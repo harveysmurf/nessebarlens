@@ -1,11 +1,10 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import {
   DIGITAL_PRICE_EUR,
-  FORMAT_ADD_EUR,
-  computeQuoteEur,
   formatLabel,
+  sizeLabel,
   type FrameFinish,
   type PrintFormat,
   type PrintSize,
@@ -30,24 +29,16 @@ const FRAMES: { id: FrameFinish; label: string }[] = [
   { id: "brown", label: "Brown Wood" },
 ];
 
-function sizeOptionLabel(size: PrintSize): string {
-  switch (size) {
-    case "30x40":
-      return '30 × 40 cm (12 × 16") — Standard';
-    case "50x70":
-      return '50 × 70 cm (20 × 28") — Medium (+€18)';
-    case "70x100":
-      return '70 × 100 cm (28 × 40") — Gallery (+€40)';
-  }
-}
+type LiveQuote = {
+  merchandiseEur: number;
+  shippingEur: number;
+};
 
 export function PrintConfigurator({
   photoSlug,
-  fromPriceEur,
   title,
 }: {
   photoSlug: string;
-  fromPriceEur: number;
   title: string;
 }) {
   const [format, setFormat] = useState<PrintFormat>("giclee");
@@ -55,28 +46,58 @@ export function PrintConfigurator({
   const [frame, setFrame] = useState<FrameFinish>("black");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [quote, setQuote] = useState<LiveQuote | null>(null);
+  const [quoteLoading, setQuoteLoading] = useState(false);
+  const [quoteError, setQuoteError] = useState<string | null>(null);
 
   const isDigital = format === "digital";
   const isFramed = format === "framed";
 
-  const quoteEur = useMemo(() => {
-    try {
-      return computeQuoteEur({
-        fromPriceEur,
-        format,
-        size: isDigital ? null : size,
-      });
-    } catch {
-      return fromPriceEur;
+  useEffect(() => {
+    if (isDigital) {
+      setQuote(null);
+      setQuoteError(null);
+      setQuoteLoading(false);
+      return;
     }
-  }, [fromPriceEur, format, size, isDigital]);
 
-  const formatHint = (id: PrintFormat): string => {
-    if (id === "digital") return `€${DIGITAL_PRICE_EUR}`;
-    const add = FORMAT_ADD_EUR[id];
-    const base = fromPriceEur + add;
-    return `from €${base}`;
-  };
+    const controller = new AbortController();
+    const timer = setTimeout(async () => {
+      setQuoteLoading(true);
+      setQuoteError(null);
+      try {
+        const body =
+          format === "framed"
+            ? { format, size, frame }
+            : { format, size, frame: null };
+        const res = await fetch("/api/quote", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(body),
+          signal: controller.signal,
+        });
+        const data = (await res.json()) as LiveQuote & { error?: string };
+        if (!res.ok) {
+          throw new Error(data.error || "Quote failed");
+        }
+        setQuote({
+          merchandiseEur: data.merchandiseEur,
+          shippingEur: data.shippingEur,
+        });
+      } catch (e) {
+        if (controller.signal.aborted) return;
+        setQuote(null);
+        setQuoteError(e instanceof Error ? e.message : "Quote failed");
+      } finally {
+        if (!controller.signal.aborted) setQuoteLoading(false);
+      }
+    }, 200);
+
+    return () => {
+      controller.abort();
+      clearTimeout(timer);
+    };
+  }, [format, size, frame, isDigital]);
 
   async function checkout() {
     setBusy(true);
@@ -105,15 +126,41 @@ export function PrintConfigurator({
     }
   }
 
+  const priceLabel = (() => {
+    if (isDigital) return `€${DIGITAL_PRICE_EUR.toFixed(2)}`;
+    if (quoteLoading) return "…";
+    if (quote) return `€${quote.merchandiseEur.toFixed(2)}`;
+    return "—";
+  })();
+
   return (
     <div className="space-y-6">
-      <div className="border-y border-stone-100 py-4 flex justify-between items-baseline">
-        <span className="text-xs uppercase tracking-wider text-stone-500">
-          Estimated Price
-        </span>
-        <span className="text-2xl font-serif text-stone-900 font-semibold">
-          €{quoteEur.toFixed(2)}
-        </span>
+      <div className="border-y border-stone-100 py-4 space-y-1">
+        <div className="flex justify-between items-baseline">
+          <span className="text-xs uppercase tracking-wider text-stone-500">
+            {isDigital ? "Price" : "Print"}
+          </span>
+          <span className="text-2xl font-serif text-stone-900 font-semibold">
+            {priceLabel}
+          </span>
+        </div>
+        {!isDigital && (
+          <div className="flex justify-between items-baseline text-xs text-stone-500">
+            <span>Shipping estimate</span>
+            <span>
+              {quoteLoading
+                ? "…"
+                : quote
+                  ? `€${quote.shippingEur.toFixed(2)}`
+                  : "—"}
+            </span>
+          </div>
+        )}
+        {quoteError && (
+          <p className="text-[11px] text-red-700" role="alert">
+            {quoteError}
+          </p>
+        )}
       </div>
 
       <div className="space-y-4 text-xs">
@@ -137,7 +184,8 @@ export function PrintConfigurator({
                 >
                   <div className="font-medium text-stone-900">{f.title}</div>
                   <div className="text-[10px] text-stone-400">
-                    {f.sub} · {formatHint(f.id)}
+                    {f.sub}
+                    {f.id === "digital" ? ` · €${DIGITAL_PRICE_EUR}` : ""}
                   </div>
                 </button>
               );
@@ -157,7 +205,7 @@ export function PrintConfigurator({
             >
               {SIZES.map((s) => (
                 <option key={s} value={s}>
-                  {sizeOptionLabel(s)}
+                  {sizeLabel(s)}
                 </option>
               ))}
             </select>
@@ -180,16 +228,13 @@ export function PrintConfigurator({
                 </option>
               ))}
             </select>
-            <p className="text-[10px] text-stone-400 mt-1">
-              Finish does not change the quote.
-            </p>
           </div>
         )}
 
         <div className="pt-4">
           <button
             type="button"
-            disabled={busy}
+            disabled={busy || (!isDigital && (!quote || quoteLoading))}
             onClick={checkout}
             className="w-full bg-stone-900 hover:bg-stone-800 disabled:opacity-60 text-white font-medium py-3.5 px-4 rounded text-xs uppercase tracking-widest transition-all shadow-sm"
           >
@@ -198,7 +243,7 @@ export function PrintConfigurator({
           <p className="text-[10px] text-center text-stone-400 mt-2">
             {isDigital
               ? "Secure payment · Download link after fulfillment"
-              : "Secure payment · EU shipping collected at Checkout · Prodigi fulfillment"}
+              : "Secure payment · Live Prodigi shipping · Prodigi fulfillment"}
           </p>
           {error && (
             <p className="text-[11px] text-center text-red-700 mt-2" role="alert">

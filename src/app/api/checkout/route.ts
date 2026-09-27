@@ -2,11 +2,8 @@ import { NextResponse } from "next/server";
 import { parseCheckoutBody } from "@/lib/checkout-body";
 import { EU_27_COUNTRY_CODES } from "@/lib/eu-countries";
 import { getPhoto } from "@/lib/photos";
-import {
-  EU_FLAT_SHIPPING_CENTS,
-  computeQuoteEur,
-  formatLabel,
-} from "@/lib/pricing";
+import { DIGITAL_PRICE_EUR, eurToCents, formatLabel } from "@/lib/pricing";
+import { quotePhysical } from "@/lib/prodigi-quote";
 import { getStripe, siteUrl } from "@/lib/stripe";
 
 export async function POST(request: Request) {
@@ -27,21 +24,31 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "Unknown photoSlug" }, { status: 404 });
   }
 
+  const isPhysical = parsed.format !== "digital";
   let quoteEur: number;
-  try {
-    quoteEur = computeQuoteEur({
-      fromPriceEur: photo.fromPriceEur,
-      format: parsed.format,
-      size: parsed.size,
-    });
-  } catch (e) {
-    return NextResponse.json(
-      { error: e instanceof Error ? e.message : "Bad quote" },
-      { status: 400 },
-    );
+  let shippingEur = 0;
+  let sku = "";
+
+  if (isPhysical) {
+    try {
+      const quote = await quotePhysical({
+        format: parsed.format,
+        size: parsed.size!,
+        frame: parsed.frame,
+        destinationCountryCode: parsed.destinationCountryCode ?? undefined,
+      });
+      quoteEur = quote.merchandiseEur;
+      shippingEur = quote.shippingEur;
+      sku = quote.sku;
+    } catch (e) {
+      const message = e instanceof Error ? e.message : "Quote failed";
+      const status = message.includes("API key") ? 503 : 502;
+      return NextResponse.json({ error: message }, { status });
+    }
+  } else {
+    quoteEur = DIGITAL_PRICE_EUR;
   }
 
-  const isPhysical = parsed.format !== "digital";
   const base = siteUrl();
   const placeholderImage = `${base}/placeholders/${photo.slug}.jpg`;
 
@@ -55,6 +62,19 @@ export async function POST(request: Request) {
     );
   }
 
+  const metadata: Record<string, string> = {
+    photoSlug: photo.slug,
+    format: parsed.format,
+    size: parsed.size ?? "",
+    frame: parsed.frame ?? "",
+    quoteEur: String(quoteEur),
+  };
+  if (isPhysical) {
+    metadata.merchandiseEur = String(quoteEur);
+    metadata.shippingEur = String(shippingEur);
+    metadata.sku = sku;
+  }
+
   const sessionParams: Parameters<typeof stripe.checkout.sessions.create>[0] = {
     mode: "payment",
     success_url: `${base}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
@@ -64,7 +84,7 @@ export async function POST(request: Request) {
         quantity: 1,
         price_data: {
           currency: "eur",
-          unit_amount: quoteEur * 100,
+          unit_amount: eurToCents(quoteEur),
           product_data: {
             name: `${photo.title} — ${formatLabel(parsed.format)}`,
             description: isPhysical
@@ -75,13 +95,7 @@ export async function POST(request: Request) {
         },
       },
     ],
-    metadata: {
-      photoSlug: photo.slug,
-      format: parsed.format,
-      size: parsed.size ?? "",
-      frame: parsed.frame ?? "",
-      quoteEur: String(quoteEur),
-    },
+    metadata,
   };
 
   if (isPhysical) {
@@ -93,10 +107,10 @@ export async function POST(request: Request) {
         shipping_rate_data: {
           type: "fixed_amount",
           fixed_amount: {
-            amount: EU_FLAT_SHIPPING_CENTS,
+            amount: eurToCents(shippingEur),
             currency: "eur",
           },
-          display_name: "EU shipping",
+          display_name: "Shipping",
         },
       },
     ];
@@ -124,5 +138,8 @@ export async function POST(request: Request) {
     url: session.url,
     sessionId: session.id,
     quoteEur,
+    ...(isPhysical
+      ? { merchandiseEur: quoteEur, shippingEur, sku }
+      : {}),
   });
 }
