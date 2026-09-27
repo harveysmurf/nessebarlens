@@ -1,7 +1,7 @@
 /**
  * Prodigi SKU map — single source for format+size → SKU.
  * Verified 2026-09-27 against api.sandbox.prodigi.com GET /v4.0/products/{sku}.
- * SKU_MAP_READY in fulfillment.ts stays false until Phase 2 order creation lands.
+ * SKU_MAP_READY is true once Phase 2 order creation is wired (see fulfillment.ts).
  */
 
 import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";

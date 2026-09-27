@@ -35,8 +35,12 @@ export async function readWorkerBindings(): Promise<WorkerBindings> {
   const webhookSecret =
     nonempty(env.STRIPE_WEBHOOK_SECRET) ??
     nonempty(process.env.STRIPE_WEBHOOK_SECRET);
+  // Prefer sandbox for Phase 0–4; live key alone still counts as configured.
   const prodigiKey =
-    nonempty(env.PRODIGI_API_KEY) ?? nonempty(process.env.PRODIGI_API_KEY);
+    nonempty(env.PRODIGI_SANDBOX_API_KEY) ??
+    nonempty(process.env.PRODIGI_SANDBOX_API_KEY) ??
+    nonempty(env.PRODIGI_API_KEY) ??
+    nonempty(process.env.PRODIGI_API_KEY);
 
   return {
     ORDERS: isOrdersKv(env.ORDERS) ? env.ORDERS : undefined,

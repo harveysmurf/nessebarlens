@@ -9,17 +9,34 @@ import {
   expectedAmountCents,
   fulfillCheckoutSession,
   parseOrderRecord,
+  parseRecipient,
   resolveDownload,
   type MastersBucket,
   type OrderRecord,
   type OrdersKv,
+  type StripeShippingDetails,
 } from "../src/lib/fulfillment.ts";
 import { masterKeyForSlug } from "../src/lib/master-key.ts";
 import { getPhoto } from "../src/lib/photos.ts";
 import { readStripeEvent } from "../src/lib/stripe-event.ts";
+import type { CreateProdigiOrder } from "../src/lib/prodigi-order.ts";
 
 const NOW = "2026-09-27T12:00:00.000Z";
 const SESSION = "cs_test_abcdefgh";
+
+process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
+
+const SHIPPING: StripeShippingDetails = {
+  name: "Test Buyer",
+  address: {
+    line1: "1 Harbor St",
+    line2: "",
+    city: "Nessebar",
+    state: "",
+    postal_code: "8230",
+    country: "BG",
+  },
+};
 
 function memoryKv(initial?: Record<string, string>): OrdersKv & { puts: string[] } {
   const store = new Map(Object.entries(initial ?? {}));
@@ -49,61 +66,177 @@ function paidInput(overrides: Record<string, unknown> = {}) {
       frame: "",
       quoteEur: "30",
     } as Record<string, string> | null,
+    shippingDetails: null as StripeShippingDetails | null,
+    customerEmail: null as string | null,
+    customerPhone: null as string | null,
     prodigiKeyConfigured: false,
     now: NOW,
     ...overrides,
   };
 }
 
-test("SKU map stays disabled; digital and physical amount math", () => {
-  assert.equal(SKU_MAP_READY, false);
+function physicalMeta(
+  extra: Record<string, string> = {},
+): Record<string, string> {
+  return {
+    photoSlug: "dawn",
+    format: "giclee",
+    size: "30x40",
+    frame: "",
+    quoteEur: "15",
+    merchandiseEur: "15",
+    shippingEur: "4.99",
+    sku: "GLOBAL-FAP-12X16",
+    ...extra,
+  };
+}
+
+const okCreate: CreateProdigiOrder = async () => ({
+  ok: true,
+  orderId: "ord_sandbox_1",
+  stage: "InProgress",
+});
+
+test("SKU map is enabled; digital and physical amount math", () => {
+  assert.equal(SKU_MAP_READY, true);
   assert.equal(expectedAmountCents("digital", 30), 3000);
   assert.equal(expectedAmountCents("giclee", 15, 4.99), 1500 + 499);
   assert.equal(expectedAmountCents("framed", 13.48, 6), 1348 + 600);
 });
 
+test("parseRecipient requires a complete address", () => {
+  assert.ok(parseRecipient(SHIPPING, "a@b.co", null));
+  assert.equal(
+    parseRecipient({ name: "x", address: { line1: "1", country: "BG" } }, null, null),
+    null,
+  );
+});
+
 test("digital payment with a matching total is paid and does not call Prodigi", async () => {
+  let called = 0;
+  const create: CreateProdigiOrder = async () => {
+    called += 1;
+    return { ok: true, orderId: "x", stage: null };
+  };
   const kv = memoryKv();
-  const result = await fulfillCheckoutSession({ ...paidInput(), kv });
+  const result = await fulfillCheckoutSession({
+    ...paidInput(),
+    kv,
+    createOrder: create,
+  });
   assert.equal(result.httpStatus, 200);
   assert.equal(result.body.status, "paid");
   assert.equal(result.body.reason, null);
+  assert.equal(called, 0);
   const stored = parseOrderRecord((await kv.get(SESSION))!);
   assert.ok(stored);
   assert.equal(stored.status, "paid");
   assert.equal(stored.masterKey, getPhoto("dawn")?.imageKey);
+  assert.equal(stored.prodigiOrderId, null);
   assert.equal(stored.terminal, true);
-  assert.equal(stored.merchantReference, SESSION);
   assert.equal(stored.format, "digital");
 });
 
-test("physical payment is paid-unfulfilled even when a Prodigi key is configured", async () => {
+test("physical payment creates a Prodigi sandbox order and stores the id", async () => {
   const kv = memoryKv();
   const result = await fulfillCheckoutSession({
     ...paidInput({
       amountTotal: 15 * 100 + 499,
       prodigiKeyConfigured: true,
-      metadata: {
-        photoSlug: "dawn",
-        format: "giclee",
-        size: "30x40",
-        frame: "",
-        quoteEur: "15",
-        merchandiseEur: "15",
-        shippingEur: "4.99",
-        sku: "GLOBAL-FAP-12X16",
-      },
+      shippingDetails: SHIPPING,
+      customerEmail: "buyer@example.com",
+      metadata: physicalMeta(),
     }),
     kv,
+    createOrder: okCreate,
   });
-  assert.equal(result.body.status, "paid-unfulfilled");
-  assert.equal(result.body.reason, "sku-map-missing");
+  assert.equal(result.httpStatus, 200);
+  assert.equal(result.body.status, "paid");
+  assert.equal(result.body.prodigiOrderId, "ord_sandbox_1");
   const stored = parseOrderRecord((await kv.get(SESSION))!);
-  assert.equal(stored?.masterKey, null);
-  assert.equal(stored?.quoteEur, 15);
+  assert.ok(stored);
+  assert.equal(stored.status, "paid");
+  assert.equal(stored.masterKey, null);
+  assert.equal(stored.prodigiOrderId, "ord_sandbox_1");
+  assert.equal(stored.prodigiStage, "InProgress");
+  assert.equal(
+    stored.assetUrl,
+    "https://nessebarlens.com/placeholders/dawn.jpg",
+  );
+  assert.equal(stored.recipient?.countryCode, "BG");
+  assert.equal(stored.recipient?.email, "buyer@example.com");
+  assert.equal(JSON.stringify(stored).includes("prints/dawn.jpg"), false);
 });
 
-test("amount mismatch and missing shipping are permanent stops", () => {
+test("missing shipping is a permanent stop without calling Prodigi", async () => {
+  let called = 0;
+  const kv = memoryKv();
+  const result = await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: null,
+      metadata: physicalMeta(),
+    }),
+    kv,
+    createOrder: async () => {
+      called += 1;
+      return { ok: true, orderId: "x", stage: null };
+    },
+  });
+  assert.equal(result.body.status, "paid-unfulfilled");
+  assert.equal(result.body.reason, "missing-shipping");
+  assert.equal(called, 0);
+});
+
+test("Prodigi client error becomes paid-unfulfilled prodigi-error", async () => {
+  const kv = memoryKv();
+  const result = await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      metadata: physicalMeta(),
+    }),
+    kv,
+    createOrder: async () => ({
+      ok: false,
+      kind: "client",
+      message: "Prodigi order HTTP 400",
+      status: 400,
+    }),
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.equal(result.body.status, "paid-unfulfilled");
+  assert.equal(result.body.reason, "prodigi-error");
+  const stored = parseOrderRecord((await kv.get(SESSION))!);
+  assert.equal(stored?.reason, "prodigi-error");
+  assert.equal(stored?.prodigiOrderId, null);
+});
+
+test("Prodigi server error returns 500 and does not write ORDERS", async () => {
+  const kv = memoryKv();
+  const result = await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      metadata: physicalMeta(),
+    }),
+    kv,
+    createOrder: async () => ({
+      ok: false,
+      kind: "server",
+      message: "Prodigi order HTTP 503",
+      status: 503,
+    }),
+  });
+  assert.equal(result.httpStatus, 500);
+  assert.equal(await kv.get(SESSION), null);
+  assert.equal(kv.puts.length, 0);
+});
+
+test("amount mismatch and missing shipping metadata are permanent stops", () => {
   const digitalWithShipping = decideFulfillment(
     paidInput({ amountTotal: 3000 + 1200 }),
   );
@@ -113,9 +246,11 @@ test("amount mismatch and missing shipping are permanent stops", () => {
     assert.equal(digitalWithShipping.record.masterKey, null);
   }
 
-  const physicalWithoutShipping = decideFulfillment(
+  const physicalWithoutShippingMeta = decideFulfillment(
     paidInput({
       amountTotal: 1500,
+      shippingDetails: SHIPPING,
+      prodigiKeyConfigured: true,
       metadata: {
         photoSlug: "dawn",
         format: "framed",
@@ -126,24 +261,21 @@ test("amount mismatch and missing shipping are permanent stops", () => {
       },
     }),
   );
-  assert.equal(physicalWithoutShipping.action, "write");
-  if (physicalWithoutShipping.action === "write") {
-    assert.equal(physicalWithoutShipping.record.reason, "bad-metadata");
+  assert.equal(physicalWithoutShippingMeta.action, "write");
+  if (physicalWithoutShippingMeta.action === "write") {
+    assert.equal(physicalWithoutShippingMeta.record.reason, "bad-metadata");
   }
 
   const physicalWrongTotal = decideFulfillment(
     paidInput({
       amountTotal: 1500,
-      metadata: {
-        photoSlug: "dawn",
+      shippingDetails: SHIPPING,
+      prodigiKeyConfigured: true,
+      metadata: physicalMeta({
         format: "framed",
-        size: "30x40",
         frame: "black",
-        quoteEur: "15",
-        merchandiseEur: "15",
-        shippingEur: "4.99",
         sku: "GLOBAL-CFPM-12X16",
-      },
+      }),
     }),
   );
   assert.equal(physicalWrongTotal.action, "write");
@@ -180,16 +312,37 @@ test("bad metadata, unknown photo, and unpaid sessions do not become downloads",
   assert.deepEqual(unpaid, { action: "ignore", reason: "unpaid" });
 });
 
-test("a second delivery does not overwrite the first ORDERS record", async () => {
+test("a second delivery does not overwrite the first ORDERS record or call Prodigi again", async () => {
   const kv = memoryKv();
-  await fulfillCheckoutSession({ ...paidInput(), kv });
+  let calls = 0;
+  const create: CreateProdigiOrder = async () => {
+    calls += 1;
+    return { ok: true, orderId: "ord_1", stage: "InProgress" };
+  };
+  await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      metadata: physicalMeta(),
+    }),
+    kv,
+    createOrder: create,
+  });
   const first = await kv.get(SESSION);
   const again = await fulfillCheckoutSession({
-    ...paidInput({ amountTotal: 1 }),
+    ...paidInput({
+      amountTotal: 1,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      metadata: physicalMeta(),
+    }),
     kv,
+    createOrder: create,
   });
   assert.equal(again.body.duplicate, true);
   assert.equal(kv.puts.length, 1);
+  assert.equal(calls, 1);
   assert.equal(await kv.get(SESSION), first);
 });
 
@@ -222,32 +375,28 @@ test("download waits until ORDERS has a paid digital session, then streams MASTE
   }
   assert.deepEqual(calls, ["prints/dawn.jpg"]);
 
-  const physical = decideFulfillment(
-    paidInput({
-      amountTotal: 1500 + 499,
-      metadata: {
-        photoSlug: "dawn",
-        format: "canvas",
-        size: "30x40",
-        frame: "",
-        quoteEur: "15",
-        merchandiseEur: "15",
-        shippingEur: "4.99",
-        sku: "GLOBAL-CAN-12X16",
-      },
+  const physicalKv = memoryKv();
+  await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      metadata: physicalMeta({ format: "canvas", sku: "GLOBAL-CAN-12X16" }),
     }),
-  );
-  assert.equal(physical.action, "write");
-  if (physical.action === "write") {
-    assert.equal(physical.record.reason, "sku-map-missing");
-    const blocked = await resolveDownload(physical.record, {
-      async get() {
-        throw new Error("masters must not be read");
-      },
-    });
-    assert.equal(blocked.kind, "json");
-    if (blocked.kind === "json") assert.equal(blocked.status, 403);
-  }
+    kv: physicalKv,
+    createOrder: okCreate,
+  });
+  const physical = parseOrderRecord((await physicalKv.get(SESSION))!);
+  assert.ok(physical);
+  assert.equal(physical.format, "canvas");
+  assert.equal(physical.status, "paid");
+  const blocked = await resolveDownload(physical, {
+    async get() {
+      throw new Error("masters must not be read");
+    },
+  });
+  assert.equal(blocked.kind, "json");
+  if (blocked.kind === "json") assert.equal(blocked.status, 403);
 });
 
 test("missing MASTERS binding and missing object are distinct", async () => {
@@ -349,7 +498,7 @@ test("web crypto verifies when constructEvent cannot run, and a bad signature do
   );
 });
 
-test("fulfillment source does not call Prodigi or fetch", () => {
+test("webhook + download routes still do not call Prodigi; order module is the only fetch site", () => {
   const root = path.join(import.meta.dirname, "..");
   for (const rel of [
     "src/lib/fulfillment.ts",
@@ -361,11 +510,11 @@ test("fulfillment source does not call Prodigi or fetch", () => {
   ]) {
     const src = fs.readFileSync(path.join(root, rel), "utf8");
     assert.equal(src.includes("fetch("), false, rel);
-    assert.equal(src.includes("prodigi.com"), false, rel);
-    assert.equal(src.includes("r2.dev"), false, rel);
+    assert.equal(src.includes("api.sandbox.prodigi.com"), false, rel);
   }
-  const fulfillment = fs.readFileSync(path.join(root, "src/lib/fulfillment.ts"), "utf8");
-  assert.equal(fulfillment.includes("MASTER_KEYS"), false);
+  const order = fs.readFileSync(path.join(root, "src/lib/prodigi-order.ts"), "utf8");
+  assert.equal(order.includes("api.sandbox.prodigi.com/v4.0/orders"), true);
+  assert.equal(order.includes("assertNoMasterLeak"), true);
   assert.equal(masterKeyForSlug("dawn"), getPhoto("dawn")?.imageKey);
   assert.equal(masterKeyForSlug("not-a-photo"), null);
 });

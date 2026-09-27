@@ -48,7 +48,40 @@ export async function POST(request: Request) {
     currency?: string | null;
     amount_total?: number | null;
     metadata?: Record<string, string> | null;
+    shipping_details?: {
+      name?: string | null;
+      address?: {
+        line1?: string | null;
+        line2?: string | null;
+        city?: string | null;
+        state?: string | null;
+        postal_code?: string | null;
+        country?: string | null;
+      } | null;
+    } | null;
+    collected_information?: {
+      shipping_details?: {
+        name?: string | null;
+        address?: {
+          line1?: string | null;
+          line2?: string | null;
+          city?: string | null;
+          state?: string | null;
+          postal_code?: string | null;
+          country?: string | null;
+        } | null;
+      } | null;
+    } | null;
+    customer_details?: {
+      email?: string | null;
+      phone?: string | null;
+    } | null;
   };
+
+  const shippingDetails =
+    session.collected_information?.shipping_details ??
+    session.shipping_details ??
+    null;
 
   try {
     const result = await fulfillCheckoutSession({
@@ -58,6 +91,9 @@ export async function POST(request: Request) {
       currency: session.currency ?? null,
       amountTotal: session.amount_total ?? null,
       metadata: session.metadata ?? null,
+      shippingDetails,
+      customerEmail: session.customer_details?.email ?? null,
+      customerPhone: session.customer_details?.phone ?? null,
       prodigiKeyConfigured: bindings.prodigiKeyConfigured,
       now: new Date().toISOString(),
     });

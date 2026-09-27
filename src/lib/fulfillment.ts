@@ -1,26 +1,31 @@
 /**
- * Checkout fulfillment decisions for ORDERS KV.
- * Prodigi is not called from this module. Physical payments are recorded
- * as paid-unfulfilled until a SKU map and a rotated sandbox key exist.
- *
- * Physical amountTotal must equal merchandise + shipping from session metadata
- * (quoteEur + shippingEur). Digital is merchandise only.
- * The only master-key list is photos.ts imageKey, via masterKeyForSlug.
+ * Checkout fulfillment for ORDERS KV.
+ * Digital: paid + masterKey for /api/download.
+ * Physical: sandbox Prodigi order on payment (Phase 2); masters never leave photos.ts.
  */
 
 import { masterKeyForSlug } from "./master-key";
+import {
+  createProdigiOrder,
+  placeholderAssetUrl,
+  type CreateProdigiOrder,
+  type OrderRecipient,
+} from "./prodigi-order";
+import type { FrameFinish, PrintSize } from "./pricing";
+import { resolveSku, type PhysicalFormat } from "./sku-map";
 
-/**
- * Keep false. paid-unfulfilled is written with HTTP 200, so Stripe does not
- * redeliver those events. Turning this on later does not replay them.
- */
-export const SKU_MAP_READY = false;
+/** Phase 2: SKU map + sandbox order path are wired. */
+export const SKU_MAP_READY = true;
 
 const FORMATS = ["giclee", "framed", "canvas", "digital"] as const;
+const SIZES = ["30x40", "50x70", "70x100"] as const;
+const FRAMES = ["black", "white", "brown"] as const;
 
 export type PrintFormat = (typeof FORMATS)[number];
 export type OrderFormat = PrintFormat | "unknown";
 export type OrderStatus = "paid" | "paid-unfulfilled";
+
+export type { OrderRecipient };
 
 export type OrderRecord = {
   v: 1;
@@ -38,6 +43,11 @@ export type OrderRecord = {
   currency: "eur";
   reason: string | null;
   masterKey: string | null;
+  recipient: OrderRecipient | null;
+  prodigiOrderId: string | null;
+  prodigiStage: string | null;
+  /** Public placeholder or WEB print.jpg — never a MASTERS key/URL. */
+  assetUrl: string | null;
   updatedAt: string;
 };
 
@@ -56,12 +66,27 @@ export type MastersBucket = {
   get(key: string): Promise<MasterObject | null>;
 };
 
+export type StripeShippingDetails = {
+  name?: string | null;
+  address?: {
+    line1?: string | null;
+    line2?: string | null;
+    city?: string | null;
+    state?: string | null;
+    postal_code?: string | null;
+    country?: string | null;
+  } | null;
+};
+
 export type FulfillmentInput = {
   sessionId: string;
   paymentStatus: string | null;
   currency: string | null;
   amountTotal: number | null;
   metadata: Record<string, string> | null;
+  shippingDetails: StripeShippingDetails | null;
+  customerEmail: string | null;
+  customerPhone: string | null;
   prodigiKeyConfigured: boolean;
   now: string;
 };
@@ -80,6 +105,34 @@ export function expectedAmountCents(
   return merch + Math.round(shippingEur * 100);
 }
 
+export function parseRecipient(
+  shipping: StripeShippingDetails | null,
+  email: string | null,
+  phone: string | null,
+): OrderRecipient | null {
+  if (!shipping?.name || !shipping.address) return null;
+  const a = shipping.address;
+  const name = shipping.name.trim();
+  const line1 = (a.line1 ?? "").trim();
+  const city = (a.city ?? "").trim();
+  const postcode = (a.postal_code ?? "").trim();
+  const countryCode = (a.country ?? "").trim().toUpperCase();
+  if (!name || !line1 || !city || !postcode || !/^[A-Z]{2}$/.test(countryCode)) {
+    return null;
+  }
+  return {
+    name: name.slice(0, 128),
+    line1: line1.slice(0, 128),
+    line2: (a.line2 ?? "").trim().slice(0, 128),
+    city: city.slice(0, 128),
+    state: (a.state ?? "").trim().slice(0, 128),
+    postcode: postcode.slice(0, 32),
+    countryCode,
+    email: email && email.includes("@") ? email.trim().slice(0, 254) : null,
+    phone: phone ? phone.trim().slice(0, 32) : null,
+  };
+}
+
 export function decideFulfillment(
   input: FulfillmentInput,
 ):
@@ -95,8 +148,11 @@ export function decideFulfillment(
 }
 
 export async function fulfillCheckoutSession(
-  input: FulfillmentInput & { kv: OrdersKv },
-): Promise<{ httpStatus: 200; body: Record<string, unknown> }> {
+  input: FulfillmentInput & {
+    kv: OrdersKv;
+    createOrder?: CreateProdigiOrder;
+  },
+): Promise<{ httpStatus: 200 | 500; body: Record<string, unknown> }> {
   const decision = decideFulfillment(input);
   if (decision.action === "ignore") {
     return {
@@ -110,16 +166,63 @@ export async function fulfillCheckoutSession(
     return { httpStatus: 200, body: { received: true, duplicate: true } };
   }
 
-  await input.kv.put(
-    decision.record.sessionId,
-    JSON.stringify(decision.record),
-  );
+  let record = decision.record;
+
+  if (
+    record.status === "paid-unfulfilled" &&
+    record.reason === "awaiting-prodigi"
+  ) {
+    const create = input.createOrder ?? createProdigiOrder;
+    const format = record.format as PhysicalFormat;
+    const size = record.size as PrintSize;
+    const frame =
+      record.frame === "" ? null : (record.frame as FrameFinish);
+    const recipient = record.recipient!;
+    const result = await create({
+      sessionId: record.sessionId,
+      photoSlug: record.photoSlug,
+      format,
+      size,
+      frame,
+      recipient,
+    });
+
+    if (!result.ok && result.kind === "server") {
+      return {
+        httpStatus: 500,
+        body: { error: "prodigi-unavailable", message: result.message },
+      };
+    }
+
+    if (!result.ok) {
+      record = {
+        ...record,
+        reason: "prodigi-error",
+        prodigiOrderId: null,
+        prodigiStage: null,
+        assetUrl: null,
+      };
+    } else {
+      record = {
+        ...record,
+        status: "paid",
+        reason: null,
+        masterKey: null,
+        prodigiOrderId: result.orderId,
+        prodigiStage: result.stage,
+        assetUrl: placeholderAssetUrl(record.photoSlug),
+      };
+    }
+  }
+
+  await input.kv.put(record.sessionId, JSON.stringify(record));
   return {
     httpStatus: 200,
     body: {
       received: true,
-      status: decision.record.status,
-      reason: decision.record.reason,
+      status: record.status,
+      reason: record.reason,
+      prodigiOrderId: record.prodigiOrderId,
     },
   };
 }
@@ -148,15 +251,40 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
   if (!(row.reason === null || typeof row.reason === "string")) return null;
   if (!(row.masterKey === null || typeof row.masterKey === "string")) return null;
   if (typeof row.updatedAt !== "string") return null;
+  if (!(row.prodigiOrderId === null || typeof row.prodigiOrderId === "string")) {
+    return null;
+  }
+  if (!(row.prodigiStage === null || typeof row.prodigiStage === "string")) {
+    return null;
+  }
+  if (!(row.assetUrl === null || typeof row.assetUrl === "string")) return null;
+  if (row.assetUrl !== null && !isSafeAssetUrl(row.assetUrl)) return null;
+  const recipient = parseStoredRecipient(row.recipient);
+  if (recipient === undefined) return null;
 
   if (row.status === "paid") {
-    const expectedKey = masterKeyForSlug(row.photoSlug);
-    if (
-      row.format !== "digital" ||
-      !expectedKey ||
-      row.masterKey !== expectedKey
-    ) {
-      return null;
+    if (row.format === "digital") {
+      const expectedKey = masterKeyForSlug(row.photoSlug);
+      if (
+        !expectedKey ||
+        row.masterKey !== expectedKey ||
+        row.prodigiOrderId !== null ||
+        row.assetUrl !== null ||
+        recipient !== null
+      ) {
+        return null;
+      }
+    } else {
+      if (
+        row.masterKey !== null ||
+        typeof row.prodigiOrderId !== "string" ||
+        !row.prodigiOrderId ||
+        typeof row.assetUrl !== "string" ||
+        !row.assetUrl ||
+        recipient === null
+      ) {
+        return null;
+      }
     }
   } else if (row.masterKey !== null) {
     return null;
@@ -177,6 +305,10 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
     currency: "eur",
     reason: row.reason,
     masterKey: row.masterKey,
+    recipient,
+    prodigiOrderId: row.prodigiOrderId,
+    prodigiStage: row.prodigiStage,
+    assetUrl: row.assetUrl,
     updatedAt: row.updatedAt,
   };
 }
@@ -255,20 +387,29 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
   const masterKey = masterKeyForSlug(photoSlug);
   const size = clip(meta.size);
   const frame = clip(meta.frame);
+  const recipient = parseRecipient(
+    input.shippingDetails,
+    input.customerEmail,
+    input.customerPhone,
+  );
 
-  const shell = {
-    v: 1 as const,
+  const shell: Omit<OrderRecord, "format" | "status" | "reason"> = {
+    v: 1,
     sessionId: input.sessionId,
     merchantReference: input.sessionId,
-    terminal: true as const,
+    terminal: true,
     photoSlug,
     size,
     frame,
     quoteEur: quoteEur ?? 0,
     amountTotal: isInt(input.amountTotal) ? input.amountTotal : 0,
-    currency: "eur" as const,
+    currency: "eur",
     updatedAt: input.now,
     masterKey: null,
+    recipient: null,
+    prodigiOrderId: null,
+    prodigiStage: null,
+    assetUrl: null,
   };
 
   if (!format || quoteEur === null || !photoSlug) {
@@ -319,15 +460,73 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     };
   }
 
-  let reason = "prodigi-disabled";
-  if (!SKU_MAP_READY) reason = "sku-map-missing";
-  else if (!input.prodigiKeyConfigured) reason = "prodigi-key-unset";
+  if (!SKU_MAP_READY) {
+    return {
+      ...shell,
+      format,
+      status: "paid-unfulfilled",
+      reason: "sku-map-missing",
+    };
+  }
 
+  if (!isPrintSize(size) || (format === "framed" && !isFrameFinish(frame))) {
+    return {
+      ...shell,
+      format,
+      status: "paid-unfulfilled",
+      reason: "bad-metadata",
+    };
+  }
+  if (format !== "framed" && frame !== "") {
+    return {
+      ...shell,
+      format,
+      status: "paid-unfulfilled",
+      reason: "bad-metadata",
+    };
+  }
+
+  try {
+    resolveSku(
+      format,
+      size,
+      format === "framed" ? (frame as FrameFinish) : null,
+    );
+  } catch {
+    return {
+      ...shell,
+      format,
+      status: "paid-unfulfilled",
+      reason: "bad-metadata",
+    };
+  }
+
+  if (!recipient) {
+    return {
+      ...shell,
+      format,
+      status: "paid-unfulfilled",
+      reason: "missing-shipping",
+    };
+  }
+
+  if (!input.prodigiKeyConfigured) {
+    return {
+      ...shell,
+      format,
+      status: "paid-unfulfilled",
+      reason: "prodigi-key-unset",
+      recipient,
+    };
+  }
+
+  // Internal marker: fulfillCheckoutSession will call Prodigi then rewrite.
   return {
     ...shell,
     format,
     status: "paid-unfulfilled",
-    reason,
+    reason: "awaiting-prodigi",
+    recipient,
   };
 }
 
@@ -364,4 +563,52 @@ function isOrderFormat(value: unknown): value is OrderFormat {
     value === "unknown" ||
     (typeof value === "string" && (FORMATS as readonly string[]).includes(value))
   );
+}
+
+function isPrintSize(value: string): value is PrintSize {
+  return (SIZES as readonly string[]).includes(value);
+}
+
+function isFrameFinish(value: string): value is FrameFinish {
+  return (FRAMES as readonly string[]).includes(value);
+}
+
+function isSafeAssetUrl(url: string): boolean {
+  if (!/^https:\/\//i.test(url)) return false;
+  if (/prints\//i.test(url) || /masters/i.test(url)) return false;
+  return true;
+}
+
+/** undefined = malformed; null = explicitly null */
+function parseStoredRecipient(
+  raw: unknown,
+): OrderRecipient | null | undefined {
+  if (raw === null) return null;
+  if (!raw || typeof raw !== "object") return undefined;
+  const r = raw as Record<string, unknown>;
+  for (const key of [
+    "name",
+    "line1",
+    "line2",
+    "city",
+    "state",
+    "postcode",
+    "countryCode",
+  ] as const) {
+    if (typeof r[key] !== "string") return undefined;
+  }
+  if (!(r.email === null || typeof r.email === "string")) return undefined;
+  if (!(r.phone === null || typeof r.phone === "string")) return undefined;
+  if (!/^[A-Z]{2}$/.test(r.countryCode as string)) return undefined;
+  return {
+    name: r.name as string,
+    line1: r.line1 as string,
+    line2: r.line2 as string,
+    city: r.city as string,
+    state: r.state as string,
+    postcode: r.postcode as string,
+    countryCode: r.countryCode as string,
+    email: r.email as string | null,
+    phone: r.phone as string | null,
+  };
 }
