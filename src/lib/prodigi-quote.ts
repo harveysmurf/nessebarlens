@@ -1,3 +1,4 @@
+import { DEFAULT_SHIPPING_COUNTRY } from "./eu-countries";
 import {
   merchandiseFromUnitCost,
   type FrameFinish,
@@ -6,7 +7,7 @@ import {
 import { resolveSku, type PhysicalFormat } from "./sku-map";
 
 /** Default quote destination when the client omits destinationCountryCode. */
-export const DEFAULT_DESTINATION_COUNTRY = "DE";
+export const DEFAULT_DESTINATION_COUNTRY = DEFAULT_SHIPPING_COUNTRY;
 
 const PRODIGI_QUOTE_URL = "https://api.sandbox.prodigi.com/v4.0/quotes";
 

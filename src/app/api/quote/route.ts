@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { parseQuoteBody } from "@/lib/checkout-body";
+import { DEFAULT_SHIPPING_COUNTRY } from "@/lib/eu-countries";
 import { quotePhysical } from "@/lib/prodigi-quote";
 
 export async function POST(request: Request) {
@@ -20,7 +21,8 @@ export async function POST(request: Request) {
       format: parsed.format,
       size: parsed.size,
       frame: parsed.frame,
-      destinationCountryCode: parsed.destinationCountryCode ?? undefined,
+      destinationCountryCode:
+        parsed.destinationCountryCode ?? DEFAULT_SHIPPING_COUNTRY,
     });
     return NextResponse.json(quote);
   } catch (e) {

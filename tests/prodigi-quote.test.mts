@@ -51,7 +51,7 @@ test("quotePhysical margins unitCost and passes shipping through", async () => {
     assert.equal(seenUrl, "https://api.sandbox.prodigi.com/v4.0/quotes");
     assert.deepEqual(seenBody, {
       shippingMethod: "Budget",
-      destinationCountryCode: "DE",
+      destinationCountryCode: "BG",
       currencyCode: "EUR",
       items: [
         {
