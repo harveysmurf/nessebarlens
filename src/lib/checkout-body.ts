@@ -9,7 +9,7 @@ export type CheckoutBody = {
 
 const FORMATS: PrintFormat[] = ["giclee", "framed", "canvas", "digital"];
 const SIZES: PrintSize[] = ["30x40", "50x70", "70x100"];
-const FRAMES: FrameFinish[] = ["oak", "black", "white"];
+const FRAMES: FrameFinish[] = ["black", "white", "brown"];
 
 export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string } {
   if (!raw || typeof raw !== "object") {
@@ -45,7 +45,7 @@ export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string 
 
   if (fmt === "framed") {
     if (typeof frame !== "string" || !FRAMES.includes(frame as FrameFinish)) {
-      return { error: "frame required for framed (oak|black|white)" };
+      return { error: "frame required for framed (black|white|brown)" };
     }
     return {
       photoSlug,

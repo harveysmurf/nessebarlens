@@ -25,9 +25,9 @@ const FORMATS: {
 const SIZES: PrintSize[] = ["30x40", "50x70", "70x100"];
 
 const FRAMES: { id: FrameFinish; label: string }[] = [
-  { id: "oak", label: "Natural Oak Wood" },
-  { id: "black", label: "Matte Black Wood" },
-  { id: "white", label: "Satin White Wood" },
+  { id: "black", label: "Matte Black" },
+  { id: "white", label: "Satin White" },
+  { id: "brown", label: "Brown Wood" },
 ];
 
 function sizeOptionLabel(size: PrintSize): string {
@@ -52,7 +52,7 @@ export function PrintConfigurator({
 }) {
   const [format, setFormat] = useState<PrintFormat>("giclee");
   const [size, setSize] = useState<PrintSize>("50x70");
-  const [frame, setFrame] = useState<FrameFinish>("oak");
+  const [frame, setFrame] = useState<FrameFinish>("black");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

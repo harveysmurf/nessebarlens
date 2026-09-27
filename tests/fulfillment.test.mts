@@ -117,7 +117,7 @@ test("amount mismatch and missing shipping are permanent stops", () => {
         photoSlug: "dawn",
         format: "framed",
         size: "30x40",
-        frame: "oak",
+        frame: "black",
         quoteEur: "45",
       },
     }),

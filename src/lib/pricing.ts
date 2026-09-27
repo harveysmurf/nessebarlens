@@ -1,6 +1,6 @@
 export type PrintFormat = "giclee" | "framed" | "canvas" | "digital";
 export type PrintSize = "30x40" | "50x70" | "70x100";
-export type FrameFinish = "oak" | "black" | "white";
+export type FrameFinish = "black" | "white" | "brown";
 
 export const SIZE_ADD_EUR: Record<PrintSize, number> = {
   "30x40": 0,
