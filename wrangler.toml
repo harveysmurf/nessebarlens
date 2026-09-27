@@ -1,0 +1,36 @@
+# Nessebar Lens — Cloudflare Pages (OpenNext Worker)
+# Secrets via `wrangler secret put` / CF dashboard — never git.
+# R2 S3 access keys are unused; Workers use bucket bindings only.
+
+name = "nessebar-lens"
+main = ".open-next/worker.js"
+compatibility_date = "2025-09-01"
+compatibility_flags = ["nodejs_compat"]
+pages_build_output_dir = ".open-next"
+
+[assets]
+directory = ".open-next/assets"
+binding = "ASSETS"
+
+# Senior Dev owns ORDERS KV reads/writes in the webhook + download route.
+[[kv_namespaces]]
+binding = "ORDERS"
+id = "c6f34450a61c4c69b3f840e845a7b0d3"
+preview_id = "849af920ace64914904b2799bd0fc073"
+
+# Public web derivatives only ({slug}/750.jpg|1500.jpg|2500.jpg).
+# Buckets blocked until R2 is enabled on the account (dashboard).
+[[r2_buckets]]
+binding = "WEB"
+bucket_name = "nessebar-lens-web"
+
+# Private masters / paid digital originals. Public access off.
+[[r2_buckets]]
+binding = "MASTERS"
+bucket_name = "nessebar-lens-masters"
+
+# Secrets (never git):
+# STRIPE_SECRET_KEY
+# STRIPE_WEBHOOK_SECRET
+# PRODIGI_API_KEY (rotated sandbox, off-channel)
+# NEXT_PUBLIC_SITE_URL / NEXT_PUBLIC_WEB_IMAGES_BASE as Pages env vars

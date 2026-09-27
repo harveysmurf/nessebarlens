@@ -1,103 +1,118 @@
-import Image from "next/image";
+import Link from "next/link";
+import { WebPhoto } from "@/components/WebPhoto";
+import { getPhoto } from "@/lib/photos";
 
-export default function Home() {
+const CATEGORIES = [
+  {
+    href: "/fine-art",
+    slug: "cobblestones",
+    n: "01",
+    title: "Fine Art",
+    blurb: "Best high-end portfolio gallery captures",
+    dark: false,
+  },
+  {
+    href: "/archive",
+    slug: "fishermen",
+    n: "02",
+    title: "Archive",
+    blurb: "Everyday street & journalistic moments",
+    dark: false,
+  },
+  {
+    href: "/film",
+    slug: "windmill",
+    n: "03",
+    title: "Film Photography",
+    blurb: "Authentic 35mm & 120 film stock negatives",
+    dark: true,
+    contrast: true,
+  },
+] as const;
+
+export default function HomePage() {
+  const hero = getPhoto("dawn")!;
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <section className="fade-in">
+      <div className="max-w-7xl mx-auto px-6 pt-10 pb-16 space-y-16">
+        <Link
+          href={`/prints/${hero.slug}`}
+          className="relative aspect-[21/9] rounded-sm overflow-hidden bg-stone-200 group block"
+        >
+          <WebPhoto
+            slug={hero.slug}
+            alt={hero.title}
+            preferred={2500}
+            priority
+            sizes="(max-width: 1280px) 100vw, 1280px"
+            className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000"
+          />
+          <div className="absolute inset-0 bg-gradient-to-t from-gallery-900/80 via-transparent to-transparent flex items-end p-8 sm:p-12">
+            <div className="text-white space-y-1">
+              <span className="text-[10px] uppercase tracking-[0.3em] text-amber-200 font-medium">
+                Featured Fine Art Print
+              </span>
+              <h1 className="font-serif text-3xl sm:text-5xl font-light">
+                {hero.title}
+              </h1>
+              <p className="text-xs text-stone-300 font-light max-w-md">
+                Limited Medium Format Giclée Capture • Fine Art Collection
+              </p>
+            </div>
+          </div>
+        </Link>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
+        <div className="text-center max-w-2xl mx-auto space-y-3 py-4">
+          <p className="font-serif text-2xl sm:text-3xl font-light leading-relaxed text-stone-800 italic">
+            &ldquo;Documenting three decades of coastal light, everyday street
+            memories, and analog film grain across Old Town Nessebar.&rdquo;
+          </p>
+          <div className="w-12 h-[1px] bg-stone-300 mx-auto" />
+          <p className="text-[10px] uppercase tracking-widest text-stone-400 pt-2">
+            Prefer the story layout?{" "}
+            <Link href="/story" className="underline hover:text-stone-800">
+              View Concept B
+            </Link>
+          </p>
         </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
-    </div>
+
+        <div className="grid md:grid-cols-3 gap-8">
+          {CATEGORIES.map((cat) => {
+            const photo = getPhoto(cat.slug)!;
+            return (
+              <Link key={cat.href} href={cat.href} className="group space-y-3 block">
+                <div
+                  className={`aspect-[4/3] overflow-hidden rounded-sm ${
+                    cat.dark ? "bg-stone-900" : "bg-stone-200"
+                  }`}
+                >
+                  <WebPhoto
+                    slug={photo.slug}
+                    alt={cat.title}
+                    preferred={1500}
+                    sizes="(max-width: 768px) 100vw, 33vw"
+                    className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ${
+                      "contrast" in cat && cat.contrast ? "filter contrast-125" : ""
+                    }`}
+                  />
+                </div>
+                <div className="border-b border-stone-200 pb-3 flex justify-between items-baseline gap-3">
+                  <div>
+                    <h3 className="font-serif text-xl font-normal">
+                      {cat.n}. {cat.title}
+                    </h3>
+                    <p className="text-[11px] text-stone-500">{cat.blurb}</p>
+                  </div>
+                  <span className="text-[10px] uppercase tracking-widest text-stone-800 font-medium group-hover:underline shrink-0">
+                    Explore →
+                  </span>
+                </div>
+              </Link>
+            );
+          })}
+        </div>
+      </div>
+    </section>
   );
 }
