@@ -1,3 +1,4 @@
+import { isEu27CountryCode } from "./eu-countries";
 import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";
 
 export type CheckoutBody = {
@@ -18,6 +19,9 @@ function parseDestinationCountry(
   if (raw === undefined || raw === null || raw === "") return null;
   if (typeof raw !== "string" || !/^[A-Z]{2}$/.test(raw)) {
     return { error: "destinationCountryCode must be a 2-letter ISO code" };
+  }
+  if (!isEu27CountryCode(raw)) {
+    return { error: "destinationCountryCode must be an EU-27 country" };
   }
   return raw;
 }

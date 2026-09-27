@@ -2,6 +2,11 @@
 
 import { useEffect, useState } from "react";
 import {
+  DEFAULT_SHIPPING_COUNTRY,
+  EU_27_COUNTRIES,
+  type Eu27CountryCode,
+} from "@/lib/eu-countries";
+import {
   DIGITAL_PRICE_EUR,
   formatLabel,
   sizeLabel,
@@ -44,6 +49,8 @@ export function PrintConfigurator({
   const [format, setFormat] = useState<PrintFormat>("giclee");
   const [size, setSize] = useState<PrintSize>("50x70");
   const [frame, setFrame] = useState<FrameFinish>("black");
+  const [destinationCountry, setDestinationCountry] =
+    useState<Eu27CountryCode>(DEFAULT_SHIPPING_COUNTRY);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quote, setQuote] = useState<LiveQuote | null>(null);
@@ -68,8 +75,18 @@ export function PrintConfigurator({
       try {
         const body =
           format === "framed"
-            ? { format, size, frame }
-            : { format, size, frame: null };
+            ? {
+                format,
+                size,
+                frame,
+                destinationCountryCode: destinationCountry,
+              }
+            : {
+                format,
+                size,
+                frame: null,
+                destinationCountryCode: destinationCountry,
+              };
         const res = await fetch("/api/quote", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -97,7 +114,7 @@ export function PrintConfigurator({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [format, size, frame, isDigital]);
+  }, [format, size, frame, destinationCountry, isDigital]);
 
   async function checkout() {
     setBusy(true);
@@ -107,8 +124,20 @@ export function PrintConfigurator({
         format === "digital"
           ? { photoSlug, format, size: null, frame: null }
           : format === "framed"
-            ? { photoSlug, format, size, frame }
-            : { photoSlug, format, size, frame: null };
+            ? {
+                photoSlug,
+                format,
+                size,
+                frame,
+                destinationCountryCode: destinationCountry,
+              }
+            : {
+                photoSlug,
+                format,
+                size,
+                frame: null,
+                destinationCountryCode: destinationCountry,
+              };
 
       const res = await fetch("/api/checkout", {
         method: "POST",
@@ -225,6 +254,31 @@ export function PrintConfigurator({
               {FRAMES.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.label}
+                </option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {!isDigital && (
+          <div>
+            <label
+              htmlFor="shipping-country"
+              className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-1"
+            >
+              Ship to
+            </label>
+            <select
+              id="shipping-country"
+              value={destinationCountry}
+              onChange={(e) =>
+                setDestinationCountry(e.target.value as Eu27CountryCode)
+              }
+              className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none"
+            >
+              {EU_27_COUNTRIES.map((c) => (
+                <option key={c.code} value={c.code}>
+                  {c.name}
                 </option>
               ))}
             </select>

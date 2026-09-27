@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { parseCheckoutBody } from "@/lib/checkout-body";
-import { EU_27_COUNTRY_CODES } from "@/lib/eu-countries";
+import {
+  DEFAULT_SHIPPING_COUNTRY,
+  type Eu27CountryCode,
+} from "@/lib/eu-countries";
 import { getPhoto } from "@/lib/photos";
 import { DIGITAL_PRICE_EUR, eurToCents, formatLabel } from "@/lib/pricing";
 import { quotePhysical } from "@/lib/prodigi-quote";
@@ -28,14 +31,18 @@ export async function POST(request: Request) {
   let quoteEur: number;
   let shippingEur = 0;
   let sku = "";
+  let destinationCountryCode: Eu27CountryCode | null = null;
 
   if (isPhysical) {
+    destinationCountryCode =
+      (parsed.destinationCountryCode as Eu27CountryCode | null) ??
+      DEFAULT_SHIPPING_COUNTRY;
     try {
       const quote = await quotePhysical({
-        format: parsed.format,
+        format: parsed.format as Exclude<typeof parsed.format, "digital">,
         size: parsed.size!,
         frame: parsed.frame,
-        destinationCountryCode: parsed.destinationCountryCode ?? undefined,
+        destinationCountryCode,
       });
       quoteEur = quote.merchandiseEur;
       shippingEur = quote.shippingEur;
@@ -69,10 +76,11 @@ export async function POST(request: Request) {
     frame: parsed.frame ?? "",
     quoteEur: String(quoteEur),
   };
-  if (isPhysical) {
+  if (isPhysical && destinationCountryCode) {
     metadata.merchandiseEur = String(quoteEur);
     metadata.shippingEur = String(shippingEur);
     metadata.sku = sku;
+    metadata.destinationCountryCode = destinationCountryCode;
   }
 
   const sessionParams: Parameters<typeof stripe.checkout.sessions.create>[0] = {
@@ -98,9 +106,11 @@ export async function POST(request: Request) {
     metadata,
   };
 
-  if (isPhysical) {
+  if (isPhysical && destinationCountryCode) {
+    // Lock Stripe address to the quoted destination so the fixed shipping
+    // amount matches Prodigi's rate for that country.
     sessionParams.shipping_address_collection = {
-      allowed_countries: [...EU_27_COUNTRY_CODES],
+      allowed_countries: [destinationCountryCode],
     };
     sessionParams.shipping_options = [
       {
