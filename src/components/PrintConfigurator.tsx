@@ -3,9 +3,9 @@
 import { useEffect, useState } from "react";
 import {
   DEFAULT_SHIPPING_COUNTRY,
-  EU_27_COUNTRIES,
-  type Eu27CountryCode,
-} from "@/lib/eu-countries";
+  SHIP_TO_COUNTRIES,
+  type ShipToCountryCode,
+} from "@/lib/ship-to-countries";
 import {
   DIGITAL_PRICE_EUR,
   formatLabel,
@@ -50,7 +50,7 @@ export function PrintConfigurator({
   const [size, setSize] = useState<PrintSize>("50x70");
   const [frame, setFrame] = useState<FrameFinish>("black");
   const [destinationCountry, setDestinationCountry] =
-    useState<Eu27CountryCode>(DEFAULT_SHIPPING_COUNTRY);
+    useState<ShipToCountryCode>(DEFAULT_SHIPPING_COUNTRY);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [quote, setQuote] = useState<LiveQuote | null>(null);
@@ -272,11 +272,11 @@ export function PrintConfigurator({
               id="shipping-country"
               value={destinationCountry}
               onChange={(e) =>
-                setDestinationCountry(e.target.value as Eu27CountryCode)
+                setDestinationCountry(e.target.value as ShipToCountryCode)
               }
               className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none"
             >
-              {EU_27_COUNTRIES.map((c) => (
+              {SHIP_TO_COUNTRIES.map((c) => (
                 <option key={c.code} value={c.code}>
                   {c.name}
                 </option>

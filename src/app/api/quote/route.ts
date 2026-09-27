@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { parseQuoteBody } from "@/lib/checkout-body";
-import { DEFAULT_SHIPPING_COUNTRY } from "@/lib/eu-countries";
+import { DEFAULT_SHIPPING_COUNTRY } from "@/lib/ship-to-countries";
 import { quotePhysical } from "@/lib/prodigi-quote";
 
 export async function POST(request: Request) {

@@ -2,8 +2,8 @@ import { NextResponse } from "next/server";
 import { parseCheckoutBody } from "@/lib/checkout-body";
 import {
   DEFAULT_SHIPPING_COUNTRY,
-  type Eu27CountryCode,
-} from "@/lib/eu-countries";
+  type ShipToCountryCode,
+} from "@/lib/ship-to-countries";
 import { getPhoto } from "@/lib/photos";
 import { DIGITAL_PRICE_EUR, eurToCents, formatLabel } from "@/lib/pricing";
 import { quotePhysical } from "@/lib/prodigi-quote";
@@ -31,11 +31,11 @@ export async function POST(request: Request) {
   let quoteEur: number;
   let shippingEur = 0;
   let sku = "";
-  let destinationCountryCode: Eu27CountryCode | null = null;
+  let destinationCountryCode: ShipToCountryCode | null = null;
 
   if (isPhysical) {
     destinationCountryCode =
-      (parsed.destinationCountryCode as Eu27CountryCode | null) ??
+      (parsed.destinationCountryCode as ShipToCountryCode | null) ??
       DEFAULT_SHIPPING_COUNTRY;
     try {
       const quote = await quotePhysical({

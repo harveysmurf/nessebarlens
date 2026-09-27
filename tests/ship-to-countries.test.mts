@@ -1,0 +1,51 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  DEFAULT_SHIPPING_COUNTRY,
+  isShipToCountryCode,
+  SHIP_TO_COUNTRIES,
+  SHIP_TO_COUNTRY_CODES,
+  STRIPE_SHIP_TO_COUNTRIES,
+} from "../src/lib/ship-to-countries.ts";
+import { parseCheckoutBody, parseQuoteBody } from "../src/lib/checkout-body.ts";
+
+test("ship-to list is Prodigi∩Stripe sized and defaults to BG", () => {
+  assert.equal(DEFAULT_SHIPPING_COUNTRY, "BG");
+  assert.equal(SHIP_TO_COUNTRIES.length, 220);
+  assert.equal(SHIP_TO_COUNTRY_CODES.length, 220);
+  assert.equal(STRIPE_SHIP_TO_COUNTRIES.length, 220);
+  assert.ok(isShipToCountryCode("BG"));
+  assert.ok(isShipToCountryCode("US"));
+  assert.ok(isShipToCountryCode("JP"));
+  assert.equal(isShipToCountryCode("AN"), false); // Prodigi-only, not Stripe
+  assert.equal(isShipToCountryCode("CU"), false);
+  assert.equal(isShipToCountryCode("XX"), false);
+});
+
+test("parseQuoteBody accepts global ship-to and rejects unknowns", () => {
+  const ok = parseQuoteBody({
+    format: "giclee",
+    size: "30x40",
+    destinationCountryCode: "US",
+  });
+  assert.ok(!("error" in ok));
+  assert.equal(ok.destinationCountryCode, "US");
+
+  const bad = parseQuoteBody({
+    format: "giclee",
+    size: "30x40",
+    destinationCountryCode: "AN",
+  });
+  assert.ok("error" in bad);
+});
+
+test("parseCheckoutBody accepts US destination for physical", () => {
+  const ok = parseCheckoutBody({
+    photoSlug: "dawn",
+    format: "canvas",
+    size: "50x70",
+    destinationCountryCode: "AU",
+  });
+  assert.ok(!("error" in ok));
+  assert.equal(ok.destinationCountryCode, "AU");
+});

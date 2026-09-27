@@ -1,4 +1,4 @@
-import { DEFAULT_SHIPPING_COUNTRY } from "./eu-countries";
+import { DEFAULT_SHIPPING_COUNTRY } from "./ship-to-countries";
 import {
   merchandiseFromUnitCost,
   type FrameFinish,
