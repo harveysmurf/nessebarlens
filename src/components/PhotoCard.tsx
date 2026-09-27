@@ -38,7 +38,7 @@ export function PhotoCard({ photo }: { photo: Photo }) {
             {photo.subtitle}
           </p>
         </div>
-        <span className="text-stone-600 font-medium shrink-0">From €{photo.fromPriceEur}</span>
+        <span className="text-stone-600 font-medium shrink-0">Print options</span>
       </div>
     </Link>
   );

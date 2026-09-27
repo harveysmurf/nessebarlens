@@ -3,13 +3,12 @@
  * Prodigi is not called from this module. Physical payments are recorded
  * as paid-unfulfilled until a SKU map and a rotated sandbox key exist.
  *
- * EU_FLAT_SHIPPING_CENTS must stay equal to the checkout route's constant.
+ * Physical amountTotal must equal merchandise + shipping from session metadata
+ * (quoteEur + shippingEur). Digital is merchandise only.
  * The only master-key list is photos.ts imageKey, via masterKeyForSlug.
  */
 
 import { masterKeyForSlug } from "./master-key";
-
-export const EU_FLAT_SHIPPING_CENTS = 1200;
 
 /**
  * Keep false. paid-unfulfilled is written with HTTP 200, so Stripe does not
@@ -71,9 +70,14 @@ export function isCheckoutSessionId(value: string): boolean {
   return /^cs_(test|live)_[A-Za-z0-9]{8,}$/.test(value);
 }
 
-export function expectedAmountCents(format: PrintFormat, quoteEur: number): number {
-  const shipping = format === "digital" ? 0 : EU_FLAT_SHIPPING_CENTS;
-  return quoteEur * 100 + shipping;
+export function expectedAmountCents(
+  format: PrintFormat,
+  quoteEur: number,
+  shippingEur = 0,
+): number {
+  const merch = Math.round(quoteEur * 100);
+  if (format === "digital") return merch;
+  return merch + Math.round(shippingEur * 100);
 }
 
 export function decideFulfillment(
@@ -139,7 +143,7 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
   if (!isOrderFormat(row.format)) return null;
   if (typeof row.photoSlug !== "string") return null;
   if (typeof row.size !== "string" || typeof row.frame !== "string") return null;
-  if (!isInt(row.quoteEur) || !isInt(row.amountTotal)) return null;
+  if (!isEurAmount(row.quoteEur) || !isInt(row.amountTotal)) return null;
   if (row.currency !== "eur") return null;
   if (!(row.reason === null || typeof row.reason === "string")) return null;
   if (!(row.masterKey === null || typeof row.masterKey === "string")) return null;
@@ -246,7 +250,7 @@ export async function resolveDownload(
 function buildRecord(input: FulfillmentInput): OrderRecord {
   const meta = input.metadata ?? {};
   const format = parseFormat(meta.format);
-  const quoteEur = parseQuoteEur(meta.quoteEur);
+  const quoteEur = parseEurAmount(meta.quoteEur ?? meta.merchandiseEur);
   const photoSlug = typeof meta.photoSlug === "string" ? meta.photoSlug : "";
   const masterKey = masterKeyForSlug(photoSlug);
   const size = clip(meta.size);
@@ -284,7 +288,18 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     };
   }
 
-  const expected = expectedAmountCents(format, quoteEur);
+  const shippingEur =
+    format === "digital" ? 0 : parseEurAmount(meta.shippingEur);
+  if (format !== "digital" && shippingEur === null) {
+    return {
+      ...shell,
+      format,
+      status: "paid-unfulfilled",
+      reason: "bad-metadata",
+    };
+  }
+
+  const expected = expectedAmountCents(format, quoteEur, shippingEur ?? 0);
   if (input.currency !== "eur" || input.amountTotal !== expected) {
     return {
       ...shell,
@@ -323,8 +338,8 @@ function parseFormat(raw: string | undefined): PrintFormat | null {
   return null;
 }
 
-function parseQuoteEur(raw: string | undefined): number | null {
-  if (!raw || !/^[1-9]\d{0,5}$/.test(raw)) return null;
+function parseEurAmount(raw: string | undefined): number | null {
+  if (!raw || !/^(?:0|[1-9]\d{0,5})(?:\.\d{1,2})?$/.test(raw)) return null;
   return Number(raw);
 }
 
@@ -335,6 +350,13 @@ function clip(raw: string | undefined): string {
 
 function isInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value);
+}
+
+function isEurAmount(value: unknown): value is number {
+  if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+    return false;
+  }
+  return Math.abs(value * 100 - Math.round(value * 100)) < 1e-6;
 }
 
 function isOrderFormat(value: unknown): value is OrderFormat {

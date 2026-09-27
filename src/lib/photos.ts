@@ -9,7 +9,6 @@ export type Photo = {
   description: string;
   /** Private master object key in MASTERS — never used in gallery UI. */
   imageKey: string;
-  fromPriceEur: number;
   /** Film gallery uses dark matte + filter. */
   filmLook?: "contrast" | "sepia" | "grayscale";
 };
@@ -25,7 +24,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Flagship gallery capture at first light over the Byzantine basilica ruins in Old Town Nessebar. Printed on Hahnemühle Photo Rag 308gsm.",
     imageKey: "prints/dawn.jpg",
-    fromPriceEur: 45,
   },
   {
     slug: "cobblestones",
@@ -36,7 +34,6 @@ export const PHOTOS: Photo[] = [
     description:
       "High-resolution architectural composition showcasing Nessebar's 19th-century wooden and stone revival homes.",
     imageKey: "prints/cobblestones.jpg",
-    fromPriceEur: 40,
   },
   {
     slug: "isthmus",
@@ -47,7 +44,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Long-exposure fine art photograph capturing the sea movement along the narrow road connecting the mainland.",
     imageKey: "prints/isthmus.jpg",
-    fromPriceEur: 50,
   },
   {
     slug: "harbor-mist",
@@ -58,7 +54,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Soft marine fog lifting off the south harbor, with wooden boats as quiet silhouettes against pale stone.",
     imageKey: "prints/harbor-mist.jpg",
-    fromPriceEur: 44,
   },
   {
     slug: "chapel-light",
@@ -69,7 +64,6 @@ export const PHOTOS: Photo[] = [
     description:
       "A quiet beam of afternoon light cutting through the arches of a small Old Town chapel.",
     imageKey: "prints/chapel-light.jpg",
-    fromPriceEur: 42,
   },
   {
     slug: "stone-arch",
@@ -80,7 +74,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Framed view through a medieval stone arch opening onto the Black Sea horizon.",
     imageKey: "prints/stone-arch.jpg",
-    fromPriceEur: 46,
   },
   {
     slug: "evening-wall",
@@ -91,7 +84,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Warm last light on the weathered fortress wall where the peninsula meets open water.",
     imageKey: "prints/evening-wall.jpg",
-    fromPriceEur: 48,
   },
   // —— Archive (7) ——
   {
@@ -103,7 +95,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Documentary street record of traditional Bulgarian fishermen untangling nets in Old Nessebar harbor.",
     imageKey: "prints/fishermen.jpg",
-    fromPriceEur: 32,
   },
   {
     slug: "autumn",
@@ -114,7 +105,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Journalistic capture of high waves crashing against the wooden pier during an October Black Sea gale.",
     imageKey: "prints/autumn.jpg",
-    fromPriceEur: 35,
   },
   {
     slug: "craftsman",
@@ -125,7 +115,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Candid archival portrait of an old cobbler working outside his workshop in the heart of Old Town.",
     imageKey: "prints/craftsman.jpg",
-    fromPriceEur: 30,
   },
   {
     slug: "market-day",
@@ -136,7 +125,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Vendors and locals crossing the isthmus with baskets on a busy Saturday morning.",
     imageKey: "prints/market-day.jpg",
-    fromPriceEur: 30,
   },
   {
     slug: "net-menders",
@@ -147,7 +135,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Two fishermen repairing blue nets on the rocks as the tide pulls back from the south shore.",
     imageKey: "prints/net-menders.jpg",
-    fromPriceEur: 32,
   },
   {
     slug: "winter-pier",
@@ -158,7 +145,6 @@ export const PHOTOS: Photo[] = [
     description:
       "An emptied wooden pier in January wind — tourist season gone, town kept by those who stay.",
     imageKey: "prints/winter-pier.jpg",
-    fromPriceEur: 34,
   },
   {
     slug: "alley-cat",
@@ -169,7 +155,6 @@ export const PHOTOS: Photo[] = [
     description:
       "A local cat claiming the warmest patch of stone in a narrow Old Town alley.",
     imageKey: "prints/alley-cat.jpg",
-    fromPriceEur: 28,
   },
   // —— Film (6) ——
   {
@@ -181,7 +166,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Captured on 35mm monochrome analog film. Raw grain and authentic silver halide tone curves.",
     imageKey: "prints/windmill.jpg",
-    fromPriceEur: 38,
     filmLook: "contrast",
   },
   {
@@ -193,7 +177,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Medium format 120 film slide capture using Hasselblad 500C. Warm analog tones and organic light bloom.",
     imageKey: "prints/fortress.jpg",
-    fromPriceEur: 42,
     filmLook: "sepia",
   },
   {
@@ -205,7 +188,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Grain-textured 35mm black and white negative capture of seagulls soaring over the northern rocks.",
     imageKey: "prints/seagulls.jpg",
-    fromPriceEur: 35,
     filmLook: "grayscale",
   },
   {
@@ -217,7 +199,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Close study of peeling blue paint on a fishing boat hull — analog color and soft grain.",
     imageKey: "prints/boat-hull.jpg",
-    fromPriceEur: 36,
     filmLook: "sepia",
   },
   {
@@ -229,7 +210,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Hard noon shadows slicing a quiet residential street in the old quarter.",
     imageKey: "prints/shadow-street.jpg",
-    fromPriceEur: 34,
     filmLook: "contrast",
   },
   {
@@ -241,7 +221,6 @@ export const PHOTOS: Photo[] = [
     description:
       "Wind and spray along the northern ramparts — high-key sky and textured stone.",
     imageKey: "prints/salt-air.jpg",
-    fromPriceEur: 37,
     filmLook: "grayscale",
   },
 ];

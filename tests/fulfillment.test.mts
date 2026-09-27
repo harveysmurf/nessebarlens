@@ -4,7 +4,6 @@ import path from "node:path";
 import test from "node:test";
 import Stripe from "stripe";
 import {
-  EU_FLAT_SHIPPING_CENTS,
   SKU_MAP_READY,
   decideFulfillment,
   expectedAmountCents,
@@ -56,11 +55,11 @@ function paidInput(overrides: Record<string, unknown> = {}) {
   };
 }
 
-test("shipping lock is 1200 cents and the SKU map is not ready", () => {
-  assert.equal(EU_FLAT_SHIPPING_CENTS, 1200);
+test("SKU map stays disabled; digital and physical amount math", () => {
   assert.equal(SKU_MAP_READY, false);
   assert.equal(expectedAmountCents("digital", 30), 3000);
-  assert.equal(expectedAmountCents("giclee", 45), 4500 + 1200);
+  assert.equal(expectedAmountCents("giclee", 15, 4.99), 1500 + 499);
+  assert.equal(expectedAmountCents("framed", 13.48, 6), 1348 + 600);
 });
 
 test("digital payment with a matching total is paid and does not call Prodigi", async () => {
@@ -82,14 +81,17 @@ test("physical payment is paid-unfulfilled even when a Prodigi key is configured
   const kv = memoryKv();
   const result = await fulfillCheckoutSession({
     ...paidInput({
-      amountTotal: 45 * 100 + EU_FLAT_SHIPPING_CENTS,
+      amountTotal: 15 * 100 + 499,
       prodigiKeyConfigured: true,
       metadata: {
         photoSlug: "dawn",
         format: "giclee",
         size: "30x40",
         frame: "",
-        quoteEur: "45",
+        quoteEur: "15",
+        merchandiseEur: "15",
+        shippingEur: "4.99",
+        sku: "GLOBAL-FAP-12X16",
       },
     }),
     kv,
@@ -98,11 +100,12 @@ test("physical payment is paid-unfulfilled even when a Prodigi key is configured
   assert.equal(result.body.reason, "sku-map-missing");
   const stored = parseOrderRecord((await kv.get(SESSION))!);
   assert.equal(stored?.masterKey, null);
+  assert.equal(stored?.quoteEur, 15);
 });
 
 test("amount mismatch and missing shipping are permanent stops", () => {
   const digitalWithShipping = decideFulfillment(
-    paidInput({ amountTotal: 3000 + EU_FLAT_SHIPPING_CENTS }),
+    paidInput({ amountTotal: 3000 + 1200 }),
   );
   assert.equal(digitalWithShipping.action, "write");
   if (digitalWithShipping.action === "write") {
@@ -112,19 +115,40 @@ test("amount mismatch and missing shipping are permanent stops", () => {
 
   const physicalWithoutShipping = decideFulfillment(
     paidInput({
-      amountTotal: 4500,
+      amountTotal: 1500,
       metadata: {
         photoSlug: "dawn",
         format: "framed",
         size: "30x40",
         frame: "black",
-        quoteEur: "45",
+        quoteEur: "15",
+        merchandiseEur: "15",
       },
     }),
   );
   assert.equal(physicalWithoutShipping.action, "write");
   if (physicalWithoutShipping.action === "write") {
-    assert.equal(physicalWithoutShipping.record.reason, "amount-mismatch");
+    assert.equal(physicalWithoutShipping.record.reason, "bad-metadata");
+  }
+
+  const physicalWrongTotal = decideFulfillment(
+    paidInput({
+      amountTotal: 1500,
+      metadata: {
+        photoSlug: "dawn",
+        format: "framed",
+        size: "30x40",
+        frame: "black",
+        quoteEur: "15",
+        merchandiseEur: "15",
+        shippingEur: "4.99",
+        sku: "GLOBAL-CFPM-12X16",
+      },
+    }),
+  );
+  assert.equal(physicalWrongTotal.action, "write");
+  if (physicalWrongTotal.action === "write") {
+    assert.equal(physicalWrongTotal.record.reason, "amount-mismatch");
   }
 });
 
@@ -200,18 +224,22 @@ test("download waits until ORDERS has a paid digital session, then streams MASTE
 
   const physical = decideFulfillment(
     paidInput({
-      amountTotal: 4500 + EU_FLAT_SHIPPING_CENTS,
+      amountTotal: 1500 + 499,
       metadata: {
         photoSlug: "dawn",
         format: "canvas",
         size: "30x40",
         frame: "",
-        quoteEur: "45",
+        quoteEur: "15",
+        merchandiseEur: "15",
+        shippingEur: "4.99",
+        sku: "GLOBAL-CAN-12X16",
       },
     }),
   );
   assert.equal(physical.action, "write");
   if (physical.action === "write") {
+    assert.equal(physical.record.reason, "sku-map-missing");
     const blocked = await resolveDownload(physical.record, {
       async get() {
         throw new Error("masters must not be read");
@@ -340,4 +368,12 @@ test("fulfillment source does not call Prodigi or fetch", () => {
   assert.equal(fulfillment.includes("MASTER_KEYS"), false);
   assert.equal(masterKeyForSlug("dawn"), getPhoto("dawn")?.imageKey);
   assert.equal(masterKeyForSlug("not-a-photo"), null);
+});
+
+test("stripe client uses fetch http client for Workers", () => {
+  const src = fs.readFileSync(
+    path.join(import.meta.dirname, "..", "src/lib/stripe.ts"),
+    "utf8",
+  );
+  assert.equal(src.includes("Stripe.createFetchHttpClient()"), true);
 });
