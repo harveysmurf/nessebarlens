@@ -17,7 +17,7 @@ export function SiteHeader() {
       <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between gap-4">
         <Link href="/" className="group shrink-0">
           <span className="font-serif text-2xl font-light tracking-tight block text-gallery-900">
-            STEFAN TODOROV
+            NESSEBAR LENS
           </span>
           <span className="text-[9px] uppercase tracking-[0.3em] text-stone-500 font-medium block">
             Old Town Nessebar • Fine Art, Archive & Film

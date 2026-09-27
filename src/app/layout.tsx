@@ -84,7 +84,7 @@ const inter = localFont({
 });
 
 export const metadata: Metadata = {
-  title: "Stefan Todorov — Nessebar Lens",
+  title: "Nessebar Lens",
   description:
     "Fine art, archive, and film photography from Old Town Nessebar. Museum-quality prints and digital downloads.",
 };
