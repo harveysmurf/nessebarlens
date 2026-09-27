@@ -4,12 +4,17 @@
  * as paid-unfulfilled until a SKU map and a rotated sandbox key exist.
  *
  * EU_FLAT_SHIPPING_CENTS must stay equal to the checkout route's constant.
- * Master keys must stay equal to photos.ts imageKey (`prints/{slug}.jpg`).
+ * The only master-key list is photos.ts imageKey, via masterKeyForSlug.
  */
+
+import { masterKeyForSlug } from "./master-key";
 
 export const EU_FLAT_SHIPPING_CENTS = 1200;
 
-/** No SKU map exists yet. Do not flip this on to enable HTTP. */
+/**
+ * Keep false. paid-unfulfilled is written with HTTP 200, so Stripe does not
+ * redeliver those events. Turning this on later does not replay them.
+ */
 export const SKU_MAP_READY = false;
 
 const FORMATS = ["giclee", "framed", "canvas", "digital"] as const;
@@ -18,23 +23,12 @@ export type PrintFormat = (typeof FORMATS)[number];
 export type OrderFormat = PrintFormat | "unknown";
 export type OrderStatus = "paid" | "paid-unfulfilled";
 
-/** Private MASTERS object keys. Gallery derivatives never go in this map. */
-export const MASTER_KEYS: Record<string, string> = {
-  dawn: "prints/dawn.jpg",
-  cobblestones: "prints/cobblestones.jpg",
-  isthmus: "prints/isthmus.jpg",
-  fishermen: "prints/fishermen.jpg",
-  autumn: "prints/autumn.jpg",
-  craftsman: "prints/craftsman.jpg",
-  windmill: "prints/windmill.jpg",
-  fortress: "prints/fortress.jpg",
-  seagulls: "prints/seagulls.jpg",
-};
-
 export type OrderRecord = {
   v: 1;
   sessionId: string;
   merchantReference: string;
+  /** Webhook already returned 200. Stripe will not redeliver this session. */
+  terminal: true;
   status: OrderStatus;
   photoSlug: string;
   format: OrderFormat;
@@ -140,6 +134,7 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
     return null;
   }
   if (row.merchantReference !== row.sessionId) return null;
+  if (row.terminal !== true) return null;
   if (row.status !== "paid" && row.status !== "paid-unfulfilled") return null;
   if (!isOrderFormat(row.format)) return null;
   if (typeof row.photoSlug !== "string") return null;
@@ -151,7 +146,7 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
   if (typeof row.updatedAt !== "string") return null;
 
   if (row.status === "paid") {
-    const expectedKey = MASTER_KEYS[row.photoSlug];
+    const expectedKey = masterKeyForSlug(row.photoSlug);
     if (
       row.format !== "digital" ||
       !expectedKey ||
@@ -167,6 +162,7 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
     v: 1,
     sessionId: row.sessionId,
     merchantReference: row.sessionId,
+    terminal: true,
     status: row.status,
     photoSlug: row.photoSlug,
     format: row.format,
@@ -252,7 +248,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
   const format = parseFormat(meta.format);
   const quoteEur = parseQuoteEur(meta.quoteEur);
   const photoSlug = typeof meta.photoSlug === "string" ? meta.photoSlug : "";
-  const masterKey = MASTER_KEYS[photoSlug] ?? null;
+  const masterKey = masterKeyForSlug(photoSlug);
   const size = clip(meta.size);
   const frame = clip(meta.frame);
 
@@ -260,6 +256,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     v: 1 as const,
     sessionId: input.sessionId,
     merchantReference: input.sessionId,
+    terminal: true as const,
     photoSlug,
     size,
     frame,

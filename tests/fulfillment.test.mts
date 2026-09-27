@@ -5,7 +5,6 @@ import test from "node:test";
 import Stripe from "stripe";
 import {
   EU_FLAT_SHIPPING_CENTS,
-  MASTER_KEYS,
   SKU_MAP_READY,
   decideFulfillment,
   expectedAmountCents,
@@ -16,7 +15,9 @@ import {
   type OrderRecord,
   type OrdersKv,
 } from "../src/lib/fulfillment.ts";
-import { constructStripeEvent } from "../src/lib/stripe-event.ts";
+import { masterKeyForSlug } from "../src/lib/master-key.ts";
+import { getPhoto } from "../src/lib/photos.ts";
+import { readStripeEvent } from "../src/lib/stripe-event.ts";
 
 const NOW = "2026-09-27T12:00:00.000Z";
 const SESSION = "cs_test_abcdefgh";
@@ -71,7 +72,8 @@ test("digital payment with a matching total is paid and does not call Prodigi", 
   const stored = parseOrderRecord((await kv.get(SESSION))!);
   assert.ok(stored);
   assert.equal(stored.status, "paid");
-  assert.equal(stored.masterKey, "prints/dawn.jpg");
+  assert.equal(stored.masterKey, getPhoto("dawn")?.imageKey);
+  assert.equal(stored.terminal, true);
   assert.equal(stored.merchantReference, SESSION);
   assert.equal(stored.format, "digital");
 });
@@ -235,9 +237,8 @@ test("missing MASTERS binding and missing object are distinct", async () => {
   if (missing.kind === "json") assert.equal(missing.status, 404);
 });
 
-test("webhook signature is checked against the raw body", () => {
-  const secret = "whsec_test_secret_value";
-  const payload = JSON.stringify({
+function webhookPayload() {
+  return JSON.stringify({
     id: "evt_test_webhook",
     object: "event",
     api_version: "2026-08-26.dahlia",
@@ -263,12 +264,60 @@ test("webhook signature is checked against the raw body", () => {
     pending_webhooks: 1,
     request: { id: null, idempotency_key: null },
   });
+}
+
+test("webhook signature is checked against the raw body", async () => {
+  const secret = "whsec_test_secret_value";
+  const payload = webhookPayload();
   const header = Stripe.webhooks.generateTestHeaderString({ payload, secret });
-  const event = constructStripeEvent(payload, header, secret);
+  const event = await readStripeEvent(payload, header, secret);
   assert.equal(event.type, "checkout.session.completed");
-  assert.throws(() => constructStripeEvent(payload, header, "whsec_other"));
-  assert.throws(() =>
-    constructStripeEvent(payload.replace("dawn", "dusk"), header, secret),
+  await assert.rejects(() => readStripeEvent(payload, header, "whsec_other"));
+  await assert.rejects(() =>
+    readStripeEvent(payload.replace("dawn", "dusk"), header, secret),
+  );
+});
+
+test("web crypto verifies when constructEvent cannot run, and a bad signature does not fall through", async () => {
+  const secret = "whsec_test_secret_value";
+  const payload = webhookPayload();
+  const header = Stripe.webhooks.generateTestHeaderString({ payload, secret });
+  const event = await readStripeEvent(payload, header, secret, {
+    construct() {
+      throw new Error("createHmac is not a function");
+    },
+  });
+  assert.equal(event.type, "checkout.session.completed");
+
+  await assert.rejects(() =>
+    readStripeEvent(payload.replace("dawn", "dusk"), header, secret, {
+      construct() {
+        throw new Error("createHmac is not a function");
+      },
+    }),
+  );
+
+  const stale = Stripe.webhooks.generateTestHeaderString({
+    payload,
+    secret,
+    timestamp: Math.floor(Date.now() / 1000) - 1000,
+  });
+  await assert.rejects(() =>
+    readStripeEvent(payload, stale, secret, {
+      construct() {
+        throw new Error("createHmac is not a function");
+      },
+    }),
+  );
+
+  await assert.rejects(() =>
+    readStripeEvent(payload, header, secret, {
+      construct() {
+        throw new Stripe.errors.StripeSignatureVerificationError(header, payload, {
+          message: "No signatures found matching the expected signature for payload.",
+        });
+      },
+    }),
   );
 });
 
@@ -276,6 +325,7 @@ test("fulfillment source does not call Prodigi or fetch", () => {
   const root = path.join(import.meta.dirname, "..");
   for (const rel of [
     "src/lib/fulfillment.ts",
+    "src/lib/master-key.ts",
     "src/lib/stripe-event.ts",
     "src/lib/worker-bindings.ts",
     "src/app/api/webhooks/stripe/route.ts",
@@ -286,5 +336,8 @@ test("fulfillment source does not call Prodigi or fetch", () => {
     assert.equal(src.includes("prodigi.com"), false, rel);
     assert.equal(src.includes("r2.dev"), false, rel);
   }
-  assert.equal(Object.values(MASTER_KEYS).every((key) => key.startsWith("prints/")), true);
+  const fulfillment = fs.readFileSync(path.join(root, "src/lib/fulfillment.ts"), "utf8");
+  assert.equal(fulfillment.includes("MASTER_KEYS"), false);
+  assert.equal(masterKeyForSlug("dawn"), getPhoto("dawn")?.imageKey);
+  assert.equal(masterKeyForSlug("not-a-photo"), null);
 });

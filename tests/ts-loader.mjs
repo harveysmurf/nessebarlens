@@ -18,5 +18,12 @@ export async function load(url, context, nextLoad) {
     },
     fileName: url,
   });
-  return { format: "module", source: outputText, shortCircuit: true };
+  const rewritten = outputText.replace(
+    /(from\s+["'])(\.[^"']+)(["'])/g,
+    (_match, open, spec, close) => {
+      if (/\.(?:ts|js|mjs|cjs|json)$/.test(spec)) return open + spec + close;
+      return open + spec + ".ts" + close;
+    },
+  );
+  return { format: "module", source: rewritten, shortCircuit: true };
 }

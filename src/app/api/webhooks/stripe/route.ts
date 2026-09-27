@@ -1,9 +1,10 @@
 import { NextResponse } from "next/server";
 import { fulfillCheckoutSession } from "@/lib/fulfillment";
-import { constructStripeEvent } from "@/lib/stripe-event";
+import { readStripeEvent } from "@/lib/stripe-event";
 import { readWorkerBindings } from "@/lib/worker-bindings";
 
 export const dynamic = "force-dynamic";
+// OpenNext runs this inside the Worker via nodejs_compat. Not a separate Node server.
 export const runtime = "nodejs";
 
 const HANDLED = new Set([
@@ -28,7 +29,7 @@ export async function POST(request: Request) {
 
   let event;
   try {
-    event = constructStripeEvent(rawBody, signature, bindings.webhookSecret);
+    event = await readStripeEvent(rawBody, signature, bindings.webhookSecret);
   } catch {
     return NextResponse.json({ error: "invalid-signature" }, { status: 400 });
   }
