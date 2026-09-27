@@ -90,21 +90,19 @@ npx wrangler pages deploy .pages-out --project-name=nessebar-lens --branch=<bran
 
 Preview URL: `https://<branch>.nessebar-lens.pages.dev`.
 
-### Production (main only) — Cloudflare Worker
+### Production (main only)
 
 ```bash
-SITE_URL=https://nessebarlens.com npx opennextjs-cloudflare deploy
-bash scripts/sync-worker-secrets.sh
+SITE_URL=https://nessebarlens.com npx opennextjs-cloudflare build
+bash scripts/assemble-pages-out.sh
+npx wrangler pages deploy .pages-out --project-name=nessebar-lens --branch=main
+bash scripts/sync-pages-secrets.sh production
 ```
 
-Production runs on the **Worker** (`opennextjs-cloudflare deploy`). KV/R2 bindings
-come from `wrangler.toml`. Runtime secrets via `wrangler secret put`
-(`scripts/sync-worker-secrets.sh`). Previews stay on **Pages** (below).
-
-**Domain cutover note:** DNS for `nessebarlens.com` / `www` currently CNAMEs to
-`nessebar-lens.pages.dev`. Before treating production CI as live, attach the
-custom domain to the Worker (or point DNS at the Worker) and remove it from the
-Pages project — otherwise Worker deploys won't serve the apex.
+Production and preview both deploy to the **Cloudflare Pages** project
+`nessebar-lens`. Apex `nessebarlens.com` / `www` CNAME to
+`nessebar-lens.pages.dev`. The idle Worker script is out of the deploy path —
+do not use `opennextjs-cloudflare deploy` for deploys.
 
 ### Wrangler config invariants (`wrangler.toml`)
 
@@ -112,11 +110,12 @@ Pages project — otherwise Worker deploys won't serve the apex.
 - `[assets]` `binding = "ASSETS"`, `run_worker_first = true`.
 - Do **not** set `pages_build_output_dir` — that makes Wrangler treat the config as
   a Pages config where `ASSETS` is reserved.
-- R2 S3 access keys are unused; Workers use bucket bindings only (`WEB`, `MASTERS`).
-- **Preview** runtime secrets: Pages `deployment_configs` via
-  `scripts/sync-pages-secrets.sh`. **Production** runtime secrets: Worker via
-  `scripts/sync-worker-secrets.sh`. `NEXT_PUBLIC_*` bake at build from GitHub
-  Environment secrets.
+- R2 S3 access keys are unused; Workers/Pages use bucket bindings only (`WEB`,
+  `MASTERS`). ORDERS KV + WEB/MASTERS R2 are attached on the Pages project
+  (preview + production configs).
+- Runtime secrets (Stripe/Prodigi) live as **Pages project secrets** (preview +
+  production). Sync with `scripts/sync-pages-secrets.sh`. `NEXT_PUBLIC_*` bake at
+  build from GitHub Environment secrets.
 
 ---
 
@@ -128,7 +127,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 22):
 |----------|---------|--------------|
 | `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → test |
 | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → Pages preview → PR comment; cleanup on close |
-| `.github/workflows/prod.yml` | push to `main` | production Environment (required reviewer) → `opennextjs-cloudflare deploy` (Worker) → `sync-worker-secrets.sh` |
+| `.github/workflows/prod.yml` | push to `main` | production Environment (required reviewer) → build → Pages `main` → `sync-pages-secrets.sh production` |
 
 GitHub Environments:
 

@@ -10,7 +10,7 @@ concurrency:
 
 jobs:
   deploy:
-    name: Deploy production (Worker)
+    name: Deploy production
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production
@@ -39,13 +39,29 @@ jobs:
       - name: Test
         run: npm test
 
-      - name: Deploy Worker (OpenNext)
-        run: npx opennextjs-cloudflare deploy
+      - name: Build (OpenNext)
+        run: npx opennextjs-cloudflare build
 
-      - name: Sync Worker runtime secrets
+      - name: Assemble Pages bundle
+        run: bash scripts/assemble-pages-out.sh
+
+      - name: Deploy Pages production
+        run: |
+          npx wrangler pages deploy .pages-out \
+            --project-name=nessebar-lens \
+            --branch=main \
+            --commit-dirty=true \
+            --commit-hash="${{ github.sha }}" \
+            --commit-message="${{ github.event.head_commit.message }}"
+
+      - name: Sync Pages production runtime secrets
         env:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           PRODIGI_API_KEY: ${{ secrets.PRODIGI_API_KEY }}
           PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
-        run: bash scripts/sync-worker-secrets.sh
+          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+          NEXT_PUBLIC_WEB_IMAGES_BASE: ${{ secrets.NEXT_PUBLIC_WEB_IMAGES_BASE }}
+        run: bash scripts/sync-pages-secrets.sh production
