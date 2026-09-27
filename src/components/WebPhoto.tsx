@@ -20,7 +20,8 @@ export function WebPhoto({
 }) {
   void _preferred;
   void sizes;
-  const src = `/placeholders/${slug}.jpg`;
+  // Bump when placeholder JPEGs change so browsers skip stale CDN copies.
+  const src = `/placeholders/${slug}.jpg?v=3`;
 
   return (
     // eslint-disable-next-line @next/next/no-img-element -- local placeholders, not next/image
