@@ -1,7 +1,6 @@
 import { NextResponse } from "next/server";
 import { parseCheckoutBody } from "@/lib/checkout-body";
 import { EU_27_COUNTRY_CODES } from "@/lib/eu-countries";
-import { webDerivativeUrls } from "@/lib/derivatives";
 import { getPhoto } from "@/lib/photos";
 import {
   EU_FLAT_SHIPPING_CENTS,
@@ -44,7 +43,7 @@ export async function POST(request: Request) {
 
   const isPhysical = parsed.format !== "digital";
   const base = siteUrl();
-  const webImage = webDerivativeUrls(photo.slug);
+  const placeholderImage = `${base}/placeholders/${photo.slug}.jpg`;
 
   let stripe;
   try {
@@ -71,7 +70,7 @@ export async function POST(request: Request) {
             description: isPhysical
               ? `${parsed.size}${parsed.frame ? ` · ${parsed.frame} frame` : ""}`
               : "Digital high-resolution license",
-            ...(webImage ? { images: [webImage.w1500] } : {}),
+            images: [placeholderImage],
           },
         },
       },

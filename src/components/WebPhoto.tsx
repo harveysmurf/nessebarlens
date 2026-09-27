@@ -1,52 +1,31 @@
-import { webDerivativeUrls } from "@/lib/derivatives";
-
-type Props = {
-  slug: string;
-  alt: string;
-  className?: string;
-  sizes?: string;
-  preferred?: 750 | 1500 | 2500;
-  priority?: boolean;
-};
-
 /**
- * Gallery / product preview — public 750/1500/2500 only.
- * Plain img + srcset when NEXT_PUBLIC_WEB_IMAGES_BASE is set.
- * Otherwise a local empty matte (no remote host, no masters, no watermark, no right-click script).
+ * Gallery / product preview for the placeholder phase.
+ * Serves committed JPEGs from /public/placeholders — not R2.
+ * Derivative ladder (derivatives.ts) stays for real prints later.
  */
 export function WebPhoto({
   slug,
   alt,
   className,
   sizes = "(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 750px",
-  preferred = 1500,
+  preferred: _preferred = 1500,
   priority = false,
-}: Props) {
-  const urls = webDerivativeUrls(slug);
-
-  if (!urls) {
-    return (
-      <div
-        role="img"
-        aria-label={alt}
-        className={`bg-stone-200 ${className ?? ""}`}
-      />
-    );
-  }
-
-  const src =
-    preferred === 750
-      ? urls.w750
-      : preferred === 2500
-        ? urls.w2500
-        : urls.w1500;
+}: {
+  slug: string;
+  alt: string;
+  className?: string;
+  sizes?: string;
+  preferred?: 750 | 1500 | 2500;
+  priority?: boolean;
+}) {
+  void _preferred;
+  void sizes;
+  const src = `/placeholders/${slug}.jpg`;
 
   return (
-    // eslint-disable-next-line @next/next/no-img-element -- fixed derivative ladder, not next/image
+    // eslint-disable-next-line @next/next/no-img-element -- local placeholders, not next/image
     <img
       src={src}
-      srcSet={urls.srcSet}
-      sizes={sizes}
       alt={alt}
       className={className}
       decoding="async"
