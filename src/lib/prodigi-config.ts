@@ -1,3 +1,5 @@
+import { envString, envStringStrippedSlash } from "./env";
+
 export const PRODIGI_SANDBOX_API_BASE = "https://api.sandbox.prodigi.com";
 export const PRODIGI_LIVE_API_BASE = "https://api.prodigi.com";
 
@@ -6,12 +8,6 @@ const ALLOWED_BASES = new Set([
   PRODIGI_LIVE_API_BASE,
 ]);
 
-function nonempty(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim().replace(/\/$/, "");
-  return trimmed.length > 0 ? trimmed : undefined;
-}
-
 /**
  * Explicit Prodigi API host. Must be set per environment — never inferred
  * from which API key is present.
@@ -19,8 +15,7 @@ function nonempty(value: unknown): string | undefined {
 export function prodigiApiBase(
   env: Record<string, unknown> = process.env,
 ): string {
-  const base =
-    nonempty(env.PRODIGI_API_BASE) ?? nonempty(process.env.PRODIGI_API_BASE);
+  const base = envStringStrippedSlash("PRODIGI_API_BASE", env);
   if (!base || !ALLOWED_BASES.has(base)) {
     throw new Error(
       "PRODIGI_API_BASE must be https://api.sandbox.prodigi.com or https://api.prodigi.com",
@@ -39,16 +34,13 @@ export function prodigiApiKey(
 ): string {
   const base = prodigiApiBase(env);
   if (isProdigiSandboxBase(base)) {
-    const key =
-      nonempty(env.PRODIGI_SANDBOX_API_KEY) ??
-      nonempty(process.env.PRODIGI_SANDBOX_API_KEY);
+    const key = envString("PRODIGI_SANDBOX_API_KEY", env);
     if (!key) {
       throw new Error("PRODIGI_SANDBOX_API_KEY is not set");
     }
     return key;
   }
-  const key =
-    nonempty(env.PRODIGI_API_KEY) ?? nonempty(process.env.PRODIGI_API_KEY);
+  const key = envString("PRODIGI_API_KEY", env);
   if (!key) {
     throw new Error("PRODIGI_API_KEY is not set");
   }

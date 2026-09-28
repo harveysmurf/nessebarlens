@@ -6,6 +6,7 @@
 
 import { masterKeyForSlug } from "./master-key";
 import { hmacSha256Hex, timingSafeEqualHex } from "./crypto-hex";
+import { envString } from "./env";
 import { siteUrl } from "./stripe";
 
 /** Prodigi may re-fetch during fulfillment; start at 7d, tighten after a live order. */
@@ -47,10 +48,9 @@ export const PRINT_ASSET_SECRET_MIN_LENGTH = 32;
 export function printAssetSecret(
   env: Record<string, unknown> = process.env,
 ): string | null {
-  const raw = env.PRINT_ASSET_HMAC_SECRET;
-  if (typeof raw !== "string") return null;
-  const trimmed = raw.trim();
-  return trimmed.length >= PRINT_ASSET_SECRET_MIN_LENGTH ? trimmed : null;
+  const secret = envString("PRINT_ASSET_HMAC_SECRET", env);
+  if (!secret || secret.length < PRINT_ASSET_SECRET_MIN_LENGTH) return null;
+  return secret;
 }
 
 export function isPhotoSlug(value: string): boolean {
