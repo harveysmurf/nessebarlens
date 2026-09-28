@@ -135,10 +135,10 @@ GitHub Environments:
 
 - **`staging`** — sandbox Stripe + `PRODIGI_API_BASE=https://api.sandbox.prodigi.com` +
   `PRODIGI_SANDBOX_API_KEY` + `SITE_URL=https://dev.nessebar-lens.pages.dev`
-- **`production`** — required reviewer `harveysmurf`. Keep sandbox Stripe/Prodigi
-  (`PRODIGI_API_BASE=https://api.sandbox.prodigi.com`) until go-live; then set
-  live Stripe keys, live webhook secret, `PRODIGI_API_BASE=https://api.prodigi.com`,
-  and `PRODIGI_API_KEY` (live org key). Host is never inferred from which key is set.
+- **`production`** — required reviewer `harveysmurf`. Live Stripe
+  (`sk_live_*` + live webhook secret) + `PRODIGI_API_BASE=https://api.prodigi.com` +
+  `PRODIGI_API_KEY` (live org key). Host is never inferred from which key is set.
+  Preview/staging stays sandbox.
 
 Secrets live in those Environments (never in git). Local `.env.local` remains the
 Debian-host symlink to `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
