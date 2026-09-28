@@ -45,58 +45,77 @@ registerHooks({
   },
 });
 
-/* Leak guard. Every test below swaps three process-wide things — the fake
-   bindings, globalThis.fetch, and pieces of process.env — and restores them by
-   hand in a finally block. node runs top-level tests in a file sequentially, so
-   a missed restore cannot make two tests *interleave*; it makes the *next* test
-   read the wrong world and fail somewhere far away from the mistake, which is
-   how a real leak here once presented as an unrelated assertion failure.
+/* Global-state discipline for the tests below.
 
-   So the leak is checked where it happens: the environment is snapshotted
-   before each test and compared after. A test that forgets to restore fails
-   with its own name in the message instead of quietly poisoning its successor. */
+   Every test here swaps three process-wide things: the fake Worker bindings,
+   globalThis.fetch, and pieces of process.env. node runs top-level tests in a
+   file sequentially, so a leak cannot make two tests *interleave* — it makes
+   the *next* test read the wrong world and fail somewhere far away from the
+   mistake. That is how a real leak here once presented as an unrelated
+   assertion failure.
+
+   The individual tests still restore by hand, but this hook is the single
+   authority: it snapshots before each test, asserts afterwards so a missed
+   restore is reported *under the test that caused it*, and then restores
+   unconditionally so the suite's ordering cannot depend on every test having
+   got its finally block right. Detection and repair are deliberately the same
+   hook — a detector alone still lets one broken test cascade into the next,
+   which is exactly the failure mode being closed here. */
 const SITE = "https://nessebarlens.com";
 // Set before the snapshot below: this one is the file's own setup, not a
 // per-test mutation, and the guard must not flag it.
 process.env.NEXT_PUBLIC_SITE_URL = SITE;
 
-const BASELINE = {
-  bindings: globals.__buzzBindings,
-  fetch: globalThis.fetch,
-  env: { ...process.env },
-};
-
 let currentTest = "unknown";
+let snapshot: { bindings: unknown; fetch: typeof globalThis.fetch; env: NodeJS.ProcessEnv };
 
 beforeEach((t) => {
   currentTest = t.name;
+  snapshot = {
+    bindings: globals.__buzzBindings,
+    fetch: globalThis.fetch,
+    env: { ...process.env },
+  };
 });
+
+/** Puts process.env back to exactly `snapshot`, including deleted keys. */
+function restoreEnv(saved: NodeJS.ProcessEnv): void {
+  for (const key of Object.keys(process.env)) {
+    if (!(key in saved)) delete process.env[key];
+  }
+  for (const [key, value] of Object.entries(saved)) {
+    if (value === undefined) delete process.env[key];
+    else process.env[key] = value;
+  }
+}
+
 afterEach(() => {
-  assert.deepEqual(
-    globalThis.__buzzBindings,
-    BASELINE.bindings,
-    `"${currentTest}" left the fake Worker bindings swapped; its restore() did not run`,
-  );
-  assert.equal(
-    globalThis.fetch,
-    BASELINE.fetch,
-    `"${currentTest}" left globalThis.fetch replaced`,
-  );
+  const leaked: string[] = [];
+  if (globals.__buzzBindings !== snapshot.bindings) {
+    leaked.push("the fake Worker bindings were left swapped");
+  }
+  if (globalThis.fetch !== snapshot.fetch) {
+    leaked.push("globalThis.fetch was left replaced");
+  }
   for (const [key, value] of Object.entries(process.env)) {
-    if (!(key in BASELINE.env)) {
-      assert.fail(`"${currentTest}" added process.env.${key} and never removed it`);
-    }
-    assert.equal(
-      value,
-      BASELINE.env[key],
-      `"${currentTest}" left process.env.${key} modified`,
-    );
+    if (!(key in snapshot.env)) leaked.push(`process.env.${key} was added`);
+    else if (value !== snapshot.env[key]) leaked.push(`process.env.${key} was modified`);
   }
-  for (const key of Object.keys(BASELINE.env)) {
-    if (!(key in process.env)) {
-      assert.fail(`"${currentTest}" deleted process.env.${key} and never restored it`);
-    }
+  for (const key of Object.keys(snapshot.env)) {
+    if (!(key in process.env)) leaked.push(`process.env.${key} was deleted`);
   }
+
+  // Repair first: a leak must never be allowed to reach the next test, even if
+  // the test itself is about to be failed for it.
+  globals.__buzzBindings = snapshot.bindings;
+  globalThis.fetch = snapshot.fetch;
+  restoreEnv(snapshot.env);
+
+  assert.deepEqual(
+    leaked,
+    [],
+    `"${currentTest}" leaked global state — ${leaked.join("; ") || "see above"}`,
+  );
 });
 
 const quote = await import("../src/app/api/quote/route.ts");
