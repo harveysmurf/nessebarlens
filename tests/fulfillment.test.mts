@@ -173,6 +173,8 @@ test("parseOrderRecord rejects off-origin asset URLs even with safe paths", () =
   );
   assert.ok(okPrintAsset);
 });
+
+test("amounts are cents: merchandise for digital, merchandise plus shipping for physical", () => {
   assert.equal(SKU_MAP_READY, true);
   assert.equal(expectedAmountCents("digital", 30), 3000);
   assert.equal(expectedAmountCents("giclee", 15, 4.99), 1500 + 499);
