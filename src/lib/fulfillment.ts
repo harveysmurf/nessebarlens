@@ -12,17 +12,25 @@ import {
   type OrderRecipient,
 } from "./prodigi-order";
 import type { FrameFinish, PrintSize } from "./pricing";
-import { resolveSku, type PhysicalFormat } from "./sku-map";
+import {
+  FRAME_FINISHES,
+  PHYSICAL_FORMATS,
+  PRINT_SIZES,
+  resolveSku,
+  type PhysicalFormat,
+} from "./sku-map";
 import { siteUrl } from "./stripe";
 
 /** Phase 2: SKU map + sandbox order path are wired. */
 export const SKU_MAP_READY = true;
 
-const FORMATS = ["giclee", "framed", "canvas", "digital"] as const;
-const SIZES = ["30x40", "50x70", "70x100"] as const;
-const FRAMES = ["black", "white", "brown"] as const;
+// Allow-lists come from sku-map so stored-record validation cannot drift
+// from the formats/sizes we can actually fulfill.
+const FORMATS: readonly PrintFormat[] = [...PHYSICAL_FORMATS, "digital"];
+const SIZES: readonly PrintSize[] = PRINT_SIZES;
+const FRAMES: readonly FrameFinish[] = FRAME_FINISHES;
 
-export type PrintFormat = (typeof FORMATS)[number];
+export type PrintFormat = "giclee" | "framed" | "canvas" | "digital";
 export type OrderFormat = PrintFormat | "unknown";
 export type OrderStatus = "paid" | "paid-unfulfilled";
 

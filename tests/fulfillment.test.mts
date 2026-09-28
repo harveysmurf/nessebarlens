@@ -18,6 +18,7 @@ import {
 } from "../src/lib/fulfillment.ts";
 import { masterKeyForSlug } from "../src/lib/master-key.ts";
 import { getPhoto } from "../src/lib/photos.ts";
+import { FRAME_FINISHES, PHYSICAL_FORMATS, PRINT_SIZES } from "../src/lib/sku-map.ts";
 import { readStripeEvent } from "../src/lib/stripe-event.ts";
 import type { CreateProdigiOrder } from "../src/lib/prodigi-order.ts";
 
@@ -611,4 +612,81 @@ test("stripe client uses fetch http client for Workers", () => {
     "utf8",
   );
   assert.equal(src.includes("Stripe.createFetchHttpClient()"), true);
+});
+
+test("fulfillment metadata validation tracks the sku-map lists", () => {
+  // Every combination the SKU table can build must pass metadata validation,
+  // and anything outside the lists must be parked as bad-metadata.
+  for (const format of PHYSICAL_FORMATS) {
+    for (const size of PRINT_SIZES) {
+      for (const frame of format === "framed" ? FRAME_FINISHES : [""]) {
+        const decided = decideFulfillment(
+          paidInput({
+            amountTotal: 1999,
+            metadata: {
+              photoSlug: "dawn",
+              format,
+              size,
+              frame,
+              quoteEur: "15",
+              merchandiseEur: "15",
+              shippingEur: "4.99",
+              sku: "GLOBAL-FAP-12X16",
+            },
+            shippingDetails: SHIPPING,
+          }),
+        );
+        assert.equal(decided.action, "write", `${format}/${size}/${frame}`);
+        assert.notEqual(
+          (decided as { record: OrderRecord }).record.reason,
+          "bad-metadata",
+        );
+      }
+    }
+  }
+
+  for (const size of ["99x99", "", "40x30"]) {
+    const decided = decideFulfillment(
+      paidInput({
+            amountTotal: 1999,
+        metadata: { photoSlug: "dawn", format: "giclee", size, frame: "", quoteEur: "15" },
+        shippingDetails: SHIPPING,
+      }),
+    );
+    assert.equal(
+      (decided as { record: OrderRecord }).record.reason,
+      "bad-metadata",
+      `size ${size} should not be fulfillable`,
+    );
+  }
+
+  for (const format of ["poster", "", "print"]) {
+    const decided = decideFulfillment(
+      paidInput({
+            amountTotal: 1999,
+        metadata: { photoSlug: "dawn", format, size: "30x40", frame: "", quoteEur: "15" },
+        shippingDetails: SHIPPING,
+      }),
+    );
+    assert.equal(
+      (decided as { record: OrderRecord }).record.reason,
+      "bad-metadata",
+      `format ${format} should not be fulfillable`,
+    );
+  }
+
+  for (const frame of ["gold", "silver"]) {
+    const decided = decideFulfillment(
+      paidInput({
+            amountTotal: 1999,
+        metadata: { photoSlug: "dawn", format: "framed", size: "30x40", frame, quoteEur: "15" },
+        shippingDetails: SHIPPING,
+      }),
+    );
+    assert.equal(
+      (decided as { record: OrderRecord }).record.reason,
+      "bad-metadata",
+      `frame ${frame} should not be fulfillable`,
+    );
+  }
 });
