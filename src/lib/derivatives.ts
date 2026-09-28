@@ -6,14 +6,18 @@
  * No third-party image hosts (Unsplash etc.) — missing base → no remote image.
  */
 
+import { envString } from "./env";
+
 export const WEB_DERIVATIVE_WIDTHS = [750, 1500, 2500] as const;
 export type WebDerivativeWidth = (typeof WEB_DERIVATIVE_WIDTHS)[number];
 
+/** Default display source — the middle rung of the ladder. */
+export const WEB_DEFAULT_WIDTH: WebDerivativeWidth = 1500;
+
 export type WebDerivativeUrls = {
-  w750: string;
-  w1500: string;
-  w2500: string;
-  /** Default display source (1500). */
+  /** One URL per entry in WEB_DERIVATIVE_WIDTHS, keyed by that width. */
+  urls: Record<WebDerivativeWidth, string>;
+  /** Default display source. */
   src: string;
   srcSet: string;
 };
@@ -25,7 +29,7 @@ export type WebDerivativeUrls = {
  * A path regex cannot catch masters: public r2.dev URLs omit the bucket name.
  */
 export function webImagesBase(): string | undefined {
-  const raw = process.env.NEXT_PUBLIC_WEB_IMAGES_BASE?.trim();
+  const raw = envString("NEXT_PUBLIC_WEB_IMAGES_BASE");
   if (!raw) return undefined;
 
   let url: URL;
@@ -36,7 +40,7 @@ export function webImagesBase(): string | undefined {
   }
   if (url.protocol !== "https:") return undefined;
 
-  return `${url.origin}${url.pathname}`.replace(/\/$/, "");
+  return `${url.origin}${url.pathname}`.replace(/\/+$/, "");
 }
 
 /**
@@ -48,14 +52,13 @@ export function webDerivativeUrls(slug: string): WebDerivativeUrls | null {
   if (!base) return null;
 
   const path = (w: WebDerivativeWidth) => `${base}/${slug}/${w}.jpg`;
-  const w750 = path(750);
-  const w1500 = path(1500);
-  const w2500 = path(2500);
+  const urls = Object.fromEntries(
+    WEB_DERIVATIVE_WIDTHS.map((w) => [w, path(w)]),
+  ) as Record<WebDerivativeWidth, string>;
+
   return {
-    w750,
-    w1500,
-    w2500,
-    src: w1500,
-    srcSet: `${w750} 750w, ${w1500} 1500w, ${w2500} 2500w`,
+    urls,
+    src: urls[WEB_DEFAULT_WIDTH],
+    srcSet: WEB_DERIVATIVE_WIDTHS.map((w) => `${urls[w]} ${w}w`).join(", "),
   };
 }
