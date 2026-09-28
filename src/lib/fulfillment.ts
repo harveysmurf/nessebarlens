@@ -11,7 +11,7 @@ import {
   type CreateProdigiOrder,
   type OrderRecipient,
 } from "./prodigi-order";
-import type { FrameFinish, PrintSize } from "./pricing";
+import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";
 import {
   FRAME_FINISHES,
   PHYSICAL_FORMATS,
@@ -24,13 +24,12 @@ import { siteUrl } from "./stripe";
 /** Phase 2: SKU map + sandbox order path are wired. */
 export const SKU_MAP_READY = true;
 
-// Allow-lists come from sku-map so stored-record validation cannot drift
-// from the formats/sizes we can actually fulfill.
+// The allow-lists below are the sku-map lists, so stored-record validation
+// cannot drift from the formats/sizes we can actually fulfill. Only "digital"
+// is ours to add — it has no Prodigi SKU.
 const FORMATS: readonly PrintFormat[] = [...PHYSICAL_FORMATS, "digital"];
-const SIZES: readonly PrintSize[] = PRINT_SIZES;
-const FRAMES: readonly FrameFinish[] = FRAME_FINISHES;
 
-export type PrintFormat = "giclee" | "framed" | "canvas" | "digital";
+export type { PrintFormat };
 export type OrderFormat = PrintFormat | "unknown";
 export type OrderStatus = "paid" | "paid-unfulfilled";
 
@@ -575,11 +574,11 @@ function isOrderFormat(value: unknown): value is OrderFormat {
 }
 
 function isPrintSize(value: string): value is PrintSize {
-  return (SIZES as readonly string[]).includes(value);
+  return (PRINT_SIZES as readonly string[]).includes(value);
 }
 
 function isFrameFinish(value: string): value is FrameFinish {
-  return (FRAMES as readonly string[]).includes(value);
+  return (FRAME_FINISHES as readonly string[]).includes(value);
 }
 
 function isSafeAssetUrl(url: string): boolean {

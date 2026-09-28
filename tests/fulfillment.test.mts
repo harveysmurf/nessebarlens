@@ -692,3 +692,35 @@ test("fulfillment metadata validation tracks the sku-map lists", () => {
     );
   }
 });
+
+test("fulfillment reuses the pricing/sku-map types instead of redeclaring them", () => {
+  const src = fs.readFileSync(
+    path.join(import.meta.dirname, "..", "src/lib/fulfillment.ts"),
+    "utf8",
+  );
+  // The union must be imported from pricing.ts, not restated here: a private
+  // copy would leave the fulfillment validator behind when a format is added.
+  // Built from parts: the TS loader rewrites relative import specifiers even
+  // inside string literals, so a literal "./pricing" needle would not match.
+  const pricingSpecifier = `"${"."}/pricing"`;
+  assert.equal(
+    src.includes(
+      `import type { FrameFinish, PrintFormat, PrintSize } from ${pricingSpecifier}`,
+    ),
+    true,
+  );
+  assert.equal(
+    src.includes('export type PrintFormat = "giclee" | "framed" | "canvas" | "digital"'),
+    false,
+  );
+  // No alias arrays re-wrapping the sku-map lists.
+  assert.equal(/const SIZES\s*:/.test(src), false);
+  assert.equal(/const FRAMES\s*:/.test(src), false);
+  assert.ok(
+    src.includes(
+      'const FORMATS: readonly PrintFormat[] = [...PHYSICAL_FORMATS, "digital"]',
+    ),
+    "FORMATS must still be built from PHYSICAL_FORMATS + digital",
+  );
+});
+
