@@ -95,6 +95,7 @@ const okCreate: CreateProdigiOrder = async () => ({
   ok: true,
   orderId: "ord_sandbox_1",
   stage: "InProgress",
+  assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
 });
 
 test("SKU map is enabled; digital and physical amount math", () => {
@@ -116,7 +117,7 @@ test("digital payment with a matching total is paid and does not call Prodigi", 
   let called = 0;
   const create: CreateProdigiOrder = async () => {
     called += 1;
-    return { ok: true, orderId: "x", stage: null };
+    return { ok: true, orderId: "x", stage: null, assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" };
   };
   const kv = memoryKv();
   const result = await fulfillCheckoutSession({
@@ -181,7 +182,7 @@ test("missing shipping is a permanent stop without calling Prodigi", async () =>
     kv,
     createOrder: async () => {
       called += 1;
-      return { ok: true, orderId: "x", stage: null };
+      return { ok: true, orderId: "x", stage: null, assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" };
     },
   });
   assert.equal(result.body.status, "paid-unfulfilled");
@@ -317,7 +318,7 @@ test("a second delivery does not overwrite the first ORDERS record or call Prodi
   let calls = 0;
   const create: CreateProdigiOrder = async () => {
     calls += 1;
-    return { ok: true, orderId: "ord_1", stage: "InProgress" };
+    return { ok: true, orderId: "ord_1", stage: "InProgress", assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" };
   };
   await fulfillCheckoutSession({
     ...paidInput({
@@ -503,10 +504,12 @@ test("webhook + download routes still do not call Prodigi; order module is the o
   for (const rel of [
     "src/lib/fulfillment.ts",
     "src/lib/master-key.ts",
+    "src/lib/print-asset.ts",
     "src/lib/stripe-event.ts",
     "src/lib/worker-bindings.ts",
     "src/app/api/webhooks/stripe/route.ts",
     "src/app/api/download/route.ts",
+    "src/app/api/print-asset/route.ts",
   ]) {
     const src = fs.readFileSync(path.join(root, rel), "utf8");
     assert.equal(src.includes("fetch("), false, rel);
@@ -517,6 +520,7 @@ test("webhook + download routes still do not call Prodigi; order module is the o
   assert.equal(order.includes("prodigiOrdersUrl"), true);
   assert.equal(order.includes("prodigiApiKey"), true);
   assert.equal(order.includes("assertNoMasterLeak"), true);
+  assert.equal(order.includes("signPrintAssetUrl"), true);
   const config = fs.readFileSync(
     path.join(root, "src/lib/prodigi-config.ts"),
     "utf8",

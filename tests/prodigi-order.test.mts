@@ -81,4 +81,9 @@ test("assertNoMasterLeak rejects master keys and masters bucket names", () => {
       url: "https://nessebarlens.com/placeholders/dawn.jpg",
     }),
   );
+  assert.doesNotThrow(() =>
+    assertNoMasterLeak({
+      url: "https://nessebarlens.com/api/print-asset?slug=dawn&exp=1&sig=abc",
+    }),
+  );
 });

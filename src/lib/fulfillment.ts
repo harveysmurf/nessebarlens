@@ -1,13 +1,13 @@
 /**
  * Checkout fulfillment for ORDERS KV.
  * Digital: paid + masterKey for /api/download.
- * Physical: sandbox Prodigi order on payment (Phase 2); masters never leave photos.ts.
+ * Physical: Prodigi order on payment; asset URL is HMAC /api/print-asset
+ * (or placeholder). Masters never leave photos.ts / MASTERS binding.
  */
 
 import { masterKeyForSlug } from "./master-key";
 import {
   createProdigiOrder,
-  placeholderAssetUrl,
   type CreateProdigiOrder,
   type OrderRecipient,
 } from "./prodigi-order";
@@ -46,7 +46,7 @@ export type OrderRecord = {
   recipient: OrderRecipient | null;
   prodigiOrderId: string | null;
   prodigiStage: string | null;
-  /** Public placeholder or WEB print.jpg — never a MASTERS key/URL. */
+  /** HMAC /api/print-asset or public placeholder — never a MASTERS key/URL. */
   assetUrl: string | null;
   updatedAt: string;
 };
@@ -210,7 +210,7 @@ export async function fulfillCheckoutSession(
         masterKey: null,
         prodigiOrderId: result.orderId,
         prodigiStage: result.stage,
-        assetUrl: placeholderAssetUrl(record.photoSlug),
+        assetUrl: result.assetUrl,
       };
     }
   }
@@ -576,7 +576,15 @@ function isFrameFinish(value: string): value is FrameFinish {
 function isSafeAssetUrl(url: string): boolean {
   if (!/^https:\/\//i.test(url)) return false;
   if (/prints\//i.test(url) || /masters/i.test(url)) return false;
-  return true;
+  // Allow site placeholders and HMAC print-asset Worker URLs only.
+  try {
+    const parsed = new URL(url);
+    if (parsed.pathname.startsWith("/placeholders/")) return true;
+    if (parsed.pathname === "/api/print-asset") return true;
+    return false;
+  } catch {
+    return false;
+  }
 }
 
 /** undefined = malformed; null = explicitly null */

@@ -1,11 +1,13 @@
 /**
  * Prodigi order creation. Host comes from PRODIGI_API_BASE (explicit per env).
- * Asset URLs are public placeholders (or WEB print.jpg later) — never MASTERS.
+ * Asset URLs are Worker HMAC /api/print-asset (or public placeholders) — never
+ * raw MASTERS keys or r2.dev master paths.
  */
 
 import { PHOTOS } from "./photos";
 import type { FrameFinish, PrintSize } from "./pricing";
 import { prodigiApiKey, prodigiOrdersUrl } from "./prodigi-config";
+import { signPrintAssetUrl } from "./print-asset";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
 import { siteUrl } from "./stripe";
 
@@ -51,6 +53,8 @@ export type ProdigiOrderSuccess = {
   ok: true;
   orderId: string;
   stage: string | null;
+  /** URL handed to Prodigi (HMAC print-asset or placeholder). */
+  assetUrl: string;
 };
 
 export type ProdigiOrderFailure = {
@@ -69,12 +73,21 @@ export type CreateProdigiOrder = (input: {
   size: PrintSize;
   frame: FrameFinish | null;
   recipient: OrderRecipient;
+  /** Override asset URL (tests). Default: signed print-asset or placeholder. */
+  assetUrl?: string;
 }) => Promise<ProdigiOrderResult>;
 
-/** Public stand-in until WEB `{slug}/print.jpg` is ingested (Phase 3 C). */
+/** Public stand-in when PRINT_ASSET_HMAC_SECRET is unset (Phase 2 fallback). */
 export function placeholderAssetUrl(photoSlug: string): string {
   const base = siteUrl().replace(/\/$/, "");
   return `${base}/placeholders/${photoSlug}.jpg`;
+}
+
+/** Prefer HMAC Worker URL; fall back to public placeholder. */
+export async function resolveOrderAssetUrl(photoSlug: string): Promise<string> {
+  return (
+    (await signPrintAssetUrl(photoSlug)) ?? placeholderAssetUrl(photoSlug)
+  );
 }
 
 export function assertNoMasterLeak(value: unknown): void {
@@ -146,9 +159,12 @@ export function buildProdigiOrderBody(input: {
 }
 
 export const createProdigiOrder: CreateProdigiOrder = async (input) => {
+  const assetUrl =
+    input.assetUrl ?? (await resolveOrderAssetUrl(input.photoSlug));
+
   let body: ProdigiOrderRequest;
   try {
-    body = buildProdigiOrderBody(input);
+    body = buildProdigiOrderBody({ ...input, assetUrl });
   } catch (e) {
     return {
       ok: false,
@@ -213,5 +229,6 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
       typeof data.order?.status?.stage === "string"
         ? data.order.status.stage
         : null,
+    assetUrl,
   };
 };
