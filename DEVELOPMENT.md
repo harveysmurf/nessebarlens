@@ -41,7 +41,12 @@ Stack:
 
 ## 3. Local development
 
+The project pins its node version in `.nvmrc` (`24.21.0`, the current LTS
+line). Node 20 cannot run the suite at all — it fails on `.mts` with
+`ERR_UNKNOWN_FILE_EXTENSION`, because type stripping is the loader's job here.
+
 ```bash
+nvm use              # honours .nvmrc
 npm install          # land under /mnt/storage, never the root fs
 npm run dev          # next dev (OpenNext dev bindings auto-init)
 npm run lint         # eslint
