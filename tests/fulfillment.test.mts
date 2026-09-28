@@ -714,10 +714,14 @@ test("fulfillment reuses the pricing/sku-map types instead of redeclaring them",
   assert.equal(/const SIZES\s*:/.test(src), false);
   assert.equal(/const FRAMES\s*:/.test(src), false);
   assert.ok(
-    src.includes(
-      'const FORMATS: readonly PrintFormat[] = [...PHYSICAL_FORMATS, "digital"]',
-    ),
-    "FORMATS must still be built from PHYSICAL_FORMATS + digital",
+    src.includes("const FORMATS: readonly PrintFormat[] = SELLABLE_FORMATS"),
+    "FORMATS must come from the shared SELLABLE_FORMATS list",
+  );
+  // SELLABLE_FORMATS is the one place "digital" joins the physical formats.
+  assert.equal(
+    /\[\.\.\.PHYSICAL_FORMATS, "digital"\]/.test(src),
+    false,
+    'do not re-spell [...PHYSICAL_FORMATS, "digital"] in fulfillment',
   );
 });
 

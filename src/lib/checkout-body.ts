@@ -1,6 +1,12 @@
 import { isShipToCountryCode } from "./ship-to-countries";
 import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";
-import { FRAME_FINISHES, PHYSICAL_FORMATS, PRINT_SIZES } from "./sku-map";
+import {
+  FRAME_FINISHES,
+  PHYSICAL_FORMATS,
+  PRINT_SIZES,
+  SELLABLE_FORMATS,
+  formatListLabel,
+} from "./sku-map";
 
 export type CheckoutBody = {
   photoSlug: string;
@@ -10,10 +16,12 @@ export type CheckoutBody = {
   destinationCountryCode: string | null;
 };
 
-/** Allow-lists are owned by sku-map so SKU coverage cannot drift from validation. */
-const FORMATS: PrintFormat[] = [...PHYSICAL_FORMATS, "digital"];
-const SIZES = PRINT_SIZES;
-const FRAMES = FRAME_FINISHES;
+// Allow-lists and their error labels are owned by sku-map, so SKU coverage
+// and the message we show on rejection cannot drift from each other.
+const FORMATS = SELLABLE_FORMATS;
+const FORMAT_LABEL = formatListLabel(SELLABLE_FORMATS);
+const SIZE_LABEL = formatListLabel(PRINT_SIZES);
+const FRAME_LABEL = formatListLabel(FRAME_FINISHES);
 
 function parseDestinationCountry(
   raw: unknown,
@@ -50,7 +58,7 @@ export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string 
     return { error: "photoSlug required" };
   }
   if (typeof format !== "string" || !FORMATS.includes(format as PrintFormat)) {
-    return { error: "format must be giclee|framed|canvas|digital" };
+    return { error: `format must be ${FORMAT_LABEL}` };
   }
   const fmt = format as PrintFormat;
 
@@ -70,13 +78,13 @@ export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string 
     };
   }
 
-  if (typeof size !== "string" || !SIZES.includes(size as PrintSize)) {
-    return { error: "size required for physical formats (30x40|50x70|70x100)" };
+  if (typeof size !== "string" || !PRINT_SIZES.includes(size as PrintSize)) {
+    return { error: `size required for physical formats (${SIZE_LABEL})` };
   }
 
   if (fmt === "framed") {
-    if (typeof frame !== "string" || !FRAMES.includes(frame as FrameFinish)) {
-      return { error: "frame required for framed (black|white|brown)" };
+    if (typeof frame !== "string" || !FRAME_FINISHES.includes(frame as FrameFinish)) {
+      return { error: `frame required for framed (${FRAME_LABEL})` };
     }
     return {
       photoSlug,
@@ -128,16 +136,16 @@ export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {
     typeof format !== "string" ||
     !(PHYSICAL_FORMATS as string[]).includes(format)
   ) {
-    return { error: "format must be giclee|framed|canvas" };
+    return { error: `format must be ${formatListLabel(PHYSICAL_FORMATS)}` };
   }
-  if (typeof size !== "string" || !SIZES.includes(size as PrintSize)) {
-    return { error: "size required (30x40|50x70|70x100)" };
+  if (typeof size !== "string" || !PRINT_SIZES.includes(size as PrintSize)) {
+    return { error: `size required (${SIZE_LABEL})` };
   }
 
   const fmt = format as Exclude<PrintFormat, "digital">;
   if (fmt === "framed") {
-    if (typeof frame !== "string" || !FRAMES.includes(frame as FrameFinish)) {
-      return { error: "frame required for framed (black|white|brown)" };
+    if (typeof frame !== "string" || !FRAME_FINISHES.includes(frame as FrameFinish)) {
+      return { error: `frame required for framed (${FRAME_LABEL})` };
     }
     return {
       format: fmt,
