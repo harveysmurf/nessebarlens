@@ -185,3 +185,111 @@ test("a caller-supplied baseUrl with extra slashes yields a single-slash URL", a
     assert.equal(url.startsWith("https://x.test/api/print-asset?"), true, url);
   }
 });
+
+test("verifyPrintAssetRequest fails closed at every boundary, in order", async () => {
+  const nowMs = NOW_MS;
+  const exp = Math.floor(nowMs / 1000) + 60;
+  const signed = await signPrintAssetUrl("dawn", { secret: SECRET, nowMs, ttlSeconds: 60 });
+  assert.ok(signed);
+  const sig = new URL(signed).searchParams.get("sig")!;
+
+  // No secret: nothing is verifiable, so 503 before any parsing.
+  assert.deepEqual(await verifyPrintAssetRequest("dawn", String(exp), sig, { secret: null, nowMs }), {
+    ok: false,
+    status: 503,
+    error: "print-asset-unavailable",
+  });
+
+  const bad = async (
+    slug: string,
+    expRaw: string,
+    signature: string,
+    error: string,
+    status: number,
+  ) => {
+    const result = await verifyPrintAssetRequest(slug, expRaw, signature, { secret: SECRET, nowMs });
+    const actual = result.ok
+      ? `ok:true (${JSON.stringify(result)})`
+      : `${result.status} ${result.error}`;
+    assert.equal(
+      actual,
+      `${status} ${error}`,
+      `slug=${slug} exp=${expRaw} sig=${signature.slice(0, 8)}…`,
+    );
+  };
+  await bad("not-a-photo", String(exp), sig, "invalid-slug", 400);
+  await bad("dawn", `${exp}.5`, sig, "invalid-exp", 400);
+  await bad("dawn", "notanumber", sig, "invalid-exp", 400);
+  await bad("dawn", "9".repeat(13), sig, "invalid-exp", 400);
+  await bad("dawn", String(exp), "zz".repeat(32), "invalid-sig", 400);
+  await bad("dawn", String(exp), sig.slice(0, 63), "invalid-sig", 400);
+  // A wrong but well-formed signature is a 401, not a 400.
+  await bad("dawn", String(exp), "ab".repeat(32), "bad-signature", 401);
+
+  // Expired and absurdly-future expiries are distinguished.
+  // Signed 10s in the past with a 1s TTL, so exp is genuinely behind now.
+  const expired = await signPrintAssetUrl("dawn", { secret: SECRET, nowMs: nowMs - 10_000, ttlSeconds: 1 });
+  const expiredSig = new URL(expired!).searchParams.get("sig")!;
+  const expiredExp = new URL(expired!).searchParams.get("exp")!;
+  await bad("dawn", expiredExp, expiredSig, "expired", 401);
+  // The window is TTL + 300s (7 days), so "absurd" means past that, not past
+  // an hour. 8 days out is rejected before the signature is even compared.
+  const eightDays = Math.floor(nowMs / 1000) + 8 * 24 * 60 * 60;
+  await bad("dawn", String(eightDays), sig, "invalid-exp", 400);
+  // One second inside the window is a signature problem, not an exp problem.
+  await bad("dawn", String(Math.floor(nowMs / 1000) + 7 * 24 * 60 * 60 + 299), sig, "bad-signature", 401);
+
+  // A signature for a different slug must not verify for this one.
+  const other = await signPrintAssetUrl("cobblestones", { secret: SECRET, nowMs, ttlSeconds: 60 });
+  const otherSig = new URL(other!).searchParams.get("sig")!;
+  await bad("dawn", String(exp), otherSig, "bad-signature", 401);
+
+  // And the happy path still passes.
+  const ok = await verifyPrintAssetRequest("dawn", String(exp), sig, { secret: SECRET, nowMs });
+  assert.deepEqual(ok, { ok: true, slug: "dawn" });
+});
+
+test("resolvePrintAssetStream separates missing binding, bucket error and missing object", async () => {
+  const bytes = (): ReadableStream<Uint8Array> =>
+    new ReadableStream({
+      start(controller) {
+        controller.enqueue(new Uint8Array([0xff, 0xd8, 0xff]));
+        controller.close();
+      },
+    });
+
+  // Unknown slug never reaches the bucket.
+  const unknown = await resolvePrintAssetStream("not-a-photo", { get: async () => null });
+  assert.equal(unknown.kind === "json" && unknown.status, 400);
+
+  // No MASTERS binding at all is 503, not a crash.
+  const unbound = await resolvePrintAssetStream("dawn", undefined);
+  assert.equal(unbound.kind === "json" && unbound.status, 503);
+  assert.equal(unbound.kind === "json" && unbound.body.error, "masters-unavailable");
+
+  // A throwing bucket is the same 503 as an absent one, and must not escape.
+  const throwing = await resolvePrintAssetStream("dawn", {
+    get: async () => {
+      throw new Error("R2 unavailable");
+    },
+  });
+  assert.equal(throwing.kind === "json" && throwing.status, 503);
+
+  // A null object is 404: the key is a catalog master that is simply absent.
+  const missing = await resolvePrintAssetStream("dawn", { get: async () => null });
+  assert.equal(missing.kind === "json" && missing.status, 404);
+  assert.equal(missing.kind === "json" && missing.body.error, "master-not-found");
+
+  // The happy path streams the catalog key, not a caller-supplied one.
+  const keys: string[] = [];
+  const found = await resolvePrintAssetStream("dawn", {
+    get: async (key: string) => {
+      keys.push(key);
+      return { body: bytes(), size: 3 };
+    },
+  });
+  assert.deepEqual(keys, ["prints/dawn.jpg"]);
+  assert.equal(found.kind === "stream", true);
+  assert.equal(found.kind === "stream" && found.contentType, "image/jpeg");
+  assert.equal(found.kind === "stream" && found.size, 3);
+});
