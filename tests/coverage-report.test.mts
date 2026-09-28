@@ -7,10 +7,31 @@ import {
 } from "../scripts/coverage-report.mjs";
 
 /* The report is node's own text, so it changes shape between node majors.
-   CI runs node 22 and local runs are node 20; the parser has to accept both,
-   or CI fails with "no rows" while the suite is perfectly green. */
+   Node >= 22 renders it as a directory tree; the flat table below is the
+   pre-22 shape, kept as a fixture so the parser cannot regress to whichever
+   layout the machine that wrote it happened to run. */
 
-const NODE_20 = `
+const NODE_24 = `
+ℹ start of coverage report
+ℹ ---------------------------------------------------------------------------------------------------------------
+ℹ file                           | line % | branch % | funcs % | uncovered lines
+ℹ ---------------------------------------------------------------------------------------------------------------
+ℹ scripts                        |        |          |         | 
+ℹ  coverage-report.mjs           | 100.00 |    92.59 |  100.00 | 
+ℹ src                            |        |          |         | 
+ℹ  lib                           |        |          |         | 
+ℹ   checkout-body.ts             |  97.62 |    96.67 |  100.00 | 120-121 142-143
+ℹ   fulfillment.ts               |  96.64 |    81.28 |  100.00 | 259-260 587-590
+ℹ   sku-map.ts                   | 100.00 |   100.00 |  100.00 | 
+ℹ tests                          |        |          |         | 
+ℹ  register.mjs                  | 100.00 |   100.00 |  100.00 | 
+ℹ ---------------------------------------------------------------------------------------------------------------
+ℹ all files                      |  98.81 |    90.76 |  100.00 | 
+ℹ ---------------------------------------------------------------------------------------------------------------
+ℹ end of coverage report
+`;
+
+const NODE_FLAT = `
 # start of coverage report
 # file                         | line % | branch % | funcs % | uncovered lines
 # -----------------------------|--------|----------|---------|----------------
@@ -20,7 +41,7 @@ const NODE_20 = `
 # end of coverage report
 `;
 
-const NODE_22 = `
+const NODE_TREE = `
 # start of coverage report
 # -----------------------------------------------------------------------------------------------------------------------------------------------
 # file                         | line % | branch % | funcs % | uncovered lines
@@ -64,8 +85,8 @@ const NODE_22 = `
 #  site-url.test.mts           |  92.45 |    92.31 |  100.00 | 17-20
 #  sku-map.test.mts            | 100.00 |   100.00 |  100.00 | 
 #  stripe-event.test.mts       | 100.00 |   100.00 |  100.00 | 
-#  ts-loader.mjs               | 100.00 |   100.00 |  100.00 | 
-#  ts-loader.test.mts          | 100.00 |   100.00 |  100.00 | 
+#  resolve-hooks.mjs           | 100.00 |   100.00 |  100.00 | 
+#  resolve-hooks.test.mts      | 100.00 |   100.00 |  100.00 | 
 #  worker-bindings.test.mts    |  95.92 |    77.78 |   57.14 | 35-36
 # -----------------------------------------------------------------------------------------------------------------------------------------------
 # all files                    |  97.50 |    89.28 |   96.39 | 
@@ -73,8 +94,8 @@ const NODE_22 = `
 # end of coverage report
 `;
 
-test("parses the node 20 report shape", () => {
-  const rows = parseCoverage(NODE_20);
+test("parses the flat pre-node-22 report shape", () => {
+  const rows = parseCoverage(NODE_FLAT);
   assert.equal(rows.length, 3);
   assert.equal(rows[0]!.file, "src/lib/sku-map.ts");
   assert.equal(rows[0]!.lines, 78.13);
@@ -85,17 +106,17 @@ test("parses the node 20 report shape", () => {
 });
 
 
-test("parses the node 22 directory tree, rebuilding full paths", () => {
-  const rows = parseCoverage(NODE_22);
+test("parses the node 24 directory tree, rebuilding full paths", () => {
+  const rows = parseCoverage(NODE_TREE);
   // 33 source + test files in the real report, plus scripts/.
   assert.equal(rows.length, 38);
   const sku = rows.find((row) => row.file === "src/lib/sku-map.ts");
   assert.ok(sku, rows.map((row) => row.file).slice(0, 5).join(", "));
   assert.equal(sku.lines, 100);
   assert.equal(sku.functions, 100);
-  const loader = rows.find((row) => row.file === "scripts/coverage-report.mjs");
-  assert.ok(loader, "a file in a one-segment directory keeps its path");
-  assert.equal(isLibFile(loader.file), false);
+  const script = rows.find((row) => row.file === "scripts/coverage-report.mjs");
+  assert.ok(script, "a file in a one-segment directory keeps its path");
+  assert.equal(isLibFile(script.file), false);
   assert.equal(isLibFile("tests/sku-map.test.mts"), false);
   assert.equal(isLibFile("src/lib/checkout-body.ts"), true);
   assert.equal(
@@ -119,14 +140,14 @@ test("file:// and absolute paths are reduced to repo-relative ones", () => {
 });
 
 test("both node layouts select the same src/lib files", () => {
-  const lib20 = parseCoverage(NODE_20).filter((row) => isLibFile(row.file));
-  const lib22 = parseCoverage(NODE_22).filter((row) => isLibFile(row.file));
+  const libFlat = parseCoverage(NODE_FLAT).filter((row) => isLibFile(row.file));
+  const libTree = parseCoverage(NODE_TREE).filter((row) => isLibFile(row.file));
   // Otherwise the floor means different things locally and in CI.
   assert.deepEqual(
-    lib20.map((row) => row.file).sort(),
+    libFlat.map((row) => row.file).sort(),
     ["src/lib/sku-map.ts", "src/lib/stripe-event.ts"],
   );
-  assert.equal(lib22.every((row) => row.file.startsWith("src/lib/")), true);
+  assert.equal(libTree.every((row) => row.file.startsWith("src/lib/")), true);
 });
 
 test("header, separator and summary noise are not parsed as files", () => {
@@ -143,5 +164,31 @@ test("an empty or unrelated report yields no rows rather than throwing", () => {
   assert.deepEqual(parseCoverage(""), []);
   assert.deepEqual(parseCoverage("Error: something went wrong\n"), []);
   assert.equal(mean([], "lines"), 0);
-  assert.equal(mean(parseCoverage(NODE_20), "lines"), (78.13 + 100 + 94.44) / 3);
+  assert.equal(mean(parseCoverage(NODE_FLAT), "lines"), (78.13 + 100 + 94.44) / 3);
+});
+
+test("parses the node 24 report, whose lines carry a reporter marker", () => {
+  // Captured verbatim from `npm run coverage` on node 24. Every line is
+  // prefixed "ℹ " because the runner is not a TTY, which shifts the
+  // indentation the tree is rebuilt from — the symptom is "parsed N rows but
+  // none under src/lib" on a fully green suite.
+  const rows = parseCoverage(NODE_24);
+  const lib = rows.filter((row) => isLibFile(row.file));
+  assert.deepEqual(
+    lib.map((row) => row.file),
+    ["src/lib/checkout-body.ts", "src/lib/fulfillment.ts", "src/lib/sku-map.ts"],
+  );
+  assert.equal(lib[0]!.uncovered, "120-121 142-143");
+  assert.equal(lib[1]!.branches, 81.28);
+  assert.equal(isLibFile(rows[0]!.file), false, "scripts/ is not src/lib");
+});
+
+test("the '..' rows node emits for a deep path never become a path prefix", () => {
+  const rows = parseCoverage(`
+ℹ ..                             |        |          |         | 
+ℹ  ..                            |        |          |         | 
+ℹ   tmp                          |        |          |         | 
+ℹ    loader.mjs                  | 100.00 |   100.00 |  100.00 | 
+`);
+  assert.deepEqual(rows.map((row) => row.file), ["tmp/loader.mjs"]);
 });

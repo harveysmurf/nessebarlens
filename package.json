@@ -2,6 +2,7 @@
   "name": "nessebar-lens",
   "version": "0.1.0",
   "private": true,
+  "type": "module",
   "scripts": {
     "dev": "next dev",
     "build": "next build",
@@ -31,5 +32,8 @@
     "eslint-config-next": "15.5.26",
     "tailwindcss": "^4",
     "typescript": "^5"
+  },
+  "engines": {
+    "node": ">=24"
   }
 }
