@@ -42,6 +42,20 @@ export const FRAME_FINISHES: FrameFinish[] = ["black", "white", "brown"];
 
 export const PHYSICAL_FORMATS: PhysicalFormat[] = ["giclee", "framed", "canvas"];
 
+/**
+ * Everything we can sell, including "digital" which has no Prodigi SKU.
+ * Owned here so the two request parsers and fulfillment share one allow-list.
+ */
+export const SELLABLE_FORMATS: PrintFormat[] = [...PHYSICAL_FORMATS, "digital"];
+
+/** "30x40|50x70|70x100" — the allow-list as a human-readable label. */
+export function formatListLabel(
+  values: readonly string[],
+  separator = "|",
+): string {
+  return values.join(separator);
+}
+
 export const PRINT_SIZES: PrintSize[] = ["30x40", "50x70", "70x100"];
 
 export function resolveSku(

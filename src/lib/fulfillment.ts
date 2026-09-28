@@ -14,8 +14,8 @@ import {
 import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";
 import {
   FRAME_FINISHES,
-  PHYSICAL_FORMATS,
   PRINT_SIZES,
+  SELLABLE_FORMATS,
   resolveSku,
   type PhysicalFormat,
 } from "./sku-map";
@@ -24,10 +24,9 @@ import { siteUrl } from "./stripe";
 /** Phase 2: SKU map + sandbox order path are wired. */
 export const SKU_MAP_READY = true;
 
-// The allow-lists below are the sku-map lists, so stored-record validation
-// cannot drift from the formats/sizes we can actually fulfill. Only "digital"
-// is ours to add — it has no Prodigi SKU.
-const FORMATS: readonly PrintFormat[] = [...PHYSICAL_FORMATS, "digital"];
+// The allow-list below is the sku-map list, so stored-record validation cannot
+// drift from the formats we can actually fulfill.
+const FORMATS: readonly PrintFormat[] = SELLABLE_FORMATS;
 
 export type { PrintFormat };
 export type OrderFormat = PrintFormat | "unknown";

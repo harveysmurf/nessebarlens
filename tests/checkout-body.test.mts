@@ -5,7 +5,9 @@ import {
   FRAME_FINISHES,
   PHYSICAL_FORMATS,
   PRINT_SIZES,
+  SELLABLE_FORMATS,
   allPhysicalSkus,
+  formatListLabel,
 } from "../src/lib/sku-map.ts";
 
 const SLUG = { photoSlug: "saint-spiridov" };
@@ -87,4 +89,47 @@ test("checkout and quote share destination country validation", () => {
   );
   const ok = parseCheckoutBody({ ...SLUG, format: "giclee", size: "30x40", destinationCountryCode: "DE" });
   assert.equal((ok as { destinationCountryCode: string }).destinationCountryCode, "DE");
+});
+
+test("rejection messages list the allow-lists, not a hand-written copy", () => {
+  // The strings a buyer reads must track sku-map, or a new size ships with a
+  // message that still says "30x40|50x70|70x100".
+  const badSize = parseCheckoutBody({
+    photoSlug: "dawn",
+    format: "giclee",
+    size: "40x30",
+  });
+  assert.equal("error" in badSize, true);
+  assert.ok(badSize.error.includes(PRINT_SIZES.join("|")), badSize.error);
+
+  const badFormat = parseCheckoutBody({ photoSlug: "dawn", format: "poster" });
+  assert.equal("error" in badFormat, true);
+  assert.ok(badFormat.error.includes(SELLABLE_FORMATS.join("|")), badFormat.error);
+
+  const badFrame = parseCheckoutBody({
+    photoSlug: "dawn",
+    format: "framed",
+    size: PRINT_SIZES[0],
+    frame: "gold",
+  });
+  assert.equal("error" in badFrame, true);
+  assert.ok(badFrame.error.includes(FRAME_FINISHES.join("|")), badFrame.error);
+
+  const badQuoteFormat = parseQuoteBody({ format: "poster", size: PRINT_SIZES[0] });
+  assert.equal("error" in badQuoteFormat, true);
+  assert.ok(
+    badQuoteFormat.error.includes(PHYSICAL_FORMATS.join("|")),
+    badQuoteFormat.error,
+  );
+});
+
+test("SELLABLE_FORMATS is the physical list plus digital, defined once", () => {
+  assert.deepEqual(SELLABLE_FORMATS, [...PHYSICAL_FORMATS, "digital"]);
+  assert.equal(new Set(SELLABLE_FORMATS).size, SELLABLE_FORMATS.length);
+});
+
+test("formatListLabel is the join the parsers use", () => {
+  assert.equal(formatListLabel(["a", "b", "c"]), "a|b|c");
+  assert.equal(formatListLabel(["a", "b"], ", "), "a, b");
+  assert.equal(formatListLabel([]), "");
 });
