@@ -553,11 +553,22 @@ function isInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value);
 }
 
+/**
+ * A stored euro amount has at most two decimals.
+ *
+ * The previous check was `|value * 100 - eurToCents(value)| < 1e-6`, but
+ * eurToCents IS Math.round(value * 100), so that only asserted "no precision
+ * finer than ~1e-5" — it accepted 9.999999999999 and 15.000000001. The write
+ * path (parseEurAmount) admits only 1-2 decimals, so the read guard has to
+ * match it; the round-trip below compares against the value's own 2-decimal
+ * rounding, which tolerates binary-float error like 0.1 while rejecting a
+ * genuinely sub-cent fraction.
+ */
 function isEurAmount(value: unknown): value is number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     return false;
   }
-  return Math.abs(value * 100 - eurToCents(value)) < 1e-6;
+  return Number(value.toFixed(2)) === value;
 }
 
 function isOrderFormat(value: unknown): value is OrderFormat {
