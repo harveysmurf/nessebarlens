@@ -3,6 +3,9 @@ import { hmacSha256Hex, timingSafeEqualHex } from "./crypto-hex";
 
 const TOLERANCE_SECONDS = 300;
 
+/** Stripe signatures are SHA-256 hex; hex case is not significant. */
+const HEX_64 = /^[0-9a-f]{64}$/i;
+
 export type ConstructEvent = (
   payload: string,
   header: string,
@@ -49,8 +52,11 @@ export async function verifyStripeSignatureWebCrypto(
   const timestamp = headerTimestamp(header);
   const signatures = headerSignatures(header);
   if (timestamp === null || signatures.length === 0) return false;
+  // Bound both ends: a future timestamp makes `age` negative, so an upper-only
+  // check would accept it and keep the signature replayable until the clock
+  // caught up. ±tolerance is what Stripe itself enforces.
   const age = Math.floor(nowMs / 1000) - timestamp;
-  if (age > TOLERANCE_SECONDS) return false;
+  if (age > TOLERANCE_SECONDS || age < -TOLERANCE_SECONDS) return false;
 
   const expected = await hmacSha256Hex(`${timestamp}.${payload}`, secret);
   return signatures.some((signature) => timingSafeEqualHex(expected, signature));
@@ -87,7 +93,7 @@ function headerSignatures(header: string): string[] {
     if (eq === -1) continue;
     if (part.slice(0, eq) !== "v1") continue;
     const signature = part.slice(eq + 1);
-    if (/^[0-9a-f]{64}$/.test(signature)) signatures.push(signature);
+    if (HEX_64.test(signature)) signatures.push(signature);
   }
   return signatures;
 }

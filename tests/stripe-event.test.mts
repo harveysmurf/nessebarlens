@@ -1,0 +1,186 @@
+import Stripe from "stripe";
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  readStripeEvent,
+  verifyStripeSignatureWebCrypto,
+} from "../src/lib/stripe-event.ts";
+import { hmacSha256Hex } from "../src/lib/crypto-hex.ts";
+
+const SECRET = "whsec_test_secret_for_signature_checks";
+const PAYLOAD = JSON.stringify({ id: "evt_1", object: "event", type: "payment_intent.succeeded" });
+
+function header(timestamp: number, sig: string, scheme = "v1"): string {
+  return `t=${timestamp},${scheme}=${sig}`;
+}
+
+async function sign(timestamp: number, secret = SECRET): Promise<string> {
+  return hmacSha256Hex(`${timestamp}.${PAYLOAD}`, secret);
+}
+
+test("a correctly signed fresh webhook verifies", async () => {
+  const nowMs = 1_700_000_000_000;
+  const timestamp = Math.floor(nowMs / 1000);
+  const sig = await sign(timestamp);
+  assert.equal(
+    await verifyStripeSignatureWebCrypto(PAYLOAD, header(timestamp, sig), SECRET, nowMs),
+    true,
+  );
+});
+
+test("a wrong secret never verifies", async () => {
+  const nowMs = 1_700_000_000_000;
+  const timestamp = Math.floor(nowMs / 1000);
+  const sig = await sign(timestamp, "whsec_other");
+  assert.equal(
+    await verifyStripeSignatureWebCrypto(PAYLOAD, header(timestamp, sig), SECRET, nowMs),
+    false,
+  );
+});
+
+test("a signature from a different payload never verifies", async () => {
+  const nowMs = 1_700_000_000_000;
+  const timestamp = Math.floor(nowMs / 1000);
+  const sig = await hmacSha256Hex(`${timestamp}.{"id":"evt_other"}`, SECRET);
+  assert.equal(
+    await verifyStripeSignatureWebCrypto(PAYLOAD, header(timestamp, sig), SECRET, nowMs),
+    false,
+  );
+});
+
+test("stale signatures past the 300s tolerance are rejected", async () => {
+  const nowMs = 1_700_000_000_000;
+  const timestamp = Math.floor(nowMs / 1000) - 301;
+  const sig = await sign(timestamp);
+  assert.equal(
+    await verifyStripeSignatureWebCrypto(PAYLOAD, header(timestamp, sig), SECRET, nowMs),
+    false,
+  );
+  // 299s old is still inside the window.
+  const fresh = Math.floor(nowMs / 1000) - 299;
+  const freshSig = await sign(fresh);
+  assert.equal(
+    await verifyStripeSignatureWebCrypto(PAYLOAD, header(fresh, freshSig), SECRET, nowMs),
+    true,
+  );
+});
+
+test("future-dated timestamps are rejected, not just old ones", async () => {
+  // Without a lower bound, a far-future t= is accepted: age is negative, so
+  // the "too old" check never trips and the signature replays for an
+  // unbounded amount of time as the clock catches up.
+  const nowMs = 1_700_000_000_000;
+  const future = Math.floor(nowMs / 1000) + 3_600;
+  const sig = await sign(future);
+  assert.equal(
+    await verifyStripeSignatureWebCrypto(PAYLOAD, header(future, sig), SECRET, nowMs),
+    false,
+  );
+  // Small clock skew is tolerated, as Stripe does.
+  const skewed = Math.floor(nowMs / 1000) + 5;
+  const skewSig = await sign(skewed);
+  assert.equal(
+    await verifyStripeSignatureWebCrypto(PAYLOAD, header(skewed, skewSig), SECRET, nowMs),
+    true,
+  );
+});
+
+test("malformed headers are rejected without throwing", async () => {
+  const nowMs = 1_700_000_000_000;
+  const timestamp = Math.floor(nowMs / 1000);
+  const sig = await sign(timestamp);
+  const bad = [
+    "",
+    "t=notanumber,v1=" + sig,
+    "t=0,v1=" + sig,
+    "t=" + timestamp,
+    header(timestamp, "zz".repeat(32)),
+    header(timestamp, sig, "v0"),
+    "t=" + timestamp + ",v1=",
+  ];
+  for (const h of bad) {
+    assert.equal(
+      await verifyStripeSignatureWebCrypto(PAYLOAD, h, SECRET, nowMs),
+      false,
+      h,
+    );
+  }
+  // Missing inputs are false, not exceptions.
+  assert.equal(await verifyStripeSignatureWebCrypto("", header(timestamp, sig), SECRET, nowMs), false);
+  assert.equal(await verifyStripeSignatureWebCrypto(PAYLOAD, header(timestamp, sig), "", nowMs), false);
+});
+
+test("any matching v1 signature in a multi-signature header wins", async () => {
+  const nowMs = 1_700_000_000_000;
+  const timestamp = Math.floor(nowMs / 1000);
+  const sig = await sign(timestamp);
+  const multi = `v0=${"00".repeat(32)},v1=${"11".repeat(32)},t=${timestamp},v1=${sig}`;
+  assert.equal(
+    await verifyStripeSignatureWebCrypto(PAYLOAD, multi, SECRET, nowMs),
+    true,
+  );
+});
+
+test("uppercase hex signatures verify (hex is not case-sensitive)", async () => {
+  const nowMs = 1_700_000_000_000;
+  const timestamp = Math.floor(nowMs / 1000);
+  const sig = (await sign(timestamp)).toUpperCase();
+  assert.equal(
+    await verifyStripeSignatureWebCrypto(PAYLOAD, header(timestamp, sig), SECRET, nowMs),
+    true,
+  );
+});
+
+test("readStripeEvent returns the parsed event when the signature is good", async () => {
+  // No nowMs: the Node constructEvent path checks the real clock, so the
+  // signature must be built against it.
+  const timestamp = Math.floor(Date.now() / 1000);
+  const sig = await sign(timestamp);
+  const event = await readStripeEvent(PAYLOAD, header(timestamp, sig), SECRET);
+  assert.equal(event.type, "payment_intent.succeeded");
+});
+
+test("readStripeEvent rethrows a signature failure instead of falling back", async () => {
+  const timestamp = Math.floor(Date.now() / 1000);
+  const badSig = "ab".repeat(32);
+  await assert.rejects(
+    readStripeEvent(PAYLOAD, header(timestamp, badSig), SECRET, {
+      construct: () => {
+        throw new Stripe.errors.StripeSignatureVerificationError(
+          badSig,
+          "whsec_test",
+        );
+      },
+    }),
+    (error: unknown) => error instanceof Stripe.errors.StripeSignatureVerificationError,
+  );
+});
+
+test("readStripeEvent falls back to Web Crypto when construct throws for another reason", async () => {
+  const nowMs = 1_700_000_000_000;
+  const timestamp = Math.floor(nowMs / 1000);
+  const sig = await sign(timestamp);
+  const event = await readStripeEvent(PAYLOAD, header(timestamp, sig), SECRET, {
+    nowMs,
+    construct: () => {
+      throw new Error("no node crypto in this runtime");
+    },
+  });
+  assert.equal(event.id, "evt_1");
+});
+
+test("readStripeEvent rejects a non-event payload that passes the signature", async () => {
+  const nowMs = 1_700_000_000_000;
+  const payload = JSON.stringify({ id: "evt_2", object: "charge" });
+  const timestamp = Math.floor(nowMs / 1000);
+  const sig = await hmacSha256Hex(`${timestamp}.${payload}`, SECRET);
+  await assert.rejects(
+    readStripeEvent(payload, header(timestamp, sig), SECRET, {
+      nowMs,
+      construct: () => {
+        throw new Error("runtime cannot construct");
+      },
+    }),
+    /invalid-event/,
+  );
+});
