@@ -4,6 +4,7 @@
  * raw MASTERS keys or r2.dev master paths.
  */
 
+import { MASTERS_BUCKET, referencesMasters } from "./master-guard";
 import { PHOTOS } from "./photos";
 import type { FrameFinish, PrintSize } from "./pricing";
 import { prodigiApiKey, prodigiOrdersUrl } from "./prodigi-config";
@@ -92,10 +93,10 @@ export async function resolveOrderAssetUrl(photoSlug: string): Promise<string> {
 
 export function assertNoMasterLeak(value: unknown): void {
   const blob = JSON.stringify(value);
-  if (blob.includes("nessebar-lens-masters")) {
+  if (blob.includes(MASTERS_BUCKET)) {
     throw new Error("master-leak: masters bucket referenced");
   }
-  if (blob.includes("/prints/") || blob.includes('"prints/')) {
+  if (referencesMasters(blob)) {
     throw new Error("master-leak: prints/ master key path");
   }
   for (const photo of PHOTOS) {
@@ -119,7 +120,7 @@ export function buildProdigiOrderBody(input: {
   if (!/^https:\/\//i.test(assetUrl)) {
     throw new Error("asset url must be https");
   }
-  if (/prints\//i.test(assetUrl) || /masters/i.test(assetUrl)) {
+  if (referencesMasters(assetUrl)) {
     throw new Error("asset url must not point at masters");
   }
 
