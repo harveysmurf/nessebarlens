@@ -353,21 +353,79 @@ test("a master asset URL is a client failure before any network call", async () 
   });
 });
 
-test("an unconfigured Prodigi key is a server failure, not a crash", async () => {
+test("a repeated idempotency key returns the original order, never a second one", async () => {
+  // The one-payment-one-order invariant, pinned at the client. Prodigi scopes
+  // idempotencyKey per account, remembers it indefinitely, and answers a
+  // repeat with 200 / outcome "alreadyExists" carrying the ORIGINAL order —
+  // so a webhook redelivery that re-attempts cannot place a second print, and
+  // we store the order id Prodigi already knows about rather than trusting our
+  // own attempt count.
+  await withProdigiEnv(async () => {
+    process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
+    const stub = stubFetch(() =>
+      json({ outcome: "alreadyExists", order: { id: "ord_first" } }),
+    );
+    try {
+      const result = await createProdigiOrder(ORDER_INPUT);
+      assert.equal(result.ok, true, "a duplicate is a success, not an error");
+      assert.equal(result.ok && result.orderId, "ord_first");
+      // The key sent is the session id, which is what makes the two attempts
+      // the same order to Prodigi.
+      const sent = JSON.parse(stub.calls[0]!.init.body as string);
+      assert.equal(sent.idempotencyKey, "cs_test_abcdefgh");
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+test("an unconfigured Prodigi key is a retryable failure, not a crash", async () => {
+  // This asserts the *credential* guard, so the HMAC secret has to be usable —
+  // without it the asset guard fires first and the test would pass for the
+  // wrong reason. That is exactly what the old version of this test did: it
+  // deleted the key but not the secret, so prodigi-asset-unconfigured answered
+  // first and the key path was never exercised.
+  //
+  // A throw here used to escape createProdigiOrder entirely and land in the
+  // route's catch-all as "orders-kv-unavailable" — a diagnosis pointing at the
+  // KV binding rather than the missing key, with no record written at all.
   const saved = process.env.PRODIGI_SANDBOX_API_KEY;
   await withProdigiEnv(async () => {
+    process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
     delete process.env.PRODIGI_SANDBOX_API_KEY;
     const stub = stubFetch(() => json({ order: { id: "ord_127" } }));
     try {
       const result = await createProdigiOrder(ORDER_INPUT);
       assert.equal(result.ok, false);
       assert.equal(result.ok === false && result.kind, "server");
-      assert.equal(stub.calls.length, 0);
+      assert.equal(result.ok === false && result.reason, "prodigi-unconfigured");
+      assert.match(result.ok === false ? result.message : "", /API_KEY is not set/);
+      assert.equal(stub.calls.length, 0, "Prodigi must never be contacted");
     } finally {
       stub.restore();
     }
   });
   if (saved !== undefined) process.env.PRODIGI_SANDBOX_API_KEY = saved;
+});
+
+test("an unrecognised Prodigi host is the same retryable unconfigured failure", async () => {
+  // prodigiApiBase throws for anything that is not the sandbox or live host.
+  // That is a misconfigured deploy, not a Prodigi outage, so it must carry the
+  // same reason: retryable, and the record says "fix the config".
+  await withProdigiEnv(async () => {
+    process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
+    process.env.PRODIGI_API_BASE = "https://api.attacker.example";
+    const stub = stubFetch(() => json({ order: { id: "ord_128" } }));
+    try {
+      const result = await createProdigiOrder(ORDER_INPUT);
+      assert.equal(result.ok, false);
+      assert.equal(result.ok === false && result.reason, "prodigi-unconfigured");
+      assert.equal(result.ok === false && result.kind, "server");
+      assert.equal(stub.calls.length, 0, "an unknown host is never contacted");
+    } finally {
+      stub.restore();
+    }
+  });
 });
 
 test("resolveOrderAssetUrl returns the signed URL, or null — never a placeholder", async () => {

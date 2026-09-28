@@ -82,7 +82,14 @@ export type ProdigiFailureReason =
    * We hold paid money but cannot sign the master URL, so there is no asset to
    * send. Distinct from prodigi-unavailable: Prodigi was never contacted.
    */
-  | "prodigi-asset-unconfigured";
+  | "prodigi-asset-unconfigured"
+  /**
+   * This deployment has no usable Prodigi API key, or PRODIGI_API_BASE is not
+   * an allowed host. Prodigi was never contacted. Retryable: the key is
+   * deployment config, and a redeploy inside Stripe's redelivery window
+   * (~3 days) is enough to place the order.
+   */
+  | "prodigi-unconfigured";
 
 export type ProdigiOrderFailure = {
   ok: false;
@@ -133,6 +140,7 @@ export const RETRYABLE_PRODIGI_REASONS: ReadonlySet<ProdigiFailureReason> =
     "prodigi-rate-limit",
     "prodigi-unavailable",
     "prodigi-asset-unconfigured",
+    "prodigi-unconfigured",
   ]);
 
 export function isRetryableProdigiReason(
@@ -267,6 +275,27 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
     };
   }
 
+  // Same fail-closed idea for the credential, and it has to be a *return*:
+  // prodigiApiKey/prodigiOrdersUrl throw when PRODIGI_API_BASE is unset or is
+  // not an allowed host, and a throw here escapes fulfillCheckoutSession to
+  // the route's catch-all — which answers 500 "orders-kv-unavailable", a
+  // diagnosis that points at the KV binding instead of the missing key, and
+  // writes no record at all, so the paid order is invisible.
+  let ordersUrl: string;
+  let apiKey: string;
+  try {
+    ordersUrl = prodigiOrdersUrl();
+    apiKey = prodigiApiKey();
+  } catch (e) {
+    return {
+      ok: false,
+      kind: "server",
+      reason: "prodigi-unconfigured",
+      message: e instanceof Error ? e.message : "prodigi-unconfigured",
+      status: null,
+    };
+  }
+
   let body: ProdigiOrderRequest;
   try {
     body = buildProdigiOrderBody({ ...input, assetUrl });
@@ -282,11 +311,11 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
 
   let res: Response;
   try {
-    res = await fetch(prodigiOrdersUrl(), {
+    res = await fetch(ordersUrl, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-API-Key": prodigiApiKey(),
+        "X-API-Key": apiKey,
       },
       body: JSON.stringify(body),
     });

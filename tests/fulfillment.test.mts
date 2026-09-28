@@ -306,6 +306,9 @@ test("a retryable Prodigi failure writes the paid order, answers 500, and retrie
     "prodigi-rate-limit",
     "prodigi-unavailable",
     "prodigi-asset-unconfigured",
+    // A key that is not deployed yet is the same shape: retryable, and a
+    // redelivery after the deploy places the order.
+    "prodigi-unconfigured",
   ] as const) {
     const kv = memoryKv();
     let fail = true;
@@ -1103,7 +1106,13 @@ test("parseOrderRecord rejects a stored recipient it cannot vouch for", () => {
   assert.ok(parseOrderRecord(JSON.stringify({ ...good, recipient: null })));
 });
 
-test("a physical order with shipping but no Prodigi key stops as prodigi-key-unset", async () => {
+test("a physical order with shipping but no Prodigi key waits, retryably, for the key", async () => {
+  // This was the silent-money-losing case. The record was written with the
+  // shell's terminal:true and the reason "prodigi-key-unset", so the webhook
+  // answered 200, Stripe never redelivered, and a customer who paid for a print
+  // got nothing — with no log line anywhere. A missing key is deploy config
+  // and is fixable inside Stripe's redelivery window, so the order has to stay
+  // eligible for a retry.
   const decided = decideFulfillment(
     paidInput({
       amountTotal: 1999,
@@ -1113,14 +1122,27 @@ test("a physical order with shipping but no Prodigi key stops as prodigi-key-uns
     }),
   );
   const record = (decided as { record: OrderRecord }).record;
-  assert.equal(record.reason, "prodigi-key-unset");
+  assert.equal(record.reason, "prodigi-unconfigured");
   assert.equal(record.status, "paid-unfulfilled");
+  assert.equal(record.terminal, false, "a redelivery must be able to retry it");
   // The address is kept: it is valid, only the credential is missing.
   assert.equal(record.recipient?.city, "Nessebar");
 
   let created = 0;
   const kv = memoryKv();
-  await fulfillCheckoutSession({
+  // Stands in for the real client, which returns this exact failure without
+  // contacting Prodigi (pinned in prodigi-order.test.mts).
+  const unconfiguredCreate: CreateProdigiOrder = async () => {
+    created++;
+    return {
+      ok: false,
+      kind: "server",
+      reason: "prodigi-unconfigured",
+      message: "PRODIGI_SANDBOX_API_KEY is not set",
+      status: null,
+    };
+  };
+  const first = await fulfillCheckoutSession({
     ...paidInput({
       amountTotal: 1999,
       prodigiKeyConfigured: false,
@@ -1128,13 +1150,33 @@ test("a physical order with shipping but no Prodigi key stops as prodigi-key-uns
       metadata: physicalMeta(),
     }),
     kv,
-    createOrder: async (input) => {
-      created++;
-      return okCreate(input);
-    },
+    createOrder: unconfiguredCreate,
   });
-  assert.equal(created, 0);
+  assert.equal(created, 1);
+  // Not a duplicate and not a success: 5xx, so Stripe keeps redelivering.
+  assert.equal(first.httpStatus, 500);
   const stored = parseOrderRecord((await kv.get(SESSION))!);
-  assert.equal(stored?.reason, "prodigi-key-unset");
+  assert.equal(stored?.reason, "prodigi-unconfigured");
+  assert.equal(stored?.terminal, false);
   assert.equal(stored?.recipient?.city, "Nessebar");
+
+  // The key is deployed; the redelivery places the order. One payment, one
+  // Prodigi order — and the same session id is the idempotency key, so even if
+  // Prodigi had already accepted the first POST it returns that same order.
+  const second = await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      metadata: physicalMeta(),
+    }),
+    kv,
+    createOrder: okCreate,
+  });
+  assert.equal(second.httpStatus, 200);
+  assert.equal(second.body.duplicate, undefined);
+  const placed = parseOrderRecord((await kv.get(SESSION))!);
+  assert.equal(placed?.status, "paid");
+  assert.equal(placed?.prodigiOrderId, "ord_sandbox_1");
+  assert.equal(placed?.terminal, true);
 });

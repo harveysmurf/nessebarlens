@@ -20,10 +20,17 @@ export async function POST(request: Request) {
   }
 
   const bindings = await readWorkerBindings();
+  // 503, not 500, and never a generic 502: "we are not configured" is a
+  // deploy-time fact a human has to fix, and it must be distinguishable in the
+  // logs from "Stripe is momentarily unhappy". 5xx either way, so Stripe keeps
+  // redelivering and no paid session is lost while the secret is missing.
   if (!bindings.webhookSecret) {
+    console.error(
+      "stripe webhook unconfigured: STRIPE_WEBHOOK_SECRET is missing or empty",
+    );
     return NextResponse.json(
       { error: "stripe-webhook-unconfigured" },
-      { status: 500 },
+      { status: 503 },
     );
   }
 
@@ -39,7 +46,8 @@ export async function POST(request: Request) {
   }
 
   if (!bindings.ORDERS) {
-    return NextResponse.json({ error: "orders-kv-unavailable" }, { status: 500 });
+    console.error("stripe webhook unconfigured: ORDERS KV binding missing");
+    return NextResponse.json({ error: "orders-kv-unavailable" }, { status: 503 });
   }
 
   const session = event.data.object as {
@@ -98,7 +106,16 @@ export async function POST(request: Request) {
       now: new Date().toISOString(),
     });
     return NextResponse.json(result.body, { status: result.httpStatus });
-  } catch {
-    return NextResponse.json({ error: "orders-kv-unavailable" }, { status: 500 });
+  } catch (e) {
+    // The bare catch used to answer "orders-kv-unavailable" for *any* throw.
+    // That is the one thing this handler must not do: a bug in fulfillment, a
+    // bad PRODIGI_API_BASE, or a KV write failure all presented as a missing
+    // binding, so the log pointed at the wrong subsystem entirely. Log the real
+    // error and keep 5xx so Stripe redelivers rather than dropping paid money.
+    console.error("stripe webhook fulfillment failed", e);
+    return NextResponse.json(
+      { error: "fulfillment-failed" },
+      { status: 500 },
+    );
   }
 }
