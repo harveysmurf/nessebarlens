@@ -700,12 +700,9 @@ test("fulfillment reuses the pricing/sku-map types instead of redeclaring them",
   );
   // The union must be imported from pricing.ts, not restated here: a private
   // copy would leave the fulfillment validator behind when a format is added.
-  // Built from parts: the TS loader rewrites relative import specifiers even
-  // inside string literals, so a literal "./pricing" needle would not match.
-  const pricingSpecifier = `"${"."}/pricing"`;
   assert.equal(
     src.includes(
-      `import type { FrameFinish, PrintFormat, PrintSize } from ${pricingSpecifier}`,
+      'import type { FrameFinish, PrintFormat, PrintSize } from "./pricing"',
     ),
     true,
   );
