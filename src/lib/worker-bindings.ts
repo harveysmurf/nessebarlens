@@ -5,6 +5,7 @@ export type WorkerBindings = {
   ORDERS?: OrdersKv;
   MASTERS?: MastersBucket;
   webhookSecret?: string;
+  printAssetSecret?: string;
   prodigiKeyConfigured: boolean;
 };
 
@@ -36,11 +37,16 @@ export async function readWorkerBindings(): Promise<WorkerBindings> {
   const webhookSecret =
     nonempty(env.STRIPE_WEBHOOK_SECRET) ??
     nonempty(process.env.STRIPE_WEBHOOK_SECRET);
+  const printAsset =
+    nonempty(env.PRINT_ASSET_HMAC_SECRET) ??
+    nonempty(process.env.PRINT_ASSET_HMAC_SECRET);
 
   return {
     ORDERS: isOrdersKv(env.ORDERS) ? env.ORDERS : undefined,
     MASTERS: isMastersBucket(env.MASTERS) ? env.MASTERS : undefined,
     webhookSecret,
+    printAssetSecret:
+      printAsset && printAsset.length >= 32 ? printAsset : undefined,
     prodigiKeyConfigured: prodigiKeyConfigured(env),
   };
 }

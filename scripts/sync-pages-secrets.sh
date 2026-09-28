@@ -38,6 +38,13 @@ export TARGET
 export PROJECT=nessebar-lens
 export PRODIGI_API_BASE="$BASE"
 
+# Optional Phase 3 print-asset HMAC (Worker streams masters to Prodigi).
+# When unset, physical orders keep using public /placeholders/*.jpg.
+PRINT_SECRET="${PRINT_ASSET_HMAC_SECRET:-}"
+if [[ -n "$PRINT_SECRET" && ${#PRINT_SECRET} -ge 32 ]]; then
+  export PRINT_ASSET_HMAC_SECRET="$PRINT_SECRET"
+fi
+
 python3 - <<'PY'
 import json, os, urllib.request
 
@@ -62,6 +69,12 @@ else:
     env_vars["PRODIGI_API_KEY"] = {
         "type": "secret_text",
         "value": os.environ["PRODIGI_API_KEY"],
+    }
+print_secret = os.environ.get("PRINT_ASSET_HMAC_SECRET", "").strip()
+if len(print_secret) >= 32:
+    env_vars["PRINT_ASSET_HMAC_SECRET"] = {
+        "type": "secret_text",
+        "value": print_secret,
     }
 # Optional public build/runtime hints (plain text)
 for name in ("NEXT_PUBLIC_SITE_URL", "NEXT_PUBLIC_WEB_IMAGES_BASE"):
