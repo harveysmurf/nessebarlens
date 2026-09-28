@@ -11,7 +11,12 @@ import {
   type CreateProdigiOrder,
   type OrderRecipient,
 } from "./prodigi-order";
-import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";
+import {
+  eurToCents,
+  type FrameFinish,
+  type PrintFormat,
+  type PrintSize,
+} from "./pricing";
 import {
   FRAME_FINISHES,
   PRINT_SIZES,
@@ -107,9 +112,11 @@ export function expectedAmountCents(
   quoteEur: number,
   shippingEur = 0,
 ): number {
-  const merch = Math.round(quoteEur * 100);
+  // eurToCents is the one EUR→cents rounding in the repo; Stripe, the webhook
+  // amount check and the stored record must not each redefine it.
+  const merch = eurToCents(quoteEur);
   if (format === "digital") return merch;
-  return merch + Math.round(shippingEur * 100);
+  return merch + eurToCents(shippingEur);
 }
 
 export function parseRecipient(
@@ -562,7 +569,7 @@ function isEurAmount(value: unknown): value is number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     return false;
   }
-  return Math.abs(value * 100 - Math.round(value * 100)) < 1e-6;
+  return Math.abs(value * 100 - eurToCents(value)) < 1e-6;
 }
 
 function isOrderFormat(value: unknown): value is OrderFormat {

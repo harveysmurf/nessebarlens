@@ -20,6 +20,7 @@ import { masterKeyForSlug } from "../src/lib/master-key.ts";
 import { getPhoto } from "../src/lib/photos.ts";
 import { FRAME_FINISHES, PHYSICAL_FORMATS, PRINT_SIZES } from "../src/lib/sku-map.ts";
 import { readStripeEvent } from "../src/lib/stripe-event.ts";
+import { eurToCents } from "../src/lib/pricing.ts";
 import type { CreateProdigiOrder } from "../src/lib/prodigi-order.ts";
 
 const NOW = "2026-09-27T12:00:00.000Z";
@@ -700,12 +701,16 @@ test("fulfillment reuses the pricing/sku-map types instead of redeclaring them",
   );
   // The union must be imported from pricing.ts, not restated here: a private
   // copy would leave the fulfillment validator behind when a format is added.
-  assert.equal(
-    src.includes(
-      'import type { FrameFinish, PrintFormat, PrintSize } from "./pricing"',
-    ),
-    true,
-  );
+  // Either shape is fine as long as every one of the three unions is imported
+  // from pricing.ts rather than restated here.
+  const pricingImport = /import (type )?\{([^}]*)\} from "\.\/pricing"/.exec(src);
+  assert.ok(pricingImport, "fulfillment must import from ./pricing");
+  for (const name of ["FrameFinish", "PrintFormat", "PrintSize"]) {
+    assert.ok(
+      pricingImport[2]!.includes(name),
+      `${name} must be imported from pricing.ts`,
+    );
+  }
   assert.equal(
     src.includes('export type PrintFormat = "giclee" | "framed" | "canvas" | "digital"'),
     false,
@@ -725,3 +730,47 @@ test("fulfillment reuses the pricing/sku-map types instead of redeclaring them",
   );
 });
 
+
+test("EUR→cents rounding is eurToCents everywhere, fractional inputs included", () => {
+  // Stripe, the webhook amount check and the stored record all have to agree
+  // on the rounding, or a paid session fails its own amount check.
+  assert.equal(expectedAmountCents("digital", 15.005), eurToCents(15.005));
+  assert.equal(expectedAmountCents("giclee", 15, 4.999), 1500 + 500);
+  assert.equal(expectedAmountCents("canvas", 0.001, 0.001), 0);
+  assert.equal(eurToCents(15.005), 1501);
+});
+
+test("parseOrderRecord accepts cent-exact amounts and rejects sub-cent ones", () => {
+  const base = {
+    v: 1,
+    sessionId: SESSION,
+    merchantReference: SESSION,
+    terminal: true,
+    status: "paid-unfulfilled",
+    photoSlug: "dawn",
+    format: "giclee",
+    size: "30x40",
+    frame: "",
+    quoteEur: 15,
+    amountTotal: 1500,
+    currency: "eur",
+    reason: null,
+    masterKey: null,
+    recipient: null,
+    prodigiOrderId: null,
+    prodigiStage: null,
+    assetUrl: null,
+    updatedAt: "2026-09-27T00:00:00.000Z",
+  };
+  const record = (patch: Record<string, unknown>) =>
+    parseOrderRecord(JSON.stringify({ ...base, ...patch }));
+
+  assert.equal(record({})?.quoteEur, 15);
+  assert.equal(record({ quoteEur: 15.5 })?.quoteEur, 15.5);
+  // 15.001 EUR is not a whole number of cents — Stripe would reject it.
+  assert.equal(record({ quoteEur: 15.001 }), null);
+  assert.equal(record({ quoteEur: -1 }), null);
+  assert.equal(record({ quoteEur: Number.NaN }), null);
+  assert.equal(record({ quoteEur: "15" }), null);
+  assert.equal(record({ amountTotal: 1500.5 }), null);
+});
