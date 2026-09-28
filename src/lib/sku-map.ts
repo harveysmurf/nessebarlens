@@ -72,14 +72,7 @@ export function allPhysicalSkus(): SkuEntry[] {
   return out;
 }
 
-export const PINNED_SKUS: readonly string[] = [
-  "GLOBAL-FAP-12X16",
-  "GLOBAL-FAP-20X28",
-  "GLOBAL-FAP-28X40",
-  "GLOBAL-CFPM-12X16",
-  "GLOBAL-CFPM-20X28",
-  "GLOBAL-CFPM-28X40",
-  "GLOBAL-CAN-12X16",
-  "GLOBAL-CAN-20X28",
-  "GLOBAL-CAN-28X40",
-] as const;
+/** The same 9 SKUs allPhysicalSkus() builds, in that order — derived, not listed. */
+export const PINNED_SKUS: readonly string[] = allPhysicalSkus().map(
+  (entry) => entry.sku,
+);

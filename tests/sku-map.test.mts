@@ -78,3 +78,26 @@ test("SKU table: format / cm / in / sku", () => {
     assert.equal(entry.sizeIn, inch);
   }
 });
+
+test("PINNED_SKUS is derived: complete, unique, and in catalog order", () => {
+  assert.deepEqual(
+    [...PINNED_SKUS],
+    allPhysicalSkus().map((entry) => entry.sku),
+  );
+  assert.equal(new Set(PINNED_SKUS).size, PINNED_SKUS.length);
+  assert.equal(
+    PINNED_SKUS.length,
+    PHYSICAL_FORMATS.length * PRINT_SIZES.length,
+  );
+});
+
+test("every pinned SKU matches the GLOBAL-<PREFIX>-<W>H<H> shape", () => {
+  assert.equal(
+    PINNED_SKUS.every((sku) => /^GLOBAL-[A-Z]+-\d+X\d+$/.test(sku)),
+    true,
+  );
+  assert.equal(
+    PINNED_SKUS.every((sku) => PRINT_SIZES.some((size) => sku.endsWith(`-${SIZE_TO_INCH[size].toUpperCase()}`))),
+    true,
+  );
+});
