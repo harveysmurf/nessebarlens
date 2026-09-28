@@ -1,14 +1,13 @@
 /**
- * Prodigi sandbox order creation (Phase 2).
+ * Prodigi order creation. Host comes from PRODIGI_API_BASE (explicit per env).
  * Asset URLs are public placeholders (or WEB print.jpg later) — never MASTERS.
  */
 
 import { PHOTOS } from "./photos";
 import type { FrameFinish, PrintSize } from "./pricing";
+import { prodigiApiKey, prodigiOrdersUrl } from "./prodigi-config";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
 import { siteUrl } from "./stripe";
-
-const PRODIGI_ORDERS_URL = "https://api.sandbox.prodigi.com/v4.0/orders";
 
 export type OrderRecipient = {
   name: string;
@@ -146,15 +145,6 @@ export function buildProdigiOrderBody(input: {
   return body;
 }
 
-function prodigiApiKey(): string {
-  const key =
-    process.env.PRODIGI_SANDBOX_API_KEY || process.env.PRODIGI_API_KEY;
-  if (!key) {
-    throw new Error("Prodigi API key is not set");
-  }
-  return key;
-}
-
 export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   let body: ProdigiOrderRequest;
   try {
@@ -170,7 +160,7 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
 
   let res: Response;
   try {
-    res = await fetch(PRODIGI_ORDERS_URL, {
+    res = await fetch(prodigiOrdersUrl(), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",

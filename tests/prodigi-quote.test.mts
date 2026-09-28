@@ -4,6 +4,14 @@ import {
   merchandiseFromUnitCost,
   PRODIGI_MARGIN,
 } from "../src/lib/pricing.ts";
+import {
+  PRODIGI_LIVE_API_BASE,
+  PRODIGI_SANDBOX_API_BASE,
+  prodigiApiBase,
+  prodigiApiKey,
+  prodigiOrdersUrl,
+  prodigiQuotesUrl,
+} from "../src/lib/prodigi-config.ts";
 import { quotePhysical } from "../src/lib/prodigi-quote.ts";
 
 test("merchandiseFromUnitCost applies PRODIGI_MARGIN and rounds to cents", () => {
@@ -11,6 +19,54 @@ test("merchandiseFromUnitCost applies PRODIGI_MARGIN and rounds to cents", () =>
   assert.equal(merchandiseFromUnitCost(10), 12);
   assert.equal(merchandiseFromUnitCost(12.5), 15);
   assert.equal(merchandiseFromUnitCost(11.23), 13.48);
+});
+
+test("prodigiApiBase requires an explicit allowed host", () => {
+  const prev = process.env.PRODIGI_API_BASE;
+  try {
+    delete process.env.PRODIGI_API_BASE;
+    assert.throws(() => prodigiApiBase({}), /PRODIGI_API_BASE must be/);
+    process.env.PRODIGI_API_BASE = "https://evil.example";
+    assert.throws(() => prodigiApiBase({}), /PRODIGI_API_BASE must be/);
+    process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
+    assert.equal(prodigiApiBase({}), PRODIGI_SANDBOX_API_BASE);
+    assert.equal(
+      prodigiQuotesUrl({}),
+      `${PRODIGI_SANDBOX_API_BASE}/v4.0/quotes`,
+    );
+    assert.equal(
+      prodigiOrdersUrl({ PRODIGI_API_BASE: PRODIGI_LIVE_API_BASE }),
+      `${PRODIGI_LIVE_API_BASE}/v4.0/orders`,
+    );
+  } finally {
+    if (prev === undefined) delete process.env.PRODIGI_API_BASE;
+    else process.env.PRODIGI_API_BASE = prev;
+  }
+});
+
+test("prodigiApiKey pairs to the explicit base (no key sniffing for host)", () => {
+  const prevBase = process.env.PRODIGI_API_BASE;
+  const prevSandbox = process.env.PRODIGI_SANDBOX_API_KEY;
+  const prevLive = process.env.PRODIGI_API_KEY;
+  try {
+    process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
+    process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
+    process.env.PRODIGI_API_KEY = "live-key";
+    assert.equal(prodigiApiKey({}), "sandbox-key");
+
+    process.env.PRODIGI_API_BASE = PRODIGI_LIVE_API_BASE;
+    assert.equal(prodigiApiKey({}), "live-key");
+
+    delete process.env.PRODIGI_API_KEY;
+    assert.throws(() => prodigiApiKey({}), /PRODIGI_API_KEY is not set/);
+  } finally {
+    if (prevBase === undefined) delete process.env.PRODIGI_API_BASE;
+    else process.env.PRODIGI_API_BASE = prevBase;
+    if (prevSandbox === undefined) delete process.env.PRODIGI_SANDBOX_API_KEY;
+    else process.env.PRODIGI_SANDBOX_API_KEY = prevSandbox;
+    if (prevLive === undefined) delete process.env.PRODIGI_API_KEY;
+    else process.env.PRODIGI_API_KEY = prevLive;
+  }
 });
 
 test("quotePhysical margins unitCost and passes shipping through", async () => {
@@ -40,6 +96,7 @@ test("quotePhysical margins unitCost and passes shipping through", async () => {
     );
   }) as typeof fetch;
 
+  process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
   process.env.PRODIGI_SANDBOX_API_KEY = "test-sandbox-key";
   delete process.env.PRODIGI_API_KEY;
 
@@ -69,6 +126,7 @@ test("quotePhysical margins unitCost and passes shipping through", async () => {
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.PRODIGI_SANDBOX_API_KEY;
+    delete process.env.PRODIGI_API_BASE;
   }
 });
 
@@ -91,6 +149,7 @@ test("quotePhysical framed includes color attribute and destination override", a
     );
   }) as typeof fetch;
 
+  process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
   process.env.PRODIGI_SANDBOX_API_KEY = "sandbox";
   try {
     const quote = await quotePhysical({
@@ -111,11 +170,46 @@ test("quotePhysical framed includes color attribute and destination override", a
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.PRODIGI_SANDBOX_API_KEY;
+    delete process.env.PRODIGI_API_BASE;
+  }
+});
+
+test("quotePhysical uses live host when PRODIGI_API_BASE is live", async () => {
+  const originalFetch = globalThis.fetch;
+  let seenUrl = "";
+
+  globalThis.fetch = (async (input) => {
+    seenUrl = String(input);
+    return new Response(
+      JSON.stringify({
+        quotes: [
+          {
+            items: [{ unitCost: { amount: "10.00" } }],
+            costSummary: { shipping: { amount: "3.00" } },
+          },
+        ],
+      }),
+      { status: 200 },
+    );
+  }) as typeof fetch;
+
+  process.env.PRODIGI_API_BASE = PRODIGI_LIVE_API_BASE;
+  process.env.PRODIGI_API_KEY = "live-key";
+  delete process.env.PRODIGI_SANDBOX_API_KEY;
+
+  try {
+    await quotePhysical({ format: "canvas", size: "30x40" });
+    assert.equal(seenUrl, "https://api.prodigi.com/v4.0/quotes");
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.PRODIGI_API_BASE;
+    delete process.env.PRODIGI_API_KEY;
   }
 });
 
 test("quotePhysical throws on non-OK HTTP and missing quote fields", async () => {
   const originalFetch = globalThis.fetch;
+  process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
   process.env.PRODIGI_SANDBOX_API_KEY = "sandbox";
 
   try {
@@ -149,5 +243,6 @@ test("quotePhysical throws on non-OK HTTP and missing quote fields", async () =>
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.PRODIGI_SANDBOX_API_KEY;
+    delete process.env.PRODIGI_API_BASE;
   }
 });

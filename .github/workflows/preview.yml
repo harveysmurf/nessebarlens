@@ -78,8 +78,10 @@ jobs:
         env:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
-          PRODIGI_API_KEY: ${{ secrets.PRODIGI_API_KEY }}
+          # Explicit host — never inferred from which Prodigi key is set.
+          PRODIGI_API_BASE: https://api.sandbox.prodigi.com
           PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
+          PRODIGI_API_KEY: ${{ secrets.PRODIGI_API_KEY }}
           NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
           NEXT_PUBLIC_WEB_IMAGES_BASE: ${{ secrets.NEXT_PUBLIC_WEB_IMAGES_BASE }}
           CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
