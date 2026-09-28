@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  isGatedFile,
   isLibFile,
   mean,
   parseCoverage,
@@ -123,6 +124,34 @@ test("parses the node 24 directory tree, rebuilding full paths", () => {
     rows.filter((row) => isLibFile(row.file)).length,
     18,
     "all 18 src/lib files must be recognised in the tree layout",
+  );
+});
+
+test("the gate covers src/lib and the api routes, and nothing else", () => {
+  // Four routes sit one level under api/, the stripe webhook two — the
+  // one-segment pattern that isLibFile uses would have silently skipped it.
+  for (const route of [
+    "src/app/api/quote/route.ts",
+    "src/app/api/checkout/route.ts",
+    "src/app/api/print-asset/route.ts",
+    "src/app/api/download/route.ts",
+    "src/app/api/webhooks/stripe/route.ts",
+  ]) {
+    assert.equal(isGatedFile(route), true, route);
+  }
+  assert.equal(isGatedFile("src/lib/photos.ts"), true);
+  // The page tree and the React components are out: they need a DOM, and a
+  // percentage over files that never run would be a number nobody can act on.
+  assert.equal(isGatedFile("src/app/page.tsx"), false);
+  assert.equal(isGatedFile("src/app/checkout/page.tsx"), false);
+  assert.equal(isGatedFile("src/components/Header.tsx"), false);
+  // route.ts counts under api/ only — a stray one in the page tree is a page.
+  assert.equal(isGatedFile("src/app/route.ts"), false);
+  assert.equal(isGatedFile("tests/routes.test.mts"), false);
+  assert.equal(
+    isLibFile("src/app/api/quote/route.ts"),
+    false,
+    "isLibFile is unchanged; the gate is wider than it deliberately",
   );
 });
 

@@ -47,6 +47,16 @@ export function prodigiApiKey(
   return key;
 }
 
+/**
+ * True when a message from the Prodigi layer means "this deployment has no API
+ * key", as opposed to Prodigi itself failing. The route handlers turn one into
+ * 503 and the other into 502, and matching on the words "API key" never fired:
+ * the thrown message is "<NAME>_API_KEY is not set".
+ */
+export function isProdigiUnconfigured(message: string): boolean {
+  return /_API_KEY is not set/.test(message);
+}
+
 export function prodigiQuotesUrl(
   env: Record<string, unknown> = process.env,
 ): string {
