@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
-import test from "node:test";
+import { afterEach, beforeEach, test } from "node:test";
 
 /* The five route handlers, called the way Next calls them: a Request in, a
    Response out. They own the status codes and the guard order, which is the
@@ -45,8 +45,59 @@ registerHooks({
   },
 });
 
+/* Leak guard. Every test below swaps three process-wide things — the fake
+   bindings, globalThis.fetch, and pieces of process.env — and restores them by
+   hand in a finally block. node runs top-level tests in a file sequentially, so
+   a missed restore cannot make two tests *interleave*; it makes the *next* test
+   read the wrong world and fail somewhere far away from the mistake, which is
+   how a real leak here once presented as an unrelated assertion failure.
+
+   So the leak is checked where it happens: the environment is snapshotted
+   before each test and compared after. A test that forgets to restore fails
+   with its own name in the message instead of quietly poisoning its successor. */
 const SITE = "https://nessebarlens.com";
+// Set before the snapshot below: this one is the file's own setup, not a
+// per-test mutation, and the guard must not flag it.
 process.env.NEXT_PUBLIC_SITE_URL = SITE;
+
+const BASELINE = {
+  bindings: globals.__buzzBindings,
+  fetch: globalThis.fetch,
+  env: { ...process.env },
+};
+
+let currentTest = "unknown";
+
+beforeEach((t) => {
+  currentTest = t.name;
+});
+afterEach(() => {
+  assert.deepEqual(
+    globalThis.__buzzBindings,
+    BASELINE.bindings,
+    `"${currentTest}" left the fake Worker bindings swapped; its restore() did not run`,
+  );
+  assert.equal(
+    globalThis.fetch,
+    BASELINE.fetch,
+    `"${currentTest}" left globalThis.fetch replaced`,
+  );
+  for (const [key, value] of Object.entries(process.env)) {
+    if (!(key in BASELINE.env)) {
+      assert.fail(`"${currentTest}" added process.env.${key} and never removed it`);
+    }
+    assert.equal(
+      value,
+      BASELINE.env[key],
+      `"${currentTest}" left process.env.${key} modified`,
+    );
+  }
+  for (const key of Object.keys(BASELINE.env)) {
+    if (!(key in process.env)) {
+      assert.fail(`"${currentTest}" deleted process.env.${key} and never restored it`);
+    }
+  }
+});
 
 const quote = await import("../src/app/api/quote/route.ts");
 const printAsset = await import("../src/app/api/print-asset/route.ts");
