@@ -78,29 +78,31 @@ runner framework**.
 
 ## 5. Build & deploy
 
-Two distinct paths — never mix them.
+Canonical path is **GitHub Actions** (§6). Manual deploys are for break-glass only.
 
-### Preview (feature branches)
+### Preview (PR / feature branch)
 
 ```bash
-wrangler pages deploy --branch=dev
+SITE_URL=https://dev.nessebar-lens.pages.dev npx opennextjs-cloudflare build
+bash scripts/assemble-pages-out.sh
+npx wrangler pages deploy .pages-out --project-name=nessebar-lens --branch=<branch>
 ```
 
-Preview URL: `https://dev.nessebar-lens.pages.dev` (and per-branch
-`https://<branch>.nessebar-lens.pages.dev`).
+Preview URL: `https://<branch>.nessebar-lens.pages.dev`.
 
 ### Production (main only)
 
 ```bash
-SITE_URL=https://nessebarlens.com opennextjs-cloudflare build
-opennextjs-cloudflare deploy
+SITE_URL=https://nessebarlens.com npx opennextjs-cloudflare build
+bash scripts/assemble-pages-out.sh
+npx wrangler pages deploy .pages-out --project-name=nessebar-lens --branch=main
+bash scripts/sync-pages-secrets.sh production
 ```
 
-`opennextjs-cloudflare deploy` is **production-only**. `wrangler pages deploy` is
-**preview-only**. Production runs with `run_worker_first = true` so OpenNext serves
-static files through `env.ASSETS` itself.
-
-Production: https://nessebarlens.com
+Production and preview both deploy to the **Cloudflare Pages** project
+`nessebar-lens`. Apex `nessebarlens.com` / `www` CNAME to
+`nessebar-lens.pages.dev`. The idle Worker script is out of the deploy path —
+do not use `opennextjs-cloudflare deploy` for deploys.
 
 ### Wrangler config invariants (`wrangler.toml`)
 
@@ -108,24 +110,33 @@ Production: https://nessebarlens.com
 - `[assets]` `binding = "ASSETS"`, `run_worker_first = true`.
 - Do **not** set `pages_build_output_dir` — that makes Wrangler treat the config as
   a Pages config where `ASSETS` is reserved.
-- R2 S3 access keys are unused; Workers use bucket bindings only (`WEB`, `MASTERS`).
+- R2 S3 access keys are unused; Workers/Pages use bucket bindings only (`WEB`,
+  `MASTERS`). ORDERS KV + WEB/MASTERS R2 are attached on the Pages project
+  (preview + production configs).
+- Runtime secrets (Stripe/Prodigi) live as **Pages project secrets** (preview +
+  production). Sync with `scripts/sync-pages-secrets.sh`. `NEXT_PUBLIC_*` bake at
+  build from GitHub Environment secrets.
 
 ---
 
 ## 6. CI/CD
 
-There is no GitHub Actions. Buzz workflows cannot run shells, tests, or wrangler and
-have no PR trigger. CI is a **systemd timer on this Debian host** (owned by Senior
-Dev):
+GitHub Actions on `harveysmurf/nessebarlens` (Node 22):
 
-- New PR tip → `npm test` → Pages preview → post preview URL on the PR. Skip deploy
-  on test failure.
-- New `main` commit → `npm test` → production deploy to https://nessebarlens.com.
-  Skip deploy on test failure.
-- Failures are posted to the `nessebar-lens-website` channel.
+| Workflow | Trigger | What it does |
+|----------|---------|--------------|
+| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → test |
+| `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → Pages preview → PR comment; cleanup on close |
+| `.github/workflows/prod.yml` | push to `main` | production Environment (required reviewer) → build → Pages `main` → `sync-pages-secrets.sh production` |
 
-Until the timer lands, deploys are driven by hand (wrangler / opennextjs-cloudflare)
-as documented in §5.
+GitHub Environments:
+
+- **`staging`** — sandbox Stripe/Prodigi + `SITE_URL=https://dev.nessebar-lens.pages.dev`
+- **`production`** — same sandbox values until Phase 5 go-live; required reviewer =
+  `harveysmurf`. Live keys swap here at go-live.
+
+Secrets live in those Environments (never in git). Local `.env.local` remains the
+Debian-host symlink to `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
 
 ---
 
@@ -168,13 +179,13 @@ as documented in §5.
 
 1. Branch off `main`.
 2. Make the change; add/adjust tests in `tests/`.
-3. `npm run lint` and `npm test` green.
-4. Preview deploy with `wrangler pages deploy --branch=dev`; verify on
-   https://dev.nessebar-lens.pages.dev.
-5. Open a Buzz PR in `nessebar-lens-website`; paste test output and the preview URL.
-6. On approval, merge to `main` and production deploy (§5) with
-   `SITE_URL=https://nessebarlens.com`.
-7. Report the PR link, both URLs, and the commit hash in the channel.
+3. `npm run lint` and `npm test` green locally.
+4. Push the branch and open a **GitHub** PR into `main`.
+5. Wait for CI + staging preview (PR comment with `*.nessebar-lens.pages.dev`).
+6. Announce the PR + preview URL in `nessebar-lens-website`; get approval.
+7. Merge to `main` → production workflow runs (GitHub Environment approval by
+   `harveysmurf`) → https://nessebarlens.com.
+8. Report the PR link, preview URL, and commit hash in the channel.
 
 ---
 
