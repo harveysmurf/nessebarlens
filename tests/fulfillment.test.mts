@@ -842,3 +842,178 @@ test("resolveDownload is a gate, and every rejection path is distinguishable", a
   const otherType = await resolveDownload(digitalPaid(), bytes("image/png"));
   assert.equal(otherType.kind === "stream" && otherType.contentType, "image/png");
 });
+
+test("the webhook ignores anything that is not a paid, well-formed session", async () => {
+  // Not a Stripe session id at all.
+  for (const sessionId of ["nope", "cs_123", "cs_test_", "cs_prod_12345678"]) {
+    assert.deepEqual(decideFulfillment(paidInput({ sessionId })), {
+      action: "ignore",
+      reason: "invalid-session-id",
+    });
+  }
+  // Right shape, not paid.
+  for (const paymentStatus of ["unpaid", "no_payment_required", null, "PAID"]) {
+    assert.deepEqual(decideFulfillment(paidInput({ paymentStatus })), {
+      action: "ignore",
+      reason: "unpaid",
+    });
+  }
+  // The ignore decision is what the route answers with: 200 + received, so
+  // Stripe stops retrying, and nothing is written.
+  const kv = memoryKv();
+  const ignored = await fulfillCheckoutSession({ ...paidInput({ sessionId: "nope" }), kv });
+  assert.deepEqual(ignored, { httpStatus: 200, body: { received: true, ignored: "invalid-session-id" } });
+  const unpaid = await fulfillCheckoutSession({ ...paidInput({ paymentStatus: "unpaid" }), kv });
+  assert.deepEqual(unpaid, { httpStatus: 200, body: { received: true, ignored: "unpaid" } });
+  assert.deepEqual(kv.puts, [], "an ignored session must not write ORDERS");
+});
+
+test("a non-framed format carrying a frame is bad metadata, not a silent drop", () => {
+  for (const [format, frame] of [
+    ["giclee", "black"],
+    ["canvas", "brown"],
+    ["giclee", " "],
+  ] as const) {
+    const decided = decideFulfillment(
+      paidInput({
+        amountTotal: 1999,
+        prodigiKeyConfigured: true,
+        shippingDetails: SHIPPING,
+        metadata: physicalMeta({ format, frame }),
+      }),
+    );
+    assert.equal(decided.action, "write");
+    const record = (decided as { record: OrderRecord }).record;
+    assert.equal(record.reason, "bad-metadata", `${format}/${frame}`);
+    assert.equal(record.status, "paid-unfulfilled");
+    assert.equal(record.recipient, null, "a rejected order keeps no shipping data");
+  }
+});
+
+test("a physical order without shipping stops as missing-shipping, before Prodigi", async () => {
+  const decided = decideFulfillment(
+    paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: null,
+      metadata: physicalMeta(),
+    }),
+  );
+  const record = (decided as { record: OrderRecord }).record;
+  assert.equal(record.reason, "missing-shipping");
+  assert.equal(record.status, "paid-unfulfilled");
+
+  let created = 0;
+  const kv = memoryKv();
+  const result = await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: null,
+      metadata: physicalMeta(),
+    }),
+    kv,
+    createOrder: async (input) => {
+      created++;
+      return okCreate(input);
+    },
+  });
+  assert.equal(created, 0, "Prodigi must not be called for an unfulfillable order");
+  assert.equal(result.httpStatus, 200);
+  const stored = parseOrderRecord((await kv.get(SESSION))!);
+  assert.equal(stored?.reason, "missing-shipping");
+});
+
+test("parseOrderRecord rejects a stored recipient it cannot vouch for", () => {
+  const shell = {
+    v: 1,
+    sessionId: SESSION,
+    merchantReference: SESSION,
+    terminal: true,
+    status: "paid-unfulfilled",
+    photoSlug: "dawn",
+    format: "giclee",
+    size: "30x40",
+    frame: "",
+    quoteEur: 15,
+    amountTotal: 1500,
+    currency: "eur",
+    reason: "prodigi-error",
+    masterKey: null,
+    prodigiOrderId: null,
+    prodigiStage: null,
+    assetUrl: null,
+    updatedAt: "2026-09-27T00:00:00.000Z",
+  };
+  const good = {
+    ...shell,
+    recipient: {
+      name: "Test Buyer",
+      line1: "1 Harbor St",
+      line2: "",
+      city: "Nessebar",
+      state: "",
+      postcode: "8230",
+      countryCode: "BG",
+      email: null,
+      phone: null,
+    },
+  };
+  assert.ok(parseOrderRecord(JSON.stringify(good)));
+  for (const patch of [
+    { email: 42 },
+    { phone: {} },
+    { countryCode: "bulgaria" },
+    { countryCode: "B" },
+    { city: 7 },
+    { line1: null },
+    { name: 1 },
+    { state: 5 },
+    { postcode: [] },
+    { countryCode: null },
+  ]) {
+    const record = { ...good, recipient: { ...good.recipient, ...patch } };
+    assert.equal(parseOrderRecord(JSON.stringify(record)), null, JSON.stringify(patch));
+  }
+  // A missing recipient field is not the same as a malformed one.
+  const withoutLine2: Record<string, unknown> = { ...good.recipient };
+  delete withoutLine2.line2;
+  assert.equal(parseOrderRecord(JSON.stringify({ ...good, recipient: withoutLine2 })), null);
+  assert.ok(parseOrderRecord(JSON.stringify({ ...good, recipient: null })));
+});
+
+test("a physical order with shipping but no Prodigi key stops as prodigi-key-unset", async () => {
+  const decided = decideFulfillment(
+    paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: false,
+      shippingDetails: SHIPPING,
+      metadata: physicalMeta(),
+    }),
+  );
+  const record = (decided as { record: OrderRecord }).record;
+  assert.equal(record.reason, "prodigi-key-unset");
+  assert.equal(record.status, "paid-unfulfilled");
+  // The address is kept: it is valid, only the credential is missing.
+  assert.equal(record.recipient?.city, "Nessebar");
+
+  let created = 0;
+  const kv = memoryKv();
+  await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: false,
+      shippingDetails: SHIPPING,
+      metadata: physicalMeta(),
+    }),
+    kv,
+    createOrder: async (input) => {
+      created++;
+      return okCreate(input);
+    },
+  });
+  assert.equal(created, 0);
+  const stored = parseOrderRecord((await kv.get(SESSION))!);
+  assert.equal(stored?.reason, "prodigi-key-unset");
+  assert.equal(stored?.recipient?.city, "Nessebar");
+});
