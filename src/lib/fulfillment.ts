@@ -22,12 +22,21 @@ import {
   FRAME_FINISHES,
   PRINT_SIZES,
   SELLABLE_FORMATS,
-  resolveSku,
   type PhysicalFormat,
 } from "./sku-map";
 import { siteUrl } from "./stripe";
 
-/** Phase 2: SKU map + sandbox order path are wired. */
+/**
+ * The SKU map and the sandbox order path are wired.
+ *
+ * This used to be read as a runtime gate: buildRecord checked it and had a
+ * try/catch around resolveSku, so a format with no pinned SKU would park the
+ * order as "sku-map-missing" or "bad-metadata". Both branches were
+ * unreachable — the flag is a literal and the isPrintSize/isFrameFinish guards
+ * above already reject anything resolveSku would refuse. The guarantee is now
+ * a test instead (sku-map.test.mts, "every UI format×size resolves to a
+ * pinned Prodigi SKU"), which is where it can actually fail loudly.
+ */
 export const SKU_MAP_READY = true;
 
 // The allow-list below is the sku-map list, so stored-record validation cannot
@@ -475,15 +484,6 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     };
   }
 
-  if (!SKU_MAP_READY) {
-    return {
-      ...shell,
-      format,
-      status: "paid-unfulfilled",
-      reason: "sku-map-missing",
-    };
-  }
-
   if (!isPrintSize(size) || (format === "framed" && !isFrameFinish(frame))) {
     return {
       ...shell,
@@ -493,21 +493,6 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     };
   }
   if (format !== "framed" && frame !== "") {
-    return {
-      ...shell,
-      format,
-      status: "paid-unfulfilled",
-      reason: "bad-metadata",
-    };
-  }
-
-  try {
-    resolveSku(
-      format,
-      size,
-      format === "framed" ? (frame as FrameFinish) : null,
-    );
-  } catch {
     return {
       ...shell,
       format,
