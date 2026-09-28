@@ -79,7 +79,7 @@ export type CreateProdigiOrder = (input: {
 
 /** Public stand-in when PRINT_ASSET_HMAC_SECRET is unset (Phase 2 fallback). */
 export function placeholderAssetUrl(photoSlug: string): string {
-  const base = siteUrl().replace(/\/$/, "");
+  const base = siteUrl();
   return `${base}/placeholders/${photoSlug}.jpg`;
 }
 

@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { envStringStrippedSlash } from "./env";
 
 export function getStripe(): Stripe {
   const key = process.env.STRIPE_SECRET_KEY;
@@ -10,9 +11,7 @@ export function getStripe(): Stripe {
   });
 }
 
+/** Absolute origin, never trailing-slashed — callers concatenate paths onto it. */
 export function siteUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "") ||
-    "http://localhost:3000"
-  );
+  return envStringStrippedSlash("NEXT_PUBLIC_SITE_URL") ?? "http://localhost:3000";
 }
