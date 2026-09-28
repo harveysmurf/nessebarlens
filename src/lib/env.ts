@@ -11,6 +11,9 @@ function trimmed(value: unknown): string | undefined {
   return out.length > 0 ? out : undefined;
 }
 
+// The ?? against process.env is intentional, not redundant: with the default
+// arg it reads the same source twice, which is harmless, and it keeps the
+// Worker-env-first precedence correct for callers that pass an env record.
 export function envString(
   name: string,
   env: Record<string, unknown> = process.env,
