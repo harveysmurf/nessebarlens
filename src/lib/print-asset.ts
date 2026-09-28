@@ -4,11 +4,7 @@
  * no ingest byte-copy. Distinct from /api/download (not digital-gated).
  */
 
-import {
-  PHOTO_SLUG_PATTERN,
-  isMasterKey,
-  masterKeyForSlug,
-} from "./master-key";
+import { PHOTO_SLUG_PATTERN, masterKeyForSlug } from "./master-key";
 import { hmacSha256Hex, timingSafeEqualHex } from "./crypto-hex";
 import { envString, stripTrailingSlashes } from "./env";
 import { siteUrl } from "./stripe";
@@ -136,13 +132,14 @@ export async function resolvePrintAssetStream(
   slug: string,
   masters: MastersBucket | undefined,
 ): Promise<PrintAssetStream> {
+  // The single gate: masterKeyForSlug returns null unless the slug is in the
+  // catalog and its imageKey is a valid prints/{slug}.jpg master. A second
+  // isMasterKey() check here was a re-run of the same predicate one call
+  // earlier — provably unreachable, and a dead 500 in a security path is worse
+  // than no branch at all.
   const masterKey = masterKeyForSlug(slug);
   if (!masterKey) {
     return { kind: "json", status: 400, body: { error: "invalid-slug" } };
-  }
-  // Hard guard: only prints/{slug}.jpg from the catalog — never arbitrary keys.
-  if (!isMasterKey(masterKey)) {
-    return { kind: "json", status: 500, body: { error: "bad-master-key" } };
   }
   if (!masters) {
     return { kind: "json", status: 503, body: { error: "masters-unavailable" } };

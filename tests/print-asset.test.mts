@@ -293,3 +293,31 @@ test("resolvePrintAssetStream separates missing binding, bucket error and missin
   assert.equal(found.kind === "stream" && found.contentType, "image/jpeg");
   assert.equal(found.kind === "stream" && found.size, 3);
 });
+
+test("the stream has exactly one gate: a key that is not a catalog master never happens", async () => {
+  // There is no longer a "bad-master-key" 500 branch, because masterKeyForSlug
+  // already guarantees the shape. Every non-catalog input is a 400 invalid-slug
+  // and the bucket is never called.
+  let called = 0;
+  const bucket = {
+    async get() {
+      called++;
+      return { body: new ReadableStream(), size: 1 };
+    },
+  };
+  for (const slug of [
+    "not-a-photo",
+    "",
+    "Dawn",
+    "dawn.jpg",
+    "../prints/dawn.jpg",
+    "prints/dawn.jpg",
+    "co%2Fb",
+  ]) {
+    const result = await resolvePrintAssetStream(slug, bucket);
+    assert.equal(result.kind === "json", true, slug);
+    assert.equal(result.kind === "json" && result.status, 400, slug);
+    assert.equal(result.kind === "json" && result.body.error, "invalid-slug", slug);
+  }
+  assert.equal(called, 0, "no lookup may be attempted for a non-catalog slug");
+});
