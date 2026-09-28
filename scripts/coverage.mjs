@@ -28,7 +28,7 @@ import { isLibFile, mean, parseCoverage } from "./coverage-report.mjs";
 const ROOT = path.join(import.meta.dirname, "..");
 
 /** Ratchet: never lower these, raise them as tests land. */
-const FLOOR = { lines: 94, branches: 93, functions: 94 };
+const FLOOR = { lines: 97, branches: 93, functions: 97 };
 
 // The test runner takes the glob itself, but only a shell expands it, so pass
 // the file list explicitly.

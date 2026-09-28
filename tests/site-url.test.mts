@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { siteUrl } from "../src/lib/stripe.ts";
+import { getStripe, siteUrl } from "../src/lib/stripe.ts";
 import { signPrintAssetUrl } from "../src/lib/print-asset.ts";
 
 async function withSiteUrl<T>(
@@ -50,4 +50,35 @@ test("signed print-asset URLs have no double slash at the join", async () => {
   assert.ok(url);
   assert.ok(url.startsWith("https://nessebarlens.com/api/print-asset?"), url);
   assert.ok(!url.includes("//api"), url);
+});
+
+test("getStripe refuses to build a client without a secret key", async () => {
+  const saved = process.env.STRIPE_SECRET_KEY;
+  try {
+    for (const raw of [undefined, "", "   "]) {
+      if (raw === undefined) delete process.env.STRIPE_SECRET_KEY;
+      else process.env.STRIPE_SECRET_KEY = raw;
+      // A blank key must throw, not hand back a client that 401s later.
+      assert.throws(() => getStripe(), /STRIPE_SECRET_KEY is not set/);
+    }
+  } finally {
+    if (saved === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved;
+  }
+});
+
+test("getStripe builds a client on the fetch http client", async () => {
+  const saved = process.env.STRIPE_SECRET_KEY;
+  try {
+    process.env.STRIPE_SECRET_KEY = "sk_test_dummy_not_used_for_requests";
+    const client = getStripe();
+    assert.equal(typeof client.checkout.sessions.create, "function");
+    assert.equal(typeof client.webhooks.constructEvent, "function");
+    // Padded keys are trimmed, not handed to Stripe as-is.
+    process.env.STRIPE_SECRET_KEY = "  sk_test_padded  ";
+    assert.doesNotThrow(() => getStripe());
+  } finally {
+    if (saved === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved;
+  }
 });
