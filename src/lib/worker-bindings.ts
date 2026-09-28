@@ -1,4 +1,5 @@
 import type { MastersBucket, OrdersKv } from "./fulfillment";
+import { envString } from "./env";
 import { printAssetSecret } from "./print-asset";
 import { prodigiKeyConfigured } from "./prodigi-config";
 
@@ -9,12 +10,6 @@ export type WorkerBindings = {
   printAssetSecret?: string;
   prodigiKeyConfigured: boolean;
 };
-
-function nonempty(value: unknown): string | undefined {
-  if (typeof value !== "string") return undefined;
-  const trimmed = value.trim();
-  return trimmed.length > 0 ? trimmed : undefined;
-}
 
 /**
  * ORDERS is KV id c6f34450a61c4c69b3f840e845a7b0d3.
@@ -35,9 +30,7 @@ export async function readWorkerBindings(): Promise<WorkerBindings> {
     env = {};
   }
 
-  const webhookSecret =
-    nonempty(env.STRIPE_WEBHOOK_SECRET) ??
-    nonempty(process.env.STRIPE_WEBHOOK_SECRET);
+  const webhookSecret = envString("STRIPE_WEBHOOK_SECRET", env);
   // Same reader as the sign/verify path, so bindings can never accept a
   // secret that verify would reject (or vice versa).
   const printAsset = printAssetSecret(env) ?? printAssetSecret();
