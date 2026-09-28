@@ -194,12 +194,30 @@ Debian-host symlink to `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
   `paymentIntents.confirm` probes — ignore them.
 - **Stripe webhooks** are verified with Web Crypto (`src/lib/stripe-event.ts`), and
   master keys are read from `photos.ts` (commit `cdac0eb`).
-- **Fulfillment is recorded, not executed.** `src/lib/fulfillment.ts` writes
-  `paid-unfulfilled` orders to KV `ORDERS` and returns HTTP 200 so Stripe does not
-  redeliver. `SKU_MAP_READY` is `false` — keep it false until a SKU map and a
-  rotated Prodigi key exist.
-- **Shipping constant coupling.** `EU_FLAT_SHIPPING_CENTS` in `fulfillment.ts` must
-  stay equal to the checkout route's constant and to `EU_SHIPPING_EUR`.
+- **Fulfillment is recorded, not executed.** `src/lib/fulfillment.ts` writes the
+  order to KV `ORDERS`. A *retryable* failure (Prodigi 401/403/429/5xx, an
+  unconfigured key or asset secret) is written `terminal: false` and the webhook
+  answers 5xx so Stripe redelivers for ~3 days; a terminal one answers 200. The
+  record's `reason` says which, so an operator can tell "rotate the key" from
+  "back off" from "fix the deploy". No auto-refund: a stuck paid order is
+  alerted for a human.
+- **One payment, one Prodigi order.** `idempotencyKey` is the Stripe session id, so
+  a redelivery that re-attempts gets Prodigi's `alreadyExists` with the original
+  order rather than a second print.
+- **Own your config errors.** A misconfiguration of *our* deploy must never
+  surface as an upstream 502/500. Two corollaries:
+  1. Read config getters (`prodigiApiKey`, `prodigiOrdersUrl`, `prodigiQuotesUrl`)
+     **before** the request — never inside the `fetch()` argument list, where a
+     throw skips the try/catch that translates it.
+  2. Every "we are not configured" path produces a **distinct, retryable reason**
+     and a **503**, so the record and the log say *what* is unset.
+
+  `isProdigiUnconfigured` is the single predicate for "our fault, not Prodigi's";
+  a new config error that does not match it silently becomes a 502.
+
+- **Shipping constant coupling.** `eurToCents` in `pricing.ts` is the one EUR→cents
+  rounding in the repo — Stripe line items, the webhook's amount check and the
+  stored record must not each redefine it.
 
 ---
 
@@ -232,6 +250,8 @@ Debian-host symlink to `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
 
 - Brand rename "Stefan Todorov" → "Nessebar Lens" is done (commit `18886c3`); keep
   "Old Town Nessebar" as the place name.
-- Prodigi fulfillment is scaffolding only — no SKU map, no production call yet.
+- Prodigi order creation is wired end to end: a pinned 9-SKU map (`src/lib/sku-map.ts`),
+  live quote + order calls, and a HMAC-signed master asset URL. Sandbox and live
+  are selected by an explicit `PRODIGI_API_BASE`, never inferred from the key.
 - Real photographs still need to land in the R2 `MASTERS`/`WEB` buckets to replace
   the 20 placeholders.
