@@ -8,6 +8,8 @@
     "start": "next start",
     "lint": "eslint",
     "test": "node --import ./tests/register.mjs --test tests/*.test.mts",
+    "coverage": "node scripts/coverage.mjs",
+    "coverage:report": "node scripts/coverage.mjs --print",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
