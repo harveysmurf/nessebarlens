@@ -3,6 +3,13 @@ import test from "node:test";
 import { MASTERS_BUCKET, referencesMasters } from "../src/lib/master-guard.ts";
 import { assertNoMasterLeak } from "../src/lib/prodigi-order.ts";
 import { parseOrderRecord } from "../src/lib/fulfillment.ts";
+import {
+  PHOTO_SLUG_PATTERN,
+  isMasterKey,
+  masterKeyForSlug,
+} from "../src/lib/master-key.ts";
+import { isPhotoSlug } from "../src/lib/print-asset.ts";
+import { PHOTOS, getPhoto } from "../src/lib/photos.ts";
 
 const SESSION = "cs_test_12345678abcd";
 
@@ -79,5 +86,42 @@ test("parseOrderRecord rejects a master asset URL in any case", () => {
       null,
       assetUrl,
     );
+  }
+});
+
+test("isMasterKey accepts exactly prints/{slug}.jpg and nothing looser", () => {
+  assert.equal(isMasterKey("prints/dawn.jpg"), true);
+  assert.equal(isMasterKey("prints/saint-spiridov.jpg"), true);
+  for (const key of [
+    "Prints/dawn.jpg",
+    "prints/Dawn.jpg",
+    "prints/dawn.png",
+    "prints/dawn.jpg/../other",
+    "masters/prints/dawn.jpg",
+    "prints/dawn",
+    "x/prints/dawn.jpg",
+    "",
+  ]) {
+    assert.equal(isMasterKey(key), false, key);
+  }
+});
+
+test("the slug pattern is shared, and masterKeyForSlug resolves through the catalog", () => {
+  // print-asset's isPhotoSlug used to carry its own copy of this grammar.
+  for (const slug of PHOTOS.map((p) => p.slug)) {
+    assert.equal(isPhotoSlug(slug), PHOTO_SLUG_PATTERN.test(slug), slug);
+    assert.equal(masterKeyForSlug(slug), getPhoto(slug)?.imageKey, slug);
+  }
+  for (const bad of ["", "Dawn", "dawn_1", "-dawn", "dawn-", "dawn.jpg", "a".repeat(300)]) {
+    assert.equal(masterKeyForSlug(bad), null, bad);
+    if (bad !== "a".repeat(300)) {
+      // The pattern itself sets no length cap; only the catalog gates a slug.
+      assert.equal(PHOTO_SLUG_PATTERN.test(bad), false, bad);
+    }
+  }
+  // Every catalog slug and imageKey satisfies the shared grammar.
+  for (const photo of PHOTOS) {
+    assert.equal(isPhotoSlug(photo.slug), true, photo.slug);
+    assert.equal(isMasterKey(photo.imageKey), true, photo.imageKey);
   }
 });

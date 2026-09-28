@@ -4,7 +4,11 @@
  * no ingest byte-copy. Distinct from /api/download (not digital-gated).
  */
 
-import { masterKeyForSlug } from "./master-key";
+import {
+  PHOTO_SLUG_PATTERN,
+  isMasterKey,
+  masterKeyForSlug,
+} from "./master-key";
 import { hmacSha256Hex, timingSafeEqualHex } from "./crypto-hex";
 import { envString, stripTrailingSlashes } from "./env";
 import { siteUrl } from "./stripe";
@@ -21,8 +25,6 @@ type MasterObject = {
 type MastersBucket = {
   get(key: string): Promise<MasterObject | null>;
 };
-
-const SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
 export type PrintAssetVerifyOk = { ok: true; slug: string };
 export type PrintAssetVerifyErr = {
@@ -54,7 +56,7 @@ export function printAssetSecret(
 }
 
 export function isPhotoSlug(value: string): boolean {
-  return SLUG_PATTERN.test(value);
+  return PHOTO_SLUG_PATTERN.test(value);
 }
 
 /**
@@ -139,7 +141,7 @@ export async function resolvePrintAssetStream(
     return { kind: "json", status: 400, body: { error: "invalid-slug" } };
   }
   // Hard guard: only prints/{slug}.jpg from the catalog — never arbitrary keys.
-  if (!masterKey.startsWith("prints/") || !masterKey.endsWith(".jpg")) {
+  if (!isMasterKey(masterKey)) {
     return { kind: "json", status: 500, body: { error: "bad-master-key" } };
   }
   if (!masters) {
