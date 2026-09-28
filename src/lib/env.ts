@@ -21,12 +21,13 @@ export function envString(
   return trimmed(env[name]) ?? trimmed(process.env[name]);
 }
 
+/** Strips every trailing slash, so callers can concatenate "/path" safely. */
 export function envStringStrippedSlash(
   name: string,
   env: Record<string, unknown> = process.env,
 ): string | undefined {
   const value = envString(name, env);
   if (value === undefined) return undefined;
-  const stripped = value.replace(/\/$/, "");
+  const stripped = value.replace(/\/+$/, "");
   return stripped.length > 0 ? stripped : undefined;
 }

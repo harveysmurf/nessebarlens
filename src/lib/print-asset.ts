@@ -78,6 +78,8 @@ export async function signPrintAssetUrl(
   const ttl = options.ttlSeconds ?? PRINT_ASSET_TTL_SECONDS;
   const exp = Math.floor(nowMs / 1000) + ttl;
   const sig = await hmacSha256Hex(signingPayload(slug, exp), secret);
+  // options.baseUrl is caller-supplied, so it still needs stripping; siteUrl()
+  // is already slash-free.
   const base = (options.baseUrl ?? siteUrl()).replace(/\/$/, "");
   const params = new URLSearchParams({
     slug,
