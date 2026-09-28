@@ -40,6 +40,9 @@ export type PrintAssetStream =
       size: number;
     };
 
+/** Min chars for the print-asset HMAC secret. Single source of truth. */
+export const PRINT_ASSET_SECRET_MIN_LENGTH = 32;
+
 /** HMAC secret for /api/print-asset. Min 32 chars; unset → placeholder fallback. */
 export function printAssetSecret(
   env: Record<string, unknown> = process.env,
@@ -47,7 +50,7 @@ export function printAssetSecret(
   const raw = env.PRINT_ASSET_HMAC_SECRET;
   if (typeof raw !== "string") return null;
   const trimmed = raw.trim();
-  return trimmed.length >= 32 ? trimmed : null;
+  return trimmed.length >= PRINT_ASSET_SECRET_MIN_LENGTH ? trimmed : null;
 }
 
 export function isPhotoSlug(value: string): boolean {

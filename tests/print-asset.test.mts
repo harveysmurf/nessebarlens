@@ -1,12 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  PRINT_ASSET_SECRET_MIN_LENGTH,
   PRINT_ASSET_TTL_SECONDS,
   printAssetSecret,
   resolvePrintAssetStream,
   signPrintAssetUrl,
   verifyPrintAssetRequest,
 } from "../src/lib/print-asset.ts";
+import { readWorkerBindings } from "../src/lib/worker-bindings.ts";
 import {
   assertNoMasterLeak,
   buildProdigiOrderBody,
@@ -32,6 +34,34 @@ const RECIPIENT: OrderRecipient = {
 test("printAssetSecret requires 32+ chars", () => {
   assert.equal(printAssetSecret({ PRINT_ASSET_HMAC_SECRET: "short" }), null);
   assert.equal(printAssetSecret({ PRINT_ASSET_HMAC_SECRET: SECRET }), SECRET);
+});
+
+test("printAssetSecret boundary is exactly PRINT_ASSET_SECRET_MIN_LENGTH", () => {
+  const exact = "x".repeat(PRINT_ASSET_SECRET_MIN_LENGTH);
+  assert.equal(printAssetSecret({ PRINT_ASSET_HMAC_SECRET: exact }), exact);
+  assert.equal(
+    printAssetSecret({ PRINT_ASSET_HMAC_SECRET: "x".repeat(PRINT_ASSET_SECRET_MIN_LENGTH - 1) }),
+    null,
+  );
+});
+
+test("readWorkerBindings and printAssetSecret never disagree", async () => {
+  const saved = process.env.PRINT_ASSET_HMAC_SECRET;
+  try {
+    for (const raw of [undefined, "short", "x".repeat(31), SECRET, `  ${SECRET}  `]) {
+      if (raw === undefined) delete process.env.PRINT_ASSET_HMAC_SECRET;
+      else process.env.PRINT_ASSET_HMAC_SECRET = raw;
+      const bindings = await readWorkerBindings();
+      assert.equal(
+        bindings.printAssetSecret ?? null,
+        printAssetSecret(),
+        `drift for ${JSON.stringify(raw)}`,
+      );
+    }
+  } finally {
+    if (saved === undefined) delete process.env.PRINT_ASSET_HMAC_SECRET;
+    else process.env.PRINT_ASSET_HMAC_SECRET = saved;
+  }
 });
 
 test("sign + verify round-trip; expiry and bad sig fail", async () => {

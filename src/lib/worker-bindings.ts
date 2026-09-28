@@ -1,4 +1,5 @@
 import type { MastersBucket, OrdersKv } from "./fulfillment";
+import { printAssetSecret } from "./print-asset";
 import { prodigiKeyConfigured } from "./prodigi-config";
 
 export type WorkerBindings = {
@@ -37,16 +38,15 @@ export async function readWorkerBindings(): Promise<WorkerBindings> {
   const webhookSecret =
     nonempty(env.STRIPE_WEBHOOK_SECRET) ??
     nonempty(process.env.STRIPE_WEBHOOK_SECRET);
-  const printAsset =
-    nonempty(env.PRINT_ASSET_HMAC_SECRET) ??
-    nonempty(process.env.PRINT_ASSET_HMAC_SECRET);
+  // Same reader as the sign/verify path, so bindings can never accept a
+  // secret that verify would reject (or vice versa).
+  const printAsset = printAssetSecret(env) ?? printAssetSecret();
 
   return {
     ORDERS: isOrdersKv(env.ORDERS) ? env.ORDERS : undefined,
     MASTERS: isMastersBucket(env.MASTERS) ? env.MASTERS : undefined,
     webhookSecret,
-    printAssetSecret:
-      printAsset && printAsset.length >= 32 ? printAsset : undefined,
+    printAssetSecret: printAsset ?? undefined,
     prodigiKeyConfigured: prodigiKeyConfigured(env),
   };
 }
