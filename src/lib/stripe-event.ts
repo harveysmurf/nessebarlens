@@ -1,4 +1,5 @@
 import Stripe from "stripe";
+import { hmacSha256Hex, timingSafeEqualHex } from "./crypto-hex";
 
 const TOLERANCE_SECONDS = 300;
 
@@ -89,31 +90,4 @@ function headerSignatures(header: string): string[] {
     if (/^[0-9a-f]{64}$/.test(signature)) signatures.push(signature);
   }
   return signatures;
-}
-
-async function hmacSha256Hex(content: string, secret: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(content));
-  const bytes = new Uint8Array(signature);
-  let hex = "";
-  for (let i = 0; i < bytes.length; i++) {
-    hex += bytes[i].toString(16).padStart(2, "0");
-  }
-  return hex;
-}
-
-function timingSafeEqualHex(expected: string, actual: string): boolean {
-  if (expected.length !== actual.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < expected.length; i++) {
-    mismatch |= expected.charCodeAt(i) ^ actual.charCodeAt(i);
-  }
-  return mismatch === 0;
 }

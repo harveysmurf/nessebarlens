@@ -4,12 +4,11 @@ import {
   type FrameFinish,
   type PrintSize,
 } from "./pricing";
+import { prodigiApiKey, prodigiQuotesUrl } from "./prodigi-config";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
 
 /** Default quote destination when the client omits destinationCountryCode. */
 export const DEFAULT_DESTINATION_COUNTRY = DEFAULT_SHIPPING_COUNTRY;
-
-const PRODIGI_QUOTE_URL = "https://api.sandbox.prodigi.com/v4.0/quotes";
 
 export type PhysicalQuote = {
   sku: string;
@@ -24,15 +23,6 @@ type ProdigiQuoteResponse = {
     costSummary?: { shipping?: { amount?: string } };
   }>;
 };
-
-function prodigiApiKey(): string {
-  const key =
-    process.env.PRODIGI_SANDBOX_API_KEY || process.env.PRODIGI_API_KEY;
-  if (!key) {
-    throw new Error("Prodigi API key is not set");
-  }
-  return key;
-}
 
 function parseEurAmount(raw: string | undefined, label: string): number {
   if (!raw || !/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(raw)) {
@@ -51,7 +41,7 @@ export async function quotePhysical(opts: {
   const destinationCountryCode =
     opts.destinationCountryCode?.trim() || DEFAULT_DESTINATION_COUNTRY;
 
-  const res = await fetch(PRODIGI_QUOTE_URL, {
+  const res = await fetch(prodigiQuotesUrl(), {
     method: "POST",
     headers: {
       "Content-Type": "application/json",

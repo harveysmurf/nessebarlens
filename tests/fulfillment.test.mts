@@ -95,9 +95,83 @@ const okCreate: CreateProdigiOrder = async () => ({
   ok: true,
   orderId: "ord_sandbox_1",
   stage: "InProgress",
+  assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
 });
 
-test("SKU map is enabled; digital and physical amount math", () => {
+test("parseOrderRecord rejects off-origin asset URLs even with safe paths", () => {
+  process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
+  const base = {
+    v: 1,
+    sessionId: SESSION,
+    merchantReference: SESSION,
+    terminal: true,
+    status: "paid",
+    photoSlug: "dawn",
+    format: "giclee",
+    size: "30x40",
+    frame: "",
+    quoteEur: 15,
+    amountTotal: 1999,
+    currency: "eur",
+    reason: null,
+    masterKey: null,
+    recipient: {
+      name: "Test Buyer",
+      line1: "1 Harbor St",
+      line2: "",
+      city: "Nessebar",
+      state: "",
+      postcode: "8230",
+      countryCode: "BG",
+      email: "buyer@example.com",
+      phone: null,
+    },
+    prodigiOrderId: "ord_1",
+    prodigiStage: "InProgress",
+    updatedAt: NOW,
+  };
+
+  assert.equal(
+    parseOrderRecord(
+      JSON.stringify({
+        ...base,
+        assetUrl: "https://evil.example/placeholders/dawn.jpg",
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    parseOrderRecord(
+      JSON.stringify({
+        ...base,
+        assetUrl: "https://evil.example/api/print-asset?slug=dawn&exp=1&sig=ab",
+      }),
+    ),
+    null,
+  );
+
+  const okPlaceholder = parseOrderRecord(
+    JSON.stringify({
+      ...base,
+      assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+    }),
+  );
+  assert.ok(okPlaceholder);
+  assert.equal(
+    okPlaceholder.assetUrl,
+    "https://nessebarlens.com/placeholders/dawn.jpg",
+  );
+
+  const okPrintAsset = parseOrderRecord(
+    JSON.stringify({
+      ...base,
+      assetUrl:
+        "https://nessebarlens.com/api/print-asset?slug=dawn&exp=1&sig=" +
+        "a".repeat(64),
+    }),
+  );
+  assert.ok(okPrintAsset);
+});
   assert.equal(SKU_MAP_READY, true);
   assert.equal(expectedAmountCents("digital", 30), 3000);
   assert.equal(expectedAmountCents("giclee", 15, 4.99), 1500 + 499);
@@ -116,7 +190,7 @@ test("digital payment with a matching total is paid and does not call Prodigi", 
   let called = 0;
   const create: CreateProdigiOrder = async () => {
     called += 1;
-    return { ok: true, orderId: "x", stage: null };
+    return { ok: true, orderId: "x", stage: null, assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" };
   };
   const kv = memoryKv();
   const result = await fulfillCheckoutSession({
@@ -181,7 +255,7 @@ test("missing shipping is a permanent stop without calling Prodigi", async () =>
     kv,
     createOrder: async () => {
       called += 1;
-      return { ok: true, orderId: "x", stage: null };
+      return { ok: true, orderId: "x", stage: null, assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" };
     },
   });
   assert.equal(result.body.status, "paid-unfulfilled");
@@ -317,7 +391,7 @@ test("a second delivery does not overwrite the first ORDERS record or call Prodi
   let calls = 0;
   const create: CreateProdigiOrder = async () => {
     calls += 1;
-    return { ok: true, orderId: "ord_1", stage: "InProgress" };
+    return { ok: true, orderId: "ord_1", stage: "InProgress", assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" };
   };
   await fulfillCheckoutSession({
     ...paidInput({
@@ -503,18 +577,30 @@ test("webhook + download routes still do not call Prodigi; order module is the o
   for (const rel of [
     "src/lib/fulfillment.ts",
     "src/lib/master-key.ts",
+    "src/lib/print-asset.ts",
+    "src/lib/crypto-hex.ts",
     "src/lib/stripe-event.ts",
     "src/lib/worker-bindings.ts",
     "src/app/api/webhooks/stripe/route.ts",
     "src/app/api/download/route.ts",
+    "src/app/api/print-asset/route.ts",
   ]) {
     const src = fs.readFileSync(path.join(root, rel), "utf8");
     assert.equal(src.includes("fetch("), false, rel);
     assert.equal(src.includes("api.sandbox.prodigi.com"), false, rel);
+    assert.equal(src.includes("api.prodigi.com"), false, rel);
   }
   const order = fs.readFileSync(path.join(root, "src/lib/prodigi-order.ts"), "utf8");
-  assert.equal(order.includes("api.sandbox.prodigi.com/v4.0/orders"), true);
+  assert.equal(order.includes("prodigiOrdersUrl"), true);
+  assert.equal(order.includes("prodigiApiKey"), true);
   assert.equal(order.includes("assertNoMasterLeak"), true);
+  assert.equal(order.includes("signPrintAssetUrl"), true);
+  const config = fs.readFileSync(
+    path.join(root, "src/lib/prodigi-config.ts"),
+    "utf8",
+  );
+  assert.equal(config.includes("https://api.sandbox.prodigi.com"), true);
+  assert.equal(config.includes("https://api.prodigi.com"), true);
   assert.equal(masterKeyForSlug("dawn"), getPhoto("dawn")?.imageKey);
   assert.equal(masterKeyForSlug("not-a-photo"), null);
 });
