@@ -6,6 +6,7 @@
  */
 
 import { masterKeyForSlug } from "./master-key";
+import { referencesMasters } from "./master-guard";
 import {
   createProdigiOrder,
   type CreateProdigiOrder,
@@ -589,7 +590,7 @@ function isFrameFinish(value: string): value is FrameFinish {
 
 function isSafeAssetUrl(url: string): boolean {
   if (!/^https:\/\//i.test(url)) return false;
-  if (/prints\//i.test(url) || /masters/i.test(url)) return false;
+  if (referencesMasters(url)) return false;
   // Allow same-origin placeholders and HMAC print-asset Worker URLs only.
   // Path-only checks would let https://evil.example/placeholders/… through.
   try {
