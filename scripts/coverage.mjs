@@ -5,13 +5,14 @@
  * src/lib only. app/ and components/ are Next.js route and React code that no
  * test imports yet, so including them would report a number nobody can act on.
  *
- * Line numbers are only trustworthy because tests/ts-loader.mjs emits an inline
- * source map: without it the reporter attributes V8 positions to the transpiled
- * output and executed code reads as uncovered (it reported prodigi-order.ts at
- * 69% when it is at 98%).
+ * Line numbers are trustworthy because node strips the types itself, in place:
+ * there is no transpiler output between the .ts and the code V8 sees. The
+ * previous ts.transpileModule loader needed a source map to say that much, and
+ * still misplaced object-literal spreads — it reported executed lines as
+ * uncovered, so the number it produced was not a measurement of this code.
  *
- * Node 20 has no --test-coverage-lines flag, so the floor is checked here
- * instead. Lines/branches/functions are the simple mean over src/lib files, not
+ * The floor is checked here rather than via --test-coverage-lines. Lines /
+ * branches / functions are the simple mean over src/lib files, not
  * a line-weighted total: that is pessimistic for big files and is therefore safe
  * to ratchet upward.
  *
@@ -28,7 +29,7 @@ import { isLibFile, mean, parseCoverage } from "./coverage-report.mjs";
 const ROOT = path.join(import.meta.dirname, "..");
 
 /** Ratchet: never lower these, raise them as tests land. */
-const FLOOR = { lines: 98, branches: 97, functions: 100 };
+const FLOOR = { lines: 99.5, branches: 97, functions: 100 };
 
 // The test runner takes the glob itself, but only a shell expands it, so pass
 // the file list explicitly.
