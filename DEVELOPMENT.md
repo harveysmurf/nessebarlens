@@ -77,6 +77,24 @@ runner framework**.
 - Add a test whenever you change `src/lib/fulfillment.ts`, `pricing.ts`, or any
   quote/order logic.
 
+### Preview smoke test
+
+`scripts/smoke.sh <base-url>` is the only test that runs against a **deployed**
+build. `preview.yml` runs it after the Pages deploy and secret sync, and a
+failure fails the PR check. It asserts the pages render, the print route 404s an
+unknown slug, request bodies are validated, and the HMAC/KV guards are live in
+the preview env (a 503 from `/api/download` means ORDERS is not bound).
+
+Run it locally against a build:
+
+```bash
+npx opennextjs-cloudflare build && bash scripts/assemble-pages-out.sh
+bash scripts/smoke.sh http://127.0.0.1:8788
+```
+
+It never calls Prodigi — the live quote path is intentionally out of scope
+because sandbox latency makes it flaky per-PR.
+
 ---
 
 ## 5. Build & deploy
@@ -129,7 +147,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 22):
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
 | `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → test |
-| `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → Pages preview → PR comment; cleanup on close |
+| `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → Pages preview → **smoke test** (`scripts/smoke.sh`) → PR comment; cleanup on close |
 | `.github/workflows/prod.yml` | push to `main` | production Environment (required reviewer) → build → Pages `main` → `sync-pages-secrets.sh production` |
 
 GitHub Environments:

@@ -89,18 +89,42 @@ jobs:
           CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: bash scripts/sync-pages-secrets.sh preview
 
+      - name: Smoke test the deployed preview
+        id: smoke
+        env:
+          SMOKE_URL: ${{ steps.deploy.outputs.alias }}
+        run: |
+          set -uo pipefail
+          # tee is last in the pipe, so capture the status explicitly rather
+          # than trusting the pipeline result.
+          bash scripts/smoke.sh "$SMOKE_URL" | tee smoke.log
+          status=${PIPESTATUS[0]}
+          if [[ "$status" -eq 0 ]]; then
+            echo "result=pass" >> "$GITHUB_OUTPUT"
+          else
+            echo "result=fail" >> "$GITHUB_OUTPUT"
+            echo "::error::Preview smoke test failed against $SMOKE_URL"
+            exit 1
+          fi
+
       - name: Comment preview URL
+        if: always()
         uses: actions/github-script@v7
         with:
           script: |
             const alias = '${{ steps.deploy.outputs.alias }}';
             const url = '${{ steps.deploy.outputs.url }}';
+            const smoke = '${{ steps.smoke.outputs.result }}' || 'skipped';
+            const badge = smoke === 'pass'
+              ? '✅ smoke passed'
+              : smoke === 'fail' ? '❌ smoke failed' : '⏭️ smoke not run';
             const body = [
               '### Staging preview',
               '',
               `- Alias: ${alias}`,
               `- Deployment: ${url}`,
               `- Built with staging secrets (sandbox Stripe/Prodigi).`,
+              `- Smoke: ${badge}`,
             ].join('\n');
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
