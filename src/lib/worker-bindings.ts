@@ -11,21 +11,33 @@ export type WorkerBindings = {
   prodigiKeyConfigured: boolean;
 };
 
+/** The Cloudflare env object, as getCloudflareContext returns it. */
+export type CloudflareEnv = Record<string, unknown>;
+
+/** Reads the Worker env. Injectable so tests can drive the real binding path. */
+export type EnvContextReader = () => Promise<CloudflareEnv>;
+
+const cloudflareEnv: EnvContextReader = async () => {
+  const mod = (await import("@opennextjs/cloudflare")) as unknown as {
+    getCloudflareContext: (options?: { async: boolean }) => Promise<{
+      env: CloudflareEnv;
+    }>;
+  };
+  const ctx = await mod.getCloudflareContext({ async: true });
+  return ctx.env ?? {};
+};
+
 /**
  * ORDERS is KV id c6f34450a61c4c69b3f840e845a7b0d3.
  * MASTERS is the private nessebar-lens-masters binding. It may be absent
  * until R2 is enabled. Never fall back to an S3 URL.
  */
-export async function readWorkerBindings(): Promise<WorkerBindings> {
-  let env: Record<string, unknown> = {};
+export async function readWorkerBindings(
+  options: { readEnv?: EnvContextReader } = {},
+): Promise<WorkerBindings> {
+  let env: CloudflareEnv = {};
   try {
-    const mod = (await import("@opennextjs/cloudflare")) as unknown as {
-      getCloudflareContext: (options?: { async: boolean }) => Promise<{
-        env: Record<string, unknown>;
-      }>;
-    };
-    const ctx = await mod.getCloudflareContext({ async: true });
-    env = ctx.env ?? {};
+    env = await (options.readEnv ?? cloudflareEnv)();
   } catch {
     env = {};
   }
