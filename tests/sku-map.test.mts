@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import type { FrameFinish } from "../src/lib/pricing.ts";
 import {
+  FRAME_COLOR,
   FRAME_FINISHES,
   PHYSICAL_FORMATS,
   PINNED_SKUS,
@@ -99,5 +101,26 @@ test("every pinned SKU matches the GLOBAL-<PREFIX>-<W>H<H> shape", () => {
   assert.equal(
     PINNED_SKUS.every((sku) => PRINT_SIZES.some((size) => sku.endsWith(`-${SIZE_TO_INCH[size].toUpperCase()}`))),
     true,
+  );
+});
+
+test("FRAME_FINISHES is the FRAME_COLOR key set, not a second hand-written list", () => {
+  // A finish added to one list and not the other used to compile fine and
+  // then fail at order time.
+  assert.deepEqual(FRAME_FINISHES, Object.keys(FRAME_COLOR));
+  assert.equal(new Set(FRAME_FINISHES).size, FRAME_FINISHES.length);
+  for (const finish of FRAME_FINISHES) {
+    assert.equal(FRAME_COLOR[finish as FrameFinish], finish);
+  }
+});
+
+test("the missing-frame error lists the finishes resolveSku actually accepts", () => {
+  assert.throws(
+    () => resolveSku("framed", "30x40", null),
+    new RegExp(`frame required .*\\(${FRAME_FINISHES.join("\\|")}\\)`),
+  );
+  assert.throws(
+    () => resolveSku("framed", "30x40", "gold" as FrameFinish),
+    /frame required/,
   );
 });

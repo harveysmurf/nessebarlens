@@ -38,7 +38,9 @@ export const FRAME_COLOR: Record<FrameFinish, string> = {
   brown: "brown",
 };
 
-export const FRAME_FINISHES: FrameFinish[] = ["black", "white", "brown"];
+// Derived from the attribute map so a finish cannot exist in one and not the
+// other; the two used to be hand-listed side by side with nothing tying them.
+export const FRAME_FINISHES = Object.keys(FRAME_COLOR) as FrameFinish[];
 
 export const PHYSICAL_FORMATS: PhysicalFormat[] = ["giclee", "framed", "canvas"];
 
@@ -68,7 +70,9 @@ export function resolveSku(
   const attributes: Record<string, string> = {};
   if (format === "framed") {
     if (!frame || !(frame in FRAME_COLOR)) {
-      throw new Error("frame required for framed format (black|white|brown)");
+      throw new Error(
+        `frame required for framed format (${formatListLabel(FRAME_FINISHES)})`,
+      );
     }
     attributes.color = FRAME_COLOR[frame];
   }
