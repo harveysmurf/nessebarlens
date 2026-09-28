@@ -170,3 +170,18 @@ test("resolvePrintAssetStream serves catalog master only", async () => {
   assert.equal(missing.kind, "json");
   if (missing.kind === "json") assert.equal(missing.status, 400);
 });
+
+test("a caller-supplied baseUrl with extra slashes yields a single-slash URL", async () => {
+  // The old inline strip removed one trailing slash only, so a base ending
+  // "//" produced "…//api/print-asset?…" and the signature check in the
+  // Worker compared against a differently-shaped path.
+  for (const baseUrl of ["https://x.test", "https://x.test/", "https://x.test//"]) {
+    const url = await signPrintAssetUrl("dawn", {
+      secret: SECRET,
+      nowMs: NOW_MS,
+      baseUrl,
+    });
+    assert.ok(url, baseUrl);
+    assert.equal(url.startsWith("https://x.test/api/print-asset?"), true, url);
+  }
+});

@@ -6,7 +6,7 @@
  * No third-party image hosts (Unsplash etc.) — missing base → no remote image.
  */
 
-import { envString } from "./env";
+import { envString, stripTrailingSlashes } from "./env";
 
 export const WEB_DERIVATIVE_WIDTHS = [750, 1500, 2500] as const;
 export type WebDerivativeWidth = (typeof WEB_DERIVATIVE_WIDTHS)[number];
@@ -40,7 +40,7 @@ export function webImagesBase(): string | undefined {
   }
   if (url.protocol !== "https:") return undefined;
 
-  return `${url.origin}${url.pathname}`.replace(/\/+$/, "");
+  return stripTrailingSlashes(`${url.origin}${url.pathname}`);
 }
 
 /**
