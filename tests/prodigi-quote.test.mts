@@ -220,6 +220,18 @@ test("quotePhysical throws on non-OK HTTP and missing quote fields", async () =>
       /Prodigi quote HTTP 500/,
     );
 
+    // A 200 that is not JSON is a distinct failure, not a parse crash and not
+    // a silent "no quote": a proxy error page lands here in practice.
+    globalThis.fetch = (async () =>
+      new Response("<html>502 Bad Gateway</html>", {
+        status: 200,
+        headers: { "content-type": "text/html" },
+      })) as typeof fetch;
+    await assert.rejects(
+      () => quotePhysical({ format: "canvas", size: "70x100" }),
+      /invalid JSON/,
+    );
+
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ quotes: [] }), {
         status: 200,
