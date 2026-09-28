@@ -1,5 +1,6 @@
 import { isShipToCountryCode } from "./ship-to-countries";
 import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";
+import { FRAME_FINISHES, PHYSICAL_FORMATS, PRINT_SIZES } from "./sku-map";
 
 export type CheckoutBody = {
   photoSlug: string;
@@ -9,9 +10,10 @@ export type CheckoutBody = {
   destinationCountryCode: string | null;
 };
 
-const FORMATS: PrintFormat[] = ["giclee", "framed", "canvas", "digital"];
-const SIZES: PrintSize[] = ["30x40", "50x70", "70x100"];
-const FRAMES: FrameFinish[] = ["black", "white", "brown"];
+/** Allow-lists are owned by sku-map so SKU coverage cannot drift from validation. */
+const FORMATS: PrintFormat[] = [...PHYSICAL_FORMATS, "digital"];
+const SIZES = PRINT_SIZES;
+const FRAMES = FRAME_FINISHES;
 
 function parseDestinationCountry(
   raw: unknown,
@@ -124,7 +126,7 @@ export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {
   }
   if (
     typeof format !== "string" ||
-    !(["giclee", "framed", "canvas"] as string[]).includes(format)
+    !(PHYSICAL_FORMATS as string[]).includes(format)
   ) {
     return { error: "format must be giclee|framed|canvas" };
   }
