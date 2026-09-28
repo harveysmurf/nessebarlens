@@ -774,3 +774,71 @@ test("parseOrderRecord accepts cent-exact amounts and rejects sub-cent ones", ()
   assert.equal(record({ quoteEur: "15" }), null);
   assert.equal(record({ amountTotal: 1500.5 }), null);
 });
+
+test("resolveDownload is a gate, and every rejection path is distinguishable", async () => {
+  const digitalPaid = (patch: Partial<OrderRecord> = {}): OrderRecord => {
+    const base = (
+      decideFulfillment(paidInput()) as { action: "write"; record: OrderRecord }
+    ).record;
+    assert.equal(base.format, "digital");
+    return { ...base, ...patch };
+  };
+  const bytes = (contentType?: string): MastersBucket => ({
+    async get() {
+      return { body: new ReadableStream(), size: 7, contentType };
+    },
+  });
+
+  // 1. A physical order is not a download at all, and the bucket is untouched.
+  let touched = false;
+  const physical = digitalPaid({ format: "giclee" });
+  const refused = await resolveDownload(physical, {
+    async get() {
+      touched = true;
+      return null;
+    },
+  });
+  assert.deepEqual(refused, {
+    kind: "json",
+    status: 403,
+    body: { error: "not-a-digital-download" },
+  });
+  assert.equal(touched, false, "a physical order must never read MASTERS");
+
+  // 2. Unfulfilled digital orders explain themselves with their stored reason.
+  for (const reason of ["prodigi-error", "unfulfilled"] as const) {
+    const unfulfilled = digitalPaid({ status: "paid-unfulfilled", reason, masterKey: null });
+    const result = await resolveDownload(unfulfilled, undefined);
+    assert.deepEqual(result, {
+      kind: "json",
+      status: 409,
+      body: { error: "download-unavailable", reason },
+    });
+  }
+
+  // 3. paid but masterKey null is still 409, not a 500 on a null key.
+  const noKey = await resolveDownload(digitalPaid({ masterKey: null }), undefined);
+  assert.equal(noKey.kind === "json" && noKey.status, 409);
+
+  // 4. A throwing bucket is a 503 that does not escape.
+  const throwing = await resolveDownload(digitalPaid(), {
+    async get() {
+      throw new Error("R2 down");
+    },
+  });
+  assert.deepEqual(throwing, {
+    kind: "json",
+    status: 503,
+    body: { error: "masters-unavailable" },
+  });
+
+  // 5. The filename comes from the slug, with a safe fallback if it is not one.
+  const odd = digitalPaid({ photoSlug: "Not A Slug", masterKey: "prints/dawn.jpg" });
+  const oddStream = await resolveDownload(odd, bytes("image/jpeg"));
+  assert.equal(oddStream.kind === "stream" && oddStream.filename, "download.jpg");
+  // contentType falls back to image/jpeg when the bucket does not say.
+  const noType = await resolveDownload(digitalPaid(), bytes(undefined));
+  assert.equal(noType.kind === "stream" && noType.contentType, "image/jpeg");
+  const otherType = await resolveDownload(digitalPaid(), bytes("image/png"));
+  assert.equal(otherType.kind === "stream" && otherType.contentType, "image/png");
+});
