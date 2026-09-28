@@ -5,6 +5,11 @@
  * src/lib only. app/ and components/ are Next.js route and React code that no
  * test imports yet, so including them would report a meaningless number.
  *
+ * Line numbers are only trustworthy because tests/ts-loader.mjs emits an
+ * inline source map: without it the reporter attributes V8 positions to the
+ * transpiled output and executed code reads as uncovered (it reported
+ * prodigi-order.ts at 69% when it is at 98%).
+ *
  * Node 20 has no --test-coverage-lines flag, so the floor is checked here
  * instead. Lines/branches/functions are the simple mean over src/lib files,
  * not a line-weighted total: that is pessimistic for big files and is
@@ -22,7 +27,7 @@ import process from "node:process";
 const ROOT = path.join(import.meta.dirname, "..");
 
 /** Ratchet: never lower these, raise them as tests land. */
-const FLOOR = { lines: 81, branches: 92, functions: 93 };
+const FLOOR = { lines: 94, branches: 93, functions: 94 };
 
 const pct = (value) => Number.parseFloat(value);
 
