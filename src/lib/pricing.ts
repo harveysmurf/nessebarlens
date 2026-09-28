@@ -16,26 +16,26 @@ export function eurToCents(eur: number): number {
   return Math.round(eur * 100);
 }
 
+// Typed as Record<union, string> rather than switch: adding a member to
+// PrintFormat/PrintSize then fails to compile here instead of silently
+// returning undefined at runtime.
+const FORMAT_LABELS: Record<PrintFormat, string> = {
+  giclee: "Giclée Fine Art Print",
+  framed: "Framed Fine Art",
+  canvas: "Stretched Canvas",
+  digital: "High-Res Digital Download",
+};
+
+const SIZE_LABELS: Record<PrintSize, string> = {
+  "30x40": '30 × 40 cm (12 × 16") — Standard',
+  "50x70": '50 × 70 cm (20 × 28") — Medium',
+  "70x100": '70 × 100 cm (28 × 40") — Gallery',
+};
+
 export function formatLabel(format: PrintFormat): string {
-  switch (format) {
-    case "giclee":
-      return "Giclée Fine Art Print";
-    case "framed":
-      return "Framed Fine Art";
-    case "canvas":
-      return "Stretched Canvas";
-    case "digital":
-      return "High-Res Digital Download";
-  }
+  return FORMAT_LABELS[format];
 }
 
 export function sizeLabel(size: PrintSize): string {
-  switch (size) {
-    case "30x40":
-      return '30 × 40 cm (12 × 16") — Standard';
-    case "50x70":
-      return '50 × 70 cm (20 × 28") — Medium';
-    case "70x100":
-      return '70 × 100 cm (28 × 40") — Gallery';
-  }
+  return SIZE_LABELS[size];
 }
