@@ -58,12 +58,90 @@ export type ProdigiOrderSuccess = {
   assetUrl: string;
 };
 
+/**
+ * Why an order could not be created.
+ *
+ * The retry decision (`kind`) and the diagnosis (`reason`) are deliberately
+ * separate axes. Auth and rate-limit failures share the same *retry* behaviour
+ * but are different operational problems, so they get different reasons — the
+ * stored record has to say which one it was, or "prodigi-error" tells nobody
+ * whether to rotate a key or back off.
+ */
+export type ProdigiFailureReason =
+  /** 401/403 — our key is wrong, revoked, or pointed at the wrong host. */
+  | "prodigi-auth-error"
+  /** 429 — we are being throttled; retrying later is correct. */
+  | "prodigi-rate-limit"
+  /** 5xx — Prodigi is down or erroring. */
+  | "prodigi-unavailable"
+  /** 4xx that is our fault and will never succeed on retry (bad request body). */
+  | "prodigi-validation-error"
+  /** 2xx with no order id in the body — a contract change, not a status code. */
+  | "prodigi-error"
+  /**
+   * We hold paid money but cannot sign the master URL, so there is no asset to
+   * send. Distinct from prodigi-unavailable: Prodigi was never contacted.
+   */
+  | "prodigi-asset-unconfigured";
+
 export type ProdigiOrderFailure = {
   ok: false;
+  /**
+   * "server" means retryable: the webhook answers 5xx so Stripe redelivers.
+   *
+   * 401/403/429 were previously "client" and therefore terminal. That made a
+   * wrong sandbox key unrecoverable: the customer had paid, the record was
+   * written, the webhook answered 200, and every later delivery hit the
+   * duplicate branch — also 200. Stripe retries for ~3 days, so retrying a
+   * genuinely permanent auth failure only buys the window to fix the key.
+   */
   kind: "client" | "server";
+  reason: ProdigiFailureReason;
   message: string;
   status: number | null;
 };
+
+/**
+ * Map a Prodigi HTTP status to retry behaviour plus a diagnosable reason.
+ *
+ * Exported for the tests that pin the mapping; it is the whole policy in one
+ * place, so "which statuses are terminal" has exactly one answer.
+ */
+export function classifyProdigiStatus(status: number): {
+  kind: "client" | "server";
+  reason: ProdigiFailureReason;
+} {
+  if (status === 401 || status === 403) {
+    return { kind: "server", reason: "prodigi-auth-error" };
+  }
+  if (status === 429) {
+    return { kind: "server", reason: "prodigi-rate-limit" };
+  }
+  if (status >= 500) {
+    return { kind: "server", reason: "prodigi-unavailable" };
+  }
+  return { kind: "client", reason: "prodigi-validation-error" };
+}
+
+/**
+ * Failures we still intend to retry, so the stored order stays eligible for a
+ * redelivery instead of being short-circuited as a duplicate.
+ */
+export const RETRYABLE_PRODIGI_REASONS: ReadonlySet<ProdigiFailureReason> =
+  new Set<ProdigiFailureReason>([
+    "prodigi-auth-error",
+    "prodigi-rate-limit",
+    "prodigi-unavailable",
+    "prodigi-asset-unconfigured",
+  ]);
+
+export function isRetryableProdigiReason(
+  reason: string | null,
+): reason is ProdigiFailureReason {
+  return reason !== null && RETRYABLE_PRODIGI_REASONS.has(
+    reason as ProdigiFailureReason,
+  );
+}
 
 export type ProdigiOrderResult = ProdigiOrderSuccess | ProdigiOrderFailure;
 
@@ -78,17 +156,31 @@ export type CreateProdigiOrder = (input: {
   assetUrl?: string;
 }) => Promise<ProdigiOrderResult>;
 
-/** Public stand-in when PRINT_ASSET_HMAC_SECRET is unset (Phase 2 fallback). */
+/**
+ * Public stand-in. Still used for the Stripe session's display image, where a
+ * low-resolution preview is the correct thing to show.
+ */
 export function placeholderAssetUrl(photoSlug: string): string {
   const base = siteUrl();
   return `${base}/placeholders/${photoSlug}.jpg`;
 }
 
-/** Prefer HMAC Worker URL; fall back to public placeholder. */
-export async function resolveOrderAssetUrl(photoSlug: string): Promise<string> {
-  return (
-    (await signPrintAssetUrl(photoSlug)) ?? placeholderAssetUrl(photoSlug)
-  );
+/**
+ * The signed master URL for a paid physical order — or null if we cannot sign.
+ *
+ * There used to be a fallback to the public placeholder here. That was the
+ * dangerous one: /api/checkout now refuses to take payment when signing is
+ * impossible, so reaching this function with no secret means the pre-payment
+ * guard did not hold (or the secret was removed between payment and
+ * fulfillment). Returning null lets the caller mark the order
+ * `paid-unfulfilled/asset-unconfigured` and answer 5xx, so Stripe redelivers
+ * and a human sees it — instead of shipping a ~41KB, 1600x1200 thumbnail to a
+ * customer who paid for a print and recording the order as fulfilled.
+ */
+export async function resolveOrderAssetUrl(
+  photoSlug: string,
+): Promise<string | null> {
+  return signPrintAssetUrl(photoSlug);
 }
 
 export function assertNoMasterLeak(value: unknown): void {
@@ -163,6 +255,18 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   const assetUrl =
     input.assetUrl ?? (await resolveOrderAssetUrl(input.photoSlug));
 
+  // Fail closed before we talk to Prodigi. Retryable, so the webhook answers
+  // 5xx and Stripe redelivers once the secret is fixed.
+  if (!assetUrl) {
+    return {
+      ok: false,
+      kind: "server",
+      reason: "prodigi-asset-unconfigured",
+      message: "print-asset signing is not configured",
+      status: null,
+    };
+  }
+
   let body: ProdigiOrderRequest;
   try {
     body = buildProdigiOrderBody({ ...input, assetUrl });
@@ -170,6 +274,7 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
     return {
       ok: false,
       kind: "client",
+      reason: "prodigi-validation-error",
       message: e instanceof Error ? e.message : "invalid-order-body",
       status: null,
     };
@@ -189,6 +294,7 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
     return {
       ok: false,
       kind: "server",
+      reason: "prodigi-unavailable",
       message: e instanceof Error ? e.message : "network-error",
       status: null,
     };
@@ -205,9 +311,11 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   }
 
   if (!res.ok) {
+    const { kind, reason } = classifyProdigiStatus(res.status);
     return {
       ok: false,
-      kind: res.status >= 500 ? "server" : "client",
+      kind,
+      reason,
       message: `Prodigi order HTTP ${res.status}`,
       status: res.status,
     };
@@ -218,6 +326,7 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
     return {
       ok: false,
       kind: "client",
+      reason: "prodigi-error",
       message: "Prodigi order missing id",
       status: res.status,
     };

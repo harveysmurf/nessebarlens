@@ -8,6 +8,7 @@ import { getPhoto } from "@/lib/photos";
 import { DIGITAL_PRICE_EUR, eurToCents, formatLabel } from "@/lib/pricing";
 import { quotePhysical } from "@/lib/prodigi-quote";
 import { isProdigiUnconfigured } from "@/lib/prodigi-config";
+import { canSignMasterAsset } from "@/lib/print-asset";
 import { getStripe, siteUrl } from "@/lib/stripe";
 
 export async function POST(request: Request) {
@@ -52,6 +53,20 @@ export async function POST(request: Request) {
       const message = e instanceof Error ? e.message : "Quote failed";
       const status = isProdigiUnconfigured(message) ? 503 : 502;
       return NextResponse.json({ error: message }, { status });
+    }
+
+    // Fail closed before taking the money. A physical order is fulfilled from
+    // an HMAC-signed /api/print-asset URL; without a usable
+    // PRINT_ASSET_HMAC_SECRET we cannot sign one, and the fulfillment path
+    // would otherwise fall back to the public ~41KB placeholder — the customer
+    // pays for a 70x100 giclee and Prodigi receives a 1600x1200 thumbnail, with
+    // nothing recording that it happened. Refusing here means the customer is
+    // never charged, so there is no refund path to build.
+    if (!(await canSignMasterAsset(photo.slug))) {
+      return NextResponse.json(
+        { error: "Print fulfillment is not configured" },
+        { status: 503 },
+      );
     }
   } else {
     quoteEur = DIGITAL_PRICE_EUR;

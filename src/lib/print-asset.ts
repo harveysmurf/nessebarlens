@@ -63,6 +63,22 @@ export function printAssetSecret(
   return usableSecret(envString("PRINT_ASSET_HMAC_SECRET", env));
 }
 
+/**
+ * Whether this deployment can actually produce a signed master URL for `slug`.
+ *
+ * Used as a pre-payment guard: /api/checkout refuses to create a Stripe
+ * session when this is false, so a physical order can never be paid for and
+ * then fulfilled from the public placeholder.
+ *
+ * It deliberately asks signPrintAssetUrl rather than testing the secret
+ * directly, so the check answers the question that actually matters — "would
+ * the order path be able to sign this?" — instead of a proxy for it that could
+ * drift from the signer.
+ */
+export async function canSignMasterAsset(slug: string): Promise<boolean> {
+  return (await signPrintAssetUrl(slug)) !== null;
+}
+
 export function isPhotoSlug(value: string): boolean {
   return PHOTO_SLUG_PATTERN.test(value);
 }

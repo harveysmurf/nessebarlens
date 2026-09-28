@@ -267,7 +267,7 @@ test("missing shipping is a permanent stop without calling Prodigi", async () =>
   assert.equal(called, 0);
 });
 
-test("Prodigi client error becomes paid-unfulfilled prodigi-error", async () => {
+test("a Prodigi 400 is terminal and stores its own reason", async () => {
   const kv = memoryKv();
   const result = await fulfillCheckoutSession({
     ...paidInput({
@@ -280,19 +280,138 @@ test("Prodigi client error becomes paid-unfulfilled prodigi-error", async () => 
     createOrder: async () => ({
       ok: false,
       kind: "client",
+      reason: "prodigi-validation-error",
       message: "Prodigi order HTTP 400",
       status: 400,
     }),
   });
   assert.equal(result.httpStatus, 200);
   assert.equal(result.body.status, "paid-unfulfilled");
-  assert.equal(result.body.reason, "prodigi-error");
+  assert.equal(result.body.reason, "prodigi-validation-error");
   const stored = parseOrderRecord((await kv.get(SESSION))!);
-  assert.equal(stored?.reason, "prodigi-error");
+  assert.equal(stored?.reason, "prodigi-validation-error");
   assert.equal(stored?.prodigiOrderId, null);
 });
 
-test("Prodigi server error returns 500 and does not write ORDERS", async () => {
+test("a retryable Prodigi failure writes the paid order, answers 500, and retries on redelivery", async () => {
+  // The unrecoverable case this replaces: a wrong sandbox key used to be
+  // terminal, so the customer paid, the record was written as a terminal
+  // duplicate, the webhook answered 200, and every later delivery hit the
+  // duplicate branch — also 200. Now the record is written non-terminal with
+  // its own reason (so a human sees the paid-but-unfulfilled order and owns the
+  // refund), the webhook answers 5xx, and a redelivery re-attempts Prodigi
+  // instead of short-circuiting.
+  for (const reason of [
+    "prodigi-auth-error",
+    "prodigi-rate-limit",
+    "prodigi-unavailable",
+    "prodigi-asset-unconfigured",
+  ] as const) {
+    const kv = memoryKv();
+    let fail = true;
+    const createOrder: CreateProdigiOrder = async () =>
+      fail
+        ? {
+            ok: false,
+            kind: "server",
+            reason,
+            message: "transient",
+            status: null,
+          }
+        : { ok: true, orderId: "ord_fixed", stage: "InProgress", assetUrl: "https://nessebarlens.com/api/print-asset?x=1" };
+
+    const first = await fulfillCheckoutSession({
+      ...paidInput({
+        amountTotal: 1999,
+        prodigiKeyConfigured: true,
+        shippingDetails: SHIPPING,
+        metadata: physicalMeta(),
+      }),
+      kv,
+      createOrder,
+    });
+    assert.equal(first.httpStatus, 500, reason);
+    const stuck = parseOrderRecord((await kv.get(SESSION))!);
+    assert.equal(stuck?.status, "paid-unfulfilled", reason);
+    assert.equal(stuck?.reason, reason, reason);
+    assert.equal(stuck?.terminal, false, reason);
+    assert.equal(stuck?.prodigiOrderId, null, reason);
+
+    // Stripe redelivers: the stored order is retried, not treated as a
+    // duplicate, so fixing the key is what lands the print.
+    fail = false;
+    const retry = await fulfillCheckoutSession({
+      ...paidInput({
+        amountTotal: 1999,
+        prodigiKeyConfigured: true,
+        shippingDetails: SHIPPING,
+        metadata: physicalMeta(),
+      }),
+      kv,
+      createOrder,
+    });
+    assert.equal(retry.httpStatus, 200, reason);
+    assert.equal(retry.body.duplicate, undefined, reason);
+    const fixed = parseOrderRecord((await kv.get(SESSION))!);
+    assert.equal(fixed?.status, "paid", reason);
+    assert.equal(fixed?.prodigiOrderId, "ord_fixed", reason);
+    assert.equal(fixed?.terminal, true, reason);
+
+    // And a further redelivery of a now-terminal order is a plain duplicate:
+    // Prodigi must not be asked to place a second order for one payment.
+    const again = await fulfillCheckoutSession({
+      ...paidInput({
+        amountTotal: 1999,
+        prodigiKeyConfigured: true,
+        shippingDetails: SHIPPING,
+        metadata: physicalMeta(),
+      }),
+      kv,
+      createOrder,
+    });
+    assert.equal(again.body.duplicate, true, reason);
+  }
+});
+
+test("a terminal Prodigi 400 is not retried on redelivery", async () => {
+  const kv = memoryKv();
+  let calls = 0;
+  const createOrder: CreateProdigiOrder = async () => {
+    calls += 1;
+    return {
+      ok: false,
+      kind: "client",
+      reason: "prodigi-validation-error",
+      message: "Prodigi order HTTP 400",
+      status: 400,
+    };
+  };
+  const first = await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      metadata: physicalMeta(),
+    }),
+    kv,
+    createOrder,
+  });
+  assert.equal(first.httpStatus, 200);
+  const second = await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      metadata: physicalMeta(),
+    }),
+    kv,
+    createOrder,
+  });
+  assert.equal(second.body.duplicate, true);
+  assert.equal(calls, 1);
+});
+
+test("Prodigi server error returns 500 and records the paid order for a human", async () => {
   const kv = memoryKv();
   const result = await fulfillCheckoutSession({
     ...paidInput({
@@ -305,13 +424,15 @@ test("Prodigi server error returns 500 and does not write ORDERS", async () => {
     createOrder: async () => ({
       ok: false,
       kind: "server",
+      reason: "prodigi-unavailable",
       message: "Prodigi order HTTP 503",
       status: 503,
     }),
   });
   assert.equal(result.httpStatus, 500);
-  assert.equal(await kv.get(SESSION), null);
-  assert.equal(kv.puts.length, 0);
+  const stored = parseOrderRecord((await kv.get(SESSION))!);
+  assert.equal(stored?.reason, "prodigi-unavailable");
+  assert.equal(stored?.terminal, false);
 });
 
 test("amount mismatch and missing shipping metadata are permanent stops", () => {

@@ -100,6 +100,10 @@ test("a non-Error thrown while building the body is reported, not rethrown", asy
   process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
   process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
+  // createProdigiOrder now fails closed before the body builder when the
+  // master cannot be signed; these tests are about the later catch arms, so
+  // give it a usable secret.
+  process.env.PRINT_ASSET_HMAC_SECRET = "defensive-branches-hmac-secret-32-ch!!";
   const originalFetch = globalThis.fetch;
   // A recipient field that throws a bare string when the body builder reads
   // it, which is what a non-Error throw site below the builder would look
@@ -131,7 +135,7 @@ test("a non-Error thrown while building the body is reported, not rethrown", asy
     assert.equal(fetched, 0, "the request must not be sent");
   } finally {
     globalThis.fetch = originalFetch;
-    for (const key of ["PRODIGI_API_BASE", "PRODIGI_SANDBOX_API_KEY", "NEXT_PUBLIC_SITE_URL"] as const) {
+    for (const key of ["PRODIGI_API_BASE", "PRODIGI_SANDBOX_API_KEY", "NEXT_PUBLIC_SITE_URL", "PRINT_ASSET_HMAC_SECRET"] as const) {
       if (saved[key] === undefined) delete process.env[key];
       else process.env[key] = saved[key];
     }
@@ -143,6 +147,10 @@ test("a non-Error thrown by fetch is a server failure, not a crash", async () =>
   process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
   process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
+  // createProdigiOrder now fails closed before the body builder when the
+  // master cannot be signed; these tests are about the later catch arms, so
+  // give it a usable secret.
+  process.env.PRINT_ASSET_HMAC_SECRET = "defensive-branches-hmac-secret-32-ch!!";
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () => {
     throw "socket exploded";
@@ -162,7 +170,7 @@ test("a non-Error thrown by fetch is a server failure, not a crash", async () =>
     assert.equal(result.ok === false && result.status, null);
   } finally {
     globalThis.fetch = originalFetch;
-    for (const key of ["PRODIGI_API_BASE", "PRODIGI_SANDBOX_API_KEY", "NEXT_PUBLIC_SITE_URL"] as const) {
+    for (const key of ["PRODIGI_API_BASE", "PRODIGI_SANDBOX_API_KEY", "NEXT_PUBLIC_SITE_URL", "PRINT_ASSET_HMAC_SECRET"] as const) {
       if (saved[key] === undefined) delete process.env[key];
       else process.env[key] = saved[key];
     }
