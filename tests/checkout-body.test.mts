@@ -155,3 +155,34 @@ test("a quote with no frame is accepted; a frame on a non-framed format is not",
     assert.match("error" in rejected ? rejected.error : "", /frame only allowed/);
   }
 });
+
+test("a quote body that is not an object is rejected before any field is read", () => {
+  // The route hands the parsed JSON straight in, so null, a bare string and a
+  // number all arrive here. Each has to be an error, not a field read off
+  // undefined that happens to be falsy.
+  for (const raw of [null, undefined, "giclee", 7, true]) {
+    assert.deepEqual(parseQuoteBody(raw), { error: "Invalid JSON body" }, String(raw));
+  }
+});
+
+test("a quote needs a size from the print list, and says which list", () => {
+  for (const size of ["", "99x99", "12X16", 7, null, undefined, {}]) {
+    const result = parseQuoteBody({ format: "giclee", size });
+    assert.match(
+      (result as { error: string }).error,
+      /^size required/,
+      JSON.stringify(size),
+    );
+  }
+  // The message names the sizes the SKU map accepts, so a caller can correct
+  // itself without reading the source.
+  const { error } = parseQuoteBody({ format: "giclee" }) as { error: string };
+  for (const size of PRINT_SIZES) {
+    assert.equal(error.includes(size), true, size);
+  }
+  // A valid size is accepted, so the check is not rejecting everything.
+  assert.equal(
+    "size" in (parseQuoteBody({ format: "giclee", size: PRINT_SIZES[0] }) as object),
+    true,
+  );
+});

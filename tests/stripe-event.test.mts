@@ -184,3 +184,41 @@ test("readStripeEvent rejects a non-event payload that passes the signature", as
     /invalid-event/,
   );
 });
+
+test("a signature with no timestamp in the header is rejected", async () => {
+  // Stripe always sends t=, so a v1-only header is not something we expect to
+  // see. What matters is that the age check cannot be skipped by omitting it:
+  // without a timestamp the header must not verify at all.
+  const nowMs = 1_700_000_000_000;
+  const timestamp = Math.floor(nowMs / 1000);
+  const sig = await sign(timestamp);
+  for (const h of [`v1=${sig}`, `v0=${sig},v1=${sig}`, `v1=${sig},`, `,v1=${sig}`]) {
+    assert.equal(
+      await verifyStripeSignatureWebCrypto(PAYLOAD, h, SECRET, nowMs),
+      false,
+      h,
+    );
+  }
+  // The same header signed with a fresh t= does verify, so the rejection above
+  // is the missing timestamp and not the signature.
+  assert.equal(
+    await verifyStripeSignatureWebCrypto(PAYLOAD, header(timestamp, sig), SECRET, nowMs),
+    true,
+  );
+});
+
+test("a non-positive or fractional t= is not a usable timestamp", async () => {
+  // Number() happily produces these from the header text; the age check is
+  // meaningless against them, so they are rejected before the signature is
+  // compared.
+  const nowMs = 1_700_000_000_000;
+  const timestamp = Math.floor(nowMs / 1000);
+  const sig = await sign(timestamp);
+  for (const t of ["-1", "0", "1.5", "NaN", "Infinity"]) {
+    assert.equal(
+      await verifyStripeSignatureWebCrypto(PAYLOAD, `t=${t},v1=${sig}`, SECRET, nowMs),
+      false,
+      t,
+    );
+  }
+});
