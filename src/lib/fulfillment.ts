@@ -13,6 +13,7 @@ import {
 } from "./prodigi-order";
 import type { FrameFinish, PrintSize } from "./pricing";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
+import { siteUrl } from "./stripe";
 
 /** Phase 2: SKU map + sandbox order path are wired. */
 export const SKU_MAP_READY = true;
@@ -576,9 +577,12 @@ function isFrameFinish(value: string): value is FrameFinish {
 function isSafeAssetUrl(url: string): boolean {
   if (!/^https:\/\//i.test(url)) return false;
   if (/prints\//i.test(url) || /masters/i.test(url)) return false;
-  // Allow site placeholders and HMAC print-asset Worker URLs only.
+  // Allow same-origin placeholders and HMAC print-asset Worker URLs only.
+  // Path-only checks would let https://evil.example/placeholders/… through.
   try {
     const parsed = new URL(url);
+    const site = new URL(siteUrl());
+    if (parsed.origin !== site.origin) return false;
     if (parsed.pathname.startsWith("/placeholders/")) return true;
     if (parsed.pathname === "/api/print-asset") return true;
     return false;

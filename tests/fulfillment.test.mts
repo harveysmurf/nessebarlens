@@ -98,7 +98,80 @@ const okCreate: CreateProdigiOrder = async () => ({
   assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
 });
 
-test("SKU map is enabled; digital and physical amount math", () => {
+test("parseOrderRecord rejects off-origin asset URLs even with safe paths", () => {
+  process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
+  const base = {
+    v: 1,
+    sessionId: SESSION,
+    merchantReference: SESSION,
+    terminal: true,
+    status: "paid",
+    photoSlug: "dawn",
+    format: "giclee",
+    size: "30x40",
+    frame: "",
+    quoteEur: 15,
+    amountTotal: 1999,
+    currency: "eur",
+    reason: null,
+    masterKey: null,
+    recipient: {
+      name: "Test Buyer",
+      line1: "1 Harbor St",
+      line2: "",
+      city: "Nessebar",
+      state: "",
+      postcode: "8230",
+      countryCode: "BG",
+      email: "buyer@example.com",
+      phone: null,
+    },
+    prodigiOrderId: "ord_1",
+    prodigiStage: "InProgress",
+    updatedAt: NOW,
+  };
+
+  assert.equal(
+    parseOrderRecord(
+      JSON.stringify({
+        ...base,
+        assetUrl: "https://evil.example/placeholders/dawn.jpg",
+      }),
+    ),
+    null,
+  );
+  assert.equal(
+    parseOrderRecord(
+      JSON.stringify({
+        ...base,
+        assetUrl: "https://evil.example/api/print-asset?slug=dawn&exp=1&sig=ab",
+      }),
+    ),
+    null,
+  );
+
+  const okPlaceholder = parseOrderRecord(
+    JSON.stringify({
+      ...base,
+      assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+    }),
+  );
+  assert.ok(okPlaceholder);
+  assert.equal(
+    okPlaceholder.assetUrl,
+    "https://nessebarlens.com/placeholders/dawn.jpg",
+  );
+
+  const okPrintAsset = parseOrderRecord(
+    JSON.stringify({
+      ...base,
+      assetUrl:
+        "https://nessebarlens.com/api/print-asset?slug=dawn&exp=1&sig=" +
+        "a".repeat(64),
+    }),
+  );
+  assert.ok(okPrintAsset);
+});
   assert.equal(SKU_MAP_READY, true);
   assert.equal(expectedAmountCents("digital", 30), 3000);
   assert.equal(expectedAmountCents("giclee", 15, 4.99), 1500 + 499);
@@ -505,6 +578,7 @@ test("webhook + download routes still do not call Prodigi; order module is the o
     "src/lib/fulfillment.ts",
     "src/lib/master-key.ts",
     "src/lib/print-asset.ts",
+    "src/lib/crypto-hex.ts",
     "src/lib/stripe-event.ts",
     "src/lib/worker-bindings.ts",
     "src/app/api/webhooks/stripe/route.ts",
