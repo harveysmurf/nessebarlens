@@ -5,6 +5,7 @@
  */
 
 import { masterKeyForSlug } from "./master-key";
+import { hmacSha256Hex, timingSafeEqualHex } from "./crypto-hex";
 import { siteUrl } from "./stripe";
 
 /** Prodigi may re-fetch during fulfillment; start at 7d, tighten after a live order. */
@@ -114,7 +115,7 @@ export async function verifyPrintAssetRequest(
   }
 
   const expected = await hmacSha256Hex(signingPayload(slug, exp), secret);
-  if (!timingSafeEqualHex(expected, sig.toLowerCase())) {
+  if (!timingSafeEqualHex(expected, sig)) {
     return { ok: false, status: 401, error: "bad-signature" };
   }
   return { ok: true, slug };
@@ -160,33 +161,4 @@ export async function resolvePrintAssetStream(
 
 function signingPayload(slug: string, exp: number): string {
   return `v1.${slug}.${exp}`;
-}
-
-async function hmacSha256Hex(content: string, secret: string): Promise<string> {
-  const encoder = new TextEncoder();
-  const key = await crypto.subtle.importKey(
-    "raw",
-    encoder.encode(secret),
-    { name: "HMAC", hash: "SHA-256" },
-    false,
-    ["sign"],
-  );
-  const signature = await crypto.subtle.sign("HMAC", key, encoder.encode(content));
-  const bytes = new Uint8Array(signature);
-  let hex = "";
-  for (let i = 0; i < bytes.length; i++) {
-    hex += bytes[i]!.toString(16).padStart(2, "0");
-  }
-  return hex;
-}
-
-function timingSafeEqualHex(expected: string, actual: string): boolean {
-  const a = expected.toLowerCase();
-  const b = actual.toLowerCase();
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i++) {
-    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return mismatch === 0;
 }
