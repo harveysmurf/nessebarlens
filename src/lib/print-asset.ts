@@ -42,13 +42,25 @@ export type PrintAssetStream =
 /** Min chars for the print-asset HMAC secret. Single source of truth. */
 export const PRINT_ASSET_SECRET_MIN_LENGTH = 32;
 
+/**
+ * A secret is usable only if it survives trimming and is long enough.
+ *
+ * A Worker binding can hold a value no env reader would produce — `wrangler
+ * secret put` keeps a trailing newline, and a paste can carry a leading space.
+ * "   " is truthy, so a bare length check signed URLs with a key of whitespace
+ * and every legitimate request came back 401 bad-signature instead of the 503
+ * that says the deployment is not configured.
+ */
+function usableSecret(secret: string | null | undefined): string | null {
+  const trimmed = secret?.trim() ?? "";
+  return trimmed.length >= PRINT_ASSET_SECRET_MIN_LENGTH ? trimmed : null;
+}
+
 /** HMAC secret for /api/print-asset. Min 32 chars; unset → placeholder fallback. */
 export function printAssetSecret(
   env: Record<string, unknown> = process.env,
 ): string | null {
-  const secret = envString("PRINT_ASSET_HMAC_SECRET", env);
-  if (!secret || secret.length < PRINT_ASSET_SECRET_MIN_LENGTH) return null;
-  return secret;
+  return usableSecret(envString("PRINT_ASSET_HMAC_SECRET", env));
 }
 
 export function isPhotoSlug(value: string): boolean {
@@ -69,7 +81,10 @@ export async function signPrintAssetUrl(
   } = {},
 ): Promise<string | null> {
   if (!isPhotoSlug(slug) || !masterKeyForSlug(slug)) return null;
-  const secret = options.secret === undefined ? printAssetSecret() : options.secret;
+  const secret =
+    options.secret === undefined
+      ? printAssetSecret()
+      : usableSecret(options.secret);
   if (!secret) return null;
 
   const nowMs = options.nowMs ?? Date.now();
@@ -93,7 +108,10 @@ export async function verifyPrintAssetRequest(
   sig: string,
   options: { secret?: string | null; nowMs?: number } = {},
 ): Promise<PrintAssetVerifyResult> {
-  const secret = options.secret === undefined ? printAssetSecret() : options.secret;
+  const secret =
+    options.secret === undefined
+      ? printAssetSecret()
+      : usableSecret(options.secret);
   if (!secret) {
     return { ok: false, status: 503, error: "print-asset-unavailable" };
   }

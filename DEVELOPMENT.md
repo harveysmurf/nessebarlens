@@ -41,7 +41,12 @@ Stack:
 
 ## 3. Local development
 
+The project pins its node version in `.nvmrc` (`24.21.0`, the current LTS
+line). Node 20 cannot run the suite at all — it fails on `.mts` with
+`ERR_UNKNOWN_FILE_EXTENSION`, because type stripping is the loader's job here.
+
 ```bash
+nvm use              # honours .nvmrc
 npm install          # land under /mnt/storage, never the root fs
 npm run dev          # next dev (OpenNext dev bindings auto-init)
 npm run lint         # eslint
@@ -68,9 +73,15 @@ Environment variables (names only — values live in the `.env.local` symlink):
 
 ## 4. Testing
 
-`npm test` runs `node --test` against `tests/fulfillment.test.mts` with a TS loader
-(`tests/register.mjs` → `tests/ts-loader.mjs`). Tests are **Node-native, no test
-runner framework**.
+`npm test` runs `node --test` against `tests/fulfillment.test.mts` on **node 24**,
+with types stripped by node itself and one resolve hook
+(`tests/register.mjs` → `tests/resolve-hooks.mjs`) for extensionless relative
+imports. Tests are **Node-native, no test runner framework**.
+
+Because stripping happens in place, `src/` must stay erasable-syntax only — no
+`enum`, `namespace`, or `declare module`. `tests/resolve-hooks.test.mts` fails
+the build if that ever changes, because tsc does not cover the files no test
+imports.
 
 - Always run `npm test` before opening a PR and again before a deploy.
 - CI (see §6) blocks deploy on a failing test run.
@@ -142,7 +153,7 @@ do not use `opennextjs-cloudflare deploy` for deploys.
 
 ## 6. CI/CD
 
-GitHub Actions on `harveysmurf/nessebarlens` (Node 22):
+GitHub Actions on `harveysmurf/nessebarlens` (Node 24):
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|

@@ -17,15 +17,27 @@ export type CloudflareEnv = Record<string, unknown>;
 /** Reads the Worker env. Injectable so tests can drive the real binding path. */
 export type EnvContextReader = () => Promise<CloudflareEnv>;
 
-const cloudflareEnv: EnvContextReader = async () => {
-  const mod = (await import("@opennextjs/cloudflare")) as unknown as {
-    getCloudflareContext: (options?: { async: boolean }) => Promise<{
-      env: CloudflareEnv;
-    }>;
-  };
+type CloudflareContextModule = {
+  getCloudflareContext: (options?: { async: boolean }) => Promise<{
+    env: CloudflareEnv;
+  }>;
+};
+
+/** The dynamic import is a parameter so a test can supply a context module. */
+const loadCloudflareModule = (): Promise<CloudflareContextModule> =>
+  import("@opennextjs/cloudflare") as unknown as Promise<CloudflareContextModule>;
+
+/**
+ * Reads the real Worker env. Exported for the tests that need a context whose
+ * `env` is present but empty, which is what a fresh binding looks like.
+ */
+export async function readCloudflareEnv(
+  load: () => Promise<CloudflareContextModule> = loadCloudflareModule,
+): Promise<CloudflareEnv> {
+  const mod = await load();
   const ctx = await mod.getCloudflareContext({ async: true });
   return ctx.env ?? {};
-};
+}
 
 /**
  * ORDERS is KV id c6f34450a61c4c69b3f840e845a7b0d3.
@@ -37,7 +49,7 @@ export async function readWorkerBindings(
 ): Promise<WorkerBindings> {
   let env: CloudflareEnv = {};
   try {
-    env = await (options.readEnv ?? cloudflareEnv)();
+    env = await (options.readEnv ?? readCloudflareEnv)();
   } catch {
     env = {};
   }
