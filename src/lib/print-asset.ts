@@ -6,7 +6,7 @@
 
 import { masterKeyForSlug } from "./master-key";
 import { hmacSha256Hex, timingSafeEqualHex } from "./crypto-hex";
-import { envString } from "./env";
+import { envString, stripTrailingSlashes } from "./env";
 import { siteUrl } from "./stripe";
 
 /** Prodigi may re-fetch during fulfillment; start at 7d, tighten after a live order. */
@@ -80,7 +80,7 @@ export async function signPrintAssetUrl(
   const sig = await hmacSha256Hex(signingPayload(slug, exp), secret);
   // options.baseUrl is caller-supplied, so it still needs stripping; siteUrl()
   // is already slash-free.
-  const base = (options.baseUrl ?? siteUrl()).replace(/\/$/, "");
+  const base = stripTrailingSlashes(options.baseUrl ?? siteUrl());
   const params = new URLSearchParams({
     slug,
     exp: String(exp),

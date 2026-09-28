@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { envString, envStringStrippedSlash } from "../src/lib/env.ts";
+import { envString, envStringStrippedSlash, stripTrailingSlashes } from "../src/lib/env.ts";
 import { prodigiApiBase, prodigiApiKey } from "../src/lib/prodigi-config.ts";
 
 function withEnv<T>(name: string, value: string | undefined, fn: () => T): T {
@@ -69,4 +69,16 @@ test("prodigiApiKey pairs the sandbox host with the sandbox key only", () => {
       });
     }),
   );
+});
+
+test("stripTrailingSlashes removes every trailing slash, not just one", () => {
+  assert.equal(stripTrailingSlashes("https://a"), "https://a");
+  assert.equal(stripTrailingSlashes("https://a/"), "https://a");
+  assert.equal(stripTrailingSlashes("https://a///"), "https://a");
+  assert.equal(stripTrailingSlashes("https://a/b//"), "https://a/b");
+  assert.equal(stripTrailingSlashes("/"), "");
+  assert.equal(stripTrailingSlashes(""), "");
+  // A path-internal slash is not a trailing slash.
+  assert.equal(stripTrailingSlashes("https://a/b"), "https://a/b");
+  assert.equal(stripTrailingSlashes("https://a/?x=1"), "https://a/?x=1");
 });

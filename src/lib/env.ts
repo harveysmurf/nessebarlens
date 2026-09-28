@@ -21,13 +21,20 @@ export function envString(
   return trimmed(env[name]) ?? trimmed(process.env[name]);
 }
 
-/** Strips every trailing slash, so callers can concatenate "/path" safely. */
+/**
+ * Strips every trailing slash so callers can concatenate "/path" safely.
+ * Every slash, not just one: the single-slash version silently left a
+ * doubled slash in a caller-supplied base and produced "//api/…" URLs.
+ */
+export function stripTrailingSlashes(value: string): string {
+  return value.replace(/\/+$/, "");
+}
 export function envStringStrippedSlash(
   name: string,
   env: Record<string, unknown> = process.env,
 ): string | undefined {
   const value = envString(name, env);
   if (value === undefined) return undefined;
-  const stripped = value.replace(/\/+$/, "");
+  const stripped = stripTrailingSlashes(value);
   return stripped.length > 0 ? stripped : undefined;
 }
