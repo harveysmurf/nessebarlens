@@ -41,6 +41,10 @@ export async function load(url, context, nextLoad) {
       module: ts.ModuleKind.ESNext,
       target: ts.ScriptTarget.ES2022,
       esModuleInterop: true,
+      // inline map + sources: node's coverage reporter remaps V8 positions
+      // through it, so report line numbers refer to the .ts the reader sees.
+      inlineSourceMap: true,
+      inlineSources: true,
     },
     fileName: url,
   });
