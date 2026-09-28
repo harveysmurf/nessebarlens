@@ -3,36 +3,35 @@
  *
  * Runs the suite under node's built-in V8 coverage, then enforces floors over
  * src/lib only. app/ and components/ are Next.js route and React code that no
- * test imports yet, so including them would report a meaningless number.
+ * test imports yet, so including them would report a number nobody can act on.
  *
- * Line numbers are only trustworthy because tests/ts-loader.mjs emits an
- * inline source map: without it the reporter attributes V8 positions to the
- * transpiled output and executed code reads as uncovered (it reported
- * prodigi-order.ts at 69% when it is at 98%).
+ * Line numbers are only trustworthy because tests/ts-loader.mjs emits an inline
+ * source map: without it the reporter attributes V8 positions to the transpiled
+ * output and executed code reads as uncovered (it reported prodigi-order.ts at
+ * 69% when it is at 98%).
  *
  * Node 20 has no --test-coverage-lines flag, so the floor is checked here
- * instead. Lines/branches/functions are the simple mean over src/lib files,
- * not a line-weighted total: that is pessimistic for big files and is
- * therefore safe to ratchet upward.
+ * instead. Lines/branches/functions are the simple mean over src/lib files, not
+ * a line-weighted total: that is pessimistic for big files and is therefore safe
+ * to ratchet upward.
  *
- *   node scripts/coverage.mjs            # check against the floors below
- *   node scripts/coverage.mjs --print    # report without gating
+ *   npm run coverage          # check against the floors below
+ *   npm run coverage:report   # report without gating
  */
 
 import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { isLibFile, mean, parseCoverage } from "./coverage-report.mjs";
 
 const ROOT = path.join(import.meta.dirname, "..");
 
 /** Ratchet: never lower these, raise them as tests land. */
 const FLOOR = { lines: 94, branches: 93, functions: 94 };
 
-const pct = (value) => Number.parseFloat(value);
-
-// Node's test runner takes the glob itself, but only the shell expands it, so
-// pass the file list explicitly.
+// The test runner takes the glob itself, but only a shell expands it, so pass
+// the file list explicitly.
 const testFiles = readdirSync(path.join(ROOT, "tests"))
   .filter((name) => name.endsWith(".test.mts"))
   .sort()
@@ -45,68 +44,54 @@ const result = spawnSync(
 );
 
 const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
-if (result.status !== 0 && !output.includes("# start of coverage report")) {
-  process.stderr.write(output);
-  process.exit(result.status ?? 1);
-}
-
-const rows = [];
-for (const line of output.split("\n")) {
-  if (!line.startsWith("# src/") && !line.startsWith("# tests/")) continue;
-  const [file, lines, branches, functions] = line
-    .replace(/^#\s*/, "")
-    .split("|")
-    .map((part) => part.trim());
-  rows.push({
-    file,
-    lines: pct(lines),
-    branches: pct(branches),
-    functions: pct(functions),
-    uncovered: line.split("|").slice(4).join("|").trim(),
-  });
-}
-
-const mean = (key, subset) =>
-  subset.reduce((sum, row) => sum + row[key], 0) / (subset.length || 1);
-
-const lib = rows.filter((row) => row.file.startsWith("src/lib/"));
-const tests = rows.filter((row) => row.file.startsWith("tests/"));
-if (lib.length === 0) {
-  process.stderr.write("coverage.mjs: no src/lib rows in the coverage report\n");
+const rows = parseCoverage(output);
+if (rows.length === 0) {
+  process.stderr.write("coverage.mjs: no file rows in the coverage report\n");
+  process.stderr.write(output.slice(-4000));
   process.exit(1);
 }
 
-const scope = mean("lines", lib);
-const scopeBranches = mean("branches", lib);
-const scopeFunctions = mean("functions", lib);
+const lib = rows.filter((row) => isLibFile(row.file));
+const tests = rows.filter((row) => /(^|\/)tests\//.test(row.file));
+if (lib.length === 0) {
+  process.stderr.write(
+    `coverage.mjs: parsed ${rows.length} rows but none under src/lib\n`,
+  );
+  process.exit(1);
+}
 
-const pad = (value) => String(value).padStart(6);
+const actual = {
+  lines: mean(lib, "lines"),
+  branches: mean(lib, "branches"),
+  functions: mean(lib, "functions"),
+};
+
 console.log(`src/lib (${lib.length} files, mean over files)`);
-for (const [name, actual, floor] of [
-  ["lines", scope, FLOOR.lines],
-  ["branches", scopeBranches, FLOOR.branches],
-  ["functions", scopeFunctions, FLOOR.functions],
-]) {
-  console.log(`  ${name.padEnd(10)} ${pad(actual.toFixed(2))}%  floor ${floor}%`);
+for (const name of ["lines", "branches", "functions"]) {
+  console.log(
+    `  ${name.padEnd(10)} ${actual[name].toFixed(2).padStart(6)}%  floor ${FLOOR[name]}%`,
+  );
 }
 if (tests.length > 0) {
-  console.log(
-    `  (test files are measured too: ${mean("lines", tests).toFixed(2)}% lines)`,
-  );
+  console.log(`  (test files are measured too: ${mean(tests, "lines").toFixed(2)}% lines)`);
 }
 
 if (process.argv.includes("--print")) process.exit(0);
 
 const failures = [];
-if (scope < FLOOR.lines) failures.push(`lines ${scope.toFixed(2)}% < ${FLOOR.lines}%`);
-if (scopeBranches < FLOOR.branches) {
-  failures.push(`branches ${scopeBranches.toFixed(2)}% < ${FLOOR.branches}%`);
-}
-if (scopeFunctions < FLOOR.functions) {
-  failures.push(`functions ${scopeFunctions.toFixed(2)}% < ${FLOOR.functions}%`);
+for (const name of ["lines", "branches", "functions"]) {
+  if (actual[name] < FLOOR[name]) {
+    failures.push(`${name} ${actual[name].toFixed(2)}% < ${FLOOR[name]}%`);
+  }
 }
 if (failures.length > 0) {
   console.error(`\ncoverage floor not met: ${failures.join(", ")}`);
+  console.error("files below the floor:");
+  for (const row of [...lib].sort((a, b) => a.lines - b.lines)) {
+    if (row.lines < FLOOR.lines) {
+      console.error(`  ${row.lines.toFixed(2).padStart(6)}%  ${row.file}  ${row.uncovered}`);
+    }
+  }
   process.exit(1);
 }
 console.log("\ncoverage floors met");
