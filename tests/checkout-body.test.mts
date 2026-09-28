@@ -133,3 +133,25 @@ test("formatListLabel is the join the parsers use", () => {
   assert.equal(formatListLabel(["a", "b"], ", "), "a, b");
   assert.equal(formatListLabel([]), "");
 });
+
+test("a non-object checkout body is rejected before any field is read", () => {
+  for (const raw of [null, undefined, 0, 42, "", "photoSlug=dawn", true]) {
+    assert.deepEqual(parseCheckoutBody(raw), { error: "Invalid JSON body" }, String(raw));
+  }
+  // An array is typeof "object", so it gets the next error rather than the
+  // shape error. Pinned because a caller might read that difference as a bug.
+  assert.deepEqual(parseCheckoutBody([]), { error: "photoSlug required" });
+});
+
+test("a quote with no frame is accepted; a frame on a non-framed format is not", () => {
+  const giclee = parseQuoteBody({ format: "giclee", size: "30x40" });
+  assert.deepEqual(giclee, { format: "giclee", size: "30x40", frame: null, destinationCountryCode: null });
+  // An explicitly undefined frame is as absent as a null one.
+  const undefinedFrame = parseQuoteBody({ format: "canvas", size: "50x70", frame: undefined });
+  assert.deepEqual(undefinedFrame, { format: "canvas", size: "50x70", frame: null, destinationCountryCode: null });
+  for (const frame of ["black", ""]) {
+    const rejected = parseQuoteBody({ format: "giclee", size: "30x40", frame });
+    assert.equal("error" in rejected, true, frame);
+    assert.match("error" in rejected ? rejected.error : "", /frame only allowed/);
+  }
+});
