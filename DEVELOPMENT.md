@@ -153,6 +153,10 @@ Debian-host symlink to `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
 - **No remote image hosts.** `next.config.ts` sets `images.remotePatterns: []` —
   do not add `images.unsplash.com` or any third-party host. Gallery uses plain
   `<img>` srcset against `NEXT_PUBLIC_WEB_IMAGES_BASE` only.
+- **Stripe Checkout only.** `/api/checkout` creates a Checkout Session
+  (`success_url` / `cancel_url`); no code path confirms a PaymentIntent. Stripe
+  sandbox emails about a missing `return_url` are expected after manual
+  `paymentIntents.confirm` probes — ignore them.
 - **Stripe webhooks** are verified with Web Crypto (`src/lib/stripe-event.ts`), and
   master keys are read from `photos.ts` (commit `cdac0eb`).
 - **Fulfillment is recorded, not executed.** `src/lib/fulfillment.ts` writes
