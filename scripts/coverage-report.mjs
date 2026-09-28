@@ -88,6 +88,21 @@ export function isLibFile(file) {
   return /(^|\/)src\/lib\/[^/]+\.[cm]?[jt]sx?$/.test(file);
 }
 
+/**
+ * True for the files the coverage gate is measured over: everything under
+ * src/lib, plus the API route handlers.
+ *
+ * The routes are Request -> Response functions with no React in them, so they
+ * are ordinary code to test and they own the status codes a client sees. The
+ * rest of app/ is a page tree and components/ is presentational React, which
+ * needs a DOM to mean anything — neither is in here.
+ */
+export function isGatedFile(file) {
+  // `[^/]+` for the segment would skip src/app/api/webhooks/stripe/route.ts,
+  // which is one level deeper than the other four.
+  return isLibFile(file) || /(^|\/)src\/app\/api\/.+\/route\.[cm]?[jt]sx?$/.test(file);
+}
+
 /** Mean of one metric over the given rows. */
 export function mean(rows, key) {
   if (rows.length === 0) return 0;

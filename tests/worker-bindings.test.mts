@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   isMastersBucket,
   isOrdersKv,
+  readCloudflareEnv,
   readWorkerBindings,
 } from "../src/lib/worker-bindings.ts";
 
@@ -150,4 +151,18 @@ test("a short print-asset secret in bindings falls back, a long one wins", async
     if (saved === undefined) delete process.env.PRINT_ASSET_HMAC_SECRET;
     else process.env.PRINT_ASSET_HMAC_SECRET = saved;
   }
+});
+
+test("a Worker context with no env at all reads as empty, not as a crash", async () => {
+  // getCloudflareContext resolves before any binding is declared in a fresh
+  // worker, so env can be absent. An empty object is the right answer: every
+  // binding then fails its shape guard and the request is refused, rather than
+  // a TypeError escaping the webhook.
+  const env = await readCloudflareEnv(async () => ({
+    getCloudflareContext: async () => ({}) as unknown as { env: Record<string, unknown> },
+  }));
+  assert.deepEqual(env, {});
+  const bindings = await readWorkerBindings({ readEnv: async () => env });
+  assert.equal(bindings.ORDERS, undefined);
+  assert.equal(bindings.MASTERS, undefined);
 });

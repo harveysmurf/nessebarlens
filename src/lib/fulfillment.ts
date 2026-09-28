@@ -455,7 +455,9 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
 
   const shippingEur =
     format === "digital" ? 0 : parseEurAmount(meta.shippingEur);
-  if (format !== "digital" && shippingEur === null) {
+  // A digital order is always 0 above, so "no shipping quote" means one thing
+  // only: a physical order whose metadata is incomplete.
+  if (shippingEur === null) {
     return {
       ...shell,
       format,
@@ -464,7 +466,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     };
   }
 
-  const expected = expectedAmountCents(format, quoteEur, shippingEur ?? 0);
+  const expected = expectedAmountCents(format, quoteEur, shippingEur);
   if (input.currency !== "eur" || input.amountTotal !== expected) {
     return {
       ...shell,

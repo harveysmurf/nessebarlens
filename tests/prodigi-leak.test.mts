@@ -87,3 +87,25 @@ test("recipient line2, state, email and phone are only sent when present", () =>
   assert.equal(full.recipient.email, "buyer@example.com");
   assert.equal(full.recipient.phoneNumber, "+359888123456");
 });
+
+test("every photo imageKey lives under prints/ — the canary for the backstop", () => {
+  /* assertNoMasterLeak ends with a loop over each photo's imageKey. Today it
+     can never throw: referencesMasters already rejects the blob for containing
+     any "prints/" key, so the loop is reached only with a key it would have
+     caught one line earlier. It stays anyway — it is the net for a future
+     imageKey stored somewhere referencesMasters does not match, and deleting a
+     security backstop to improve a coverage number is the wrong trade.
+
+     This test is what makes keeping it honest rather than dead: the invariant
+     the loop defends is now asserted directly, so a new imageKey outside
+     prints/ fails here and has to be reasoned about on purpose. */
+  const outside = PHOTOS.filter(
+    (photo) => !photo.imageKey.startsWith("prints/"),
+  );
+  assert.deepEqual(
+    outside.map((photo) => photo.imageKey),
+    [],
+    "a photo imageKey outside prints/ needs a re-check of assertNoMasterLeak",
+  );
+  assert.ok(PHOTOS.length > 0, "the canary is vacuous if there are no photos");
+});

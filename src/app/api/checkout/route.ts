@@ -7,6 +7,7 @@ import {
 import { getPhoto } from "@/lib/photos";
 import { DIGITAL_PRICE_EUR, eurToCents, formatLabel } from "@/lib/pricing";
 import { quotePhysical } from "@/lib/prodigi-quote";
+import { isProdigiUnconfigured } from "@/lib/prodigi-config";
 import { getStripe, siteUrl } from "@/lib/stripe";
 
 export async function POST(request: Request) {
@@ -49,7 +50,7 @@ export async function POST(request: Request) {
       sku = quote.sku;
     } catch (e) {
       const message = e instanceof Error ? e.message : "Quote failed";
-      const status = message.includes("API key") ? 503 : 502;
+      const status = isProdigiUnconfigured(message) ? 503 : 502;
       return NextResponse.json({ error: message }, { status });
     }
   } else {
