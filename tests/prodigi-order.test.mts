@@ -4,6 +4,7 @@ import { PHOTOS } from "../src/lib/photos.ts";
 import {
   assertNoMasterLeak,
   buildProdigiOrderBody,
+  classifyProdigiStatus,
   createProdigiOrder,
   placeholderAssetUrl,
   resolveOrderAssetUrl,
@@ -152,8 +153,9 @@ const ORDER_INPUT = {
   recipient: RECIPIENT,
 };
 
-test("createProdigiOrder posts to the sandbox orders URL and returns the id", async () => {
+test("createProdigiOrder posts the signed asset URL to the sandbox orders URL", async () => {
   await withProdigiEnv(async () => {
+    process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
     const stub = stubFetch(() =>
       json({ order: { id: "ord_123", status: { stage: "awaiting_payment" } } }),
     );
@@ -171,13 +173,36 @@ test("createProdigiOrder posts to the sandbox orders URL and returns the id", as
       const sent = JSON.parse(call.init.body as string);
       assert.equal(sent.idempotencyKey, "cs_test_abcdefgh");
       assert.equal(sent.merchantReference, "cs_test_abcdefgh");
-      // No HMAC secret configured: the public placeholder stands in.
-      assert.match(sent.items[0].assets[0].url, /placeholders\/dawn\.jpg$/);
+      // A paid physical order never gets the public placeholder.
+      assert.match(sent.items[0].assets[0].url, /\/api\/print-asset\?/);
       assert.equal(result.ok && result.assetUrl, sent.items[0].assets[0].url);
     } finally {
       stub.restore();
     }
   });
+});
+
+test("an unsignable master fails the order closed, before any network call", async () => {
+  // This is the defect that motivated the guard: without a secret we cannot
+  // sign the master, and the old fallback handed Prodigi the ~41KB public
+  // placeholder — a customer pays for a 70x100 print and the order is recorded
+  // as fulfilled. Retryable, so the webhook answers 5xx and Stripe redelivers.
+  for (const secret of [undefined, "too-short", "        "]) {
+    await withProdigiEnv(async () => {
+      if (secret === undefined) delete process.env.PRINT_ASSET_HMAC_SECRET;
+      else process.env.PRINT_ASSET_HMAC_SECRET = secret;
+      const stub = stubFetch(() => json({ order: { id: "ord_never" } }));
+      try {
+        const result = await createProdigiOrder(ORDER_INPUT);
+        assert.equal(result.ok, false, JSON.stringify(secret));
+        assert.equal(result.ok === false && result.reason, "prodigi-asset-unconfigured");
+        assert.equal(result.ok === false && result.kind, "server");
+        assert.equal(stub.calls.length, 0, "Prodigi must never be contacted");
+      } finally {
+        stub.restore();
+      }
+    });
+  }
 });
 
 test("createProdigiOrder signs the asset URL when the HMAC secret is set", async () => {
@@ -194,14 +219,33 @@ test("createProdigiOrder signs the asset URL when the HMAC secret is set", async
   });
 });
 
-test("Prodigi 4xx is a client failure, 5xx a server failure, and the status survives", async () => {
-  for (const [status, kind] of [[422, "client"], [503, "server"]] as const) {
+test("auth and rate-limit failures retry; a bad request does not", async () => {
+  // Retryability is the load-bearing decision here. A 401 used to be
+  // terminal, which meant a wrong sandbox key produced a paid order, a 200 to
+  // Stripe, and no redelivery — unrecoverable without manual intervention.
+  // Stripe retries for ~3 days, so retrying a genuinely permanent auth failure
+  // only buys the window in which to fix the key.
+  const cases = [
+    [401, "server", "prodigi-auth-error"],
+    [403, "server", "prodigi-auth-error"],
+    [429, "server", "prodigi-rate-limit"],
+    [500, "server", "prodigi-unavailable"],
+    [503, "server", "prodigi-unavailable"],
+    [400, "client", "prodigi-validation-error"],
+    [422, "client", "prodigi-validation-error"],
+  ] as const;
+
+  for (const [status, kind, reason] of cases) {
     await withProdigiEnv(async () => {
+    // A usable secret, so the fail-closed asset guard does not short-circuit
+    // before the HTTP behaviour this test is actually about.
+    process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
       const stub = stubFetch(() => json({ error: "nope" }, status));
       try {
         const result = await createProdigiOrder(ORDER_INPUT);
         assert.equal(result.ok, false);
-        assert.equal(result.ok === false && result.kind, kind);
+        assert.equal(result.ok === false && result.kind, kind, `status ${status}`);
+        assert.equal(result.ok === false && result.reason, reason, `status ${status}`);
         assert.equal(result.ok === false && result.status, status);
         assert.equal(
           result.ok === false && result.message,
@@ -214,8 +258,21 @@ test("Prodigi 4xx is a client failure, 5xx a server failure, and the status surv
   }
 });
 
+test("auth and rate-limit share retry behaviour but not their reason", async () => {
+  // The two axes are separate on purpose: an operator reading the stored
+  // record must be able to tell "rotate the key" from "back off".
+  assert.notEqual(
+    classifyProdigiStatus(401).reason,
+    classifyProdigiStatus(429).reason,
+  );
+  assert.equal(classifyProdigiStatus(401).kind, classifyProdigiStatus(429).kind);
+});
+
 test("a 200 with no order id is a client failure, not a silent success", async () => {
   await withProdigiEnv(async () => {
+    // A usable secret, so the fail-closed asset guard does not short-circuit
+    // before the HTTP behaviour this test is actually about.
+    process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
     const stub = stubFetch(() => json({ order: { status: { stage: "x" } } }));
     try {
       const result = await createProdigiOrder(ORDER_INPUT);
@@ -230,6 +287,9 @@ test("a 200 with no order id is a client failure, not a silent success", async (
 
 test("a non-JSON 200 body is a failure, not a crash", async () => {
   await withProdigiEnv(async () => {
+    // A usable secret, so the fail-closed asset guard does not short-circuit
+    // before the HTTP behaviour this test is actually about.
+    process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
     const stub = stubFetch(() => new Response("<html>oops</html>", { status: 200 }));
     try {
       const result = await createProdigiOrder(ORDER_INPUT);
@@ -243,6 +303,9 @@ test("a non-JSON 200 body is a failure, not a crash", async () => {
 
 test("a network throw becomes a server failure with no status", async () => {
   await withProdigiEnv(async () => {
+    // A usable secret, so the fail-closed asset guard does not short-circuit
+    // before the HTTP behaviour this test is actually about.
+    process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
     const stub = stubFetch(() => {
       throw new Error("ECONNRESET");
     });
@@ -307,20 +370,20 @@ test("an unconfigured Prodigi key is a server failure, not a crash", async () =>
   if (saved !== undefined) process.env.PRODIGI_SANDBOX_API_KEY = saved;
 });
 
-test("resolveOrderAssetUrl prefers the signed URL over the placeholder", async () => {
+test("resolveOrderAssetUrl returns the signed URL, or null — never a placeholder", async () => {
   await withProdigiEnv(async () => {
     process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
     const signed = await resolveOrderAssetUrl("dawn");
-    assert.equal(signed.includes("/api/print-asset?"), true);
+    assert.equal(signed?.includes("/api/print-asset?"), true);
   });
   await withProdigiEnv(async () => {
-    const fallback = await resolveOrderAssetUrl("dawn");
-    assert.equal(fallback, "https://nessebarlens.com/placeholders/dawn.jpg");
+    assert.equal(await resolveOrderAssetUrl("dawn"), null);
   });
   await withProdigiEnv(async () => {
-    // An unknown slug signs to null, so the placeholder is used even with a
-    // secret configured.
-    const unknown = await resolveOrderAssetUrl("not-a-photo");
-    assert.equal(unknown, "https://nessebarlens.com/placeholders/not-a-photo.jpg");
+    // An unknown slug signs to null even with a secret configured. There is no
+    // placeholder path left: null means "cannot fulfill this", not "send the
+    // 41KB stand-in".
+    process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
+    assert.equal(await resolveOrderAssetUrl("not-a-photo"), null);
   });
 });

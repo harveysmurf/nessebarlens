@@ -112,14 +112,13 @@ test("signed URL has no .jpg extension (Prodigi tolerance unknown; content-type 
   assert.equal(path, "/api/print-asset");
 });
 
-test("sign returns null without secret; resolveOrderAssetUrl falls back to placeholder", async () => {
+test("sign returns null without secret, and the order asset path has no placeholder left", async () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   delete process.env.PRINT_ASSET_HMAC_SECRET;
   assert.equal(await signPrintAssetUrl("dawn", { secret: null }), null);
-  assert.equal(
-    await resolveOrderAssetUrl("dawn"),
-    "https://nessebarlens.com/placeholders/dawn.jpg",
-  );
+  // Null, not a fallback: a paid order must never be fulfilled from the public
+  // low-res stand-in. The caller turns this into a retryable failure.
+  assert.equal(await resolveOrderAssetUrl("dawn"), null);
 });
 
 test("Prodigi body accepts HMAC print-asset URL without master leak", async () => {

@@ -9,6 +9,7 @@ import { masterKeyForSlug } from "./master-key";
 import { referencesMasters } from "./master-guard";
 import {
   createProdigiOrder,
+  isRetryableProdigiReason,
   type CreateProdigiOrder,
   type OrderRecipient,
 } from "./prodigi-order";
@@ -53,8 +54,14 @@ export type OrderRecord = {
   v: 1;
   sessionId: string;
   merchantReference: string;
-  /** Webhook already returned 200. Stripe will not redeliver this session. */
-  terminal: true;
+  /**
+   * True when this delivery attempt is finished (the webhook answered 200, so
+   * Stripe will not redeliver this session). False only for the retryable
+   * Prodigi failures: we answered 5xx, the record is there so a human can see
+   * the paid-but-unfulfilled order, and a redelivery must be allowed to retry
+   * it rather than being rejected as a duplicate.
+   */
+  terminal: boolean;
   status: OrderStatus;
   photoSlug: string;
   format: OrderFormat;
@@ -185,16 +192,32 @@ export async function fulfillCheckoutSession(
     };
   }
 
-  const existing = await input.kv.get(decision.record.sessionId);
-  if (existing !== null) {
+  const existingRaw = await input.kv.get(decision.record.sessionId);
+  // A record left behind by a retryable failure is not a duplicate: Stripe is
+  // redelivering precisely so we can try again, and the stored order is where
+  // the paid-but-unfulfilled state is visible to a human. Everything else that
+  // is already stored is done, and re-running Prodigi would place a second
+  // order for one payment.
+  const retryRecord =
+    existingRaw !== null
+      ? parseOrderRecord(existingRaw)
+      : null;
+  const isRetry =
+    retryRecord !== null &&
+    retryRecord.status === "paid-unfulfilled" &&
+    !retryRecord.terminal &&
+    isRetryableProdigiReason(retryRecord.reason);
+
+  if (existingRaw !== null && !isRetry) {
     return { httpStatus: 200, body: { received: true, duplicate: true } };
   }
 
-  let record = decision.record;
+  let record = isRetry ? retryRecord : decision.record;
 
   if (
     record.status === "paid-unfulfilled" &&
-    record.reason === "awaiting-prodigi"
+    (record.reason === "awaiting-prodigi" ||
+      isRetryableProdigiReason(record.reason))
   ) {
     const create = input.createOrder ?? createProdigiOrder;
     const format = record.format as PhysicalFormat;
@@ -212,16 +235,37 @@ export async function fulfillCheckoutSession(
     });
 
     if (!result.ok && result.kind === "server") {
+      // We hold paid money and cannot fulfil it. No auto-refund (Simo's call:
+      // refunds are hard to reverse and a config failure wants eyes), so: write
+      // the order with its specific reason, log loudly for a human, and answer
+      // 5xx so Stripe keeps redelivering for ~3 days — long enough to fix the
+      // key or the HMAC secret and still land the order.
+      record = {
+        ...record,
+        terminal: false,
+        reason: result.reason,
+        prodigiOrderId: null,
+        prodigiStage: null,
+        assetUrl: null,
+      };
+      await input.kv.put(record.sessionId, JSON.stringify(record));
+      console.error(
+        `paid order ${record.sessionId} unfulfilled: ${result.reason} (${result.message}) — needs a human refund or retry`,
+      );
       return {
         httpStatus: 500,
-        body: { error: "prodigi-unavailable", message: result.message },
+        body: { error: result.reason, message: result.message },
       };
     }
 
     if (!result.ok) {
       record = {
         ...record,
-        reason: "prodigi-error",
+        // Keep the specific cause. A single "prodigi-error" for an auth
+        // failure, a rate limit and a malformed body makes the stored record
+        // useless for telling "rotate the key" from "back off" from "we sent
+        // something Prodigi does not accept".
+        reason: result.reason,
         prodigiOrderId: null,
         prodigiStage: null,
         assetUrl: null,
@@ -229,6 +273,9 @@ export async function fulfillCheckoutSession(
     } else {
       record = {
         ...record,
+        // The retry landed, so this session is finished: from here on a
+        // redelivery is a plain duplicate.
+        terminal: true,
         status: "paid",
         reason: null,
         masterKey: null,
@@ -265,7 +312,7 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
     return null;
   }
   if (row.merchantReference !== row.sessionId) return null;
-  if (row.terminal !== true) return null;
+  if (typeof row.terminal !== "boolean") return null;
   if (row.status !== "paid" && row.status !== "paid-unfulfilled") return null;
   if (!isOrderFormat(row.format)) return null;
   if (typeof row.photoSlug !== "string") return null;
@@ -318,7 +365,7 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
     v: 1,
     sessionId: row.sessionId,
     merchantReference: row.sessionId,
-    terminal: true,
+    terminal: row.terminal,
     status: row.status,
     photoSlug: row.photoSlug,
     format: row.format,
@@ -553,11 +600,22 @@ function isInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value);
 }
 
+/**
+ * A stored euro amount has at most two decimals.
+ *
+ * The previous check was `|value * 100 - eurToCents(value)| < 1e-6`, but
+ * eurToCents IS Math.round(value * 100), so that only asserted "no precision
+ * finer than ~1e-5" — it accepted 9.999999999999 and 15.000000001. The write
+ * path (parseEurAmount) admits only 1-2 decimals, so the read guard has to
+ * match it; the round-trip below compares against the value's own 2-decimal
+ * rounding, which tolerates binary-float error like 0.1 while rejecting a
+ * genuinely sub-cent fraction.
+ */
 function isEurAmount(value: unknown): value is number {
   if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
     return false;
   }
-  return Math.abs(value * 100 - eurToCents(value)) < 1e-6;
+  return Number(value.toFixed(2)) === value;
 }
 
 function isOrderFormat(value: unknown): value is OrderFormat {

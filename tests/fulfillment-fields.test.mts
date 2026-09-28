@@ -71,11 +71,16 @@ const SHIPPING: StripeShippingDetails = {
 
 test("each scalar guard on a stored record rejects its own value", () => {
   assert.ok(parseOrderRecord(JSON.stringify(unfulfilled())));
+  // A non-terminal record is a retryable Prodigi failure still eligible for
+  // redelivery, so it has to survive validation — that is the paid order a
+  // human is asked to refund.
+  assert.ok(parseOrderRecord(JSON.stringify(unfulfilled({ terminal: false }))));
   for (const patch of [
     { merchantReference: "cs_test_other" },
     { merchantReference: undefined },
-    { terminal: false },
     { terminal: "true" },
+    { terminal: 1 },
+    { terminal: null },
     { status: "refunded" },
     { status: "unpaid" },
     { format: "poster" },
@@ -105,6 +110,35 @@ test("each scalar guard on a stored record rejects its own value", () => {
       parseOrderRecord(JSON.stringify(unfulfilled({ recipient }))),
       null,
       JSON.stringify(recipient),
+    );
+  }
+});
+
+test("a stored euro amount may not carry sub-cent precision", () => {
+  // The write path (parseEurAmount) admits 1-2 decimals only, so the read
+  // guard must reject anything a write could never have produced. The previous
+  // guard compared against eurToCents, which IS Math.round(v*100) — that only
+  // rejected precision finer than ~1e-5, so these all passed.
+  for (const quoteEur of [
+    9.999999999999,
+    15.000000001,
+    0.30000000000000004,
+    12.345,
+    15.001,
+  ]) {
+    assert.equal(
+      parseOrderRecord(JSON.stringify(unfulfilled({ quoteEur }))),
+      null,
+      `${quoteEur} should not validate`,
+    );
+  }
+  // Every value the write path can emit must still validate, including the
+  // binary-float cases (0.29 * 100 is not exactly 29).
+  for (const quoteEur of [0, 0.07, 0.29, 0.3, 9.5, 15, 123.45]) {
+    assert.notEqual(
+      parseOrderRecord(JSON.stringify(unfulfilled({ quoteEur }))),
+      null,
+      `${quoteEur} should validate`,
     );
   }
 });

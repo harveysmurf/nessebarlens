@@ -25,7 +25,16 @@ export async function POST(request: Request) {
       destinationCountryCode:
         parsed.destinationCountryCode ?? DEFAULT_SHIPPING_COUNTRY,
     });
-    return NextResponse.json(quote);
+    // Ship only what the browser prices with. quotePhysical also carries `sku`
+    // and `unitCostEur`, and this route is unauthenticated — returning the
+    // whole object handed any caller our exact wholesale cost for all nine
+    // pinned SKUs, the SKU codes themselves, and the 1.2x multiplier, which is
+    // the margin. Checkout reads `sku` from quotePhysical server-side, so
+    // nothing downstream needs them over the wire.
+    return NextResponse.json({
+      merchandiseEur: quote.merchandiseEur,
+      shippingEur: quote.shippingEur,
+    });
   } catch (e) {
     const message = e instanceof Error ? e.message : "Quote failed";
     // An unset key is a deployment problem, not a bad gateway.
