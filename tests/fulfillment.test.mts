@@ -511,10 +511,18 @@ test("webhook + download routes still do not call Prodigi; order module is the o
     const src = fs.readFileSync(path.join(root, rel), "utf8");
     assert.equal(src.includes("fetch("), false, rel);
     assert.equal(src.includes("api.sandbox.prodigi.com"), false, rel);
+    assert.equal(src.includes("api.prodigi.com"), false, rel);
   }
   const order = fs.readFileSync(path.join(root, "src/lib/prodigi-order.ts"), "utf8");
-  assert.equal(order.includes("api.sandbox.prodigi.com/v4.0/orders"), true);
+  assert.equal(order.includes("prodigiOrdersUrl"), true);
+  assert.equal(order.includes("prodigiApiKey"), true);
   assert.equal(order.includes("assertNoMasterLeak"), true);
+  const config = fs.readFileSync(
+    path.join(root, "src/lib/prodigi-config.ts"),
+    "utf8",
+  );
+  assert.equal(config.includes("https://api.sandbox.prodigi.com"), true);
+  assert.equal(config.includes("https://api.prodigi.com"), true);
   assert.equal(masterKeyForSlug("dawn"), getPhoto("dawn")?.imageKey);
   assert.equal(masterKeyForSlug("not-a-photo"), null);
 });

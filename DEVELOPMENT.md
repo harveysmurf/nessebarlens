@@ -54,8 +54,10 @@ Environment variables (names only — values live in the `.env.local` symlink):
 | Var | Purpose |
 |-----|---------|
 | `CF_ACCOUNT_ID`, `CF_API_TOKEN` | Wrangler / OpenNext deploy auth |
-| `STRIPE_SECRET_KEY` | Stripe Checkout (sandbox) |
-| `PRODIGI_API_KEY` | Prodigi POD (not yet called from code) |
+| `STRIPE_SECRET_KEY` | Stripe Checkout |
+| `PRODIGI_API_BASE` | Explicit Prodigi host: `https://api.sandbox.prodigi.com` or `https://api.prodigi.com` (never inferred from key presence) |
+| `PRODIGI_SANDBOX_API_KEY` | Prodigi key used when `PRODIGI_API_BASE` is sandbox |
+| `PRODIGI_API_KEY` | Prodigi key used when `PRODIGI_API_BASE` is live |
 | `NEXT_PUBLIC_SITE_URL` | Canonical public origin (used by `src/lib/stripe.ts`) |
 | `NEXT_PUBLIC_WEB_IMAGES_BASE` | Base URL for gallery `<img>` srcset |
 | `R2_ACCOUNT_ID`, `R2_ENDPOINT`, `R2_S3_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | R2 S3 creds (unused by Workers — they use bucket bindings) |
@@ -131,9 +133,12 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 22):
 
 GitHub Environments:
 
-- **`staging`** — sandbox Stripe/Prodigi + `SITE_URL=https://dev.nessebar-lens.pages.dev`
-- **`production`** — same sandbox values until Phase 5 go-live; required reviewer =
-  `harveysmurf`. Live keys swap here at go-live.
+- **`staging`** — sandbox Stripe + `PRODIGI_API_BASE=https://api.sandbox.prodigi.com` +
+  `PRODIGI_SANDBOX_API_KEY` + `SITE_URL=https://dev.nessebar-lens.pages.dev`
+- **`production`** — required reviewer `harveysmurf`. Keep sandbox Stripe/Prodigi
+  (`PRODIGI_API_BASE=https://api.sandbox.prodigi.com`) until go-live; then set
+  live Stripe keys, live webhook secret, `PRODIGI_API_BASE=https://api.prodigi.com`,
+  and `PRODIGI_API_KEY` (live org key). Host is never inferred from which key is set.
 
 Secrets live in those Environments (never in git). Local `.env.local` remains the
 Debian-host symlink to `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
