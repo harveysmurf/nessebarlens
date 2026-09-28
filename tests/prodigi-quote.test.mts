@@ -7,6 +7,7 @@ import {
 import {
   PRODIGI_LIVE_API_BASE,
   PRODIGI_SANDBOX_API_BASE,
+  isProdigiUnconfigured,
   prodigiApiBase,
   prodigiApiKey,
   prodigiOrdersUrl,
@@ -252,6 +253,55 @@ test("quotePhysical throws on non-OK HTTP and missing quote fields", async () =>
       () => quotePhysical({ format: "canvas", size: "70x100" }),
       /missing unitCost/,
     );
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.PRODIGI_SANDBOX_API_KEY;
+    delete process.env.PRODIGI_API_BASE;
+  }
+});
+
+test("a bad Prodigi host reads as unconfigured, not as a bad gateway", async () => {
+  // isProdigiUnconfigured only matched "<NAME>_API_KEY is not set", so a
+  // misconfigured PRODIGI_API_BASE fell through to 502 — the one status that
+  // means "something upstream is unhealthy". A human would go check Prodigi's
+  // status page for a deploy problem of ours. Both quote and checkout use this
+  // predicate, so it has to cover every way to be unconfigured.
+  assert.equal(
+    isProdigiUnconfigured("PRODIGI_API_KEY is not set"),
+    true,
+  );
+  assert.equal(
+    isProdigiUnconfigured(
+      "PRODIGI_API_BASE must be https://api.sandbox.prodigi.com or https://api.prodigi.com",
+    ),
+    true,
+  );
+  // A genuine upstream failure must NOT be reported as our misconfiguration.
+  for (const message of [
+    "Prodigi quote HTTP 502",
+    "Prodigi quote returned invalid JSON",
+    "Prodigi quote missing quotes[0]",
+  ]) {
+    assert.equal(isProdigiUnconfigured(message), false, message);
+  }
+});
+
+test("quotePhysical surfaces a misconfigured host before any network call", async () => {
+  const originalFetch = globalThis.fetch;
+  let called = 0;
+  globalThis.fetch = (async () => {
+    called++;
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+  try {
+    process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
+    process.env.PRODIGI_API_BASE = "https://evil.example";
+    await assert.rejects(
+      () => quotePhysical({ format: "canvas", size: "70x100" }),
+      // The route turns this into 503 via isProdigiUnconfigured.
+      (e: Error) => isProdigiUnconfigured(e.message),
+    );
+    assert.equal(called, 0, "an unknown host is never contacted");
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.PRODIGI_SANDBOX_API_KEY;
