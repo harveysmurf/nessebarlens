@@ -233,13 +233,14 @@ export function photosByCategory(category: PhotoCategory): Photo[] {
   return PHOTOS.filter((p) => p.category === category);
 }
 
+// A Record rather than a switch: a switch falls off the end when a category
+// is added, so a new one would type-check and render href={undefined}.
+const CATEGORY_HREF: Record<PhotoCategory, string> = {
+  "fine-art": "/fine-art",
+  archive: "/archive",
+  film: "/film",
+};
+
 export function categoryHref(category: PhotoCategory): string {
-  switch (category) {
-    case "fine-art":
-      return "/fine-art";
-    case "archive":
-      return "/archive";
-    case "film":
-      return "/film";
-  }
+  return CATEGORY_HREF[category];
 }
