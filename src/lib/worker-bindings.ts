@@ -44,13 +44,26 @@ export async function readWorkerBindings(): Promise<WorkerBindings> {
   };
 }
 
-function isOrdersKv(value: unknown): value is OrdersKv {
+/** True when the value is an object exposing every named method. */
+function hasMethods(
+  value: unknown,
+  ...names: string[]
+): value is Record<string, unknown> {
   if (!value || typeof value !== "object") return false;
-  const kv = value as { get?: unknown; put?: unknown };
-  return typeof kv.get === "function" && typeof kv.put === "function";
+  const candidate = value as Record<string, unknown>;
+  return names.every((name) => typeof candidate[name] === "function");
 }
 
-function isMastersBucket(value: unknown): value is MastersBucket {
-  if (!value || typeof value !== "object") return false;
-  return typeof (value as { get?: unknown }).get === "function";
+/**
+ * A KV namespace needs get *and* put — fulfillment writes ORDERS records, so
+ * a get-only binding would pass the check and then throw on first write.
+ * Exported for the binding-shape tests.
+ */
+export function isOrdersKv(value: unknown): value is OrdersKv {
+  return hasMethods(value, "get", "put");
+}
+
+/** R2 is read-only from here, so get() is the whole contract. */
+export function isMastersBucket(value: unknown): value is MastersBucket {
+  return hasMethods(value, "get");
 }
