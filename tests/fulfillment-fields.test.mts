@@ -71,11 +71,16 @@ const SHIPPING: StripeShippingDetails = {
 
 test("each scalar guard on a stored record rejects its own value", () => {
   assert.ok(parseOrderRecord(JSON.stringify(unfulfilled())));
+  // A non-terminal record is a retryable Prodigi failure still eligible for
+  // redelivery, so it has to survive validation — that is the paid order a
+  // human is asked to refund.
+  assert.ok(parseOrderRecord(JSON.stringify(unfulfilled({ terminal: false }))));
   for (const patch of [
     { merchantReference: "cs_test_other" },
     { merchantReference: undefined },
-    { terminal: false },
     { terminal: "true" },
+    { terminal: 1 },
+    { terminal: null },
     { status: "refunded" },
     { status: "unpaid" },
     { format: "poster" },

@@ -65,6 +65,11 @@ const SITE = "https://nessebarlens.com";
 // Set before the snapshot below: this one is the file's own setup, not a
 // per-test mutation, and the guard must not flag it.
 process.env.NEXT_PUBLIC_SITE_URL = SITE;
+// A usable print-asset secret is part of this file's baseline, not a per-test
+// mutation: a correctly configured deployment has one, and /api/checkout now
+// refuses to take money for a physical order without it. The tests that prove
+// the fail-closed behaviour delete it explicitly.
+process.env.PRINT_ASSET_HMAC_SECRET = "route-test-print-asset-secret-32-chars";
 
 let currentTest = "unknown";
 let snapshot: { bindings: unknown; fetch: typeof globalThis.fetch; env: NodeJS.ProcessEnv };
@@ -247,6 +252,8 @@ test("print-asset: with a secret configured, an expired signature is a 401", asy
 });
 
 test("print-asset: no configured secret is a 503 and no bucket is never a redirect", async () => {
+  const savedSecret = process.env.PRINT_ASSET_HMAC_SECRET;
+  delete process.env.PRINT_ASSET_HMAC_SECRET;
   const restore = withBindings({ prodigiKeyConfigured: false });
   try {
     const response = await printAsset.GET(
@@ -257,6 +264,9 @@ test("print-asset: no configured secret is a 503 and no bucket is never a redire
     assert.equal((await body(response)).error, "print-asset-unavailable");
   } finally {
     restore();
+    if (savedSecret !== undefined) {
+      process.env.PRINT_ASSET_HMAC_SECRET = savedSecret;
+    }
   }
 });
 
@@ -910,14 +920,118 @@ test("quote: a physical quote is priced from the Prodigi response", async () => 
     );
     assert.equal(response.status, 200);
     const priced = await body(response);
-    assert.equal(priced.sku, "GLOBAL-FAP-12X16");
     assert.equal(priced.shippingEur, 4.99);
     assert.equal(priced.merchandiseEur, 11.4, "9.50 of unit cost at the margin");
+    // This route is unauthenticated, so it must not hand out the wholesale
+    // cost or the SKU codes: together with merchandiseEur they disclose our
+    // unit cost and the margin multiplier to anyone who curls it.
+    assert.equal("sku" in priced, false, "sku must not be public");
+    assert.equal("unitCostEur" in priced, false, "unit cost must not be public");
+    assert.deepEqual(Object.keys(priced).sort(), [
+      "merchandiseEur",
+      "shippingEur",
+    ]);
   } finally {
     globalThis.fetch = originalFetch;
     for (const key of ["PRODIGI_API_BASE", "PRODIGI_SANDBOX_API_KEY"] as const) {
       if (saved[key] === undefined) delete process.env[key];
       else process.env[key] = saved[key];
+    }
+  }
+});
+
+test("checkout: a physical order with no signing secret is refused before payment", async () => {
+  // The primary fail-closed guard. Without a usable secret we cannot sign the
+  // master URL, and the fulfillment path used to fall back to the ~41KB public
+  // placeholder — the customer pays for a 70x100 giclee and Prodigi receives a
+  // 1600x1200 thumbnail, with nothing recording it. Refusing here means the
+  // customer is never charged, so there is no refund path to build.
+  for (const secret of [undefined, "", "   ", "too-short"]) {
+    const savedSecret = process.env.PRINT_ASSET_HMAC_SECRET;
+    if (secret === undefined) delete process.env.PRINT_ASSET_HMAC_SECRET;
+    else process.env.PRINT_ASSET_HMAC_SECRET = secret;
+    const saved = { ...process.env };
+    const originalFetch = globalThis.fetch;
+    process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+    process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
+    process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
+    let stripeCalled = false;
+    globalThis.fetch = (async (url: unknown) => {
+      if (String(url).includes("stripe.com")) {
+        stripeCalled = true;
+        return new Response(JSON.stringify({ id: "cs_test_abcdefgh" }), {
+          status: 200,
+          headers: { "content-type": "application/json" },
+        });
+      }
+      return new Response(
+        JSON.stringify({
+          quotes: [
+            {
+              items: [{ unitCost: { amount: "9.5" } }],
+              costSummary: { shipping: { amount: "4.99" } },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }) as typeof fetch;
+    try {
+      const response = await checkout.POST(
+        jsonRequest(`${SITE}/api/checkout`, {
+          photoSlug: "dawn",
+          format: "giclee",
+          size: "30x40",
+          frame: null,
+          destinationCountryCode: "BG",
+        }),
+      );
+      assert.equal(response.status, 503, JSON.stringify(secret));
+      assert.equal((await body(response)).error, "Print fulfillment is not configured");
+      assert.equal(stripeCalled, false, "no Stripe session may be created");
+    } finally {
+      globalThis.fetch = originalFetch;
+      for (const key of [
+        "STRIPE_SECRET_KEY",
+        "PRODIGI_API_BASE",
+        "PRODIGI_SANDBOX_API_KEY",
+      ] as const) {
+        if (saved[key] === undefined) delete process.env[key];
+        else process.env[key] = saved[key];
+      }
+      if (savedSecret !== undefined) {
+        process.env.PRINT_ASSET_HMAC_SECRET = savedSecret;
+      }
+    }
+  }
+});
+
+test("checkout: a digital order is unaffected by the signing guard", async () => {
+  // Digital orders deliver through the gated /api/download path and never touch
+  // Prodigi, so the guard must not block them.
+  const savedSecret = process.env.PRINT_ASSET_HMAC_SECRET;
+  delete process.env.PRINT_ASSET_HMAC_SECRET;
+  const saved = { ...process.env };
+  const originalFetch = globalThis.fetch;
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({ id: "cs_test_abcdefgh", url: "https://checkout.stripe.com/pay" }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    )) as typeof fetch;
+  try {
+    const response = await checkout.POST(
+      jsonRequest(`${SITE}/api/checkout`, { photoSlug: "dawn", format: "digital" }),
+    );
+    assert.equal(response.status, 200);
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const key of ["STRIPE_SECRET_KEY"] as const) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+    if (savedSecret !== undefined) {
+      process.env.PRINT_ASSET_HMAC_SECRET = savedSecret;
     }
   }
 });

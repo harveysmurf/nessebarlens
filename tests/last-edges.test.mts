@@ -145,6 +145,9 @@ test("the real Prodigi client is what runs when no order factory is injected", a
   process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
   process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
+  // The order path now fails closed when the master cannot be signed, so this
+  // needs a usable secret to reach the real client at all.
+  process.env.PRINT_ASSET_HMAC_SECRET = "last-edges-hmac-secret-32-chars!!";
   const originalFetch = globalThis.fetch;
   const requests: { url: string; body: unknown }[] = [];
   globalThis.fetch = (async (input: unknown, init?: { body?: string }) => {
