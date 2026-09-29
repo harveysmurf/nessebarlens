@@ -134,7 +134,10 @@ test("the owned grammars are declared exactly once, in their owning module", () 
   // a divergent copy once. A new copy fails here even if it is, today,
   // behaviourally identical — which is exactly the case tests missed.
   const owners: Record<string, string> = {
-    "/^[a-z0-9]+(?:-[a-z0-9]+)*$/": "src/lib/master-key.ts",
+    // Owned by derivative-ladder.ts, not master-key.ts: the leaf module with
+    // no imports is the one an ops script can load, so the grammar it needs
+    // has to live there. master-key.ts re-exports it.
+    "/^[a-z0-9]+(?:-[a-z0-9]+)*$/": "src/lib/derivative-ladder.ts",
     "/prints\\/|nessebar-lens-masters/i": "src/lib/master-guard.ts",
     "/^[0-9a-f]{64}$/i": "src/lib/crypto-hex.ts",
     "/^[A-Z]{2}$/": "src/lib/ship-to-countries.ts",

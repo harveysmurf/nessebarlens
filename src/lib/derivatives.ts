@@ -19,13 +19,23 @@
  * deliberate act that says the upload happened.
  */
 
+import {
+  WEB_DEFAULT_WIDTH,
+  WEB_DERIVATIVE_WIDTHS,
+  type WebDerivativeWidth,
+} from "./derivative-ladder";
 import { envFlag, envString, stripTrailingSlashes } from "./env";
 
-export const WEB_DERIVATIVE_WIDTHS = [750, 1500, 2500] as const;
-export type WebDerivativeWidth = (typeof WEB_DERIVATIVE_WIDTHS)[number];
-
-/** Default display source — the middle rung of the ladder. */
-export const WEB_DEFAULT_WIDTH: WebDerivativeWidth = 1500;
+// Rungs, bucket names and key shapes are declared in derivative-ladder.ts so
+// the ingest script reads the same list this module serves. Re-exported here
+// because the site only ever asks for them through this module.
+export {
+  MASTERS_BUCKET_NAME,
+  WEB_BUCKET_NAME,
+  WEB_DEFAULT_WIDTH,
+  WEB_DERIVATIVE_WIDTHS,
+  type WebDerivativeWidth,
+} from "./derivative-ladder";
 
 export type WebDerivativeUrls = {
   /** One URL per entry in WEB_DERIVATIVE_WIDTHS, keyed by that width. */

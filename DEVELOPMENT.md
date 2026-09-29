@@ -73,6 +73,7 @@ Environment variables (names only — values live in the `.env.local` symlink):
 | `NEXT_PUBLIC_WEB_IMAGES_BASE` | Base URL for gallery `<img>` srcset |
 | `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` | Opt-in gate for the R2 derivative ladder. Unset = placeholders. Only `true`/`1` enable it — a configured base alone does **not**. |
 | `R2_ACCOUNT_ID`, `R2_ENDPOINT`, `R2_S3_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | R2 S3 creds (unused by Workers — they use bucket bindings) |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Needed only by `npm run ingest` from a laptop (see §6a) |
 | `EU_SHIPPING_EUR` | Flat EU shipping (must match `EU_FLAT_SHIPPING_CENTS`) |
 
 ---
@@ -197,6 +198,59 @@ GitHub Environments:
 
 Secrets live in those Environments (never in git). Local `.env.local` remains the
 Debian-host symlink to `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
+
+---
+
+## 6a. Ingesting photos (masters → R2 ladder)
+
+Simo runs this from his own box, not CI. Three prerequisites, in order:
+
+1. **Node 24.21** — `nvm use` in the repo root. `npm run ingest` checks the
+   pin in `.nvmrc` and stops with `ingest needs Node 24.21.0` otherwise,
+   because `sharp` is a native binding and a mismatch otherwise surfaces as an
+   opaque `ERR_UNKNOWN_FILE_EXTENSION`.
+2. **`npm install`** — `sharp` and `@aws-sdk/client-s3` are devDependencies
+   only the ingest uses; the site itself never imports them.
+3. **R2 credentials in `.env.local`** (gitignored) or exported:
+
+   ```
+   R2_S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com
+   R2_ACCESS_KEY_ID=...
+   R2_SECRET_ACCESS_KEY=...
+   ```
+
+   From Cloudflare → R2 → Manage R2 API Tokens → *Object Read & Write* scoped
+   to `nessebar-lens-masters` and `nessebar-lens-web`. The workspace copy of
+   these lives in `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
+   Missing keys fail as `missing env: R2_ACCESS_KEY_ID ...`, never as a 403.
+
+Then, per photo:
+
+1. Drop the master JPEG in `ingest/` (repo root, gitignored), **named for its
+   slug** — `alley-cat.jpg` is the catalog slug `alley-cat`. Files not matching
+   `{slug}.jpg` are reported and skipped, so a `.DS_Store` or `IMG_4021.jpg`
+   cannot become an unlinkable photo.
+2. `npm run ingest` — **dry run by default.** It prints every object it would
+   write, in both buckets, and uploads nothing. Read that list.
+3. `npm run ingest -- --apply` — writes the original to
+   `nessebar-lens-masters/prints/{slug}.jpg` and each rung to
+   `nessebar-lens-web/{slug}/{750,1500,2500}.jpg`. Width-driven resize, aspect
+   ratio preserved, no crop: the list page's uniform tiles are a CSS
+   `aspect-ratio` with `object-fit: cover`, and the photo page is uncropped.
+   `--only alley-cat` narrows a run to one photo.
+4. Verify a couple of URLs resolve under `NEXT_PUBLIC_WEB_IMAGES_BASE`, **then**
+   set `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED=true`. Only `true` or `1` enable
+   the ladder; a configured base alone does not.
+
+Idempotent — re-running overwrites the same keys with the same bytes. The run
+**refuses outright** if `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` is set, because at
+that point the site is already serving this bucket and a half-written ladder
+would 404 the storefront. Turn the flag off, ingest, verify, then turn it on.
+
+The rung list is `WEB_DERIVATIVE_WIDTHS` in `src/lib/derivative-ladder.ts` —
+one array, read by both the srcSet the site serves and the plan the script
+executes. Changing the rungs is a one-line edit there; do not add widths in the
+script.
 
 ---
 
