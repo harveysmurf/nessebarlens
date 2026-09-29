@@ -4,23 +4,18 @@
  * no ingest byte-copy. Distinct from /api/download (not digital-gated).
  */
 
-import { PHOTO_SLUG_PATTERN, masterKeyForSlug } from "./master-key";
+import {
+  PHOTO_SLUG_PATTERN,
+  masterKeyForSlug,
+  type MasterObject,
+  type MastersBucket,
+} from "./master-key";
 import { hmacSha256Hex, timingSafeEqualHex } from "./crypto-hex";
 import { envString, stripTrailingSlashes } from "./env";
 import { siteUrl } from "./stripe";
 
 /** Prodigi may re-fetch during fulfillment; start at 7d, tighten after a live order. */
 export const PRINT_ASSET_TTL_SECONDS = 7 * 24 * 60 * 60;
-
-type MasterObject = {
-  body: ReadableStream<Uint8Array>;
-  size: number;
-  contentType?: string;
-};
-
-type MastersBucket = {
-  get(key: string): Promise<MasterObject | null>;
-};
 
 export type PrintAssetVerifyOk = { ok: true; slug: string };
 export type PrintAssetVerifyErr = {

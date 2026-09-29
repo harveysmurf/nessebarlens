@@ -5,7 +5,12 @@
  * (or placeholder). Masters never leave photos.ts / MASTERS binding.
  */
 
-import { masterKeyForSlug } from "./master-key";
+import {
+  PHOTO_SLUG_PATTERN,
+  masterKeyForSlug,
+  type MasterObject,
+  type MastersBucket,
+} from "./master-key";
 import { referencesMasters } from "./master-guard";
 import {
   createProdigiOrder,
@@ -85,15 +90,7 @@ export type OrdersKv = {
   put(key: string, value: string): Promise<void>;
 };
 
-export type MasterObject = {
-  body: ReadableStream<Uint8Array>;
-  size: number;
-  contentType?: string;
-};
-
-export type MastersBucket = {
-  get(key: string): Promise<MasterObject | null>;
-};
+export type { MasterObject, MastersBucket };
 
 export type StripeShippingDetails = {
   name?: string | null;
@@ -437,7 +434,9 @@ export async function resolveDownload(
     return { kind: "json", status: 404, body: { error: "master-not-found" } };
   }
 
-  const filename = /^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(order.photoSlug)
+  // The catalog slug grammar, not a second copy of it: this used to inline the
+  // same regex, so a slug the catalog rejected could still name the download.
+  const filename = PHOTO_SLUG_PATTERN.test(order.photoSlug)
     ? `${order.photoSlug}.jpg`
     : "download.jpg";
 
