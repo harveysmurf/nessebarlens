@@ -190,3 +190,114 @@ test("a URL that looks like https but is not parseable is rejected", () => {
     );
   }
 });
+
+test("email and phone are the same string-or-null rule as the other optionals", async () => {
+  // reason/masterKey/prodigiOrderId/prodigiStage/assetUrl all reject a
+  // non-string, non-null value. email and phone are the same rule and had no
+  // case pinning it, so a widening of that check would have gone unnoticed.
+  const base = unfulfilled();
+  for (const field of ["email", "phone"] as const) {
+    for (const value of [17, {}, [], true, 1.5]) {
+      const recipient = { ...base.recipient, [field]: value };
+      assert.equal(
+        parseOrderRecord(JSON.stringify(unfulfilled({ recipient }))),
+        null,
+        `${field} ${JSON.stringify(value)}`,
+      );
+    }
+    // null and a string are the two accepted shapes.
+    assert.ok(
+      parseOrderRecord(
+        JSON.stringify(unfulfilled({ recipient: { ...base.recipient, [field]: "a@b.c" } })),
+      ),
+      `${field} as a string`,
+    );
+  }
+});
+
+test("every recipient string field rejects a non-string, and a missing one is not silently empty", () => {
+  // parseStoredRecipient checked all seven via a loop but read them back
+  // through per-field casts, so the loop and the reads were only connected by
+  // the field names being written the same way twice. Pin every key.
+  const base = unfulfilled().recipient;
+  const keys = [
+    "name",
+    "line1",
+    "line2",
+    "city",
+    "state",
+    "postcode",
+    "countryCode",
+  ] as const;
+  for (const key of keys) {
+    for (const value of [17, null, {}, [], true]) {
+      const recipient = { ...base, [key]: value };
+      assert.equal(
+        parseOrderRecord(JSON.stringify(unfulfilled({ recipient }))),
+        null,
+        `${key} ${JSON.stringify(value)}`,
+      );
+    }
+    // Deleting the key entirely is a rejection too, not an empty string.
+    const { [key]: _omitted, ...withoutKey } = base;
+    void _omitted;
+    assert.equal(
+      parseOrderRecord(JSON.stringify(unfulfilled({ recipient: withoutKey }))),
+      null,
+      `${key} missing`,
+    );
+  }
+});
+
+test("a bad countryCode is rejected on its own ISO shape, not by the string check", () => {
+  // The order of the two checks matters: a non-string countryCode must be
+  // rejected by the string rule, and a *string* that is not ISO alpha-2 by the
+  // pattern. Merging them would let one silently cover the other.
+  const base = unfulfilled().recipient;
+  for (const value of ["", "B", "BGR", "bg", "12", "B G"]) {
+    assert.equal(
+      parseOrderRecord(JSON.stringify(unfulfilled({ recipient: { ...base, countryCode: value } }))),
+      null,
+      JSON.stringify(value),
+    );
+  }
+  assert.ok(
+    parseOrderRecord(JSON.stringify(unfulfilled({ recipient: { ...base, countryCode: "BG" } }))),
+  );
+});
+
+test("a recipient missing email or phone entirely is rejected, not defaulted to null", () => {
+  // A key absent from the JSON is `undefined`, not `null`, and the two are
+  // different states in this record type. A validator that treats them alike
+  // silently turns a truncated write into a valid order.
+  const base = unfulfilled().recipient;
+  for (const field of ["email", "phone"] as const) {
+    const { [field]: _omitted, ...withoutField } = base;
+    void _omitted;
+    assert.equal(
+      parseOrderRecord(JSON.stringify(unfulfilled({ recipient: withoutField }))),
+      null,
+      field,
+    );
+  }
+});
+
+test("the validated string keys are exactly the non-nullable recipient fields", () => {
+  // RECIPIENT_STRING_KEYS is derived from OrderRecipient, so a drift is a
+  // compile error — this asserts the *shape* of that derivation, so email and
+  // phone being excluded by the nullability rule is visible rather than
+  // implied, and the seven names are pinned in a readable place.
+  const base = unfulfilled().recipient;
+  const stringKeys = ["name", "line1", "line2", "city", "state", "postcode", "countryCode"];
+  const nullableKeys = ["email", "phone"];
+  const allKeys = [...stringKeys, ...nullableKeys];
+  assert.deepEqual(Object.keys(base).sort(), [...allKeys].sort());
+  // Every nullable key is accepted as null and as a string, and rejected as
+  // anything else — which is what makes excluding them from the string loop
+  // correct rather than an omission.
+  for (const key of nullableKeys) {
+    assert.ok(parseOrderRecord(JSON.stringify(unfulfilled({ recipient: { ...base, [key]: null } }))), key);
+    assert.ok(parseOrderRecord(JSON.stringify(unfulfilled({ recipient: { ...base, [key]: "x" } }))), key);
+    assert.equal(parseOrderRecord(JSON.stringify(unfulfilled({ recipient: { ...base, [key]: 1 } }))), null, key);
+  }
+});

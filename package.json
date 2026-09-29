@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint",
+    "typecheck": "tsc --noEmit",
     "test": "node --import ./tests/register.mjs --test tests/*.test.mts",
     "coverage": "node scripts/coverage.mjs",
     "coverage:report": "node scripts/coverage.mjs --print",
