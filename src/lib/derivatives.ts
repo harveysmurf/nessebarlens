@@ -4,6 +4,12 @@
  *   {slug}/750.jpg | {slug}/1500.jpg | {slug}/2500.jpg
  * Never link masters or Image Resizing URLs from the gallery.
  * No third-party image hosts (Unsplash etc.) — missing base → no remote image.
+ *
+ * NOT WIRED UP. Nothing in src/ imports this module yet: the gallery still
+ * serves committed placeholders via lib/placeholder-photo.ts. That is the
+ * placeholder phase, not an oversight, and this file is the prepared half of
+ * the switch — keep it, and wire it when the R2 ingest produces real
+ * derivatives. tests/derivatives.test.mts is its only caller today.
  */
 
 import { envString, stripTrailingSlashes } from "./env";
