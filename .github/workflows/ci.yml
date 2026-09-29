@@ -31,6 +31,15 @@ jobs:
       - name: Lint
         run: npm run lint
 
+      # Type-level constraints cannot die in a test: a Record keyed by a mapped
+      # type, a Record<union, string> label table, a `satisfies` guard — all of
+      # them are enforced by the compiler or not at all. Tests prove runtime
+      # behaviour and are blind here, so this needs its own gate. Before this
+      # step the only typecheck was `next build` in the preview job, one job
+      # later than a green "Lint & test" on a pull request implied.
+      - name: Typecheck
+        run: npm run typecheck
+
       - name: Test
         run: npm test
 
