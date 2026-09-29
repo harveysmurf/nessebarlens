@@ -1,5 +1,10 @@
 export type PhotoCategory = "fine-art" | "archive" | "film";
 
+/** Runtime list, so the union and the class record cannot fall out of step. */
+export const FILM_LOOKS = ["contrast", "sepia", "grayscale"] as const;
+
+export type FilmLook = (typeof FILM_LOOKS)[number];
+
 export type Photo = {
   slug: string;
   title: string;
@@ -10,7 +15,7 @@ export type Photo = {
   /** Private master object key in MASTERS — never used in gallery UI. */
   imageKey: string;
   /** Film gallery uses dark matte + filter. */
-  filmLook?: "contrast" | "sepia" | "grayscale";
+  filmLook?: FilmLook;
 };
 
 export const PHOTOS: Photo[] = [
@@ -249,7 +254,7 @@ export function categoryHref(category: PhotoCategory): string {
 // hand-rolled in every page and component that renders a film photo, and the
 // copies only stayed identical by luck — a rename here would have left the
 // others rendering an unfiltered image with no test failing.
-const FILM_LOOK_CLASS: Record<NonNullable<Photo["filmLook"]>, string> = {
+const FILM_LOOK_CLASS: Record<FilmLook, string> = {
   contrast: "filter contrast-125",
   sepia: "filter sepia",
   grayscale: "filter grayscale",

@@ -16,17 +16,13 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import ts from "typescript";
-import { filmLookClass, type Photo } from "../src/lib/photos.ts";
+import { FILM_LOOKS, filmLookClass } from "../src/lib/photos.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
-// Derived from the module under test rather than spelled out here, so the
-// guard cannot drift away from the record it is guarding.
-const FILM_LOOKS: NonNullable<Photo["filmLook"]>[] = [
-  "contrast",
-  "sepia",
-  "grayscale",
-];
+// Both lists are the module's own runtime exports, not spellings of them: a
+// new look added to FILM_LOOKS is walked the day it is added, instead of only
+// once someone remembers to edit this file too.
 const FILM_LOOK_CLASSES: string[] = FILM_LOOKS.map((look) => {
   const cls = filmLookClass(look);
   // If a look stopped mapping to a class, the walk below would quietly stop
