@@ -9,6 +9,35 @@ const ALLOWED_BASES = new Set([
 ]);
 
 /**
+ * The unconfigured-message grammar, written once.
+ *
+ * These strings used to be produced at the throw sites and re-derived as a
+ * regex by isProdigiUnconfigured, so the classification depended on a second
+ * copy of the wording staying in step with the first. Rewording a throw site
+ * to "PRODIGI_API_KEY is missing" would have turned a 503 into a 502 -- a
+ * deployment problem reported as Prodigi being unhealthy, which is the exact
+ * misdiagnosis the predicate exists to prevent. The throw sites and the
+ * predicate now build both halves from these functions, so the copies cannot
+ * drift. tests/prodigi-config.test.mts checks that everything this module can
+ * throw is still classified, which is what catches a *new* throw site.
+ *
+ * Indexed rather than a name-to-slot map: the first name is the sandbox key
+ * for the sandbox host, the second the live key for the live host.
+ */
+const UNCONFIGURED_KEY_NAMES = [
+  "PRODIGI_SANDBOX_API_KEY",
+  "PRODIGI_API_KEY",
+] as const;
+
+function missingKeyMessage(name: string): string {
+  return `${name} is not set`;
+}
+
+function badBaseMessage(): string {
+  return `PRODIGI_API_BASE must be ${PRODIGI_SANDBOX_API_BASE} or ${PRODIGI_LIVE_API_BASE}`;
+}
+
+/**
  * Explicit Prodigi API host. Must be set per environment — never inferred
  * from which API key is present.
  */
@@ -17,9 +46,7 @@ export function prodigiApiBase(
 ): string {
   const base = envStringStrippedSlash("PRODIGI_API_BASE", env);
   if (!base || !ALLOWED_BASES.has(base)) {
-    throw new Error(
-      "PRODIGI_API_BASE must be https://api.sandbox.prodigi.com or https://api.prodigi.com",
-    );
+    throw new Error(badBaseMessage());
   }
   return base;
 }
@@ -33,16 +60,12 @@ export function prodigiApiKey(
   env: Record<string, unknown> = process.env,
 ): string {
   const base = prodigiApiBase(env);
-  if (isProdigiSandboxBase(base)) {
-    const key = envString("PRODIGI_SANDBOX_API_KEY", env);
-    if (!key) {
-      throw new Error("PRODIGI_SANDBOX_API_KEY is not set");
-    }
-    return key;
-  }
-  const key = envString("PRODIGI_API_KEY", env);
+  const name = isProdigiSandboxBase(base)
+    ? UNCONFIGURED_KEY_NAMES[0]
+    : UNCONFIGURED_KEY_NAMES[1];
+  const key = envString(name, env);
   if (!key) {
-    throw new Error("PRODIGI_API_KEY is not set");
+    throw new Error(missingKeyMessage(name));
   }
   return key;
 }
@@ -60,9 +83,19 @@ export function prodigiApiKey(
  * means "something upstream is unhealthy": a human reading the logs would go
  * look at Prodigi's status page for a misconfigured deploy of ours. Same
  * failure shape as the webhook's catch-all, one layer over.
+ *
+ * Matching on the message rather than an error subclass is deliberate. The
+ * value crosses a bundler, and a module duplicated across two chunks yields
+ * two copies of a class that fail an instanceof check -- which would turn a
+ * 503 back into the 502 this predicate exists to prevent. Exact equality also
+ * means a Prodigi error that merely contains these words cannot be mistaken
+ * for ours; the old regex would have matched inside one.
  */
 export function isProdigiUnconfigured(message: string): boolean {
-  return /_API_KEY is not set/.test(message) || /^PRODIGI_API_BASE must be /.test(message);
+  return (
+    UNCONFIGURED_KEY_NAMES.some((name) => message === missingKeyMessage(name)) ||
+    message === badBaseMessage()
+  );
 }
 
 export function prodigiQuotesUrl(
