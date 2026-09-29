@@ -272,6 +272,50 @@ test("a film-look class is not re-spelled outside its owning module", () => {
   }
 });
 
+test("filmLookClass is never called with a spelled-out look name", () => {
+  // The class-name walk above cannot see a bare look name: filmLookClass("contrast")
+  // is not the class, it is the key. Two category cards once passed the literal
+  // behind a hand-maintained `contrast: true` flag, so renaming a look in
+  // FILM_LOOKS would have left those two pages asking for a look that no longer
+  // exists — rendering no filter at all — with the source walk still green.
+  // The only legal argument is photo.filmLook.
+  const offenders: string[] = [];
+  for (const file of sourceFiles(path.join(root, "src"))) {
+    if (relative(file) === "src/lib/photos.ts") {
+      // The owner: FILM_LOOK_CLASS's keys are the legal spellings, and a
+      // non-literal there is a compile error, not a duplication.
+      continue;
+    }
+    const source = ts.createSourceFile(
+      file,
+      fs.readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+      file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+    );
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isCallExpression(node) &&
+        ts.isIdentifier(node.expression) &&
+        node.expression.text === "filmLookClass"
+      ) {
+        const arg = node.arguments[0];
+        if (arg && (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg))) {
+          const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+          offenders.push(`${relative(file)}:${line + 1}`);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `filmLookClass called with a look name literal: ${offenders.join(", ")}`,
+  );
+});
+
 test("filmLookClass maps every look in the union, and nothing else", () => {
   for (const look of FILM_LOOKS) {
     assert.notEqual(filmLookClass(look), "", look);

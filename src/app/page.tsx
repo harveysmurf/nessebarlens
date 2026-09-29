@@ -26,7 +26,6 @@ const CATEGORIES = [
     title: "Film Photography",
     blurb: "Authentic 35mm & 120 film stock negatives",
     dark: true,
-    contrast: true,
   },
 ] as const;
 
@@ -92,11 +91,7 @@ export default function HomePage() {
                     alt={cat.title}
                     preferred={1500}
                     sizes="(max-width: 768px) 100vw, 33vw"
-                    className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ${
-                      "contrast" in cat && cat.contrast
-                        ? filmLookClass("contrast")
-                        : ""
-                    }`}
+                    className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ${filmLookClass(photo.filmLook)}`}
                   />
                 </div>
                 <div className="border-b border-stone-200 pb-3 flex justify-between items-baseline gap-3">
