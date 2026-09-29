@@ -197,13 +197,16 @@ export function assertNoMasterLeak(value: unknown): void {
   if (blob.includes(MASTERS_BUCKET)) {
     throw new Error("master-leak: masters bucket referenced");
   }
-  if (referencesMasters(blob)) {
-    throw new Error("master-leak: prints/ master key path");
-  }
+  // The per-photo imageKey check comes first: every catalog imageKey starts
+  // with prints/, so the generic marker below would reject the payload and this
+  // loop's branch could never be reached from a test or from production.
   for (const photo of PHOTOS) {
     if (blob.includes(photo.imageKey)) {
       throw new Error(`master-leak: imageKey ${photo.imageKey}`);
     }
+  }
+  if (referencesMasters(blob)) {
+    throw new Error("master-leak: prints/ master key path");
   }
 }
 
