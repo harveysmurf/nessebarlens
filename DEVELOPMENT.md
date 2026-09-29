@@ -44,6 +44,11 @@ Stack:
 The project pins its node version in `.nvmrc` (`24.21.0`, the current LTS
 line). Node 20 cannot run the suite at all — it fails on `.mts` with
 `ERR_UNKNOWN_FILE_EXTENSION`, because type stripping is the loader's job here.
+Not every 24.x works either: **24.10 fails `tests/routes.test.mts`** on a
+loader change, so `engines.node` is `>=24.21.0 <25` and every workflow pins
+`node-version` to the exact `.nvmrc` value. Bump all three together
+(`.nvmrc`, `engines.node`, each workflow) — `tests/node-version-pin.test.mts`
+fails if they drift.
 
 ```bash
 nvm use              # honours .nvmrc
@@ -153,7 +158,7 @@ do not use `opennextjs-cloudflare deploy` for deploys.
 
 ## 6. CI/CD
 
-GitHub Actions on `harveysmurf/nessebarlens` (Node 24):
+GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|

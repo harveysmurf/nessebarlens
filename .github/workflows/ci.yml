@@ -22,7 +22,10 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
-          node-version: "24"
+          # Exact, not a "24" range: 24.10 fails tests/routes.test.mts on a
+          # loader change, so a floating major lets CI and .nvmrc disagree.
+          # tests/node-version-pin.test.mts holds every workflow to .nvmrc.
+          node-version: "24.21.0"
           cache: npm
 
       - name: Install
