@@ -186,3 +186,40 @@ test("a quote needs a size from the print list, and says which list", () => {
     true,
   );
 });
+
+/**
+ * The frame rules are one function shared by both bodies, so a divergence
+ * between the two endpoints is a regression in the shared helper. This
+ * compares them case by case rather than asserting each side separately: the
+ * invariant is that they answer identically, which is what a second copy
+ * could quietly stop doing.
+ */
+test("checkout and quote apply the same frame rule, case for case", () => {
+  const cases: Array<Record<string, unknown>> = [
+    { format: "framed", size: "50x70", frame: "black" },
+    { format: "framed", size: "50x70", frame: "chartreuse" },
+    { format: "framed", size: "50x70" },
+    { format: "framed", size: "50x70", frame: null },
+    { format: "framed", size: "50x70", frame: "" },
+    { format: "giclee", size: "50x70" },
+    { format: "giclee", size: "50x70", frame: null },
+    { format: "canvas", size: "30x40", frame: "black" },
+    { format: "canvas", size: "30x40", frame: undefined },
+  ];
+
+  for (const c of cases) {
+    const checkout = parseCheckoutBody({ ...SLUG, ...c });
+    const quote = parseQuoteBody(c);
+    const describe_ = JSON.stringify(c);
+    assert.equal("error" in checkout, "error" in quote, `acceptance differs for ${describe_}`);
+    if ("error" in checkout && "error" in quote) {
+      assert.equal(checkout.error, quote.error, `error text differs for ${describe_}`);
+    } else if (!("error" in checkout) && !("error" in quote)) {
+      assert.equal(
+        checkout.frame,
+        quote.frame,
+        `accepted frame differs for ${describe_}`,
+      );
+    }
+  }
+});
