@@ -246,6 +246,13 @@ Owners: `master-key.ts` (slug, master key, MASTERS storage shape),
 AST — a regex in a string or a comment is not mistaken for a declaration. It
 fails on any regex literal or object shape that appears in two modules.
 
+The guard only sees **syntactic** duplicates. It cannot see two grammars that
+mean the same thing but are written differently — `/^https:\/\//i` next to
+`URL.canParse(x)` is one rule wearing two coats, and the guard stays green. That
+is a naming and design problem, not a lint problem: treat "this belongs to an
+existing owner module" as intent you have to apply by reading the code, and use
+the guard to keep the honest copy honest.
+
 ---
 
 ## 9. Release checklist
@@ -253,6 +260,9 @@ fails on any regex literal or object shape that appears in two modules.
 1. Branch off `main`.
 2. Make the change; add/adjust tests in `tests/`.
 3. `npm run lint` and `npm test` green locally.
+   Run `git status --short` before committing: `git commit -a` stages only
+   *tracked* files, so a brand-new module can pass locally and fail CI on a
+   missing import. This repo has shipped one red build that way.
 4. Push the branch and open a **GitHub** PR into `main`.
 5. Wait for CI + staging preview (PR comment with `*.nessebar-lens.pages.dev`).
 6. Announce the PR + preview URL in `nessebar-lens-website`; get approval.
