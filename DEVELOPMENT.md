@@ -354,6 +354,12 @@ the guard to keep the honest copy honest.
 6. Announce the PR + preview URL in `nessebar-lens-website`; get approval.
 7. Merge to `main` → production workflow runs (GitHub Environment approval by
    `harveysmurf`) → https://nessebarlens.com.
+   **Squash a multi-commit PR into one commit on main.** A refactor branch
+   accumulates a commit per idea, and main is the place someone reads to learn
+   what a module is *for* — a ten-commit trail of "move this, tighten that"
+   turns the history into a changelog of mechanics. The one-line rule of thumb:
+   if the individual commit subjects do not each make sense as a description of
+   the resulting code, squash.
 8. Report the PR link, preview URL, and commit hash in the channel.
 
 ---
@@ -366,4 +372,16 @@ the guard to keep the honest copy honest.
   live quote + order calls, and a HMAC-signed master asset URL. Sandbox and live
   are selected by an explicit `PRODIGI_API_BASE`, never inferred from the key.
 - Real photographs still need to land in the R2 `MASTERS`/`WEB` buckets to replace
-  the 20 placeholders.
+  the 20 placeholders. `npm run ingest` (§6a) does that; the ladder stays off
+  until the upload is verified.
+- If a 502 shows up from `/api/quote` or `/api/checkout` and it is *not* Prodigi
+  being down, look at `prodigiErrorStatus` first. 503 means this deploy is
+  misconfigured (unset Prodigi key, or a `PRODIGI_API_BASE` outside the two
+  allowed hosts); 502 means Prodigi. The split is exact string equality against
+  the messages `src/lib/prodigi-config.ts` throws, so a *new* throw site that
+  forgets to be classified reports a deploy problem as a bad gateway.
+  `tests/prodigi-config.test.mts` enumerates them; that is the file to extend
+  when the module gains one.
+- `PRODIGI_SHIPPING_METHOD` ("Budget") is the value we quote and buy with, and
+  no unit test can confirm Prodigi still accepts that string for the pinned SKUs.
+  It is a sandbox check, not a test.
