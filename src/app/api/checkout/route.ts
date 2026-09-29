@@ -103,6 +103,14 @@ export async function POST(request: Request) {
     mode: "payment",
     success_url: `${base}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${base}/checkout/cancel?slug=${encodeURIComponent(photo.slug)}`,
+    // The line item is built inline rather than from a Stripe price_… ID on
+    // purpose. Every price here is per-photo and per-quote (a Prodigi quote
+    // for the chosen format/size/frame/destination), so there is no fixed
+    // catalogue to map onto a Price created in the dashboard. Stripe's
+    // account-setup guide tells you to create a non-recurring product and
+    // paste its price ID; that step does not apply to this route, and
+    // adding one would create an object nothing reads. `mode: "payment"`
+    // plus the returned `session.url` is the whole hosted-checkout flow.
     line_items: [
       {
         quantity: 1,
