@@ -104,17 +104,13 @@ if len(print_secret) >= 32:
         "type": "secret_text",
         "value": print_secret,
     }
-# Propagation probe. Plain text so scripts/pages-env-readback.sh can read it
-# back off the serving deployment and answer whether a synced env_var reaches
-# live traffic without a deploy. Only written when a caller asks for one, so a
-# normal rotation leaves no marker behind.
+# Propagation probe. Plain text so it can be compared against what a running
+# deployment reports. Only written when a caller asks for one, and a sync with
+# no probe omits it entirely — the PATCH replaces the whole env_vars map, so a
+# plain sync is also what clears a probe left over from an earlier test.
 probe = os.environ.get("SYNC_PROBE", "").strip()
 if probe:
     env_vars["SYNC_PROBE"] = {"type": "plain_text", "value": probe}
-    # The echo route 404s without this, so a forgotten probe leaves nothing
-    # readable on production. Written alongside the probe on purpose: enabling
-    # the route and arming it are the same action, so they cannot drift.
-    env_vars["PROBE_ROUTE_ENABLED"] = {"type": "plain_text", "value": "1"}
 
 # Optional public build/runtime hints (plain text)
 for name in ("NEXT_PUBLIC_SITE_URL", "NEXT_PUBLIC_WEB_IMAGES_BASE"):
