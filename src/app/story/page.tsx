@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { WebPhoto } from "@/components/WebPhoto";
-import { getPhoto } from "@/lib/photos";
+import { filmLookClass, getPhoto } from "@/lib/photos";
 
 const BLOCKS = [
   {
@@ -81,7 +81,7 @@ export default function StoryPage() {
                     sizes="(max-width: 768px) 100vw, 60vw"
                     className={`w-full h-full object-cover hover:scale-105 transition-transform duration-700 ${
                       "contrast" in block && block.contrast
-                        ? "filter contrast-125"
+                        ? filmLookClass("contrast")
                         : ""
                     }`}
                   />

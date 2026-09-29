@@ -16,8 +16,22 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import ts from "typescript";
+import { FILM_LOOKS, filmLookClass } from "../src/lib/photos.ts";
 
 const root = path.join(import.meta.dirname, "..");
+
+// Both lists are the module's own runtime exports, not spellings of them: a
+// new look added to FILM_LOOKS is walked the day it is added, instead of only
+// once someone remembers to edit this file too.
+const FILM_LOOK_CLASSES: string[] = FILM_LOOKS.map((look) => {
+  const cls = filmLookClass(look);
+  // If a look stopped mapping to a class, the walk below would quietly stop
+  // guarding that look instead of failing, so assert the input is usable.
+  // Truthiness, not notEqual: a look that stopped mapping returns undefined,
+  // and includes(undefined) silently stops matching rather than failing.
+  assert.ok(cls, `${look} maps to no class; the walk would be vacuous for it`);
+  return cls;
+});
 
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
@@ -157,6 +171,67 @@ test("no object shape is declared in two modules", () => {
     }
   }
   assert.deepEqual(duplicates, []);
+});
+
+test("a film-look class is not re-spelled outside its owning module", () => {
+  // Same bug shape as the grammars above: the class was hand-rolled in every
+  // page and component, and the copies agreed until one of them didn't. A
+  // behavioural test could not catch it, because before the rename every copy
+  // was correct. This is the source walk that can.
+  //
+  // All three classes, not just contrast: sepia and grayscale were duplicated
+  // in the same two files, and a guard that covers only the instance you
+  // happened to notice does not guard the class of bug.
+  const OWNER = "src/lib/photos.ts";
+  const owners: string[] = [];
+  const offenders: string[] = [];
+  for (const file of sourceFiles(path.join(root, "src"))) {
+    const rel = relative(file);
+    const text = fs.readFileSync(file, "utf8");
+    const source = ts.createSourceFile(
+      file,
+      text,
+      ts.ScriptTarget.Latest,
+      true,
+      file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+    );
+    const visit = (node: ts.Node): void => {
+      if (ts.isStringLiteral(node)) {
+        const look = FILM_LOOK_CLASSES.find((cls) => node.text.includes(cls));
+        if (look) {
+          const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+          (rel === OWNER ? owners : offenders).push(`${look} at ${rel}:${line + 1}`);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `film-look class declared outside ${OWNER}: ${offenders.join(", ")}`,
+  );
+  // The owner must still declare all three, or the walk above is vacuous
+  // because someone emptied the record.
+  for (const cls of FILM_LOOK_CLASSES) {
+    assert.ok(
+      owners.some((o) => o.startsWith(cls)),
+      `${cls} not declared in ${OWNER}`,
+    );
+  }
+});
+
+test("filmLookClass maps every look in the union, and nothing else", () => {
+  for (const look of FILM_LOOKS) {
+    assert.notEqual(filmLookClass(look), "", look);
+  }
+  // Exact classes, not just non-empty: a Tailwind class that does not exist
+  // renders as no filter at all, and the source walk would still be happy.
+  assert.deepEqual(filmLookClass("contrast"), "filter contrast-125");
+  assert.deepEqual(filmLookClass("sepia"), "filter sepia");
+  assert.deepEqual(filmLookClass("grayscale"), "filter grayscale");
+  assert.equal(filmLookClass(undefined), "");
 });
 
 test("the MASTERS storage shape is declared once and both readers import it", () => {

@@ -1,16 +1,9 @@
 import Link from "next/link";
-import type { Photo } from "@/lib/photos";
+import { filmLookClass, type Photo } from "@/lib/photos";
 import { WebPhoto } from "@/components/WebPhoto";
 
 export function PhotoCard({ photo }: { photo: Photo }) {
-  const filmClass =
-    photo.filmLook === "contrast"
-      ? "filter contrast-125"
-      : photo.filmLook === "sepia"
-        ? "filter sepia"
-        : photo.filmLook === "grayscale"
-          ? "filter grayscale"
-          : "";
+  const filmClass = filmLookClass(photo.filmLook);
 
   return (
     <Link href={`/prints/${photo.slug}`} className="group cursor-pointer space-y-3 block">
