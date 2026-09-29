@@ -9,30 +9,17 @@ import {
 import {
   DIGITAL_PRICE_EUR,
   formatLabel,
-  sizeLabel,
   type FrameFinish,
   type PrintFormat,
   type PrintSize,
 } from "@/lib/pricing";
-
-const FORMATS: {
-  id: PrintFormat;
-  title: string;
-  sub: string;
-}[] = [
-  { id: "giclee", title: "Giclée Fine Art", sub: "Hahnemühle 308gsm" },
-  { id: "framed", title: "Framed Print", sub: "Solid Wood Frame" },
-  { id: "canvas", title: "Stretched Canvas", sub: "Cotton Canvas" },
-  { id: "digital", title: "Digital Copy", sub: "Full Resolution JPG" },
-];
-
-const SIZES: PrintSize[] = ["30x40", "50x70", "70x100"];
-
-const FRAMES: { id: FrameFinish; label: string }[] = [
-  { id: "black", label: "Matte Black" },
-  { id: "white", label: "Satin White" },
-  { id: "brown", label: "Brown Wood" },
-];
+import {
+  CONFIGURATOR_FORMATS,
+  CONFIGURATOR_FRAMES,
+  CONFIGURATOR_SIZES,
+  DEFAULT_FRAME_FINISH,
+  DEFAULT_PRINT_SIZE,
+} from "@/lib/print-copy";
 
 type LiveQuote = {
   merchandiseEur: number;
@@ -47,8 +34,8 @@ export function PrintConfigurator({
   title: string;
 }) {
   const [format, setFormat] = useState<PrintFormat>("giclee");
-  const [size, setSize] = useState<PrintSize>("50x70");
-  const [frame, setFrame] = useState<FrameFinish>("black");
+  const [size, setSize] = useState<PrintSize>(DEFAULT_PRINT_SIZE);
+  const [frame, setFrame] = useState<FrameFinish>(DEFAULT_FRAME_FINISH);
   const [destinationCountry, setDestinationCountry] =
     useState<ShipToCountryCode>(DEFAULT_SHIPPING_COUNTRY);
   const [busy, setBusy] = useState(false);
@@ -198,7 +185,7 @@ export function PrintConfigurator({
             Supported Prodigi Option
           </label>
           <div className="grid grid-cols-2 gap-2">
-            {FORMATS.map((f) => {
+            {CONFIGURATOR_FORMATS.map((f) => {
               const active = format === f.id;
               return (
                 <button
@@ -232,9 +219,9 @@ export function PrintConfigurator({
               onChange={(e) => setSize(e.target.value as PrintSize)}
               className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none"
             >
-              {SIZES.map((s) => (
-                <option key={s} value={s}>
-                  {sizeLabel(s)}
+              {CONFIGURATOR_SIZES.map((s) => (
+                <option key={s.id} value={s.id}>
+                  {s.label}
                 </option>
               ))}
             </select>
@@ -251,7 +238,7 @@ export function PrintConfigurator({
               onChange={(e) => setFrame(e.target.value as FrameFinish)}
               className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none"
             >
-              {FRAMES.map((f) => (
+              {CONFIGURATOR_FRAMES.map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.label}
                 </option>
