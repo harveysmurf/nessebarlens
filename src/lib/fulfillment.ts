@@ -22,14 +22,15 @@ import {
 } from "./prodigi-order";
 import {
   eurToCents,
+  parseEurAmount,
   type FrameFinish,
   type PrintFormat,
   type PrintSize,
 } from "./pricing";
 import {
-  FRAME_FINISHES,
-  PRINT_SIZES,
   SELLABLE_FORMATS,
+  isFrameFinishValue,
+  isPrintSize,
   type PhysicalFormat,
 } from "./sku-map";
 import { siteUrl } from "./stripe";
@@ -40,9 +41,9 @@ import { siteUrl } from "./stripe";
  * This used to be read as a runtime gate: buildRecord checked it and had a
  * try/catch around resolveSku, so a format with no pinned SKU would park the
  * order as "sku-map-missing" or "bad-metadata". Both branches were
- * unreachable — the flag is a literal and the isPrintSize/isFrameFinish guards
- * above already reject anything resolveSku would refuse. The guarantee is now
- * a test instead (sku-map.test.mts, "every UI format×size resolves to a
+ * unreachable — the flag is a literal and the isPrintSize/isFrameFinishValue
+ * guards above already reject anything resolveSku would refuse. The guarantee is
+ * now a test instead (sku-map.test.mts, "every UI format×size resolves to a
  * pinned Prodigi SKU"), which is where it can actually fail loudly.
  */
 export const SKU_MAP_READY = true;
@@ -534,7 +535,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     };
   }
 
-  if (!isPrintSize(size) || (format === "framed" && !isFrameFinish(frame))) {
+  if (!isPrintSize(size) || (format === "framed" && !isFrameFinishValue(frame))) {
     return {
       ...shell,
       format,
@@ -595,11 +596,6 @@ function parseFormat(raw: string | undefined): PrintFormat | null {
   return null;
 }
 
-function parseEurAmount(raw: string | undefined): number | null {
-  if (!raw || !/^(?:0|[1-9]\d{0,5})(?:\.\d{1,2})?$/.test(raw)) return null;
-  return Number(raw);
-}
-
 function clip(raw: string | undefined): string {
   if (!raw) return "";
   return raw.slice(0, 64);
@@ -640,14 +636,6 @@ function isOrderFormat(value: unknown): value is OrderFormat {
     value === "unknown" ||
     (typeof value === "string" && (FORMATS as readonly string[]).includes(value))
   );
-}
-
-function isPrintSize(value: string): value is PrintSize {
-  return (PRINT_SIZES as readonly string[]).includes(value);
-}
-
-function isFrameFinish(value: string): value is FrameFinish {
-  return (FRAME_FINISHES as readonly string[]).includes(value);
 }
 
 function isSafeAssetUrl(url: string): boolean {

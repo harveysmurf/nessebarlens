@@ -112,6 +112,31 @@ test("signed URL has no .jpg extension (Prodigi tolerance unknown; content-type 
   assert.equal(path, "/api/print-asset");
 });
 
+test("signer and verifier resolve the configured secret identically", async () => {
+  process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
+  // A binding-pasted secret with surrounding whitespace: both paths must trim
+  // it, and must agree, or the signer signs with one key and the verifier
+  // checks another.
+  process.env.PRINT_ASSET_HMAC_SECRET = `  ${SECRET}  `;
+  const nowMs = 1_700_000_000_000;
+  const url = (await signPrintAssetUrl("dawn", { nowMs }))!;
+  assert.ok(url, "configured secret must produce a signature");
+  const query = new URL(url).searchParams;
+  const verified = await verifyPrintAssetRequest("dawn", query.get("exp")!, query.get("sig")!, {
+    nowMs,
+  });
+  assert.equal(verified.ok, true, JSON.stringify(verified));
+
+  // A whitespace-only secret is unusable on both sides, identically.
+  process.env.PRINT_ASSET_HMAC_SECRET = " ".repeat(32);
+  assert.equal(await signPrintAssetUrl("dawn", { nowMs }), null);
+  assert.deepEqual(
+    await verifyPrintAssetRequest("dawn", query.get("exp")!, query.get("sig")!, { nowMs }),
+    { ok: false, status: 503, error: "print-asset-unavailable" },
+  );
+  delete process.env.PRINT_ASSET_HMAC_SECRET;
+});
+
 test("sign returns null without secret, and the order asset path has no placeholder left", async () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   delete process.env.PRINT_ASSET_HMAC_SECRET;

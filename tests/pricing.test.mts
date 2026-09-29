@@ -6,6 +6,7 @@ import {
   eurToCents,
   formatLabel,
   merchandiseFromUnitCost,
+  parseEurAmount,
   sizeLabel,
 } from "../src/lib/pricing.ts";
 import { PRINT_SIZES, SELLABLE_FORMATS } from "../src/lib/sku-map.ts";
@@ -43,4 +44,32 @@ test("every print size has a label with both unit systems", () => {
     assert.match(label, /"/);
   }
   assert.equal(sizeLabel(PRINT_SIZES[0]!), '30 × 40 cm (12 × 16") — Standard');
+});
+
+test("parseEurAmount accepts plain decimal amounts and rejects the rest", () => {
+  assert.equal(parseEurAmount("0"), 0);
+  assert.equal(parseEurAmount("12.5"), 12.5);
+  assert.equal(parseEurAmount("12.50"), 12.5);
+  assert.equal(parseEurAmount("123456.78"), 123456.78);
+
+  // Not an amount: empty, non-numeric, exponent notation, thousands separator,
+  // leading zeros, and more than two decimals.
+  for (const bad of [
+    "",
+    null,
+    undefined,
+    "abc",
+    "1e3",
+    "1,000",
+    "012",
+    "-1",
+    "12.505",
+    ".5",
+  ]) {
+    assert.equal(parseEurAmount(bad as string | null), null, String(bad));
+  }
+  // The integer part is capped at six digits. This is the divergence the
+  // shared grammar resolved: prodigi-quote.ts used to accept these.
+  assert.equal(parseEurAmount("1234567"), null);
+  assert.equal(parseEurAmount("1234567.89"), null);
 });
