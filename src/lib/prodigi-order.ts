@@ -12,6 +12,7 @@ import {
   prodigiApiKey,
   prodigiOrdersUrl,
 } from "./prodigi-config";
+import { PLACEHOLDER_VERSION } from "./placeholder-photo";
 import { signPrintAssetUrl } from "./print-asset";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
 import { siteUrl } from "./stripe";
@@ -174,8 +175,12 @@ export type CreateProdigiOrder = (input: {
  * low-resolution preview is the correct thing to show.
  */
 export function placeholderAssetUrl(photoSlug: string): string {
-  const base = siteUrl();
-  return `${base}/placeholders/${photoSlug}.jpg`;
+  // The same `?v=` the gallery uses, from the same constant, so a placeholder
+  // bump cannot leave the Stripe session image serving a stale CDN copy. The
+  // version is imported rather than the function: that function returns null
+  // for an unsafe slug, and this must keep returning a URL for whatever the
+  // catalog handed us rather than throwing mid-order.
+  return `${siteUrl()}/placeholders/${photoSlug}.jpg?v=${PLACEHOLDER_VERSION}`;
 }
 
 /**
