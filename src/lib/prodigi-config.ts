@@ -109,6 +109,21 @@ export function isProdigiUnconfigured(message: string): boolean {
   );
 }
 
+/**
+ * The status a failed Prodigi call reports: 503 for a misconfigured deploy of
+ * ours, 502 for Prodigi being unhealthy.
+ *
+ * Both API routes decided this with the same one-liner over the same
+ * predicate. The *predicate* was already single-sourced, so this is a
+ * judgement worth making once rather than a bug fix -- but the value it
+ * returns is the difference between "check the deploy" and "check Prodigi's
+ * status page", and it was the operator who had to know which one a given
+ * 502 was.
+ */
+export function prodigiErrorStatus(message: string): 502 | 503 {
+  return isProdigiUnconfigured(message) ? 503 : 502;
+}
+
 export function prodigiQuotesUrl(
   env: Record<string, unknown> = process.env,
 ): string {
