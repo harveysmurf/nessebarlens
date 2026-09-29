@@ -40,12 +40,23 @@ fi
 # ALLOW_STRIPE_MODE_MISMATCH=1 to override deliberately (e.g. a live-mode
 # smoke test before activation completes).
 if [[ "${ALLOW_STRIPE_MODE_MISMATCH:-0}" != "1" ]]; then
-  want="sk_test_"
+  # Stripe issues both standard (sk_*) and restricted (rk_*) keys; the mode
+  # suffix is what matters, not the key class. Accept either so a restricted
+  # live key is not mistaken for a test key.
   if [[ "$TARGET" == "production" ]]; then
-    want="sk_live_"
+    want=("sk_live_" "rk_live_")
+  else
+    want=("sk_test_" "rk_test_")
   fi
-  if [[ "$STRIPE_SECRET_KEY" != "$want"* ]]; then
-    echo "$TARGET requires a ${want}* STRIPE_SECRET_KEY (got ${STRIPE_SECRET_KEY:0:8}...)" >&2
+  key_ok=0
+  for w in "${want[@]}"; do
+    if [[ "$STRIPE_SECRET_KEY" == "$w"* ]]; then
+      key_ok=1
+      break
+    fi
+  done
+  if [[ "$key_ok" -ne 1 ]]; then
+    echo "$TARGET requires a ${want[0]}* or ${want[1]}* STRIPE_SECRET_KEY (got ${STRIPE_SECRET_KEY:0:8}...)" >&2
     echo "set ALLOW_STRIPE_MODE_MISMATCH=1 if this mismatch is intentional" >&2
     exit 1
   fi

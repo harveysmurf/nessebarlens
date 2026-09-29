@@ -687,6 +687,36 @@ test("checkout: a created session returns the Stripe URL and the quote", async (
   }
 });
 
+test("checkout: a Stripe rejection is a 502 that names Stripe's own code", async () => {
+  const saved = { ...process.env };
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        error: { type: "invalid_request_error", code: "api_key_invalid" },
+      }),
+      { status: 401, headers: { "content-type": "application/json" } },
+    )) as typeof fetch;
+  const restore = withBindings({ prodigiKeyConfigured: false });
+  try {
+    const response = await checkout.POST(
+      jsonRequest(`${SITE}/api/checkout`, { photoSlug: "dawn", format: "digital" }),
+    );
+    assert.equal(response.status, 502);
+    const failed = await body(response);
+    // A bare 502 cannot tell a key missing Checkout Sessions write from an
+    // account that is not live; the code is the only thing that can.
+    assert.equal(failed.stripeCode, "api_key_invalid");
+    assert.equal(failed.error, "Could not create Checkout Session");
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+    if (saved.STRIPE_SECRET_KEY === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved.STRIPE_SECRET_KEY;
+  }
+});
+
 /** A Stripe-style signature header for `payload` under `secret`. */
 async function sign(payload: string, secret: string): Promise<string> {
   const { hmacSha256Hex } = await import("../src/lib/crypto-hex.ts");

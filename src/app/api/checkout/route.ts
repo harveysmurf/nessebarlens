@@ -154,9 +154,18 @@ export async function POST(request: Request) {
   try {
     session = await stripe.checkout.sessions.create(sessionParams);
   } catch (e) {
-    console.error("stripe.checkout.sessions.create", e);
+    // Surface Stripe's own error code in the response body. Without it a
+    // 502 is indistinguishable between a key missing Checkout Sessions
+    // write, an account not yet live, and a bad request — every one of which
+    // was a guess we had to make from outside. The message stays generic;
+    // the code is what identifies the cause, and it is not sensitive.
+    const code =
+      typeof e === "object" && e !== null && "code" in e
+        ? String((e as { code: unknown }).code)
+        : "unknown";
+    console.error("stripe.checkout.sessions.create", code, e);
     return NextResponse.json(
-      { error: "Could not create Checkout Session" },
+      { error: "Could not create Checkout Session", stripeCode: code },
       { status: 502 },
     );
   }
