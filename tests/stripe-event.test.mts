@@ -222,3 +222,106 @@ test("a non-positive or fractional t= is not a usable timestamp", async () => {
     );
   }
 });
+
+test("a duplicate t= is decided by the first one, not the first usable one", async () => {
+  // The timestamp reader returns on the first `t=` it finds, so an unusable
+  // first value poisons the header rather than being skipped. Pinned because
+  // the header is now parsed by one shared reader, and it would be easy to
+  // "fix" this into first-usable-wins while deduplicating.
+  const nowMs = 1_700_000_000_000;
+  const timestamp = Math.floor(nowMs / 1000);
+  const sig = await sign(timestamp);
+  for (const bad of ["0", "-1", "1.5", "abc"]) {
+    assert.equal(
+      await verifyStripeSignatureWebCrypto(
+        PAYLOAD,
+        `t=${bad},t=${timestamp},v1=${sig}`,
+        SECRET,
+        nowMs,
+      ),
+      false,
+      bad,
+    );
+  }
+  // Control: the good one first, the bad one after, still verifies. Without
+  // this the test above would pass even if every t= were rejected.
+  assert.equal(
+    await verifyStripeSignatureWebCrypto(
+      PAYLOAD,
+      `t=${timestamp},t=0,v1=${sig}`,
+      SECRET,
+      nowMs,
+    ),
+    true,
+  );
+});
+
+test("every well-formed v1= is collected, not just the first", async () => {
+  // The mirror image of the timestamp rule: the signature reader accumulates.
+  // Stripe sends a second v1= during secret rotation, so dropping later ones
+  // would break every rotation window.
+  const nowMs = 1_700_000_000_000;
+  const timestamp = Math.floor(nowMs / 1000);
+  const sig = await sign(timestamp);
+  const rotated = await sign(timestamp, "whsec_rotated");
+  const malformed = "nothex";
+  assert.equal(
+    await verifyStripeSignatureWebCrypto(
+      PAYLOAD,
+      `t=${timestamp},v1=${malformed},v1=${sig}`,
+      SECRET,
+      nowMs,
+    ),
+    true,
+    "a usable signature after a malformed one",
+  );
+  assert.equal(
+    await verifyStripeSignatureWebCrypto(
+      PAYLOAD,
+      `t=${timestamp},v1=${sig},v1=${malformed}`,
+      SECRET,
+      nowMs,
+    ),
+    true,
+    "a usable signature before a malformed one",
+  );
+  assert.equal(
+    await verifyStripeSignatureWebCrypto(
+      PAYLOAD,
+      `t=${timestamp},v1=${sig},v1=${rotated}`,
+      SECRET,
+      nowMs,
+    ),
+    true,
+    "the earlier of two good signatures is the one that matches",
+  );
+  assert.equal(
+    await verifyStripeSignatureWebCrypto(
+      PAYLOAD,
+      `t=${timestamp},v1=${malformed},v1=${rotated}`,
+      SECRET,
+      nowMs,
+    ),
+    false,
+    "two malformed/foreign signatures verify nothing",
+  );
+});
+
+test("a part with no = is skipped, never fatal", async () => {
+  const nowMs = 1_700_000_000_000;
+  const timestamp = Math.floor(nowMs / 1000);
+  const sig = await sign(timestamp);
+  for (const h of [
+    `t=${timestamp},barepart,v1=${sig}`,
+    `barepart,t=${timestamp},v1=${sig}`,
+    `t=${timestamp},v1=${sig},barepart`,
+    `t=${timestamp},v1=${sig},`,
+    `,t=${timestamp},v1=${sig}`,
+  ]) {
+    assert.equal(
+      await verifyStripeSignatureWebCrypto(PAYLOAD, h, SECRET, nowMs),
+      true,
+      h,
+    );
+  }
+});

@@ -97,12 +97,23 @@ function isSignatureVerificationError(error: unknown): boolean {
   return error instanceof Stripe.errors.StripeSignatureVerificationError;
 }
 
-function headerTimestamp(header: string): number | null {
+// Wire order, first `=` only, and a part with no `=` is skipped rather than
+// fatal. The two readers below differ deliberately: the timestamp takes the
+// first `t=` it sees, while signatures collects every well-formed `v1=`.
+function headerParts(header: string): Array<[string, string]> {
+  const parts: Array<[string, string]> = [];
   for (const part of header.split(",")) {
     const eq = part.indexOf("=");
     if (eq === -1) continue;
-    if (part.slice(0, eq) !== "t") continue;
-    const timestamp = Number(part.slice(eq + 1));
+    parts.push([part.slice(0, eq), part.slice(eq + 1)]);
+  }
+  return parts;
+}
+
+function headerTimestamp(header: string): number | null {
+  for (const [key, value] of headerParts(header)) {
+    if (key !== "t") continue;
+    const timestamp = Number(value);
     if (!Number.isInteger(timestamp) || timestamp <= 0) return null;
     return timestamp;
   }
@@ -111,12 +122,9 @@ function headerTimestamp(header: string): number | null {
 
 function headerSignatures(header: string): string[] {
   const signatures: string[] = [];
-  for (const part of header.split(",")) {
-    const eq = part.indexOf("=");
-    if (eq === -1) continue;
-    if (part.slice(0, eq) !== "v1") continue;
-    const signature = part.slice(eq + 1);
-    if (HEX_64_PATTERN.test(signature)) signatures.push(signature);
+  for (const [key, value] of headerParts(header)) {
+    if (key !== "v1") continue;
+    if (HEX_64_PATTERN.test(value)) signatures.push(value);
   }
   return signatures;
 }
