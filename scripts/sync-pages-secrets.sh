@@ -104,6 +104,14 @@ if len(print_secret) >= 32:
         "type": "secret_text",
         "value": print_secret,
     }
+# Propagation probe. Plain text so scripts/pages-env-readback.sh can read it
+# back off the serving deployment and answer whether a synced env_var reaches
+# live traffic without a deploy. Only written when a caller asks for one, so a
+# normal rotation leaves no marker behind.
+probe = os.environ.get("SYNC_PROBE", "").strip()
+if probe:
+    env_vars["SYNC_PROBE"] = {"type": "plain_text", "value": probe}
+
 # Optional public build/runtime hints (plain text)
 for name in ("NEXT_PUBLIC_SITE_URL", "NEXT_PUBLIC_WEB_IMAGES_BASE"):
     val = os.environ.get(name, "").strip()
