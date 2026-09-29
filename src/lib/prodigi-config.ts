@@ -48,13 +48,21 @@ export function prodigiApiKey(
 }
 
 /**
- * True when a message from the Prodigi layer means "this deployment has no API
- * key", as opposed to Prodigi itself failing. The route handlers turn one into
- * 503 and the other into 502, and matching on the words "API key" never fired:
- * the thrown message is "<NAME>_API_KEY is not set".
+ * True when a message from the Prodigi layer means "this deployment is not
+ * configured", as opposed to Prodigi itself failing. The route handlers turn
+ * one into 503 and the other into 502.
+ *
+ * Three ways to be unconfigured, and the predicate has to cover all of them:
+ *   - PRODIGI_SANDBOX_API_KEY / PRODIGI_API_KEY missing → "<NAME>_API_KEY is not set"
+ *   - PRODIGI_API_BASE unset or not an allowlisted host → "PRODIGI_API_BASE must be ..."
+ *
+ * The base case used to fall through to 502, which is the one status that
+ * means "something upstream is unhealthy": a human reading the logs would go
+ * look at Prodigi's status page for a misconfigured deploy of ours. Same
+ * failure shape as the webhook's catch-all, one layer over.
  */
 export function isProdigiUnconfigured(message: string): boolean {
-  return /_API_KEY is not set/.test(message);
+  return /_API_KEY is not set/.test(message) || /^PRODIGI_API_BASE must be /.test(message);
 }
 
 export function prodigiQuotesUrl(

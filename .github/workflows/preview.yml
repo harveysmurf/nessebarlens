@@ -48,8 +48,11 @@ jobs:
         id: branch
         run: |
           raw="${{ github.head_ref }}"
-          # Pages branch names: lowercase, alphanumeric + hyphen
-          safe="$(echo "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-58)"
+          # Pages branch names: lowercase, alphanumeric + hyphen.
+          # Cloudflare truncates the branch alias at 28 characters, so the smoke
+          # test only finds the deployment if we truncate to the same limit --
+          # otherwise a longer branch name deploys fine and 404s on smoke.
+          safe="$(echo "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-28)"
           echo "name=$safe" >> "$GITHUB_OUTPUT"
 
       - name: Build (OpenNext)
@@ -175,7 +178,7 @@ jobs:
         run: |
           set -euo pipefail
           raw="${{ github.head_ref }}"
-          safe="$(echo "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-58)"
+          safe="$(echo "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-28)"
           echo "Cleaning deployments for branch=$safe"
           export SAFE_BRANCH="$safe"
           npx wrangler pages deployment list --project-name=nessebar-lens --json > /tmp/deps.json || true

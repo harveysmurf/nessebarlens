@@ -266,7 +266,10 @@ test("a physical order with no quoteEur falls back to merchandiseEur", () => {
   assert.equal(record.quoteEur, 15);
   assert.equal(record.status, "paid-unfulfilled");
   // The amount matched 15 + 4.99, so the only remaining stop is the credential.
-  assert.equal(record.reason, "prodigi-key-unset");
+  assert.equal(record.reason, "prodigi-unconfigured");
+  // Retryable, so the order is not lost: a redeploy inside Stripe's redelivery
+  // window places it.
+  assert.equal(record.terminal, false);
 });
 
 test("parseRecipient copes with an address that omits every optional field", () => {

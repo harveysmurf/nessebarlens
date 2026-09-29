@@ -455,7 +455,10 @@ test("webhook: no signature, no secret, bad signature — in that order", async 
         body: "{}",
       }),
     );
-    assert.equal(unconfigured.status, 500);
+    // 503, not 500: "this deploy has no webhook secret" is a config fact a
+    // human must fix, and it has to be distinguishable in the logs from a
+    // transient Stripe problem. Still 5xx, so nothing paid is dropped.
+    assert.equal(unconfigured.status, 503);
     assert.equal((await body(unconfigured)).error, "stripe-webhook-unconfigured");
 
     process.env.STRIPE_WEBHOOK_SECRET = "whsec_test_route_secret";
@@ -552,7 +555,9 @@ test("webhook: a handled event with no ORDERS binding is a 500, not a silent 200
         body: event,
       }),
     );
-    assert.equal(response.status, 500);
+    // A missing binding is 503 "unconfigured", the same shape as the missing
+    // webhook secret, so a deploy misconfig is diagnosable one way.
+    assert.equal(response.status, 503);
     assert.equal((await body(response)).error, "orders-kv-unavailable");
   } finally {
     restore();
@@ -1700,8 +1705,11 @@ test("webhook: a store that throws mid-fulfilment is a 500, not a lost order", a
         body: event,
       }),
     );
+    // A KV that throws is NOT the same as a KV that is absent, and the old
+    // bare catch reported both as "orders-kv-unavailable" — so a real
+    // fulfillment bug pointed the log at the binding. Distinct error now.
     assert.equal(response.status, 500);
-    assert.deepEqual(await body(response), { error: "orders-kv-unavailable" });
+    assert.deepEqual(await body(response), { error: "fulfillment-failed" });
   } finally {
     restore();
   }

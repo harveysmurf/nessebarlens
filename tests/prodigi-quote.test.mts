@@ -7,6 +7,7 @@ import {
 import {
   PRODIGI_LIVE_API_BASE,
   PRODIGI_SANDBOX_API_BASE,
+  isProdigiUnconfigured,
   prodigiApiBase,
   prodigiApiKey,
   prodigiOrdersUrl,
@@ -256,5 +257,151 @@ test("quotePhysical throws on non-OK HTTP and missing quote fields", async () =>
     globalThis.fetch = originalFetch;
     delete process.env.PRODIGI_SANDBOX_API_KEY;
     delete process.env.PRODIGI_API_BASE;
+  }
+});
+
+test("a bad Prodigi host reads as unconfigured, not as a bad gateway", async () => {
+  // isProdigiUnconfigured only matched "<NAME>_API_KEY is not set", so a
+  // misconfigured PRODIGI_API_BASE fell through to 502 — the one status that
+  // means "something upstream is unhealthy". A human would go check Prodigi's
+  // status page for a deploy problem of ours. Both quote and checkout use this
+  // predicate, so it has to cover every way to be unconfigured.
+  assert.equal(
+    isProdigiUnconfigured("PRODIGI_API_KEY is not set"),
+    true,
+  );
+  assert.equal(
+    isProdigiUnconfigured(
+      "PRODIGI_API_BASE must be https://api.sandbox.prodigi.com or https://api.prodigi.com",
+    ),
+    true,
+  );
+  // A genuine upstream failure must NOT be reported as our misconfiguration.
+  for (const message of [
+    "Prodigi quote HTTP 502",
+    "Prodigi quote returned invalid JSON",
+    "Prodigi quote missing quotes[0]",
+  ]) {
+    assert.equal(isProdigiUnconfigured(message), false, message);
+  }
+});
+
+test("quotePhysical surfaces a misconfigured host before any network call", async () => {
+  const originalFetch = globalThis.fetch;
+  let called = 0;
+  globalThis.fetch = (async () => {
+    called++;
+    return new Response("{}", { status: 200 });
+  }) as typeof fetch;
+  try {
+    process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
+    process.env.PRODIGI_API_BASE = "https://evil.example";
+    await assert.rejects(
+      () => quotePhysical({ format: "canvas", size: "70x100" }),
+      // The route turns this into 503 via isProdigiUnconfigured.
+      (e: Error) => isProdigiUnconfigured(e.message),
+    );
+    assert.equal(called, 0, "an unknown host is never contacted");
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.PRODIGI_SANDBOX_API_KEY;
+    delete process.env.PRODIGI_API_BASE;
+  }
+});
+
+test("every config-failure message is recognised as ours, not as a 502", async () => {
+  // The standing rule (DEVELOPMENT.md §7): a misconfiguration of our deploy
+  // must never surface as an upstream 502/500. This walks every message the
+  // Prodigi config layer can throw through the real getters and asserts the
+  // predicate claims each one, so a newly added config error cannot silently
+  // fall back to "bad gateway" and point an operator at Prodigi's status page
+  // for a problem of ours.
+  const cases: Array<{ env: Record<string, unknown>; what: string }> = [
+    { env: {}, what: "PRODIGI_API_BASE unset" },
+    { env: { PRODIGI_API_BASE: "" }, what: "PRODIGI_API_BASE empty" },
+    { env: { PRODIGI_API_BASE: "   " }, what: "PRODIGI_API_BASE whitespace" },
+    {
+      env: { PRODIGI_API_BASE: "https://api.attacker.example" },
+      what: "PRODIGI_API_BASE not allowlisted",
+    },
+    {
+      env: { PRODIGI_API_BASE: "https://api.prodigi.com.evil.example" },
+      what: "PRODIGI_API_BASE lookalike host",
+    },
+    {
+      env: { PRODIGI_API_BASE: "http://api.sandbox.prodigi.com" },
+      what: "PRODIGI_API_BASE wrong scheme",
+    },
+    {
+      env: { PRODIGI_API_BASE: PRODIGI_SANDBOX_API_BASE },
+      what: "sandbox host, sandbox key unset",
+    },
+    {
+      env: {
+        PRODIGI_API_BASE: PRODIGI_SANDBOX_API_BASE,
+        PRODIGI_SANDBOX_API_KEY: "",
+      },
+      what: "sandbox key empty",
+    },
+    {
+      env: {
+        PRODIGI_API_BASE: PRODIGI_SANDBOX_API_BASE,
+        PRODIGI_SANDBOX_API_KEY: "   ",
+      },
+      what: "sandbox key whitespace",
+    },
+    {
+      env: { PRODIGI_API_BASE: PRODIGI_LIVE_API_BASE },
+      what: "live host, live key unset",
+    },
+    {
+      env: { PRODIGI_API_BASE: PRODIGI_LIVE_API_BASE, PRODIGI_API_KEY: "" },
+      what: "live key empty",
+    },
+  ];
+
+  const messages: string[] = [];
+  for (const { env, what } of cases) {
+    // Which getter *should* throw depends on the case: with an allowlisted
+    // base but no key, prodigiApiBase legitimately succeeds and only the key
+    // reader fails. Asserting every getter throws would be asserting the code
+    // is broken.
+    // The URL builders depend only on the base; only prodigiApiKey depends on
+    // the credential. Asking a URL builder to fail on a missing key would be
+    // asserting a bug that does not exist.
+    const baseOk = env.PRODIGI_API_BASE === PRODIGI_SANDBOX_API_BASE ||
+      env.PRODIGI_API_BASE === PRODIGI_LIVE_API_BASE;
+    const getters = baseOk
+      ? [prodigiApiKey]
+      : [prodigiApiBase, prodigiQuotesUrl, prodigiOrdersUrl];
+    for (const getter of getters) {
+      try {
+        getter(env);
+        assert.fail(`${what}: ${getter.name} unexpectedly succeeded`);
+      } catch (e) {
+        const message = e instanceof Error ? e.message : String(e);
+        messages.push(message);
+        assert.equal(
+          isProdigiUnconfigured(message),
+          true,
+          `${what} via ${getter.name} reported as an upstream failure: ${message}`,
+        );
+      }
+    }
+  }
+  assert.ok(messages.length >= cases.length);
+
+  // And the converse: a real upstream failure must NOT be claimed as ours, or
+  // we would hide a Prodigi outage behind "unconfigured, just redeploy".
+  for (const message of [
+    "Prodigi quote HTTP 500",
+    "Prodigi quote HTTP 429",
+    "Prodigi order HTTP 401",
+    "Prodigi quote returned invalid JSON",
+    "Prodigi quote missing quotes[0]",
+    "Prodigi quote missing unitCost",
+    "fetch failed",
+  ]) {
+    assert.equal(isProdigiUnconfigured(message), false, message);
   }
 });

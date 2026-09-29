@@ -560,11 +560,19 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
   }
 
   if (!input.prodigiKeyConfigured) {
+    // Retryable, not terminal. This used to be written with the shell's
+    // terminal:true and the reason "prodigi-key-unset", which made it
+    // indistinguishable from a done order: the webhook answered 200, Stripe
+    // never redelivered, and a customer who paid for a print got nothing with
+    // no log line anywhere. A missing key is deployment config, fixable inside
+    // Stripe's ~3-day redelivery window, and the address is already valid — so
+    // keep it and let a redelivery place the order.
     return {
       ...shell,
       format,
       status: "paid-unfulfilled",
-      reason: "prodigi-key-unset",
+      terminal: false,
+      reason: "prodigi-unconfigured",
       recipient,
     };
   }

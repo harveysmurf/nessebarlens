@@ -41,11 +41,20 @@ export async function quotePhysical(opts: {
   const destinationCountryCode =
     opts.destinationCountryCode?.trim() || DEFAULT_DESTINATION_COUNTRY;
 
-  const res = await fetch(prodigiQuotesUrl(), {
+  // The host and the key are read before the request for the same reason
+  // createProdigiOrder does it: prodigiQuotesUrl/prodigiApiKey throw when
+  // PRODIGI_API_BASE is unset or not allowlisted, and a throw inside the
+  // fetch() argument list skips the try below entirely. The message still
+  // reaches isProdigiUnconfigured, so the route answers 503 for a config
+  // problem and 502 for Prodigi being unhealthy.
+  const quotesUrl = prodigiQuotesUrl();
+  const apiKey = prodigiApiKey();
+
+  const res = await fetch(quotesUrl, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "X-API-Key": prodigiApiKey(),
+      "X-API-Key": apiKey,
     },
     body: JSON.stringify({
       shippingMethod: "Budget",
