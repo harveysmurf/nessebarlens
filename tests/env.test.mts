@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { envString, envStringStrippedSlash, stripTrailingSlashes } from "../src/lib/env.ts";
+import { envFlag, envString, envStringStrippedSlash, stripTrailingSlashes } from "../src/lib/env.ts";
 import { prodigiApiBase, prodigiApiKey } from "../src/lib/prodigi-config.ts";
 
 function withEnv<T>(name: string, value: string | undefined, fn: () => T): T {
@@ -81,4 +81,18 @@ test("stripTrailingSlashes removes every trailing slash, not just one", () => {
   // A path-internal slash is not a trailing slash.
   assert.equal(stripTrailingSlashes("https://a/b"), "https://a/b");
   assert.equal(stripTrailingSlashes("https://a/?x=1"), "https://a/?x=1");
+});
+
+test("envFlag is opt-in: only true or 1 turn a gate on", () => {
+  assert.equal(envFlag("X", { X: "true" }), true);
+  assert.equal(envFlag("X", { X: "TRUE" }), true);
+  assert.equal(envFlag("X", { X: " true " }), true);
+  assert.equal(envFlag("X", { X: "1" }), true);
+  // Deliberately strict: these callers gate things that 404 rather than
+  // things that merely degrade, so a surprising value fails closed.
+  for (const value of ["yes", "on", "enabled", "0", "false", "", "   ", "true1", "01"]) {
+    assert.equal(envFlag("X", { X: value }), false, JSON.stringify(value));
+  }
+  assert.equal(envFlag("X", {}), false);
+  assert.equal(envFlag("X", { X: 42 }), false);
 });

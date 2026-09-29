@@ -71,6 +71,7 @@ Environment variables (names only — values live in the `.env.local` symlink):
 | `PRINT_ASSET_HMAC_SECRET` | ≥32-char HMAC secret for `/api/print-asset` (Prodigi). Optional — when unset, physical orders use `/placeholders/*.jpg` |
 | `NEXT_PUBLIC_SITE_URL` | Canonical public origin (used by `src/lib/stripe.ts`) |
 | `NEXT_PUBLIC_WEB_IMAGES_BASE` | Base URL for gallery `<img>` srcset |
+| `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` | Opt-in gate for the R2 derivative ladder. Unset = placeholders. Only `true`/`1` enable it — a configured base alone does **not**. |
 | `R2_ACCOUNT_ID`, `R2_ENDPOINT`, `R2_S3_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | R2 S3 creds (unused by Workers — they use bucket bindings) |
 | `EU_SHIPPING_EUR` | Flat EU shipping (must match `EU_FLAT_SHIPPING_CENTS`) |
 
@@ -212,6 +213,13 @@ Debian-host symlink to `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
 - **No remote image hosts.** `next.config.ts` sets `images.remotePatterns: []` —
   do not add `images.unsplash.com` or any third-party host. Gallery uses plain
   `<img>` srcset against `NEXT_PUBLIC_WEB_IMAGES_BASE` only.
+- **The derivative ladder is gated.** `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED`
+  (default off) decides between the R2 ladder (`{slug}/{width}.jpg` in
+  `nessebar-lens-web`) and the committed placeholders. Set the base without the
+  flag and the gallery keeps serving placeholders — that is deliberate, because
+  the base is configured in every environment while both buckets are still
+  empty. Turn the flag on only after the upload is verified, and expect
+  `tests/placeholder-photo.test.mts` to need updating at that moment.
 - **Stripe Checkout only.** `/api/checkout` creates a Checkout Session
   (`success_url` / `cancel_url`); no code path confirms a PaymentIntent. Stripe
   sandbox emails about a missing `return_url` are expected after manual

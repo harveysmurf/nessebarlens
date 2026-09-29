@@ -1,41 +1,50 @@
 /**
- * The placeholder-phase image source.
+ * What the gallery shows for one photo. One place decides this, so the answer
+ * to "which image is live" is a single function rather than a habit spread
+ * across components.
  *
- * This is the single place that decides what the gallery serves while the
- * real derivative ladder (lib/derivatives.ts) is not wired up. It exists as
- * its own module rather than as a template literal inside the component so
- * that the placeholder phase is *tested* and not just asserted in a comment:
- * the whole point of this file is that the thing which changes when real
- * JPEGs ship is one function with one test, not a prop threaded through a
- * component.
+ * Two sources, in priority order:
+ *   1. the R2 derivative ladder, when it is explicitly enabled
+ *   2. the committed placeholder JPEG in /public/placeholders
  *
- * When real derivatives land, this becomes:
- *   const d = webDerivativeUrls(slug);
- *   return d ? { src: d.src, srcSet: d.srcSet } : { src: legacyPlaceholder(slug) };
- * and the test moves with it. Nothing else about the page changes.
+ * The ladder is off by default and is not switched on by the base URL being
+ * configured — see lib/derivatives.ts. Both buckets were empty while the base
+ * was already set in every environment, so "base is set" cannot mean "files
+ * exist". With the flag off this module is byte-identical to the pre-ladder
+ * behaviour, which is why the switch could be added before the upload.
+ *
+ * Aspect ratio is CSS, not filenames. Derivatives are resized by width with
+ * height following the photo's own ratio, so portrait and landscape both fit
+ * the same rung; a tile that must look uniform sets `aspect-ratio` and
+ * `object-fit: cover`, and the photo page drops both to show it uncropped.
  */
+
+import { webDerivativeUrls } from "./derivatives";
+import { PHOTO_SLUG_PATTERN } from "./master-key";
 
 /**
  * Bump when the placeholder JPEGs change so browsers skip stale CDN copies.
- * Kept in one place because the same bump across a component and a copy in
- * another file is exactly the drift this repo keeps catching.
+ * Kept in one place because the same bump copied into a second file is
+ * exactly the drift this repo keeps catching.
  */
-import { PHOTO_SLUG_PATTERN } from "./master-key";
-
 export const PLACEHOLDER_VERSION = 3;
 
-export type PlaceholderImage = {
-  /** Always a single URL: there is no ladder to choose a rung from yet. */
+export type GalleryImage = {
   src: string;
-  /** Null, never a fabricated one-rung srcSet -- a srcSet of one is a lie. */
-  srcSet: null;
+  /**
+   * Null when there is no ladder. Never a one-rung srcSet: it would render
+   * correctly and imply a responsive ladder that does not exist, which is
+   * how a missing ladder stays invisible.
+   */
+  srcSet: string | null;
+  /** "ladder" or "placeholder" — surfaced for tests and debugging. */
+  source: "ladder" | "placeholder";
 };
 
 /**
- * Returns the committed placeholder JPEG for a slug, or null when the slug
- * is not a safe path segment. The caller renders alt text only in that case,
- * so a slug that would escape /public/placeholders produces a broken image
- * rather than a readable file from somewhere else on disk.
+ * The committed placeholder JPEG for a slug, or null when the slug is not a
+ * safe path segment. A slug that would escape /public/placeholders must not
+ * produce a request at all, so the caller can render alt text instead.
  */
 export function placeholderPhotoSrc(slug: string): string | null {
   // The catalog's own slug grammar, not a second copy of it: a slug the
@@ -44,8 +53,22 @@ export function placeholderPhotoSrc(slug: string): string | null {
   return `/placeholders/${slug}.jpg?v=${PLACEHOLDER_VERSION}`;
 }
 
-/** As placeholderPhotoSrc, typed for a component that spreads `srcSet`. */
-export function placeholderPhotoImage(slug: string): PlaceholderImage | null {
-  const src = placeholderPhotoSrc(slug);
-  return src === null ? null : { src, srcSet: null };
+/**
+ * The image for one slug. Null only when the slug is unusable — the ladder
+ * being off is a normal state, not a failure, and degrades to the
+ * placeholder rather than to nothing.
+ */
+export function galleryImage(slug: string): GalleryImage | null {
+  if (!PHOTO_SLUG_PATTERN.test(slug)) return null;
+
+  const ladder = webDerivativeUrls(slug);
+  if (ladder) {
+    return { src: ladder.src, srcSet: ladder.srcSet, source: "ladder" };
+  }
+
+  return {
+    src: `/placeholders/${slug}.jpg?v=${PLACEHOLDER_VERSION}`,
+    srcSet: null,
+    source: "placeholder",
+  };
 }
