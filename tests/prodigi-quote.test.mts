@@ -253,6 +253,25 @@ test("quotePhysical throws on non-OK HTTP and missing quote fields", async () =>
       () => quotePhysical({ format: "canvas", size: "70x100" }),
       /missing unitCost/,
     );
+
+    // An amount with more than six integer digits is rejected, the same answer
+    // the stored-record path gives. This copy of the grammar used to accept it.
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          quotes: [
+            {
+              items: [{ unitCost: { amount: "1234567.89" } }],
+              costSummary: { shipping: { amount: "6.00" } },
+            },
+          ],
+        }),
+        { status: 200 },
+      )) as typeof fetch;
+    await assert.rejects(
+      () => quotePhysical({ format: "canvas", size: "70x100" }),
+      /missing unitCost/,
+    );
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.PRODIGI_SANDBOX_API_KEY;

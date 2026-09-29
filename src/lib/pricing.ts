@@ -16,6 +16,22 @@ export function eurToCents(eur: number): number {
   return Math.round(eur * 100);
 }
 
+/**
+ * Parse a decimal EUR string as it arrives over the wire (Prodigi quotes,
+ * stored order metadata). Returns null for anything that is not a plain
+ * non-negative amount with at most two decimals.
+ *
+ * This grammar used to be written down twice, in fulfillment.ts and
+ * prodigi-quote.ts, and the copies had already drifted: the stored-record copy
+ * capped the integer part at six digits, the Prodigi copy did not. A >6-digit
+ * amount was therefore readable from a quote and rejected from a record, and
+ * which one you got depended on which module you were in.
+ */
+export function parseEurAmount(raw: string | null | undefined): number | null {
+  if (!raw || !/^(?:0|[1-9]\d{0,5})(?:\.\d{1,2})?$/.test(raw)) return null;
+  return Number(raw);
+}
+
 // Typed as Record<union, string> rather than switch: adding a member to
 // PrintFormat/PrintSize then fails to compile here instead of silently
 // returning undefined at runtime.

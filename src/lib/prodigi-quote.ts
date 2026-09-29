@@ -1,6 +1,7 @@
 import { DEFAULT_SHIPPING_COUNTRY } from "./ship-to-countries";
 import {
   merchandiseFromUnitCost,
+  parseEurAmount,
   type FrameFinish,
   type PrintSize,
 } from "./pricing";
@@ -24,11 +25,15 @@ type ProdigiQuoteResponse = {
   }>;
 };
 
-function parseEurAmount(raw: string | undefined, label: string): number {
-  if (!raw || !/^(?:0|[1-9]\d*)(?:\.\d{1,2})?$/.test(raw)) {
+// The shared grammar caps the integer part at six digits, which the local copy
+// of this check did not. A quote that large is not a real quote, and rejecting
+// it here is the same answer the stored-record path already gave.
+function requiredEurAmount(raw: string | undefined, label: string): number {
+  const amount = parseEurAmount(raw);
+  if (amount === null) {
     throw new Error(`Prodigi quote missing ${label}`);
   }
-  return Number(raw);
+  return amount;
 }
 
 export async function quotePhysical(opts: {
@@ -87,11 +92,11 @@ export async function quotePhysical(opts: {
     throw new Error("Prodigi quote missing quotes[0]");
   }
 
-  const unitCostEur = parseEurAmount(
+  const unitCostEur = requiredEurAmount(
     quote.items?.[0]?.unitCost?.amount,
     "unitCost",
   );
-  const shippingEur = parseEurAmount(
+  const shippingEur = requiredEurAmount(
     quote.costSummary?.shipping?.amount,
     "shipping",
   );

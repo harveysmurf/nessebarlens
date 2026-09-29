@@ -63,6 +63,20 @@ export function printAssetSecret(
 }
 
 /**
+ * The secret the signer and the verifier must agree on.
+ *
+ * Both paths resolve it identically on purpose: an explicit `undefined` means
+ * "use this deployment's configured secret", while an explicit null or string
+ * is taken as given (and still run through usableSecret, so a whitespace-only
+ * override is rejected the same way a whitespace-only binding is). If the two
+ * ever picked differently, URLs would be signed with one key and verified with
+ * another, and every legitimate download would 401.
+ */
+function resolveSecret(secret: string | null | undefined): string | null {
+  return secret === undefined ? printAssetSecret() : usableSecret(secret);
+}
+
+/**
  * Whether this deployment can actually produce a signed master URL for `slug`.
  *
  * Used as a pre-payment guard: /api/checkout refuses to create a Stripe
@@ -96,10 +110,7 @@ export async function signPrintAssetUrl(
   } = {},
 ): Promise<string | null> {
   if (!isPhotoSlug(slug) || !masterKeyForSlug(slug)) return null;
-  const secret =
-    options.secret === undefined
-      ? printAssetSecret()
-      : usableSecret(options.secret);
+  const secret = resolveSecret(options.secret);
   if (!secret) return null;
 
   const nowMs = options.nowMs ?? Date.now();
@@ -123,10 +134,7 @@ export async function verifyPrintAssetRequest(
   sig: string,
   options: { secret?: string | null; nowMs?: number } = {},
 ): Promise<PrintAssetVerifyResult> {
-  const secret =
-    options.secret === undefined
-      ? printAssetSecret()
-      : usableSecret(options.secret);
+  const secret = resolveSecret(options.secret);
   if (!secret) {
     return { ok: false, status: 503, error: "print-asset-unavailable" };
   }
