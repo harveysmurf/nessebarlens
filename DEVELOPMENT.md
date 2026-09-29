@@ -159,7 +159,26 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24):
 |----------|---------|--------------|
 | `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → test |
 | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → Pages preview → **smoke test** (`scripts/smoke.sh`) → PR comment; cleanup on close |
-| `.github/workflows/prod.yml` | push to `main` | production Environment (required reviewer) → build → Pages `main` → `sync-pages-secrets.sh production` |
+| `.github/workflows/prod.yml` | push to `main` + `workflow_dispatch` | production Environment → build → Pages `main` → `sync-pages-secrets.sh production` |
+
+### Rotating a credential
+
+Update the GitHub Environment secret, then **Run workflow** on `prod.yml`
+(`workflow_dispatch`). That one build is what applies it — no code commit, no
+Cloudflare dashboard, no PR.
+
+A deploy is unavoidable and this is not a design gap: Pages `env_vars` are
+frozen into a deployment when it is created, so a synced value does not reach
+traffic until the next deploy. `wrangler pages secret put` does not help — it
+PATCHes the same `deployment_configs[env].env_vars` map with
+`type: secret_text` (it does support `--env production|preview`). There is no
+deploy-free rotation path on Pages. A standalone sync-without-deploy workflow
+existed briefly and was deleted: it changed config that nothing served, which
+is a silent-failure trap.
+
+Expect a few minutes between merge and the deploy starting — that is GitHub
+Actions queue latency, not a dropped run. Check the Actions tab before
+re-dispatching.
 
 GitHub Environments:
 
