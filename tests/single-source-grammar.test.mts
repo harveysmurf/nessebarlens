@@ -340,3 +340,66 @@ test("the MASTERS storage shape is declared once and both readers import it", ()
     assert.match(src, /from "\.\/master-key"/, reader);
   }
 });
+
+test("no module re-exports a single-source constant under a second name", () => {
+  // prodigi-quote.ts used to export DEFAULT_DESTINATION_COUNTRY as a
+  // second name for DEFAULT_SHIPPING_COUNTRY, used nowhere else. A behavioural
+  // test cannot catch an alias — the two names agreed perfectly until one of
+  // them was changed. This walks the AST for the two declaration shapes an
+  // alias can take: `export const X = SOME_CONST` and
+  // `export { SOME_CONST as X }`.
+  const GUARDED: Record<string, string> = {
+    DEFAULT_SHIPPING_COUNTRY: "src/lib/ship-to-countries.ts",
+  };
+  const offenders: string[] = [];
+  for (const file of allSourceFiles()) {
+    const rel = relative(file);
+    const text = fs.readFileSync(file, "utf8");
+    const source = ts.createSourceFile(
+      file,
+      text,
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const lineOf = (node: ts.Node): number =>
+      source.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isVariableStatement(node) &&
+        node.modifiers?.some((m) => m.kind === ts.SyntaxKind.ExportKeyword)
+      ) {
+        for (const decl of node.declarationList.declarations) {
+          if (
+            decl.initializer &&
+            ts.isIdentifier(decl.initializer) &&
+            GUARDED[decl.initializer.text]
+          ) {
+            offenders.push(
+              `${decl.name.getText()} = ${decl.initializer.text} at ${rel}:${lineOf(decl)}`,
+            );
+          }
+        }
+      }
+      if (ts.isExportDeclaration(node) && node.exportClause &&
+          ts.isNamedExports(node.exportClause)) {
+        for (const spec of node.exportClause.elements) {
+          const local = (spec.propertyName ?? spec.name).text;
+          if (spec.name.text !== local && GUARDED[local]) {
+            offenders.push(
+              `${spec.name.text} = ${local} at ${rel}:${lineOf(spec)}`,
+            );
+          }
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  assert.deepEqual(offenders, [], `constant aliased: ${offenders.join(", ")}`);
+  // Non-vacuous: the constants above must still exist in their owning module,
+  // or this walk stops guarding anything while staying green.
+  for (const [name, owner] of Object.entries(GUARDED)) {
+    const src = fs.readFileSync(path.join(root, owner), "utf8");
+    assert.match(src, new RegExp(`export const ${name}\\b`), name);
+  }
+});
