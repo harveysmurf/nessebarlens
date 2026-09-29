@@ -19,7 +19,13 @@ import { MASTERS_BUCKET_NAME } from "./derivative-ladder";
 export const MASTERS_BUCKET = MASTERS_BUCKET_NAME;
 
 /** Any casing of the master key prefix or bucket name. */
-const MASTER_MARKER = /prints\/|nessebar-lens-masters/i;
+export const MASTER_MARKER = new RegExp(
+  // The bucket name is interpolated, not re-spelled: a rename would otherwise
+  // silently stop this guard matching the new bucket. The `prints\/` half
+  // stays a literal so the source-grammar test can see the pattern here.
+  `prints\\/|${MASTERS_BUCKET_NAME}`,
+  "i",
+);
 
 /**
  * True when the value references the masters bucket or a `prints/` master key

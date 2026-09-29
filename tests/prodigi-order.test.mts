@@ -1,7 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PRODIGI_SHIPPING_METHOD } from "../src/lib/prodigi-config.ts";
+import {
+  PLACEHOLDER_VERSION,
+  placeholderPhotoSrc,
+} from "../src/lib/placeholder-photo.ts";
 import { PHOTOS } from "../src/lib/photos.ts";
+import { siteUrl } from "../src/lib/stripe.ts";
 import {
   assertNoMasterLeak,
   buildProdigiOrderBody,
@@ -27,10 +32,25 @@ const RECIPIENT: OrderRecipient = {
 test("placeholder asset URL is public https under /placeholders", () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   const url = placeholderAssetUrl("dawn");
-  assert.equal(url, "https://nessebarlens.com/placeholders/dawn.jpg");
+  assert.equal(
+    url,
+    `https://nessebarlens.com/placeholders/dawn.jpg?v=${PLACEHOLDER_VERSION}`,
+  );
   assert.match(url, /^https:\/\//);
   assert.equal(url.includes("prints/"), false);
   assert.equal(url.includes("masters"), false);
+});
+
+// This one used to carry no ?v= while placeholderPhotoSrc carried ?v=3, so a
+// placeholder bump left the Stripe session image on a stale CDN copy. Assert
+// the link explicitly, because both URLs being individually correct is exactly
+// the state that let the drift sit there.
+test("placeholder asset URL carries the same version as the gallery", () => {
+  process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
+  assert.equal(
+    placeholderAssetUrl("dawn"),
+    `${siteUrl()}${placeholderPhotoSrc("dawn")}`,
+  );
 });
 
 test("Prodigi order body uses SKU + placeholder and never leaks masters", () => {
@@ -53,7 +73,7 @@ test("Prodigi order body uses SKU + placeholder and never leaks masters", () => 
   assert.equal(body.items[0].sizing, "fillPrintArea");
   assert.equal(
     body.items[0].assets[0].url,
-    "https://nessebarlens.com/placeholders/dawn.jpg",
+    `https://nessebarlens.com/placeholders/dawn.jpg?v=${PLACEHOLDER_VERSION}`,
   );
   assert.equal(body.recipient.address.countryCode, "BG");
   assert.equal(body.recipient.email, "buyer@example.com");

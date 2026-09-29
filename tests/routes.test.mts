@@ -1141,9 +1141,12 @@ test("checkout: a physical order quotes, locks the country, and ships a rate", a
     // The image Stripe shows is the same URL the order body carries, built
     // by the one helper. It was asserted nowhere, so the two spellings of it
     // could have drifted without any test noticing.
+    const { PLACEHOLDER_VERSION } = await import(
+      "../src/lib/placeholder-photo.ts"
+    );
     assert.equal(
       params["line_items[0][price_data][product_data][images][0]"],
-      `${SITE}/placeholders/dawn.jpg`,
+      `${SITE}/placeholders/dawn.jpg?v=${PLACEHOLDER_VERSION}`,
     );
     assert.equal(params["shipping_options[0][shipping_rate_data][fixed_amount][amount]"], "499");
   } finally {

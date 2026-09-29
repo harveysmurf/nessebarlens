@@ -16,6 +16,8 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import ts from "typescript";
+import { MASTERS_BUCKET_NAME } from "../src/lib/derivative-ladder.ts";
+import { MASTERS_BUCKET, MASTER_MARKER } from "../src/lib/master-guard.ts";
 import { FILM_LOOKS, filmLookClass } from "../src/lib/photos.ts";
 
 const root = path.join(import.meta.dirname, "..");
@@ -151,7 +153,6 @@ test("the owned grammars are declared exactly once, in their owning module", () 
     // no imports is the one an ops script can load, so the grammar it needs
     // has to live there. master-key.ts re-exports it.
     "/^[a-z0-9]+(?:-[a-z0-9]+)*$/": "src/lib/derivative-ladder.ts",
-    "/prints\\/|nessebar-lens-masters/i": "src/lib/master-guard.ts",
     "/^[0-9a-f]{64}$/i": "src/lib/crypto-hex.ts",
     "/^[A-Z]{2}$/": "src/lib/ship-to-countries.ts",
     "/^https:\\/\\//i": "src/lib/url-patterns.ts",
@@ -168,10 +169,43 @@ test("the master-marker and slug grammars are still single modules", () => {
   // The converse of the check above, so a renamed or rewritten grammar cannot
   // quietly fall out of the registry above and stop being guarded.
   const bySource = regexLiterals();
-  const markerSites = bySource.get("/prints\\/|nessebar-lens-masters/i") ?? [];
-  assert.equal(markerSites.length, 1, "master marker duplicated");
   const slugSites = bySource.get("/^[a-z0-9]+(?:-[a-z0-9]+)*$/") ?? [];
   assert.equal(slugSites.length, 1, "slug pattern duplicated");
+});
+
+test("the master marker tracks the bucket name instead of re-spelling it", () => {
+  // The marker used to hardcode the bucket as a regex literal. Renaming the
+  // bucket would then have left the guard matching a name that no longer
+  // exists — a silent leak, with the grammar test still green because it only
+  // pinned "declared once". Tie the two together instead.
+  assert.equal(MASTERS_BUCKET, MASTERS_BUCKET_NAME);
+  assert.ok(
+    MASTER_MARKER.source.includes(MASTERS_BUCKET_NAME),
+    `master marker does not reference ${MASTERS_BUCKET_NAME}: ${MASTER_MARKER.source}`,
+  );
+  assert.ok(MASTER_MARKER.test(MASTERS_BUCKET_NAME), "marker rejects the bucket");
+  assert.ok(MASTER_MARKER.test("prints/dusk.jpg"), "marker rejects a master key");
+
+  // And the name itself is written down once: a second copy in another module
+  // is the drift this whole file exists to catch. Comments are excluded — the
+  // other three hits are prose explaining the boundary, and a doc comment that
+  // names the bucket correctly is not a second declaration of it.
+  const declaring = allSourceFiles().filter((file) =>
+    fs
+      .readFileSync(file, "utf8")
+      .split("\n")
+      .some(
+        (line) =>
+          !line.trim().startsWith("*") &&
+          !line.trim().startsWith("//") &&
+          line.includes(MASTERS_BUCKET_NAME),
+      ),
+  );
+  assert.deepEqual(
+    declaring.map(relative).sort(),
+    ["src/lib/derivative-ladder.ts"],
+    "masters bucket name spelled outside derivative-ladder.ts",
+  );
 });
 
 test("no object shape is declared in two modules", () => {
