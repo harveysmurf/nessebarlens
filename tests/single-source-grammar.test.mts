@@ -39,7 +39,7 @@ function sourceFiles(dir: string): string[] {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       out.push(...sourceFiles(full));
-    } else if (/\.tsx?$/.test(entry.name)) {
+    } else if (/\.(tsx?|mjs)$/.test(entry.name)) {
       out.push(full);
     }
   }
@@ -52,10 +52,23 @@ function relative(file: string): string {
   return path.relative(root, file);
 }
 
+/**
+ * src/ and scripts/ together. The ops scripts are excluded for no reason
+ * other than that they used to be: an ingest script that re-inlines the
+ * ladder flag's `true|1` grammar would refuse runs the site is serving from,
+ * and no src-only test can see that.
+ */
+function allSourceFiles(): string[] {
+  return [
+    ...sourceFiles(path.join(root, "src")),
+    ...sourceFiles(path.join(root, "scripts")),
+  ];
+}
+
 /** Every regex literal in the tree, as `file:line` occurrences of its source. */
 function regexLiterals(): Map<string, Declared[]> {
   const bySource = new Map<string, Declared[]>();
-  for (const file of sourceFiles(path.join(root, "src"))) {
+  for (const file of allSourceFiles()) {
     const text = fs.readFileSync(file, "utf8");
     const source = ts.createSourceFile(
       file,
@@ -88,7 +101,7 @@ function shapeDeclarations(): Map<string, Declared[]> {
     list.push({ file: relative(file), line });
     byName.set(name, list);
   };
-  for (const file of sourceFiles(path.join(root, "src"))) {
+  for (const file of allSourceFiles()) {
     const text = fs.readFileSync(file, "utf8");
     const source = ts.createSourceFile(
       file,
@@ -134,7 +147,10 @@ test("the owned grammars are declared exactly once, in their owning module", () 
   // a divergent copy once. A new copy fails here even if it is, today,
   // behaviourally identical — which is exactly the case tests missed.
   const owners: Record<string, string> = {
-    "/^[a-z0-9]+(?:-[a-z0-9]+)*$/": "src/lib/master-key.ts",
+    // Owned by derivative-ladder.ts, not master-key.ts: the leaf module with
+    // no imports is the one an ops script can load, so the grammar it needs
+    // has to live there. master-key.ts re-exports it.
+    "/^[a-z0-9]+(?:-[a-z0-9]+)*$/": "src/lib/derivative-ladder.ts",
     "/prints\\/|nessebar-lens-masters/i": "src/lib/master-guard.ts",
     "/^[0-9a-f]{64}$/i": "src/lib/crypto-hex.ts",
     "/^[A-Z]{2}$/": "src/lib/ship-to-countries.ts",

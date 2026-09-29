@@ -22,6 +22,23 @@ export function envString(
 }
 
 /**
+ * A boolean env var that defaults to OFF and must be opted into.
+ *
+ * Only the exact strings "true" and "1" (any case, trimmed) enable it. This
+ * is deliberately stricter than envString's truthiness, because the callers
+ * are gates around things that 404 rather than things that merely degrade:
+ * reading "yes"/"on"/"enabled" as false fails visibly and immediately, while
+ * guessing wrong on the way to true breaks a live storefront silently.
+ */
+export function envFlag(
+  name: string,
+  env: Record<string, unknown> = process.env,
+): boolean {
+  const value = envString(name, env);
+  return value !== undefined && /^(?:true|1)$/i.test(value);
+}
+
+/**
  * Strips every trailing slash so callers can concatenate "/path" safely.
  * Every slash, not just one: the single-slash version silently left a
  * doubled slash in a caller-supplied base and produced "//api/…" URLs.

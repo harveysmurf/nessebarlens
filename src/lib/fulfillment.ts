@@ -28,9 +28,9 @@ import {
   type PrintSize,
 } from "./pricing";
 import {
-  SELLABLE_FORMATS,
   isFrameFinishValue,
   isPrintSize,
+  isSellableFormat,
   type PhysicalFormat,
 } from "./sku-map";
 import { siteUrl } from "./stripe";
@@ -47,10 +47,6 @@ import { siteUrl } from "./stripe";
  * pinned Prodigi SKU"), which is where it can actually fail loudly.
  */
 export const SKU_MAP_READY = true;
-
-// The allow-list below is the sku-map list, so stored-record validation cannot
-// drift from the formats we can actually fulfill.
-const FORMATS: readonly PrintFormat[] = SELLABLE_FORMATS;
 
 export type { PrintFormat };
 export type OrderFormat = PrintFormat | "unknown";
@@ -589,11 +585,14 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
   };
 }
 
+// The sku-map predicate, not this module's own copy of the list: parseFormat
+// and isOrderFormat are the two guards that decide whether a stored order is
+// fulfillable, so they have to read the same allow-list the order path writes
+// from. `(FORMATS as string[]).includes(raw)` followed by a second
+// `raw as PrintFormat` was the cast making the value valid rather than the
+// check — the pattern sku-map already documents removing.
 function parseFormat(raw: string | undefined): PrintFormat | null {
-  if (raw && (FORMATS as readonly string[]).includes(raw)) {
-    return raw as PrintFormat;
-  }
-  return null;
+  return isSellableFormat(raw) ? raw : null;
 }
 
 function clip(raw: string | undefined): string {
@@ -632,10 +631,7 @@ function isEurAmount(value: unknown): value is number {
 }
 
 function isOrderFormat(value: unknown): value is OrderFormat {
-  return (
-    value === "unknown" ||
-    (typeof value === "string" && (FORMATS as readonly string[]).includes(value))
-  );
+  return value === "unknown" || isSellableFormat(value);
 }
 
 function isSafeAssetUrl(url: string): boolean {

@@ -4,6 +4,7 @@ import {
 } from "./ship-to-countries";
 import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";
 import {
+  type PhysicalFormat,
   FRAME_FINISHES,
   PHYSICAL_FORMATS,
   PRINT_SIZES,
@@ -30,6 +31,33 @@ const SIZE_LABEL = formatListLabel(PRINT_SIZES);
 const FRAME_LABEL = formatListLabel(FRAME_FINISHES);
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
+
+/**
+ * The frame rules, which checkout and quote share exactly: framed requires a
+ * known finish, every other physical format must omit it. The two bodies
+ * diverge on everything else -- digital exists only in checkout, and their
+ * size and format messages are worded for their own endpoint -- so this is
+ * the only part factored out. Its two error strings are part of the API
+ * contract; tests/checkout-body.test.mts pins them for both parsers.
+ */
+function parseFrame(
+  format: PhysicalFormat,
+  frame: unknown,
+): Parsed<FrameFinish | null> {
+  if (format === "framed") {
+    if (!isFrameFinishValue(frame)) {
+      return { ok: false, error: `frame required for framed (${FRAME_LABEL})` };
+    }
+    return { ok: true, value: frame };
+  }
+  if (frame !== null && frame !== undefined) {
+    return {
+      ok: false,
+      error: "frame only allowed when format is framed",
+    };
+  }
+  return { ok: true, value: null };
+}
 
 /**
  * Returns a tagged result rather than string | null | { error }. The old shape
@@ -98,28 +126,14 @@ export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string 
     return { error: `size required for physical formats (${SIZE_LABEL})` };
   }
 
-  if (fmt === "framed") {
-    if (!isFrameFinishValue(frame)) {
-      return { error: `frame required for framed (${FRAME_LABEL})` };
-    }
-    return {
-      photoSlug,
-      format: fmt,
-      size,
-      frame,
-      destinationCountryCode,
-    };
-  }
-
-  if (frame !== null && frame !== undefined) {
-    return { error: "frame only allowed when format is framed" };
-  }
+  const parsedFrame = parseFrame(fmt, frame);
+  if (!parsedFrame.ok) return { error: parsedFrame.error };
 
   return {
     photoSlug,
     format: fmt,
     size,
-    frame: null,
+    frame: parsedFrame.value,
     destinationCountryCode,
   };
 }
@@ -154,26 +168,13 @@ export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {
   }
 
   const fmt = format;
-  if (fmt === "framed") {
-    if (!isFrameFinishValue(frame)) {
-      return { error: `frame required for framed (${FRAME_LABEL})` };
-    }
-    return {
-      format: fmt,
-      size,
-      frame,
-      destinationCountryCode,
-    };
-  }
-
-  if (frame !== null && frame !== undefined) {
-    return { error: "frame only allowed when format is framed" };
-  }
+  const parsedFrame = parseFrame(fmt, frame);
+  if (!parsedFrame.ok) return { error: parsedFrame.error };
 
   return {
     format: fmt,
     size,
-    frame: null,
+    frame: parsedFrame.value,
     destinationCountryCode,
   };
 }

@@ -4,12 +4,11 @@ import {
   resolvePrintAssetStream,
   verifyPrintAssetRequest,
 } from "@/lib/print-asset";
+import { NO_STORE_HEADERS } from "@/lib/private-headers";
 import { readWorkerBindings } from "@/lib/worker-bindings";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-
-const NO_STORE = { "Cache-Control": "private, no-store" };
 
 /**
  * Prodigi fetch target: HMAC-gated stream of the catalog master JPEG.
@@ -28,7 +27,7 @@ export async function GET(request: Request) {
   if (!verified.ok) {
     return NextResponse.json(
       { error: verified.error },
-      { status: verified.status, headers: NO_STORE },
+      { status: verified.status, headers: NO_STORE_HEADERS },
     );
   }
 
@@ -36,7 +35,7 @@ export async function GET(request: Request) {
   if (resolved.kind === "json") {
     return NextResponse.json(resolved.body, {
       status: resolved.status,
-      headers: NO_STORE,
+      headers: NO_STORE_HEADERS,
     });
   }
 
@@ -46,7 +45,7 @@ export async function GET(request: Request) {
     headers: {
       "Content-Type": "image/jpeg",
       "Content-Length": String(resolved.size),
-      "Cache-Control": "private, no-store",
+      ...NO_STORE_HEADERS,
       "X-Content-Type-Options": "nosniff",
     },
   });

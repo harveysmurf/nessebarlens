@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MASTERS_BUCKET, referencesMasters } from "../src/lib/master-guard.ts";
+import { MASTERS_BUCKET_NAME } from "../src/lib/derivative-ladder.ts";
 import { assertNoMasterLeak } from "../src/lib/prodigi-order.ts";
 import { decideFulfillment, parseOrderRecord, resolveDownload } from "../src/lib/fulfillment.ts";
 import {
@@ -159,4 +160,12 @@ test("the download filename is gated by the shared slug grammar, not a private c
       slug,
     );
   }
+});
+
+test("the masters bucket name is declared once, in the ladder module", () => {
+  // This module owns the *marker* — what counts as pointing at masters — not
+  // the spelling of the bucket. It aliases the ladder's constant so renaming
+  // a bucket is a one-line change, and this assertion is what would catch a
+  // second literal creeping back in beside it.
+  assert.equal(MASTERS_BUCKET, MASTERS_BUCKET_NAME);
 });

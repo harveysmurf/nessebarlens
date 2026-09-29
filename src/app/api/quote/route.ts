@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { parseQuoteBody } from "@/lib/checkout-body";
 import { DEFAULT_SHIPPING_COUNTRY } from "@/lib/ship-to-countries";
 import { quotePhysical } from "@/lib/prodigi-quote";
-import { isProdigiUnconfigured } from "@/lib/prodigi-config";
+import { prodigiErrorStatus } from "@/lib/prodigi-config";
 
 export async function POST(request: Request) {
   let raw: unknown;
@@ -38,7 +38,7 @@ export async function POST(request: Request) {
   } catch (e) {
     const message = e instanceof Error ? e.message : "Quote failed";
     // An unset key is a deployment problem, not a bad gateway.
-    const status = isProdigiUnconfigured(message) ? 503 : 502;
+    const status = prodigiErrorStatus(message);
     return NextResponse.json({ error: message }, { status });
   }
 }

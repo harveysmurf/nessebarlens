@@ -7,16 +7,30 @@ import {
   webImagesBase,
 } from "../src/lib/derivatives.ts";
 
-function withBase<T>(value: string | undefined, fn: () => T): T {
-  const saved = process.env.NEXT_PUBLIC_WEB_IMAGES_BASE;
+function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
+  const saved: Record<string, string | undefined> = {};
+  for (const key of Object.keys(env)) saved[key] = process.env[key];
   try {
-    if (value === undefined) delete process.env.NEXT_PUBLIC_WEB_IMAGES_BASE;
-    else process.env.NEXT_PUBLIC_WEB_IMAGES_BASE = value;
+    for (const [key, value] of Object.entries(env)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
     return fn();
   } finally {
-    if (saved === undefined) delete process.env.NEXT_PUBLIC_WEB_IMAGES_BASE;
-    else process.env.NEXT_PUBLIC_WEB_IMAGES_BASE = saved;
+    for (const [key, value] of Object.entries(saved)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
   }
+}
+
+const BASE = "NEXT_PUBLIC_WEB_IMAGES_BASE";
+const FLAG = "NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED";
+const BASE_URL = "https://cdn.example.com/g";
+
+/** Both env vars as the ladder needs them to be on. */
+function on(base = BASE_URL) {
+  return { [BASE]: base, [FLAG]: "true" };
 }
 
 test("webImagesBase rejects non-https, relative, and unset values", () => {
@@ -28,7 +42,7 @@ test("webImagesBase rejects non-https, relative, and unset values", () => {
     "/relative/path",
     "not a url",
   ]) {
-    withBase(raw, () => {
+    withEnv({ ...on(), [BASE]: raw }, () => {
       assert.equal(webImagesBase(), undefined, JSON.stringify(raw));
       assert.equal(webDerivativeUrls("dawn"), null, JSON.stringify(raw));
     });
@@ -36,16 +50,44 @@ test("webImagesBase rejects non-https, relative, and unset values", () => {
 });
 
 test("webImagesBase normalizes trailing slashes and keeps the path", () => {
-  withBase("https://cdn.example.com/gallery///", () => {
+  withEnv({ [BASE]: "https://cdn.example.com/gallery///" }, () => {
     assert.equal(webImagesBase(), "https://cdn.example.com/gallery");
   });
-  withBase("  https://cdn.example.com/  ", () => {
+  withEnv({ [BASE]: "  https://cdn.example.com/  " }, () => {
     assert.equal(webImagesBase(), "https://cdn.example.com");
   });
 });
 
+test("a configured base alone does not turn the ladder on", () => {
+  // The exact state this repo was in: the base set in every environment,
+  // both buckets empty. Serving here would 404 the whole storefront.
+  for (const flag of [undefined, "", "   ", "false", "no", "off", "0", "maybe"]) {
+    withEnv({ [BASE]: BASE_URL, [FLAG]: flag }, () => {
+      assert.equal(
+        webDerivativeUrls("dawn"),
+        null,
+        `flag ${JSON.stringify(flag)} must not enable the ladder`,
+      );
+    });
+  }
+});
+
+test("the flag is opt-in and accepts only true or 1", () => {
+  for (const flag of ["true", "TRUE", " true ", "1"]) {
+    withEnv({ ...on(), [FLAG]: flag }, () => {
+      assert.ok(webDerivativeUrls("dawn"), `flag ${JSON.stringify(flag)} should enable the ladder`);
+    });
+  }
+});
+
+test("enabled but with no usable base still serves nothing", () => {
+  withEnv({ [BASE]: undefined, [FLAG]: "true" }, () => {
+    assert.equal(webDerivativeUrls("dawn"), null);
+  });
+});
+
 test("every rung in WEB_DERIVATIVE_WIDTHS gets a URL, and only those", () => {
-  withBase("https://cdn.example.com/g", () => {
+  withEnv(on(), () => {
     const out = webDerivativeUrls("dawn");
     assert.ok(out);
     assert.deepEqual(
@@ -62,7 +104,7 @@ test("every rung in WEB_DERIVATIVE_WIDTHS gets a URL, and only those", () => {
 });
 
 test("srcSet covers every width, and src is the declared default", () => {
-  withBase("https://cdn.example.com/g", () => {
+  withEnv(on(), () => {
     const out = webDerivativeUrls("dawn");
     assert.ok(out);
     assert.equal(out.src, out.urls[WEB_DEFAULT_WIDTH]);

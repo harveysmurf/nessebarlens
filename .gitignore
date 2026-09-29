@@ -13,6 +13,9 @@
 # testing
 /coverage
 
+# photo masters dropped for ingest (never committed)
+/ingest/
+
 # next.js
 /.next/
 /out/

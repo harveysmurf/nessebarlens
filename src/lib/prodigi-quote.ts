@@ -5,7 +5,11 @@ import {
   type FrameFinish,
   type PrintSize,
 } from "./pricing";
-import { prodigiApiKey, prodigiQuotesUrl } from "./prodigi-config";
+import {
+  PRODIGI_SHIPPING_METHOD,
+  prodigiApiKey,
+  prodigiQuotesUrl,
+} from "./prodigi-config";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
 
 /** Default quote destination when the client omits destinationCountryCode. */
@@ -62,7 +66,7 @@ export async function quotePhysical(opts: {
       "X-API-Key": apiKey,
     },
     body: JSON.stringify({
-      shippingMethod: "Budget",
+      shippingMethod: PRODIGI_SHIPPING_METHOD,
       destinationCountryCode,
       currencyCode: "EUR",
       items: [

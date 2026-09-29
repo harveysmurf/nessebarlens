@@ -44,6 +44,11 @@ Stack:
 The project pins its node version in `.nvmrc` (`24.21.0`, the current LTS
 line). Node 20 cannot run the suite at all — it fails on `.mts` with
 `ERR_UNKNOWN_FILE_EXTENSION`, because type stripping is the loader's job here.
+Not every 24.x works either: **24.10 fails `tests/routes.test.mts`** on a
+loader change, so `engines.node` is `>=24.21.0 <25` and every workflow pins
+`node-version` to the exact `.nvmrc` value. Bump all three together
+(`.nvmrc`, `engines.node`, each workflow) — `tests/node-version-pin.test.mts`
+fails if they drift.
 
 ```bash
 nvm use              # honours .nvmrc
@@ -66,7 +71,9 @@ Environment variables (names only — values live in the `.env.local` symlink):
 | `PRINT_ASSET_HMAC_SECRET` | ≥32-char HMAC secret for `/api/print-asset` (Prodigi). Optional — when unset, physical orders use `/placeholders/*.jpg` |
 | `NEXT_PUBLIC_SITE_URL` | Canonical public origin (used by `src/lib/stripe.ts`) |
 | `NEXT_PUBLIC_WEB_IMAGES_BASE` | Base URL for gallery `<img>` srcset |
+| `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` | Opt-in gate for the R2 derivative ladder. Unset = placeholders. Only `true`/`1` enable it — a configured base alone does **not**. |
 | `R2_ACCOUNT_ID`, `R2_ENDPOINT`, `R2_S3_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | R2 S3 creds (unused by Workers — they use bucket bindings) |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Needed only by `npm run ingest` from a laptop (see §6a) |
 | `EU_SHIPPING_EUR` | Flat EU shipping (must match `EU_FLAT_SHIPPING_CENTS`) |
 
 ---
@@ -153,7 +160,7 @@ do not use `opennextjs-cloudflare deploy` for deploys.
 
 ## 6. CI/CD
 
-GitHub Actions on `harveysmurf/nessebarlens` (Node 24):
+GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
@@ -194,6 +201,59 @@ Debian-host symlink to `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
 
 ---
 
+## 6a. Ingesting photos (masters → R2 ladder)
+
+Simo runs this from his own box, not CI. Three prerequisites, in order:
+
+1. **Node 24.21** — `nvm use` in the repo root. `npm run ingest` checks the
+   pin in `.nvmrc` and stops with `ingest needs Node 24.21.0` otherwise,
+   because `sharp` is a native binding and a mismatch otherwise surfaces as an
+   opaque `ERR_UNKNOWN_FILE_EXTENSION`.
+2. **`npm install`** — `sharp` and `@aws-sdk/client-s3` are devDependencies
+   only the ingest uses; the site itself never imports them.
+3. **R2 credentials in `.env.local`** (gitignored) or exported:
+
+   ```
+   R2_S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com
+   R2_ACCESS_KEY_ID=...
+   R2_SECRET_ACCESS_KEY=...
+   ```
+
+   From Cloudflare → R2 → Manage R2 API Tokens → *Object Read & Write* scoped
+   to `nessebar-lens-masters` and `nessebar-lens-web`. The workspace copy of
+   these lives in `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
+   Missing keys fail as `missing env: R2_ACCESS_KEY_ID ...`, never as a 403.
+
+Then, per photo:
+
+1. Drop the master JPEG in `ingest/` (repo root, gitignored), **named for its
+   slug** — `alley-cat.jpg` is the catalog slug `alley-cat`. Files not matching
+   `{slug}.jpg` are reported and skipped, so a `.DS_Store` or `IMG_4021.jpg`
+   cannot become an unlinkable photo.
+2. `npm run ingest` — **dry run by default.** It prints every object it would
+   write, in both buckets, and uploads nothing. Read that list.
+3. `npm run ingest -- --apply` — writes the original to
+   `nessebar-lens-masters/prints/{slug}.jpg` and each rung to
+   `nessebar-lens-web/{slug}/{750,1500,2500}.jpg`. Width-driven resize, aspect
+   ratio preserved, no crop: the list page's uniform tiles are a CSS
+   `aspect-ratio` with `object-fit: cover`, and the photo page is uncropped.
+   `--only alley-cat` narrows a run to one photo.
+4. Verify a couple of URLs resolve under `NEXT_PUBLIC_WEB_IMAGES_BASE`, **then**
+   set `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED=true`. Only `true` or `1` enable
+   the ladder; a configured base alone does not.
+
+Idempotent — re-running overwrites the same keys with the same bytes. The run
+**refuses outright** if `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` is set, because at
+that point the site is already serving this bucket and a half-written ladder
+would 404 the storefront. Turn the flag off, ingest, verify, then turn it on.
+
+The rung list is `WEB_DERIVATIVE_WIDTHS` in `src/lib/derivative-ladder.ts` —
+one array, read by both the srcSet the site serves and the plan the script
+executes. Changing the rungs is a one-line edit there; do not add widths in the
+script.
+
+---
+
 ## 7. Data flow & invariants
 
 - **Catalog is the single source.** `src/lib/photos.ts` `PHOTOS` array holds every
@@ -207,6 +267,13 @@ Debian-host symlink to `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
 - **No remote image hosts.** `next.config.ts` sets `images.remotePatterns: []` —
   do not add `images.unsplash.com` or any third-party host. Gallery uses plain
   `<img>` srcset against `NEXT_PUBLIC_WEB_IMAGES_BASE` only.
+- **The derivative ladder is gated.** `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED`
+  (default off) decides between the R2 ladder (`{slug}/{width}.jpg` in
+  `nessebar-lens-web`) and the committed placeholders. Set the base without the
+  flag and the gallery keeps serving placeholders — that is deliberate, because
+  the base is configured in every environment while both buckets are still
+  empty. Turn the flag on only after the upload is verified, and expect
+  `tests/placeholder-photo.test.mts` to need updating at that moment.
 - **Stripe Checkout only.** `/api/checkout` creates a Checkout Session
   (`success_url` / `cancel_url`); no code path confirms a PaymentIntent. Stripe
   sandbox emails about a missing `return_url` are expected after manual
@@ -287,6 +354,12 @@ the guard to keep the honest copy honest.
 6. Announce the PR + preview URL in `nessebar-lens-website`; get approval.
 7. Merge to `main` → production workflow runs (GitHub Environment approval by
    `harveysmurf`) → https://nessebarlens.com.
+   **Squash a multi-commit PR into one commit on main.** A refactor branch
+   accumulates a commit per idea, and main is the place someone reads to learn
+   what a module is *for* — a ten-commit trail of "move this, tighten that"
+   turns the history into a changelog of mechanics. The one-line rule of thumb:
+   if the individual commit subjects do not each make sense as a description of
+   the resulting code, squash.
 8. Report the PR link, preview URL, and commit hash in the channel.
 
 ---
@@ -299,4 +372,16 @@ the guard to keep the honest copy honest.
   live quote + order calls, and a HMAC-signed master asset URL. Sandbox and live
   are selected by an explicit `PRODIGI_API_BASE`, never inferred from the key.
 - Real photographs still need to land in the R2 `MASTERS`/`WEB` buckets to replace
-  the 20 placeholders.
+  the 20 placeholders. `npm run ingest` (§6a) does that; the ladder stays off
+  until the upload is verified.
+- If a 502 shows up from `/api/quote` or `/api/checkout` and it is *not* Prodigi
+  being down, look at `prodigiErrorStatus` first. 503 means this deploy is
+  misconfigured (unset Prodigi key, or a `PRODIGI_API_BASE` outside the two
+  allowed hosts); 502 means Prodigi. The split is exact string equality against
+  the messages `src/lib/prodigi-config.ts` throws, so a *new* throw site that
+  forgets to be classified reports a deploy problem as a bad gateway.
+  `tests/prodigi-config.test.mts` enumerates them; that is the file to extend
+  when the module gains one.
+- `PRODIGI_SHIPPING_METHOD` ("Budget") is the value we quote and buy with, and
+  no unit test can confirm Prodigi still accepts that string for the pinned SKUs.
+  It is a sandbox check, not a test.

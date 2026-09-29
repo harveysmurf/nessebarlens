@@ -1,0 +1,241 @@
+/**
+ * The derivative ladder's vocabulary: slugs, object keys, rungs, buckets, and
+ * what one ingest run will write.
+ *
+ * No imports, on purpose. This module is what an ops script outside the Next
+ * build can load — scripts/ingest-derivatives.mjs runs under plain node, where
+ * `./something` has no extension and does not resolve, so every module this
+ * one pulled in would have to be extension-annotated or hook-registered. One
+ * leaf keeps the script honest about where its numbers come from: the rung
+ * list the site advertises and the rung list that gets generated are the same
+ * array, in one file, with no loader trickery between them.
+ *
+ * The URL side of the ladder (src/lib/derivatives.ts) needs the environment
+ * and therefore cannot live here; it imports from here instead.
+ *
+ * The ingest direction is the other way round: masters arrive as local files
+ * in the gitignored `ingest/` folder (scripts/ingest-derivatives.mjs), get
+ * written to the private masters bucket as `prints/{slug}.jpg`, and their
+ * rungs go to the public web bucket as `{slug}/{rung}.jpg`. A dropped file is
+ * named for the slug it declares, so the plan is decided from file names and
+ * pixel widths alone.
+ */
+
+/**
+ * Photo slugs are lowercase kebab-case; they key the catalog, the derivative
+ * paths and the master object keys. One pattern, so a slug that one module
+ * accepts cannot be rejected by another.
+ *
+ * Anchored, so it is a complete-value check — do not interpolate this into
+ * another pattern, use SLUG_BODY for that.
+ */
+export const PHOTO_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
+
+/** The same slug grammar without anchors, for building a longer key pattern. */
+const SLUG_BODY = PHOTO_SLUG_PATTERN.source.replace(/^\^/, "").replace(/\$$/, "");
+
+/** Where a master lives, and where its rungs go. Never inverted. */
+export const MASTERS_BUCKET_NAME = "nessebar-lens-masters";
+export const WEB_BUCKET_NAME = "nessebar-lens-web";
+
+export const MASTER_KEY_PREFIX = "prints/";
+
+/** Shape of a private MASTERS object key. The catalog itself is photos.ts imageKey. */
+export const MASTER_KEY_PATTERN = new RegExp(
+  `^${MASTER_KEY_PREFIX}${SLUG_BODY}\\.jpg$`,
+);
+
+/**
+ * The rung list, in one place. Adding a rung is a one-line change here and
+ * nothing else: the srcSet, the ingest plan and the tests all read it.
+ * Ascending, unique, positive — assertRungList() rejects anything else rather
+ * than generating a ladder the srcSet cannot express.
+ */
+export const WEB_DERIVATIVE_WIDTHS = [750, 1500, 2500] as const;
+export type WebDerivativeWidth = (typeof WEB_DERIVATIVE_WIDTHS)[number];
+
+/** Default display source — the middle rung of the ladder. */
+export const WEB_DEFAULT_WIDTH: WebDerivativeWidth = 1500;
+
+/** The one place a rung's object key is spelled. */
+export function derivativeKey(slug: string, rung: number): string {
+  return `${slug}/${rung}.jpg`;
+}
+
+/** True only for a well-formed `prints/{slug}.jpg` master key. */
+export function isMasterKey(key: string): boolean {
+  return MASTER_KEY_PATTERN.test(key);
+}
+
+/** The slug inside a well-formed `prints/{slug}.jpg` key, or null. */
+export function slugFromMasterKey(key: string): string | null {
+  return isMasterKey(key)
+    ? key.slice(MASTER_KEY_PREFIX.length, -".jpg".length)
+    : null;
+}
+
+/** Strictly ascending positive integers, or the ladder is not expressible. */
+export function assertRungList(widths: readonly number[]): void {
+  if (widths.length === 0) throw new Error("derivative rung list is empty");
+  for (let i = 0; i < widths.length; i += 1) {
+    const w = widths[i]!;
+    if (!Number.isInteger(w) || w <= 0) {
+      throw new Error(`derivative rung ${i} is not a positive integer: ${w}`);
+    }
+    if (i > 0 && w <= widths[i - 1]!) {
+      throw new Error(
+        `derivative rungs must strictly ascend: ${widths.join(", ")}`,
+      );
+    }
+  }
+}
+
+/**
+ * A rung never encodes more pixels than the master has. A 1200px master
+ * still gets 750/1500/2500 written — each at its own intrinsic width — so
+ * every key the srcSet advertises exists. Skipping the wide rungs instead
+ * would leave a srcSet pointing at 404s, which is the failure the ladder gate
+ * in derivatives.ts exists to prevent.
+ */
+export const DERIVATIVE_JPEG_QUALITY = 82;
+
+export type MasterUpload = {
+  slug: string;
+  /** Where the original bytes are written: `prints/{slug}.jpg` in MASTERS. */
+  key: string;
+};
+
+export type DerivativeJob = {
+  slug: string;
+  /** The dropped file this object comes from, by name — `alley-cat.jpg`. */
+  sourceName: string;
+  /** The rung this object is stored as, in the width the srcSet advertises. */
+  rung: number;
+  /** Pixels to resize to — the rung, capped at the master's own width. */
+  pixels: number;
+  /** Where it is written: `{slug}/{rung}.jpg` in WEB. */
+  key: string;
+};
+
+export type IngestPlan = {
+  /** One per accepted dropped file, written to the private masters bucket. */
+  masters: MasterUpload[];
+  jobs: DerivativeJob[];
+  /** Dropped file names that are not `{slug}.jpg`. */
+  ignoredNames: string[];
+  /** Per-slug notes a dry run should show, e.g. clamped rungs. */
+  notes: string[];
+};
+
+export type DroppedMaster = { name: string; width: number };
+
+/**
+ * The slug a dropped file declares, or null if the name cannot be one.
+ *
+ * A dropped master is named for the photo it is: `alley-cat.jpg` is the
+ * catalog slug `alley-cat`. Extension is checked, base name is checked
+ * against the one slug grammar, and nothing else is accepted — so a stray
+ * `IMG_4021.HEIC` or a `.DS_Store` in the drop folder is reported by name
+ * rather than silently uploaded as a photo nobody can link to.
+ */
+export function slugFromDroppedName(name: string): string | null {
+  if (!name.toLowerCase().endsWith(".jpg")) return null;
+  const base = name.slice(0, -".jpg".length);
+  return PHOTO_SLUG_PATTERN.test(base) ? base : null;
+}
+
+/** The key the original bytes of a dropped master are stored under. */
+export function masterKeyForSlug(slug: string): string {
+  return `${MASTER_KEY_PREFIX}${slug}.jpg`;
+}
+
+/**
+ * One master upload plus one job per rung per dropped file, decided without
+ * reading or writing anything — which is why the rules are testable at all.
+ * `width` is the only thing that decides whether a rung is clamped.
+ */
+export function planDerivatives(
+  drops: DroppedMaster[],
+  rungs: readonly number[],
+): IngestPlan {
+  assertRungList(rungs);
+
+  const masters: MasterUpload[] = [];
+  const jobs: DerivativeJob[] = [];
+  const ignoredNames: string[] = [];
+  const notes: string[] = [];
+  const seen = new Set<string>();
+
+  for (const drop of drops) {
+    const slug = slugFromDroppedName(drop.name);
+    if (slug === null) {
+      ignoredNames.push(drop.name);
+      continue;
+    }
+    if (seen.has(slug)) {
+      throw new Error(`two dropped masters declare the slug ${slug}`);
+    }
+    seen.add(slug);
+    if (!Number.isInteger(drop.width) || drop.width <= 0) {
+      throw new Error(
+        `master ${drop.name} has no usable width: ${drop.width}`,
+      );
+    }
+
+    masters.push({ slug, key: masterKeyForSlug(slug) });
+
+    let clamped = 0;
+    for (const rung of rungs) {
+      const pixels = Math.min(rung, drop.width);
+      if (pixels < rung) clamped += 1;
+      jobs.push({
+        slug,
+        sourceName: drop.name,
+        rung,
+        pixels,
+        key: derivativeKey(slug, rung),
+      });
+    }
+    if (clamped > 0) {
+      notes.push(
+        `${slug}: master is ${drop.width}px wide, ${clamped} rung(s) stored at their own width`,
+      );
+    }
+  }
+
+  return { masters, jobs, ignoredNames, notes };
+}
+
+export type UploadTarget = {
+  mastersBucket: string;
+  webBucket: string;
+  /** Read from NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED. */
+  ladderEnabled: boolean;
+};
+
+/**
+ * Refuses an upload that could break a live gallery, before any bytes move.
+ *
+ * Two ways this run hurts people, both checked here:
+ *  - the ladder flag is on, so every photo is already being served from WEB
+ *    and a half-written set of rungs turns the storefront into 404s;
+ *  - the buckets are named wrong, so masters land in the public bucket.
+ * Turn the flag on after the upload, never before.
+ */
+export function assertUploadIsSafe(target: UploadTarget): void {
+  if (target.webBucket !== WEB_BUCKET_NAME) {
+    throw new Error(
+      `refusing to upload: web bucket must be ${WEB_BUCKET_NAME}, got ${target.webBucket}`,
+    );
+  }
+  if (target.mastersBucket !== MASTERS_BUCKET_NAME) {
+    throw new Error(
+      `refusing to upload: masters bucket must be ${MASTERS_BUCKET_NAME}, got ${target.mastersBucket}`,
+    );
+  }
+  if (target.ladderEnabled) {
+    throw new Error(
+      "refusing to upload: NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED is on, so the site is already serving this bucket. Turn the flag off, ingest, verify, then turn it on.",
+    );
+  }
+}
