@@ -32,7 +32,6 @@ const BLOCKS = [
     cta: "Browse Film Gallery →",
     flip: false,
     dark: true,
-    contrast: true,
   },
 ] as const;
 
@@ -79,11 +78,7 @@ export default function StoryPage() {
                     alt={block.title}
                     preferred={1500}
                     sizes="(max-width: 768px) 100vw, 60vw"
-                    className={`w-full h-full object-cover hover:scale-105 transition-transform duration-700 ${
-                      "contrast" in block && block.contrast
-                        ? filmLookClass("contrast")
-                        : ""
-                    }`}
+                    className={`w-full h-full object-cover hover:scale-105 transition-transform duration-700 ${filmLookClass(photo.filmLook)}`}
                   />
                 </Link>
               </div>
