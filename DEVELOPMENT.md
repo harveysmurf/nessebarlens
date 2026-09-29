@@ -51,13 +51,32 @@ loader change, so `engines.node` is `>=24.21.0 <25` and every workflow pins
 fails if they drift.
 
 ```bash
-nvm use              # honours .nvmrc
+nvm use              # honours .nvmrc — do this FIRST, see below
 npm install          # land under /mnt/storage, never the root fs
 npm run dev          # next dev (OpenNext dev bindings auto-init)
 npm run lint         # eslint
 npm test             # node --test (see §4)
 npm run cf-typegen   # regenerate cloudflare-env.d.ts from wrangler.toml
 ```
+
+**Always `nvm use` before anything else — it is not optional and it is not
+automatic.** A shell whose `node` predates the pin will run the wrong runtime and
+report failures that are not the code's fault: on Node 20 the suite fails all 30
+test files with `ERR_UNKNOWN_FILE_EXTENSION` on `.mts`, which reads exactly like
+a broken rebase or a bad merge but is neither. Check with `node -v` (expect
+`v24.21.0`) before trusting a red run. If the shell is non-interactive (an agent
+harness, a CI step, a cron job) `nvm` may not be on the path at all — source it
+first, and verify the version actually changed rather than assuming:
+
+```bash
+export NVM_DIR=/mnt/storage/apps/nvm   # not the default ~/.nvm, this is the 2TB drive
+. "$NVM_DIR/nvm.sh"
+cd /path/to/nessebarlens && nvm use   # reads .nvmrc; no-op + warning outside the repo
+node -v                                # must print v24.21.0
+```
+
+`nvm use` prints `No .nvmrc file found` and changes nothing when run outside the
+repo root — that is the other way to end up on the wrong runtime.
 
 Environment variables (names only — values live in the `.env.local` symlink):
 
