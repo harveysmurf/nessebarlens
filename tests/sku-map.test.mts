@@ -9,6 +9,10 @@ import {
   PRINT_SIZES,
   SIZE_TO_INCH,
   allPhysicalSkus,
+  isFrameFinishValue,
+  isPhysicalFormat,
+  isPrintSize,
+  isSellableFormat,
   resolveSku,
 } from "../src/lib/sku-map.ts";
 
@@ -123,4 +127,19 @@ test("the missing-frame error lists the finishes resolveSku actually accepts", (
     () => resolveSku("framed", "30x40", "gold" as FrameFinish),
     /frame required/,
   );
+});
+
+test("isPhysicalFormat rejects digital; isSellableFormat accepts it", () => {
+  assert.equal(isPhysicalFormat("digital"), false);
+  assert.equal(isSellableFormat("digital"), true);
+  for (const format of PHYSICAL_FORMATS) {
+    assert.equal(isPhysicalFormat(format), true);
+    assert.equal(isSellableFormat(format), true);
+  }
+  assert.equal(isPhysicalFormat(null), false);
+  assert.equal(isPhysicalFormat("poster"), false);
+  assert.equal(isPrintSize("30x40"), true);
+  assert.equal(isPrintSize("40x30"), false);
+  assert.equal(isFrameFinishValue("black"), true);
+  assert.equal(isFrameFinishValue("gold"), false);
 });

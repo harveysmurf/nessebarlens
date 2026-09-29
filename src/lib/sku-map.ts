@@ -60,6 +60,29 @@ export function formatListLabel(
 
 export const PRINT_SIZES: PrintSize[] = ["30x40", "50x70", "70x100"];
 
+// Membership tests for the allow-lists above, owned here because this module
+// owns the lists. Callers used to cast their way to one —
+// `PRINT_SIZES.includes(size as PrintSize)` followed by a second
+// `size as PrintSize` at the use — so the cast, not the check, was what made
+// the value valid. A predicate narrows once and holds at every later use, and
+// adding a format or size cannot leave a caller validating against a
+// hand-typed union that has drifted from the list.
+export function isSellableFormat(value: unknown): value is PrintFormat {
+  return typeof value === "string" && SELLABLE_FORMATS.includes(value as PrintFormat);
+}
+
+export function isPhysicalFormat(value: unknown): value is PhysicalFormat {
+  return typeof value === "string" && PHYSICAL_FORMATS.includes(value as PhysicalFormat);
+}
+
+export function isPrintSize(value: unknown): value is PrintSize {
+  return typeof value === "string" && PRINT_SIZES.includes(value as PrintSize);
+}
+
+export function isFrameFinishValue(value: unknown): value is FrameFinish {
+  return typeof value === "string" && FRAME_FINISHES.includes(value as FrameFinish);
+}
+
 export function resolveSku(
   format: PhysicalFormat,
   size: PrintSize,

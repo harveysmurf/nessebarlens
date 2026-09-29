@@ -9,6 +9,10 @@ import {
   PRINT_SIZES,
   SELLABLE_FORMATS,
   formatListLabel,
+  isFrameFinishValue,
+  isPhysicalFormat,
+  isPrintSize,
+  isSellableFormat,
 } from "./sku-map";
 
 export type CheckoutBody = {
@@ -21,7 +25,6 @@ export type CheckoutBody = {
 
 // Allow-lists and their error labels are owned by sku-map, so SKU coverage
 // and the message we show on rejection cannot drift from each other.
-const FORMATS = SELLABLE_FORMATS;
 const FORMAT_LABEL = formatListLabel(SELLABLE_FORMATS);
 const SIZE_LABEL = formatListLabel(PRINT_SIZES);
 const FRAME_LABEL = formatListLabel(FRAME_FINISHES);
@@ -70,10 +73,10 @@ export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string 
   if (typeof photoSlug !== "string" || !photoSlug) {
     return { error: "photoSlug required" };
   }
-  if (typeof format !== "string" || !FORMATS.includes(format as PrintFormat)) {
+  if (!isSellableFormat(format)) {
     return { error: `format must be ${FORMAT_LABEL}` };
   }
-  const fmt = format as PrintFormat;
+  const fmt = format;
 
   if (fmt === "digital") {
     if (size !== null && size !== undefined) {
@@ -91,19 +94,19 @@ export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string 
     };
   }
 
-  if (typeof size !== "string" || !PRINT_SIZES.includes(size as PrintSize)) {
+  if (!isPrintSize(size)) {
     return { error: `size required for physical formats (${SIZE_LABEL})` };
   }
 
   if (fmt === "framed") {
-    if (typeof frame !== "string" || !FRAME_FINISHES.includes(frame as FrameFinish)) {
+    if (!isFrameFinishValue(frame)) {
       return { error: `frame required for framed (${FRAME_LABEL})` };
     }
     return {
       photoSlug,
       format: fmt,
-      size: size as PrintSize,
-      frame: frame as FrameFinish,
+      size,
+      frame,
       destinationCountryCode,
     };
   }
@@ -115,7 +118,7 @@ export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string 
   return {
     photoSlug,
     format: fmt,
-    size: size as PrintSize,
+    size,
     frame: null,
     destinationCountryCode,
   };
@@ -143,25 +146,22 @@ export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {
   if (format === "digital") {
     return { error: "digital has no Prodigi quote" };
   }
-  if (
-    typeof format !== "string" ||
-    !(PHYSICAL_FORMATS as string[]).includes(format)
-  ) {
+  if (!isPhysicalFormat(format)) {
     return { error: `format must be ${formatListLabel(PHYSICAL_FORMATS)}` };
   }
-  if (typeof size !== "string" || !PRINT_SIZES.includes(size as PrintSize)) {
+  if (!isPrintSize(size)) {
     return { error: `size required (${SIZE_LABEL})` };
   }
 
-  const fmt = format as Exclude<PrintFormat, "digital">;
+  const fmt = format;
   if (fmt === "framed") {
-    if (typeof frame !== "string" || !FRAME_FINISHES.includes(frame as FrameFinish)) {
+    if (!isFrameFinishValue(frame)) {
       return { error: `frame required for framed (${FRAME_LABEL})` };
     }
     return {
       format: fmt,
-      size: size as PrintSize,
-      frame: frame as FrameFinish,
+      size,
+      frame,
       destinationCountryCode,
     };
   }
@@ -172,7 +172,7 @@ export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {
 
   return {
     format: fmt,
-    size: size as PrintSize,
+    size,
     frame: null,
     destinationCountryCode,
   };
