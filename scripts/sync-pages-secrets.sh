@@ -111,6 +111,10 @@ if len(print_secret) >= 32:
 probe = os.environ.get("SYNC_PROBE", "").strip()
 if probe:
     env_vars["SYNC_PROBE"] = {"type": "plain_text", "value": probe}
+    # The echo route 404s without this, so a forgotten probe leaves nothing
+    # readable on production. Written alongside the probe on purpose: enabling
+    # the route and arming it are the same action, so they cannot drift.
+    env_vars["PROBE_ROUTE_ENABLED"] = {"type": "plain_text", "value": "1"}
 
 # Optional public build/runtime hints (plain text)
 for name in ("NEXT_PUBLIC_SITE_URL", "NEXT_PUBLIC_WEB_IMAGES_BASE"):
