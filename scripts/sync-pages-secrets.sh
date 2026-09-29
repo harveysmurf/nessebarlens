@@ -34,6 +34,23 @@ else
   : "${PRODIGI_API_KEY:?}"
 fi
 
+# Fail loud on a key whose mode contradicts the target. A test key in
+# production is otherwise indistinguishable from a live one at this boundary:
+# it syncs cleanly and then silently fails to take money. Set
+# ALLOW_STRIPE_MODE_MISMATCH=1 to override deliberately (e.g. a live-mode
+# smoke test before activation completes).
+if [[ "${ALLOW_STRIPE_MODE_MISMATCH:-0}" != "1" ]]; then
+  want="sk_test_"
+  if [[ "$TARGET" == "production" ]]; then
+    want="sk_live_"
+  fi
+  if [[ "$STRIPE_SECRET_KEY" != "$want"* ]]; then
+    echo "$TARGET requires a ${want}* STRIPE_SECRET_KEY (got ${STRIPE_SECRET_KEY:0:8}...)" >&2
+    echo "set ALLOW_STRIPE_MODE_MISMATCH=1 if this mismatch is intentional" >&2
+    exit 1
+  fi
+fi
+
 export TARGET
 export PROJECT=nessebar-lens
 export PRODIGI_API_BASE="$BASE"
