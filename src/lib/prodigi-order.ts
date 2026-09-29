@@ -11,6 +11,7 @@ import { prodigiApiKey, prodigiOrdersUrl } from "./prodigi-config";
 import { signPrintAssetUrl } from "./print-asset";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
 import { siteUrl } from "./stripe";
+import { HTTPS_URL_PATTERN } from "./url-patterns";
 
 export type OrderRecipient = {
   name: string;
@@ -217,7 +218,7 @@ export function buildProdigiOrderBody(input: {
 }): ProdigiOrderRequest {
   const entry = resolveSku(input.format, input.size, input.frame);
   const assetUrl = input.assetUrl ?? placeholderAssetUrl(input.photoSlug);
-  if (!/^https:\/\//i.test(assetUrl)) {
+  if (!HTTPS_URL_PATTERN.test(assetUrl)) {
     throw new Error("asset url must be https");
   }
   if (referencesMasters(assetUrl)) {

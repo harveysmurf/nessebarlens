@@ -1,5 +1,12 @@
 /** Shared Web Crypto HMAC-SHA256 hex helpers (Workers + Node). */
 
+/**
+ * A SHA-256 signature as hex. Owned here because two modules verify HMACs with
+ * it — stripe-event.ts and print-asset.ts — and each used to carry its own
+ * copy of the same literal.
+ */
+export const HEX_64_PATTERN = /^[0-9a-f]{64}$/i;
+
 export async function hmacSha256Hex(
   content: string,
   secret: string,

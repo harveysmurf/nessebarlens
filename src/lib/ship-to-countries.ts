@@ -246,6 +246,13 @@ export const STRIPE_SHIP_TO_COUNTRIES = SHIP_TO_COUNTRY_CODES;
 /** Default shipping destination (Nessebar / store home). */
 export const DEFAULT_SHIPPING_COUNTRY: ShipToCountryCode = "BG";
 
+/**
+ * Two-letter ISO country code. Owned here because three modules validate one:
+ * checkout-body.ts (client input) and twice in fulfillment.ts (the stored
+ * recipient). Each used to carry its own copy of the literal.
+ */
+export const ISO_ALPHA2_PATTERN = /^[A-Z]{2}$/;
+
 const SHIP_TO_SET = new Set<string>(SHIP_TO_COUNTRY_CODES);
 
 export function isShipToCountryCode(code: string): code is ShipToCountryCode {

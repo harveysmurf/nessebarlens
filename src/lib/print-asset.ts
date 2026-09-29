@@ -10,7 +10,11 @@ import {
   type MasterObject,
   type MastersBucket,
 } from "./master-key";
-import { hmacSha256Hex, timingSafeEqualHex } from "./crypto-hex";
+import {
+  HEX_64_PATTERN,
+  hmacSha256Hex,
+  timingSafeEqualHex,
+} from "./crypto-hex";
 import { envString, stripTrailingSlashes } from "./env";
 import { siteUrl } from "./stripe";
 
@@ -132,7 +136,7 @@ export async function verifyPrintAssetRequest(
   if (!/^\d{1,12}$/.test(expRaw)) {
     return { ok: false, status: 400, error: "invalid-exp" };
   }
-  if (!/^[0-9a-f]{64}$/i.test(sig)) {
+  if (!HEX_64_PATTERN.test(sig)) {
     return { ok: false, status: 400, error: "invalid-sig" };
   }
 
