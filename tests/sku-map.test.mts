@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
+import { readFileSync } from "node:fs";
 import test from "node:test";
+import { PRODIGI_SHIPPING_METHOD } from "../src/lib/prodigi-config.ts";
 import type { FrameFinish } from "../src/lib/pricing.ts";
 import {
   FRAME_COLOR,
@@ -142,4 +144,21 @@ test("isPhysicalFormat rejects digital; isSellableFormat accepts it", () => {
   assert.equal(isPrintSize("40x30"), false);
   assert.equal(isFrameFinishValue("black"), true);
   assert.equal(isFrameFinishValue("gold"), false);
+});
+
+test("the Prodigi shipping method is declared once, in prodigi-config", () => {
+  // Quote and order must buy and charge for the same shipping. The value was
+  // a literal in both bodies and in the request type, so a divergence would
+  // have been invisible to every test here. Both now read this constant.
+  assert.equal(PRODIGI_SHIPPING_METHOD, "Budget");
+  for (const file of [
+    "../src/lib/prodigi-quote.ts",
+    "../src/lib/prodigi-order.ts",
+  ]) {
+    const source = readFileSync(new URL(file, import.meta.url), "utf8");
+    assert.ok(
+      !source.includes('"Budget"'),
+      `${file} re-spells the shipping method literal`,
+    );
+  }
 });

@@ -842,9 +842,24 @@ test("fulfillment reuses the pricing/sku-map types instead of redeclaring them",
   // No alias arrays re-wrapping the sku-map lists.
   assert.equal(/const SIZES\s*:/.test(src), false);
   assert.equal(/const FRAMES\s*:/.test(src), false);
+  // The allow-list is read through sku-map's predicate, not through a local
+  // alias array. The alias was not itself the bug -- it pointed at the shared
+  // list -- but the two format guards each cast their way through it, so the
+  // cast rather than the check decided what a stored format could be. Reading
+  // isSellableFormat narrows once and cannot be pointed at a different list.
   assert.ok(
-    src.includes("const FORMATS: readonly PrintFormat[] = SELLABLE_FORMATS"),
-    "FORMATS must come from the shared SELLABLE_FORMATS list",
+    src.includes("isSellableFormat"),
+    "fulfillment must validate formats with sku-map's isSellableFormat",
+  );
+  assert.equal(
+    /const FORMATS\s*:/.test(src),
+    false,
+    "no local alias of the sellable format list",
+  );
+  assert.equal(
+    /as readonly string\[\]/.test(src),
+    false,
+    "no cast-through-string[] membership test in fulfillment",
   );
   // SELLABLE_FORMATS is the one place "digital" joins the physical formats.
   assert.equal(

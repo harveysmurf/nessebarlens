@@ -131,6 +131,23 @@ test("optional stored fields reject a value of the wrong type rather than coerci
   );
 });
 
+test("the stored format is checked against the sellable list, not a local copy", () => {
+  // fulfillment's two format guards used their own alias of the allow-list and
+  // two casts. They now read isSellableFormat, so a format the catalog can
+  // order must be accepted and anything else — including a shape the old
+  // `(FORMATS as string[]).includes` would have reached differently — refused.
+  assert.ok(parseOrderRecord(JSON.stringify(unfulfilled({ format: "giclee" }))));
+  assert.ok(parseOrderRecord(JSON.stringify(unfulfilled({ format: "framed" }))));
+  assert.ok(parseOrderRecord(JSON.stringify(unfulfilled({ format: "digital" }))));
+  for (const format of ["poster", "Giclee", "", null, 7, {}, ["giclee"]]) {
+    assert.equal(
+      parseOrderRecord(JSON.stringify(unfulfilled({ format }))),
+      null,
+      JSON.stringify(format),
+    );
+  }
+});
+
 test("an unusable print size, or framed with no frame finish, is bad-metadata", () => {
   // The shape a stale or tampered metadata block produces. The order must
   // still be written — paid-unfulfilled, not dropped — so it stays inspectable.

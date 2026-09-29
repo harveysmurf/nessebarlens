@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { PRODIGI_SHIPPING_METHOD } from "../src/lib/prodigi-config.ts";
 import {
   merchandiseFromUnitCost,
   PRODIGI_MARGIN,
@@ -108,7 +109,7 @@ test("quotePhysical margins unitCost and passes shipping through", async () => {
     });
     assert.equal(seenUrl, "https://api.sandbox.prodigi.com/v4.0/quotes");
     assert.deepEqual(seenBody, {
-      shippingMethod: "Budget",
+      shippingMethod: PRODIGI_SHIPPING_METHOD,
       destinationCountryCode: "BG",
       currencyCode: "EUR",
       items: [

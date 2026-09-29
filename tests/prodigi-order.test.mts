@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { PRODIGI_SHIPPING_METHOD } from "../src/lib/prodigi-config.ts";
 import { PHOTOS } from "../src/lib/photos.ts";
 import {
   assertNoMasterLeak,
@@ -44,7 +45,10 @@ test("Prodigi order body uses SKU + placeholder and never leaks masters", () => 
   });
   assert.equal(body.idempotencyKey, "cs_test_abcdefgh");
   assert.equal(body.merchantReference, "cs_test_abcdefgh");
-  assert.equal(body.shippingMethod, "Budget");
+  // The value the customer was quoted with, read from the one constant —
+  // not re-spelled here, because a test that repeats the literal asserts
+  // nothing about whether quote and order agree.
+  assert.equal(body.shippingMethod, PRODIGI_SHIPPING_METHOD);
   assert.equal(body.items[0].sku, "GLOBAL-FAP-20X28");
   assert.equal(body.items[0].sizing, "fillPrintArea");
   assert.equal(

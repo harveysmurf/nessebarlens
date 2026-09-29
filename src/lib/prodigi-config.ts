@@ -29,6 +29,17 @@ const UNCONFIGURED_KEY_NAMES = [
   "PRODIGI_API_KEY",
 ] as const;
 
+/**
+ * The Prodigi shipping method we quote with and buy with.
+ *
+ * It appeared as a literal in the quote body, the order body and the
+ * request type. That is not a cosmetic duplication: if the two drift, the
+ * shipping the customer was quoted is not the shipping the order gets, and
+ * nothing downstream compares them. One constant, typed from itself, so the
+ * type and both payloads cannot disagree.
+ */
+export const PRODIGI_SHIPPING_METHOD = "Budget";
+
 function missingKeyMessage(name: string): string {
   return `${name} is not set`;
 }

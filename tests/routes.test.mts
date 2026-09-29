@@ -836,6 +836,23 @@ test("download: a paid digital order streams the master as an attachment", async
     );
     assert.equal(response.headers.get("Content-Type"), "image/jpeg");
     assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
+    // A customer's purchase must not sit in a shared cache. This header was
+    // written out four times across the two asset routes; the download route
+    // asserted none of them.
+    assert.equal(response.headers.get("Cache-Control"), "private, no-store");
+  } finally {
+    restore();
+  }
+});
+
+test("download: an invalid session id is 400 and still uncacheable", async () => {
+  const restore = withBindings({ prodigiKeyConfigured: false });
+  try {
+    const response = await download.GET(
+      new Request(`${SITE}/api/download?session_id=not-a-session`),
+    );
+    assert.equal(response.status, 400);
+    assert.equal(response.headers.get("Cache-Control"), "private, no-store");
   } finally {
     restore();
   }

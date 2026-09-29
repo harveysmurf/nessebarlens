@@ -7,7 +7,11 @@
 import { MASTERS_BUCKET, referencesMasters } from "./master-guard";
 import { PHOTOS } from "./photos";
 import type { FrameFinish, PrintSize } from "./pricing";
-import { prodigiApiKey, prodigiOrdersUrl } from "./prodigi-config";
+import {
+  PRODIGI_SHIPPING_METHOD,
+  prodigiApiKey,
+  prodigiOrdersUrl,
+} from "./prodigi-config";
 import { signPrintAssetUrl } from "./print-asset";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
 import { siteUrl } from "./stripe";
@@ -28,7 +32,7 @@ export type OrderRecipient = {
 export type ProdigiOrderRequest = {
   merchantReference: string;
   idempotencyKey: string;
-  shippingMethod: "Budget";
+  shippingMethod: typeof PRODIGI_SHIPPING_METHOD;
   recipient: {
     name: string;
     email?: string;
@@ -247,7 +251,7 @@ export function buildProdigiOrderBody(input: {
   const body: ProdigiOrderRequest = {
     merchantReference: input.sessionId,
     idempotencyKey: input.sessionId,
-    shippingMethod: "Budget",
+    shippingMethod: PRODIGI_SHIPPING_METHOD,
     recipient,
     items: [
       {
