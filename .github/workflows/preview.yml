@@ -52,7 +52,10 @@ jobs:
           # Cloudflare truncates the branch alias at 28 characters, so the smoke
           # test only finds the deployment if we truncate to the same limit --
           # otherwise a longer branch name deploys fine and 404s on smoke.
-          safe="$(echo "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-28)"
+          # Cut first, then strip trailing hyphens: Cloudflare truncates and
+          # only then drops a trailing hyphen, so a 28-char prefix ending in "-"
+          # must not keep it here either or the alias gains a character.
+          safe="$(echo "$raw" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9-]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g' | cut -c1-28 | sed -E 's/-+$//')"
           echo "name=$safe" >> "$GITHUB_OUTPUT"
 
       - name: Build (OpenNext)
