@@ -50,14 +50,22 @@ jobs:
       - name: Assemble Pages bundle
         run: bash scripts/assemble-pages-out.sh
 
+      # The sha and message arrive via env, never interpolated straight into the
+      # script. A commit message
+      # is free-form text: backticks in it became command substitution inside
+      # the double quotes and wrangler died on the shell's output. This failed
+      # the deploy of a merge whose message quoted a file path.
       - name: Deploy Pages production
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
         run: |
           npx wrangler pages deploy .pages-out \
             --project-name=nessebar-lens \
             --branch=main \
             --commit-dirty=true \
-            --commit-hash="${{ github.sha }}" \
-            --commit-message="${{ github.event.head_commit.message }}"
+            --commit-hash="$COMMIT_SHA" \
+            --commit-message="$COMMIT_MESSAGE"
 
       # Secrets are not synced here. Rotating a credential must not require
       # shipping a build, and running the sync from the deploy is what forced
