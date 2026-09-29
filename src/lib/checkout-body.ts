@@ -1,4 +1,7 @@
-import { isShipToCountryCode } from "./ship-to-countries";
+import {
+  ISO_ALPHA2_PATTERN,
+  isShipToCountryCode,
+} from "./ship-to-countries";
 import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";
 import {
   FRAME_FINISHES,
@@ -35,7 +38,7 @@ function parseDestinationCountry(raw: unknown): Parsed<string | null> {
   if (raw === undefined || raw === null || raw === "") {
     return { ok: true, value: null };
   }
-  if (typeof raw !== "string" || !/^[A-Z]{2}$/.test(raw)) {
+  if (typeof raw !== "string" || !ISO_ALPHA2_PATTERN.test(raw)) {
     return {
       ok: false,
       error: "destinationCountryCode must be a 2-letter ISO code",

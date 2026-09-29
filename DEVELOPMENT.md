@@ -230,6 +230,22 @@ Debian-host symlink to `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
 - TypeScript strict; run `npm run lint` before committing.
 - Fonts are vendored; never pull them from a CDN at build time.
 
+### One source per grammar and per shape
+
+Any regex or object type that encodes a rule is declared in **one** module and
+imported everywhere else. Tests do not catch a divergent copy while the copies
+still behave the same, and that is exactly how two bugs got here: the
+master-marker regex and the photo-slug grammar each grew a private second copy
+that agreed until it did not.
+
+Owners: `master-key.ts` (slug, master key, MASTERS storage shape),
+`master-guard.ts` (master marker), `crypto-hex.ts` (hex signature),
+`ship-to-countries.ts` (ISO alpha-2), `url-patterns.ts` (absolute https).
+
+`tests/single-source-grammar.test.mts` enforces this by walking the TypeScript
+AST — a regex in a string or a comment is not mistaken for a declaration. It
+fails on any regex literal or object shape that appears in two modules.
+
 ---
 
 ## 9. Release checklist

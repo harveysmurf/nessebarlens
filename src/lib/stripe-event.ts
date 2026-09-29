@@ -1,11 +1,12 @@
 import Stripe from "stripe";
-import { hmacSha256Hex, timingSafeEqualHex } from "./crypto-hex";
+import {
+  HEX_64_PATTERN,
+  hmacSha256Hex,
+  timingSafeEqualHex,
+} from "./crypto-hex";
 import type { StripeShippingDetails } from "./fulfillment";
 
 const TOLERANCE_SECONDS = 300;
-
-/** Stripe signatures are SHA-256 hex; hex case is not significant. */
-const HEX_64 = /^[0-9a-f]{64}$/i;
 
 export type ConstructEvent = (
   payload: string,
@@ -115,7 +116,7 @@ function headerSignatures(header: string): string[] {
     if (eq === -1) continue;
     if (part.slice(0, eq) !== "v1") continue;
     const signature = part.slice(eq + 1);
-    if (HEX_64.test(signature)) signatures.push(signature);
+    if (HEX_64_PATTERN.test(signature)) signatures.push(signature);
   }
   return signatures;
 }

@@ -12,6 +12,8 @@ import {
   type MastersBucket,
 } from "./master-key";
 import { referencesMasters } from "./master-guard";
+import { ISO_ALPHA2_PATTERN } from "./ship-to-countries";
+import { HTTPS_URL_PATTERN } from "./url-patterns";
 import {
   createProdigiOrder,
   isRetryableProdigiReason,
@@ -145,7 +147,7 @@ export function parseRecipient(
   const city = (a.city ?? "").trim();
   const postcode = (a.postal_code ?? "").trim();
   const countryCode = (a.country ?? "").trim().toUpperCase();
-  if (!name || !line1 || !city || !postcode || !/^[A-Z]{2}$/.test(countryCode)) {
+  if (!name || !line1 || !city || !postcode || !ISO_ALPHA2_PATTERN.test(countryCode)) {
     return null;
   }
   return {
@@ -641,7 +643,7 @@ function isFrameFinish(value: string): value is FrameFinish {
 }
 
 function isSafeAssetUrl(url: string): boolean {
-  if (!/^https:\/\//i.test(url)) return false;
+  if (!HTTPS_URL_PATTERN.test(url)) return false;
   if (referencesMasters(url)) return false;
   // Allow same-origin placeholders and HMAC print-asset Worker URLs only.
   // Path-only checks would let https://evil.example/placeholders/… through.
@@ -677,7 +679,7 @@ function parseStoredRecipient(
   }
   if (!(r.email === null || typeof r.email === "string")) return undefined;
   if (!(r.phone === null || typeof r.phone === "string")) return undefined;
-  if (!/^[A-Z]{2}$/.test(r.countryCode as string)) return undefined;
+  if (!ISO_ALPHA2_PATTERN.test(r.countryCode as string)) return undefined;
   return {
     name: r.name as string,
     line1: r.line1 as string,
