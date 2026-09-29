@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { WebPhoto } from "@/components/WebPhoto";
-import { getPhoto } from "@/lib/photos";
+import { filmLookClass, getPhoto } from "@/lib/photos";
 
 const CATEGORIES = [
   {
@@ -93,7 +93,9 @@ export default function HomePage() {
                     preferred={1500}
                     sizes="(max-width: 768px) 100vw, 33vw"
                     className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ${
-                      "contrast" in cat && cat.contrast ? "filter contrast-125" : ""
+                      "contrast" in cat && cat.contrast
+                        ? filmLookClass("contrast")
+                        : ""
                     }`}
                   />
                 </div>

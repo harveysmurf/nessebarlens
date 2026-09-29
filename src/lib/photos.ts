@@ -244,3 +244,17 @@ const CATEGORY_HREF: Record<PhotoCategory, string> = {
 export function categoryHref(category: PhotoCategory): string {
   return CATEGORY_HREF[category];
 }
+
+// The one place a film look is written as a CSS class. This string was
+// hand-rolled in every page and component that renders a film photo, and the
+// copies only stayed identical by luck — a rename here would have left the
+// others rendering an unfiltered image with no test failing.
+const FILM_LOOK_CLASS: Record<NonNullable<Photo["filmLook"]>, string> = {
+  contrast: "filter contrast-125",
+  sepia: "filter sepia",
+  grayscale: "filter grayscale",
+};
+
+export function filmLookClass(look: Photo["filmLook"]): string {
+  return look ? FILM_LOOK_CLASS[look] : "";
+}

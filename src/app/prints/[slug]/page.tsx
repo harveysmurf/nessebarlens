@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PrintConfigurator } from "@/components/PrintConfigurator";
 import { WebPhoto } from "@/components/WebPhoto";
-import { categoryHref, getPhoto, PHOTOS } from "@/lib/photos";
+import { categoryHref, filmLookClass, getPhoto, PHOTOS } from "@/lib/photos";
 
 export function generateStaticParams() {
   return PHOTOS.map((p) => ({ slug: p.slug }));
@@ -35,15 +35,7 @@ export default async function PrintDetailPage({
               preferred={2500}
               sizes="(max-width: 1024px) 100vw, 60vw"
               priority
-              className={`max-h-full max-w-full object-contain shadow-md ${
-                photo.filmLook === "contrast"
-                  ? "filter contrast-125"
-                  : photo.filmLook === "sepia"
-                    ? "filter sepia"
-                    : photo.filmLook === "grayscale"
-                      ? "filter grayscale"
-                      : ""
-              }`}
+              className={`max-h-full max-w-full object-contain shadow-md ${filmLookClass(photo.filmLook)}`}
             />
           </div>
           <div className="flex justify-between text-[10px] text-stone-400 uppercase tracking-widest px-1">

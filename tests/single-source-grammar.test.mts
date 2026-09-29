@@ -16,6 +16,7 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import ts from "typescript";
+import { filmLookClass } from "../src/lib/photos.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
@@ -157,6 +158,41 @@ test("no object shape is declared in two modules", () => {
     }
   }
   assert.deepEqual(duplicates, []);
+});
+
+test("the film-look filter class is not re-spelled in any tsx file", () => {
+  // Same bug shape as the grammars above: the class was hand-rolled in every
+  // page and component, and the copies agreed until one of them didn't. A
+  // behavioural test could not catch it, because before the rename every copy
+  // was correct. This is the source walk that can.
+  const offenders: string[] = [];
+  for (const file of sourceFiles(path.join(root, "src"))) {
+    if (!file.endsWith(".tsx")) continue;
+    const text = fs.readFileSync(file, "utf8");
+    const source = ts.createSourceFile(
+      file,
+      text,
+      ts.ScriptTarget.Latest,
+      true,
+      ts.ScriptKind.TSX,
+    );
+    const visit = (node: ts.Node): void => {
+      if (ts.isStringLiteral(node) && node.text.includes("contrast-125")) {
+        const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+        offenders.push(`${relative(file)}:${line + 1}`);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  assert.deepEqual(offenders, [], `filter contrast-125 re-spelled in tsx: ${offenders.join(", ")}`);
+});
+
+test("filmLookClass is the single source of every film-look class", () => {
+  assert.equal(filmLookClass("contrast"), "filter contrast-125");
+  assert.equal(filmLookClass("sepia"), "filter sepia");
+  assert.equal(filmLookClass("grayscale"), "filter grayscale");
+  assert.equal(filmLookClass(undefined), "");
 });
 
 test("the MASTERS storage shape is declared once and both readers import it", () => {
