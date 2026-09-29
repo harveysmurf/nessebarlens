@@ -1,6 +1,9 @@
 import { NextResponse } from "next/server";
 import { fulfillCheckoutSession } from "@/lib/fulfillment";
-import { readStripeEvent } from "@/lib/stripe-event";
+import {
+  readStripeEvent,
+  type StripeCheckoutSession,
+} from "@/lib/stripe-event";
 import { readWorkerBindings } from "@/lib/worker-bindings";
 
 export const dynamic = "force-dynamic";
@@ -50,41 +53,7 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "orders-kv-unavailable" }, { status: 503 });
   }
 
-  const session = event.data.object as {
-    id?: string;
-    payment_status?: string | null;
-    currency?: string | null;
-    amount_total?: number | null;
-    metadata?: Record<string, string> | null;
-    shipping_details?: {
-      name?: string | null;
-      address?: {
-        line1?: string | null;
-        line2?: string | null;
-        city?: string | null;
-        state?: string | null;
-        postal_code?: string | null;
-        country?: string | null;
-      } | null;
-    } | null;
-    collected_information?: {
-      shipping_details?: {
-        name?: string | null;
-        address?: {
-          line1?: string | null;
-          line2?: string | null;
-          city?: string | null;
-          state?: string | null;
-          postal_code?: string | null;
-          country?: string | null;
-        } | null;
-      } | null;
-    } | null;
-    customer_details?: {
-      email?: string | null;
-      phone?: string | null;
-    } | null;
-  };
+  const session = event.data.object as StripeCheckoutSession;
 
   const shippingDetails =
     session.collected_information?.shipping_details ??

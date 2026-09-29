@@ -23,20 +23,32 @@ const FORMAT_LABEL = formatListLabel(SELLABLE_FORMATS);
 const SIZE_LABEL = formatListLabel(PRINT_SIZES);
 const FRAME_LABEL = formatListLabel(FRAME_FINISHES);
 
-function parseDestinationCountry(
-  raw: unknown,
-): string | null | { error: string } {
-  if (raw === undefined || raw === null || raw === "") return null;
+type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
+
+/**
+ * Returns a tagged result rather than string | null | { error }. The old shape
+ * mixed a value and an error object in one union, so every caller needed an
+ * `"error" in x` test plus a cast back to `string | null` — a cast the
+ * compiler could not check, and one more place for a rejection to slip past.
+ */
+function parseDestinationCountry(raw: unknown): Parsed<string | null> {
+  if (raw === undefined || raw === null || raw === "") {
+    return { ok: true, value: null };
+  }
   if (typeof raw !== "string" || !/^[A-Z]{2}$/.test(raw)) {
-    return { error: "destinationCountryCode must be a 2-letter ISO code" };
+    return {
+      ok: false,
+      error: "destinationCountryCode must be a 2-letter ISO code",
+    };
   }
   if (!isShipToCountryCode(raw)) {
     return {
+      ok: false,
       error:
         "destinationCountryCode must be a Prodigi+Stripe ship-to country",
     };
   }
-  return raw;
+  return { ok: true, value: raw };
 }
 
 export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string } {
@@ -49,10 +61,8 @@ export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string 
   const size = body.size ?? null;
   const frame = body.frame ?? null;
   const destination = parseDestinationCountry(body.destinationCountryCode);
-  if (destination && typeof destination === "object" && "error" in destination) {
-    return destination;
-  }
-  const destinationCountryCode = destination as string | null;
+  if (!destination.ok) return { error: destination.error };
+  const destinationCountryCode = destination.value;
 
   if (typeof photoSlug !== "string" || !photoSlug) {
     return { error: "photoSlug required" };
@@ -124,10 +134,8 @@ export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {
   const size = body.size ?? null;
   const frame = body.frame ?? null;
   const destination = parseDestinationCountry(body.destinationCountryCode);
-  if (destination && typeof destination === "object" && "error" in destination) {
-    return destination;
-  }
-  const destinationCountryCode = destination as string | null;
+  if (!destination.ok) return { error: destination.error };
+  const destinationCountryCode = destination.value;
 
   if (format === "digital") {
     return { error: "digital has no Prodigi quote" };

@@ -1,5 +1,6 @@
 import Stripe from "stripe";
 import { hmacSha256Hex, timingSafeEqualHex } from "./crypto-hex";
+import type { StripeShippingDetails } from "./fulfillment";
 
 const TOLERANCE_SECONDS = 300;
 
@@ -61,6 +62,27 @@ export async function verifyStripeSignatureWebCrypto(
   const expected = await hmacSha256Hex(`${timestamp}.${payload}`, secret);
   return signatures.some((signature) => timingSafeEqualHex(expected, signature));
 }
+
+/**
+ * The fields the webhook reads off a Checkout Session. Declared here so the
+ * handler stops re-typing Stripe's shipping shape inline — it had two copies
+ * of the same nested address object, one per place Stripe can put it.
+ */
+export type StripeCheckoutSession = {
+  id?: string;
+  payment_status?: string | null;
+  currency?: string | null;
+  amount_total?: number | null;
+  metadata?: Record<string, string> | null;
+  shipping_details?: StripeShippingDetails | null;
+  collected_information?: {
+    shipping_details?: StripeShippingDetails | null;
+  } | null;
+  customer_details?: {
+    email?: string | null;
+    phone?: string | null;
+  } | null;
+};
 
 function parseStripeEvent(payload: string): Stripe.Event {
   const parsed = JSON.parse(payload) as Stripe.Event;

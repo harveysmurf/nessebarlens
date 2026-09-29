@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { MASTERS_BUCKET, referencesMasters } from "../src/lib/master-guard.ts";
 import { assertNoMasterLeak } from "../src/lib/prodigi-order.ts";
-import { parseOrderRecord } from "../src/lib/fulfillment.ts";
+import { decideFulfillment, parseOrderRecord, resolveDownload } from "../src/lib/fulfillment.ts";
 import {
   PHOTO_SLUG_PATTERN,
   isMasterKey,
@@ -123,5 +123,40 @@ test("the slug pattern is shared, and masterKeyForSlug resolves through the cata
   for (const photo of PHOTOS) {
     assert.equal(isPhotoSlug(photo.slug), true, photo.slug);
     assert.equal(isMasterKey(photo.imageKey), true, photo.imageKey);
+  }
+});
+
+test("the download filename is gated by the shared slug grammar, not a private copy", async () => {
+  // resolveDownload used to inline a second copy of PHOTO_SLUG_PATTERN, so the
+  // two could drift: a slug the catalog accepted could be renamed to
+  // download.jpg. Drive the real resolver over slugs on both sides of the
+  // grammar and assert it agrees with the one pattern.
+  const decided = decideFulfillment({
+    sessionId: SESSION,
+    paymentStatus: "paid",
+    currency: "eur",
+    amountTotal: 3000,
+    metadata: { photoSlug: "dawn", format: "digital", quoteEur: "30" },
+    shippingDetails: null,
+    customerEmail: "a@example.com",
+    customerPhone: null,
+    prodigiKeyConfigured: true,
+    now: "2026-01-01T00:00:00.000Z",
+  });
+  assert.equal(decided.action, "write");
+  if (decided.action !== "write") return;
+  const bytes = {
+    async get() {
+      return { body: new ReadableStream(), size: 7 };
+    },
+  };
+  for (const slug of ["dawn", "harbor-mist", "Not A Slug", "dawn_1", "", "dawn.jpg"]) {
+    const streamed = await resolveDownload({ ...decided.record, photoSlug: slug }, bytes);
+    assert.equal(streamed.kind, "stream", slug);
+    assert.equal(
+      streamed.kind === "stream" ? streamed.filename : "",
+      PHOTO_SLUG_PATTERN.test(slug) ? `${slug}.jpg` : "download.jpg",
+      slug,
+    );
   }
 });
