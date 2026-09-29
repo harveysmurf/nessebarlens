@@ -104,14 +104,6 @@ if len(print_secret) >= 32:
         "type": "secret_text",
         "value": print_secret,
     }
-# Propagation probe. Plain text so it can be compared against what a running
-# deployment reports. Only written when a caller asks for one, and a sync with
-# no probe omits it entirely — the PATCH replaces the whole env_vars map, so a
-# plain sync is also what clears a probe left over from an earlier test.
-probe = os.environ.get("SYNC_PROBE", "").strip()
-if probe:
-    env_vars["SYNC_PROBE"] = {"type": "plain_text", "value": probe}
-
 # Optional public build/runtime hints (plain text)
 for name in ("NEXT_PUBLIC_SITE_URL", "NEXT_PUBLIC_WEB_IMAGES_BASE"):
     val = os.environ.get(name, "").strip()
