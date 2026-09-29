@@ -1,0 +1,3 @@
+
+// positive control: force a production deploy so the synced probe values
+// become build-time for the next deployment. No functional change.
