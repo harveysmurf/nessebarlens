@@ -3,6 +3,11 @@ name: Production
 on:
   push:
     branches: [main]
+  # A secret-only change (rotated Stripe key, new Prodigi credential) has no
+  # commit to trigger a deploy, and the sync step at the bottom of this
+  # workflow is what actually applies it. Without a manual trigger, rotating
+  # a credential means committing an empty change to production.
+  workflow_dispatch:
 
 concurrency:
   group: production
