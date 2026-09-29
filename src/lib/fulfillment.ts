@@ -318,16 +318,16 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
   if (typeof row.size !== "string" || typeof row.frame !== "string") return null;
   if (!isEurAmount(row.quoteEur) || !isInt(row.amountTotal)) return null;
   if (row.currency !== "eur") return null;
-  if (!(row.reason === null || typeof row.reason === "string")) return null;
-  if (!(row.masterKey === null || typeof row.masterKey === "string")) return null;
+  if (!isNullableString(row.reason)) return null;
+  if (!isNullableString(row.masterKey)) return null;
   if (typeof row.updatedAt !== "string") return null;
-  if (!(row.prodigiOrderId === null || typeof row.prodigiOrderId === "string")) {
+  if (!isNullableString(row.prodigiOrderId)) {
     return null;
   }
-  if (!(row.prodigiStage === null || typeof row.prodigiStage === "string")) {
+  if (!isNullableString(row.prodigiStage)) {
     return null;
   }
-  if (!(row.assetUrl === null || typeof row.assetUrl === "string")) return null;
+  if (!isNullableString(row.assetUrl)) return null;
   if (row.assetUrl !== null && !isSafeAssetUrl(row.assetUrl)) return null;
   const recipient = parseStoredRecipient(row.recipient);
   if (recipient === undefined) return null;
@@ -609,6 +609,14 @@ function isInt(value: unknown): value is number {
   return typeof value === "number" && Number.isInteger(value);
 }
 
+// A stored optional field is either a string or an explicit null — never
+// undefined, never a number. Written out as `!(v === null || typeof v ===
+// "string")` at seven call sites, where the double negative is what makes the
+// narrowing work; a predicate states the rule once and narrows the same way.
+function isNullableString(value: unknown): value is string | null {
+  return value === null || typeof value === "string";
+}
+
 /**
  * A stored euro amount has at most two decimals.
  *
@@ -659,6 +667,33 @@ function isSafeAssetUrl(url: string): boolean {
   }
 }
 
+// Derived from the type, not spelled out: a hand-written list here is the
+// same "names written twice" trap one hop up, and a field added to
+// OrderRecipient would validate against nothing. The test asserts the derived
+// list is exactly the seven non-nullable keys, so email/phone staying out of it
+// is visible rather than implied.
+type RecipientStringKey = {
+  [K in keyof OrderRecipient]-?: [OrderRecipient[K]] extends [string]
+    ? null extends OrderRecipient[K]
+      ? never
+      : K
+    : never;
+}[keyof OrderRecipient];
+
+// Completeness is enforced, not just soundness: a key added to
+// OrderRecipient that is missing here fails to compile, and a name that is not
+// a key at all fails too. Annotated as an exhaustive record so both directions
+// are checked; the object is what the loop iterates.
+const RECIPIENT_STRING_KEYS: Record<RecipientStringKey, true> = {
+  name: true,
+  line1: true,
+  line2: true,
+  city: true,
+  state: true,
+  postcode: true,
+  countryCode: true,
+};
+
 /** undefined = malformed; null = explicitly null */
 function parseStoredRecipient(
   raw: unknown,
@@ -666,29 +701,25 @@ function parseStoredRecipient(
   if (raw === null) return null;
   if (!raw || typeof raw !== "object") return undefined;
   const r = raw as Record<string, unknown>;
-  for (const key of [
-    "name",
-    "line1",
-    "line2",
-    "city",
-    "state",
-    "postcode",
-    "countryCode",
-  ] as const) {
+  for (const key of Object.keys(RECIPIENT_STRING_KEYS) as RecipientStringKey[]) {
     if (typeof r[key] !== "string") return undefined;
   }
-  if (!(r.email === null || typeof r.email === "string")) return undefined;
-  if (!(r.phone === null || typeof r.phone === "string")) return undefined;
-  if (!ISO_ALPHA2_PATTERN.test(r.countryCode as string)) return undefined;
+  if (!isNullableString(r.email)) return undefined;
+  if (!isNullableString(r.phone)) return undefined;
+  // The loop proved every key above is a string, but a computed key does not
+  // carry that narrowing, so read them back through one typed view instead of
+  // casting each field. email/phone need no cast: the predicate narrowed them.
+  const s = r as Record<RecipientStringKey, string>;
+  if (!ISO_ALPHA2_PATTERN.test(s.countryCode)) return undefined;
   return {
-    name: r.name as string,
-    line1: r.line1 as string,
-    line2: r.line2 as string,
-    city: r.city as string,
-    state: r.state as string,
-    postcode: r.postcode as string,
-    countryCode: r.countryCode as string,
-    email: r.email as string | null,
-    phone: r.phone as string | null,
+    name: s.name,
+    line1: s.line1,
+    line2: s.line2,
+    city: s.city,
+    state: s.state,
+    postcode: s.postcode,
+    countryCode: s.countryCode,
+    email: r.email,
+    phone: r.phone,
   };
 }
