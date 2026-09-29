@@ -12,9 +12,6 @@ import {
 } from "./prodigi-config";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
 
-/** Default quote destination when the client omits destinationCountryCode. */
-export const DEFAULT_DESTINATION_COUNTRY = DEFAULT_SHIPPING_COUNTRY;
-
 export type PhysicalQuote = {
   sku: string;
   unitCostEur: number;
@@ -48,7 +45,7 @@ export async function quotePhysical(opts: {
 }): Promise<PhysicalQuote> {
   const entry = resolveSku(opts.format, opts.size, opts.frame ?? null);
   const destinationCountryCode =
-    opts.destinationCountryCode?.trim() || DEFAULT_DESTINATION_COUNTRY;
+    opts.destinationCountryCode?.trim() || DEFAULT_SHIPPING_COUNTRY;
 
   // The host and the key are read before the request for the same reason
   // createProdigiOrder does it: prodigiQuotesUrl/prodigiApiKey throw when
