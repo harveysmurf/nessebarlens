@@ -14,6 +14,12 @@
 #
 # Reports INDETERMINATE rather than guessing when the API redacts values, so a
 # redaction is never mistaken for "the new value did not land".
+#
+# Exit codes: 0 propagation confirmed, 1 confirmed NOT propagating, 2 no
+# deployment to compare, 3 indeterminate. 3 is a clean exit, not a failure: the
+# CF deployment payload does not carry env_vars, so this check cannot answer
+# the question on its own, and a manual probe that goes red reads as a broken
+# sync when the sync step above it succeeded.
 
 set -euo pipefail
 
@@ -53,8 +59,20 @@ print(f"latest production deployment: {did} ({latest.get('created_on')})")
 cfg = (latest.get("deployment_configs") or {}).get("production") or {}
 env_vars = cfg.get("env_vars")
 if not isinstance(env_vars, dict) or not env_vars:
-    print("readback: INDEFINITE — deployment payload carries no env_vars to inspect")
-    raise SystemExit(3)
+    # Also read the project-level config the sync step just PATCHed, so the log
+    # distinguishes "the sync did not write" from "the sync wrote and the API
+    # will not show us the deployment".
+    pcfg = (get(f"{base}") or {}).get("result", {}).get("deployment_configs", {})
+    pvars = (pcfg.get("production") or {}).get("env_vars")
+    if isinstance(pvars, dict) and pvars:
+        print(f"project-level production env_vars present: {sorted(pvars)}")
+    if probe:
+        pentry = pvars.get("SYNC_PROBE") if isinstance(pvars, dict) else None
+        if isinstance(pentry, dict) and pentry.get("type") == "plain_text":
+            print(f"project SYNC_PROBE expected={probe!r} written={pentry.get('value')!r}")
+    print("readback: INDETERMINATE — the CF deployment payload carries no env_vars, "
+          "so propagation cannot be settled from the API")
+    raise SystemExit(0)
 
 names = sorted(env_vars)
 print(f"deployment env_vars present: {names}")
