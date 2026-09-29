@@ -18,6 +18,7 @@ import {
   CONFIGURATOR_FRAMES,
   CONFIGURATOR_SIZES,
   DEFAULT_FRAME_FINISH,
+  DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
 } from "@/lib/print-copy";
 
@@ -33,7 +34,7 @@ export function PrintConfigurator({
   photoSlug: string;
   title: string;
 }) {
-  const [format, setFormat] = useState<PrintFormat>("giclee");
+  const [format, setFormat] = useState<PrintFormat>(DEFAULT_PRINT_FORMAT);
   const [size, setSize] = useState<PrintSize>(DEFAULT_PRINT_SIZE);
   const [frame, setFrame] = useState<FrameFinish>(DEFAULT_FRAME_FINISH);
   const [destinationCountry, setDestinationCountry] =

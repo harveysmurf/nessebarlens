@@ -7,6 +7,7 @@ import {
   CONFIGURATOR_FRAMES,
   CONFIGURATOR_SIZES,
   DEFAULT_FRAME_FINISH,
+  DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
 } from "../src/lib/print-copy.ts";
 import { sizeLabel } from "../src/lib/pricing.ts";
@@ -81,6 +82,7 @@ test("the component declares no option lists of its own", () => {
   }
   // The opening selection has to be one of the options, or the select opens
   // on a value the list does not contain.
+  assert.ok(SELLABLE_FORMATS.includes(DEFAULT_PRINT_FORMAT));
   assert.ok(PRINT_SIZES.includes(DEFAULT_PRINT_SIZE));
   assert.ok(FRAME_FINISHES.includes(DEFAULT_FRAME_FINISH));
   assert.ok(source.includes("CONFIGURATOR_FORMATS"));

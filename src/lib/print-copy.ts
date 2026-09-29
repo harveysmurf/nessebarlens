@@ -60,12 +60,13 @@ export const CONFIGURATOR_SIZES = PRINT_SIZES.map((size) => ({
 /**
  * What the configurator opens on.
  *
- * These were two literals in the component's useState calls — the last
+ * These were three literals in the component's useState calls — the last
  * hand-typed catalog values in the file. A size added or removed would leave
  * the default selecting an option that is not in the list, which React reports
  * as an uncontrolled-to-controlled warning rather than as the configuration
  * error it is. Exported from here so a test can assert they are members.
  */
+export const DEFAULT_PRINT_FORMAT: PrintFormat = "giclee";
 export const DEFAULT_PRINT_SIZE: PrintSize = "50x70";
 export const DEFAULT_FRAME_FINISH: FrameFinish = "black";
 
