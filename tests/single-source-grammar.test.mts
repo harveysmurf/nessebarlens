@@ -16,9 +16,26 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import ts from "typescript";
-import { filmLookClass } from "../src/lib/photos.ts";
+import { filmLookClass, type Photo } from "../src/lib/photos.ts";
 
 const root = path.join(import.meta.dirname, "..");
+
+// Derived from the module under test rather than spelled out here, so the
+// guard cannot drift away from the record it is guarding.
+const FILM_LOOKS: NonNullable<Photo["filmLook"]>[] = [
+  "contrast",
+  "sepia",
+  "grayscale",
+];
+const FILM_LOOK_CLASSES: string[] = FILM_LOOKS.map((look) => {
+  const cls = filmLookClass(look);
+  // If a look stopped mapping to a class, the walk below would quietly stop
+  // guarding that look instead of failing, so assert the input is usable.
+  // Truthiness, not notEqual: a look that stopped mapping returns undefined,
+  // and includes(undefined) silently stops matching rather than failing.
+  assert.ok(cls, `${look} maps to no class; the walk would be vacuous for it`);
+  return cls;
+});
 
 function sourceFiles(dir: string): string[] {
   const out: string[] = [];
@@ -160,38 +177,64 @@ test("no object shape is declared in two modules", () => {
   assert.deepEqual(duplicates, []);
 });
 
-test("the film-look filter class is not re-spelled in any tsx file", () => {
+test("a film-look class is not re-spelled outside its owning module", () => {
   // Same bug shape as the grammars above: the class was hand-rolled in every
   // page and component, and the copies agreed until one of them didn't. A
   // behavioural test could not catch it, because before the rename every copy
   // was correct. This is the source walk that can.
+  //
+  // All three classes, not just contrast: sepia and grayscale were duplicated
+  // in the same two files, and a guard that covers only the instance you
+  // happened to notice does not guard the class of bug.
+  const OWNER = "src/lib/photos.ts";
+  const owners: string[] = [];
   const offenders: string[] = [];
   for (const file of sourceFiles(path.join(root, "src"))) {
-    if (!file.endsWith(".tsx")) continue;
+    const rel = relative(file);
     const text = fs.readFileSync(file, "utf8");
     const source = ts.createSourceFile(
       file,
       text,
       ts.ScriptTarget.Latest,
       true,
-      ts.ScriptKind.TSX,
+      file.endsWith(".tsx") ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
     );
     const visit = (node: ts.Node): void => {
-      if (ts.isStringLiteral(node) && node.text.includes("contrast-125")) {
-        const { line } = source.getLineAndCharacterOfPosition(node.getStart());
-        offenders.push(`${relative(file)}:${line + 1}`);
+      if (ts.isStringLiteral(node)) {
+        const look = FILM_LOOK_CLASSES.find((cls) => node.text.includes(cls));
+        if (look) {
+          const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+          (rel === OWNER ? owners : offenders).push(`${look} at ${rel}:${line + 1}`);
+        }
       }
       ts.forEachChild(node, visit);
     };
     visit(source);
   }
-  assert.deepEqual(offenders, [], `filter contrast-125 re-spelled in tsx: ${offenders.join(", ")}`);
+  assert.deepEqual(
+    offenders,
+    [],
+    `film-look class declared outside ${OWNER}: ${offenders.join(", ")}`,
+  );
+  // The owner must still declare all three, or the walk above is vacuous
+  // because someone emptied the record.
+  for (const cls of FILM_LOOK_CLASSES) {
+    assert.ok(
+      owners.some((o) => o.startsWith(cls)),
+      `${cls} not declared in ${OWNER}`,
+    );
+  }
 });
 
-test("filmLookClass is the single source of every film-look class", () => {
-  assert.equal(filmLookClass("contrast"), "filter contrast-125");
-  assert.equal(filmLookClass("sepia"), "filter sepia");
-  assert.equal(filmLookClass("grayscale"), "filter grayscale");
+test("filmLookClass maps every look in the union, and nothing else", () => {
+  for (const look of FILM_LOOKS) {
+    assert.notEqual(filmLookClass(look), "", look);
+  }
+  // Exact classes, not just non-empty: a Tailwind class that does not exist
+  // renders as no filter at all, and the source walk would still be happy.
+  assert.deepEqual(filmLookClass("contrast"), "filter contrast-125");
+  assert.deepEqual(filmLookClass("sepia"), "filter sepia");
+  assert.deepEqual(filmLookClass("grayscale"), "filter grayscale");
   assert.equal(filmLookClass(undefined), "");
 });
 
