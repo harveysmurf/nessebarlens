@@ -66,8 +66,9 @@ export function galleryImage(slug: string): GalleryImage | null {
     return { src: ladder.src, srcSet: ladder.srcSet, source: "ladder" };
   }
 
+  // The slug is already known good here, so this cannot be null.
   return {
-    src: `/placeholders/${slug}.jpg?v=${PLACEHOLDER_VERSION}`,
+    src: placeholderPhotoSrc(slug)!,
     srcSet: null,
     source: "placeholder",
   };

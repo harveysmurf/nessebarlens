@@ -8,8 +8,15 @@
  * should ever name one.
  */
 
+// The name itself is declared once, next to the derivative ladder that
+// writes into it — this module is about *what counts as pointing at
+// masters*, not about spelling the bucket. The regex below stays a literal:
+// tests/single-source-grammar.test.mts pins its exact source here, and
+// rebuilding it from the constant would hide the marker from that test.
+import { MASTERS_BUCKET_NAME } from "./derivative-ladder";
+
 /** Private bucket name that must never appear in a URL we hand out. */
-export const MASTERS_BUCKET = "nessebar-lens-masters";
+export const MASTERS_BUCKET = MASTERS_BUCKET_NAME;
 
 /** Any casing of the master key prefix or bucket name. */
 const MASTER_MARKER = /prints\/|nessebar-lens-masters/i;

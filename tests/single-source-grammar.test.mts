@@ -39,7 +39,7 @@ function sourceFiles(dir: string): string[] {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) {
       out.push(...sourceFiles(full));
-    } else if (/\.tsx?$/.test(entry.name)) {
+    } else if (/\.(tsx?|mjs)$/.test(entry.name)) {
       out.push(full);
     }
   }
@@ -52,10 +52,23 @@ function relative(file: string): string {
   return path.relative(root, file);
 }
 
+/**
+ * src/ and scripts/ together. The ops scripts are excluded for no reason
+ * other than that they used to be: an ingest script that re-inlines the
+ * ladder flag's `true|1` grammar would refuse runs the site is serving from,
+ * and no src-only test can see that.
+ */
+function allSourceFiles(): string[] {
+  return [
+    ...sourceFiles(path.join(root, "src")),
+    ...sourceFiles(path.join(root, "scripts")),
+  ];
+}
+
 /** Every regex literal in the tree, as `file:line` occurrences of its source. */
 function regexLiterals(): Map<string, Declared[]> {
   const bySource = new Map<string, Declared[]>();
-  for (const file of sourceFiles(path.join(root, "src"))) {
+  for (const file of allSourceFiles()) {
     const text = fs.readFileSync(file, "utf8");
     const source = ts.createSourceFile(
       file,
@@ -88,7 +101,7 @@ function shapeDeclarations(): Map<string, Declared[]> {
     list.push({ file: relative(file), line });
     byName.set(name, list);
   };
-  for (const file of sourceFiles(path.join(root, "src"))) {
+  for (const file of allSourceFiles()) {
     const text = fs.readFileSync(file, "utf8");
     const source = ts.createSourceFile(
       file,

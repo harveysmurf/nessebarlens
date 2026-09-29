@@ -20,6 +20,7 @@
  */
 
 import {
+  derivativeKey,
   WEB_DEFAULT_WIDTH,
   WEB_DERIVATIVE_WIDTHS,
   type WebDerivativeWidth,
@@ -76,7 +77,10 @@ export function webDerivativeUrls(slug: string): WebDerivativeUrls | null {
   const base = webImagesBase();
   if (!base) return null;
 
-  const path = (w: WebDerivativeWidth) => `${base}/${slug}/${w}.jpg`;
+  // derivativeKey owns the {slug}/{rung}.jpg shape; this module only adds
+  // the base. Spelling the path again here is the one copy that could
+  // disagree with the key the ingest writes.
+  const path = (w: WebDerivativeWidth) => `${base}/${derivativeKey(slug, w)}`;
   const urls = Object.fromEntries(
     WEB_DERIVATIVE_WIDTHS.map((w) => [w, path(w)]),
   ) as Record<WebDerivativeWidth, string>;

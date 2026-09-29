@@ -1121,6 +1121,13 @@ test("checkout: a physical order quotes, locks the country, and ships a rate", a
     assert.equal(params["metadata[sku]"], "GLOBAL-FAP-12X16");
     assert.equal(params["metadata[photoSlug]"], "dawn");
     assert.equal(params["shipping_address_collection[allowed_countries][0]"], "BG");
+    // The image Stripe shows is the same URL the order body carries, built
+    // by the one helper. It was asserted nowhere, so the two spellings of it
+    // could have drifted without any test noticing.
+    assert.equal(
+      params["line_items[0][price_data][product_data][images][0]"],
+      `${SITE}/placeholders/dawn.jpg`,
+    );
     assert.equal(params["shipping_options[0][shipping_rate_data][fixed_amount][amount]"], "499");
   } finally {
     globalThis.fetch = originalFetch;

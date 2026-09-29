@@ -6,6 +6,7 @@ import {
 } from "@/lib/ship-to-countries";
 import { getPhoto } from "@/lib/photos";
 import { DIGITAL_PRICE_EUR, eurToCents, formatLabel } from "@/lib/pricing";
+import { placeholderAssetUrl } from "@/lib/prodigi-order";
 import { quotePhysical } from "@/lib/prodigi-quote";
 import { isProdigiUnconfigured } from "@/lib/prodigi-config";
 import { canSignMasterAsset } from "@/lib/print-asset";
@@ -73,7 +74,9 @@ export async function POST(request: Request) {
   }
 
   const base = siteUrl();
-  const placeholderImage = `${base}/placeholders/${photo.slug}.jpg`;
+  // The same helper the Prodigi order body uses, so the image Stripe shows
+  // and the asset the order carries cannot drift apart.
+  const placeholderImage = placeholderAssetUrl(photo.slug);
 
   let stripe;
   try {

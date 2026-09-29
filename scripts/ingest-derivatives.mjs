@@ -47,6 +47,12 @@ import {
   assertUploadIsSafe,
   planDerivatives,
 } from "../src/lib/derivative-ladder.ts";
+// envFlag, not a second copy of its `true|1` grammar: this file already
+// reaches into src/, and a hand-inlined regex here would be the one place
+// where the ladder flag accepts a value the site would read as false — so
+// the guard would refuse a run the site is happily serving from, or allow
+// one it is not.
+import { envFlag } from "../src/lib/env.ts";
 
 const DROP_DIR = "ingest";
 /** A week, never `immutable`: a re-ingest overwrites the same key, and an
@@ -125,9 +131,7 @@ async function main() {
   assertUploadIsSafe({
     mastersBucket: MASTERS_BUCKET_NAME,
     webBucket: WEB_BUCKET_NAME,
-    ladderEnabled: /^(?:true|1)$/i.test(
-      (process.env.NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED ?? "").trim(),
-    ),
+    ladderEnabled: envFlag("NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED"),
   });
 
   const found = await readDrops(DROP_DIR);
