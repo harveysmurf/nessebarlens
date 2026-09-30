@@ -1198,9 +1198,8 @@ test("a physical order with shipping but no Prodigi key waits, retryably, for th
 // is asserted at its own boundary so a change to one is a deliberate edit that
 // names the field, rather than a shared "field length" that moves in silence.
 test("parseRecipient truncates each field at its own cap", () => {
-  const long = (n: number) => "x".repeat(n);
-  const at = (n: number) => long(n);
-  const over = (n: number) => long(n + 1);
+  const at = (n: number) => "x".repeat(n);
+  const over = (n: number) => at(n) + "x";
 
   const recipient = parseRecipient(
     {
@@ -1224,8 +1223,8 @@ test("parseRecipient truncates each field at its own cap", () => {
   assert.equal(recipient.line2, at(128));
   assert.equal(recipient.city, at(128));
   assert.equal(recipient.state, at(128));
-  // Postcode and phone are both 32 today, but they are separate caps: this
-  // test would still hold if one were raised alone.
+  // Postcode and phone are both 32 today, but they are separate caps: raising
+  // either one alone must break the assertion above, which is the point.
   assert.equal(recipient.postcode, at(32));
   assert.equal(recipient.phone, at(32));
   // Email is 254.
