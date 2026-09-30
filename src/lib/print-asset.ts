@@ -21,6 +21,16 @@ import { siteUrl } from "./stripe";
 /** Prodigi may re-fetch during fulfillment; start at 7d, tighten after a live order. */
 export const PRINT_ASSET_TTL_SECONDS = 7 * 24 * 60 * 60;
 
+/**
+ * Slack on top of PRINT_ASSET_TTL_SECONDS when rejecting an absurd future
+ * `exp`, for two reasons that are not the TTL's: the verifying Worker's clock
+ * can run behind the signing one, and the URL may have been generated just
+ * before the current second rolled over. Deliberately NOT folded into the TTL
+ * — raising the TTL must not silently widen the skew allowance a verifier
+ * accepts, which is a separate security decision.
+ */
+const CLOCK_SKEW_PAD_SECONDS = 300;
+
 export type PrintAssetVerifyOk = { ok: true; slug: string };
 export type PrintAssetVerifyErr = {
   ok: false;
@@ -153,8 +163,8 @@ export async function verifyPrintAssetRequest(
   if (exp < nowSec) {
     return { ok: false, status: 401, error: "expired" };
   }
-  // Reject absurd future expiry (clock skew + max TTL + small pad).
-  if (exp > nowSec + PRINT_ASSET_TTL_SECONDS + 300) {
+  // Reject absurd future expiry: max TTL, plus the skew allowance.
+  if (exp > nowSec + PRINT_ASSET_TTL_SECONDS + CLOCK_SKEW_PAD_SECONDS) {
     return { ok: false, status: 400, error: "invalid-exp" };
   }
 
