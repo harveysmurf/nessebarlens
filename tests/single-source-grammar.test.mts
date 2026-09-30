@@ -49,9 +49,12 @@ function sourceFiles(dir: string): string[] {
   return out;
 }
 
+/** Its own type rather than an optional field on Declared, which the regex and shape walks never carry. */
+type LiteralSite = { file: string; line: number; literal: string };
+
 /** Every string literal in src/, as `file:line`, from the AST rather than a grep. */
-function stringLiteralSites(): Declared[] {
-  const sites: Declared[] = [];
+function stringLiteralSites(): LiteralSite[] {
+  const sites: LiteralSite[] = [];
   for (const file of sourceFiles(path.join(root, "src"))) {
     const source = ts.createSourceFile(
       file,
