@@ -344,3 +344,26 @@ test("the stream has exactly one gate: a key that is not a catalog master never 
   }
   assert.equal(called, 0, "no lookup may be attempted for a non-catalog slug");
 });
+
+// The future-exp bound is TTL + a clock-skew pad. Both halves matter and the
+// pad is not part of the TTL, so the boundary is asserted at the exact second:
+// one second past it must be rejected, which is what makes the pad a stated
+// number rather than an unbounded fudge factor.
+test("a future exp is accepted exactly up to TTL plus the skew pad, and no further", async () => {
+  const nowMs = Date.parse("2026-09-28T12:00:00.000Z");
+  const nowSec = Math.floor(nowMs / 1000);
+  const PAD = 300;
+
+  const at = async (exp: number) =>
+    verifyPrintAssetRequest("dawn", String(exp), "0".repeat(64), { secret: SECRET, nowMs });
+
+  // Inside the bound: rejected on signature, not on the exp window. A wrong
+  // signature is the only way to probe the window without forging a valid one.
+  const edge = await at(nowSec + PRINT_ASSET_TTL_SECONDS + PAD);
+  assert.equal(edge.ok, false);
+  if (!edge.ok) assert.equal(edge.error, "bad-signature");
+
+  const past = await at(nowSec + PRINT_ASSET_TTL_SECONDS + PAD + 1);
+  assert.equal(past.ok, false);
+  if (!past.ok) assert.equal(past.error, "invalid-exp");
+});
