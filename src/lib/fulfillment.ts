@@ -39,6 +39,15 @@ export type { PrintFormat };
 export type OrderFormat = PrintFormat | "unknown";
 export type OrderStatus = "paid" | "paid-unfulfilled";
 
+/**
+ * Internal marker reason for a physical order that decideFulfillment has
+ * accepted but that has not reached Prodigi yet. It is written once in
+ * buildRecord and read once in the Prodigi trigger, and `reason` is
+ * `string | null`, so a one-sided rename would type-check and strand every paid
+ * print as paid-unfulfilled forever. Single-sourced so the two cannot drift.
+ */
+export const AWAITING_PRODIGI_REASON = "awaiting-prodigi";
+
 export type { OrderRecipient };
 
 export type OrderRecord = {
@@ -199,7 +208,7 @@ export async function fulfillCheckoutSession(
 
   if (
     record.status === "paid-unfulfilled" &&
-    (record.reason === "awaiting-prodigi" ||
+    (record.reason === AWAITING_PRODIGI_REASON ||
       isRetryableProdigiReason(record.reason))
   ) {
     const create = input.createOrder ?? createProdigiOrder;
@@ -567,7 +576,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     ...shell,
     format,
     status: "paid-unfulfilled",
-    reason: "awaiting-prodigi",
+    reason: AWAITING_PRODIGI_REASON,
     recipient,
   };
 }

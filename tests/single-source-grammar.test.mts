@@ -19,6 +19,7 @@ import ts from "typescript";
 import { MASTERS_BUCKET_NAME } from "../src/lib/derivative-ladder.ts";
 import { MASTERS_BUCKET, MASTER_MARKER } from "../src/lib/master-guard.ts";
 import { FILM_LOOKS, filmLookClass } from "../src/lib/photos.ts";
+import { AWAITING_PRODIGI_REASON } from "../src/lib/fulfillment.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
@@ -402,4 +403,74 @@ test("no module re-exports a single-source constant under a second name", () => 
     const src = fs.readFileSync(path.join(root, owner), "utf8");
     assert.match(src, new RegExp(`export const ${name}\\b`), name);
   }
+});
+
+test("the awaiting-prodigi reason marker is spelled once, in fulfillment.ts", () => {
+  // `reason` is `string | null`, so a one-sided rename of this marker
+  // type-checks: the writer keeps writing one spelling and the Prodigi
+  // trigger keeps comparing against another, and every paid print is then
+  // stuck at paid-unfulfilled with no log line anywhere. A behavioural test
+  // cannot see that — before the drift both sides are correct — so pin the
+  // spelling itself: exactly one literal in src/, and it is the one the
+  // constant holds.
+  const OWNER = "src/lib/fulfillment.ts";
+  // Imported, not re-typed: the guard has to track whatever the constant is
+  // called now, and a hand-written name here would drift into a test that
+  // passes because it guarded a spelling nobody uses.
+  const VALUE = AWAITING_PRODIGI_REASON;
+  const NAME = `${VALUE.toUpperCase().replaceAll("-", "_")}_REASON`;
+  // The walk keys off the identifier, so the two must be the same word in the
+  // two spellings. Asserted rather than assumed: if the value is ever renamed
+  // without the name following, this fails here instead of quietly finding
+  // zero uses and calling that a pass.
+  assert.equal(NAME, "AWAITING_PRODIGI_REASON");
+  const sites: string[] = [];
+  const uses: string[] = [];
+  for (const file of sourceFiles(path.join(root, "src"))) {
+    const rel = relative(file);
+    const source = ts.createSourceFile(
+      file,
+      fs.readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const lineOf = (node: ts.Node): number =>
+      source.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+    const visit = (node: ts.Node): void => {
+      if (
+        (ts.isStringLiteral(node) ||
+          ts.isNoSubstitutionTemplateLiteral(node)) &&
+        node.text === VALUE
+      ) {
+        sites.push(`${rel}:${lineOf(node)}`);
+      }
+      if (ts.isIdentifier(node) && node.text === NAME) {
+        // The declaration's own name node is not a use.
+        const parent = node.parent;
+        const isDeclName =
+          parent &&
+          ts.isVariableDeclaration(parent) &&
+          parent.name === node;
+        if (!isDeclName) {
+          uses.push(`${rel}:${lineOf(node)}`);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  // Non-vacuous in both directions: the literal must exist exactly once, in
+  // the owner, and both the writer and the reader must reference the
+  // constant. Zero literals would mean the constant is not the marker's
+  // value; a single use would mean one of the two sides was inlined again.
+  assert.deepEqual(
+    sites.map((s) => s.split(":")[0]),
+    [OWNER],
+    `"awaiting-prodigi" spelled outside ${OWNER}: ${sites.join(", ")}`,
+  );
+  const owned = uses.filter((u) => u.startsWith(`${OWNER}:`));
+  assert.ok(
+    owned.length >= 2,
+    `expected the writer and the reader to use ${NAME}, saw ${owned.length}`,
+  );
 });
