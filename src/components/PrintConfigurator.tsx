@@ -169,35 +169,46 @@ export function PrintConfigurator({
       </div>
 
       <div className="space-y-4 text-xs">
-        <div>
-          <label className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-2">
+        <fieldset>
+          <legend className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-2">
             Supported Prodigi Option
-          </label>
+          </legend>
           <div className="grid grid-cols-2 gap-2">
             {CONFIGURATOR_FORMATS.map((f) => {
               const active = format === f.id;
               return (
-                <button
+                // A real radio input, visually hidden behind the label: the
+                // group and "one is selected" semantics come from the browser
+                // instead of a hand-rolled toggle button, and arrow-key
+                // navigation works without extra key handling.
+                <label
                   key={f.id}
-                  type="button"
-                  aria-pressed={active}
-                  onClick={() => setFormat(f.id)}
-                  className={`p-3 rounded text-left transition-colors ${
+                  htmlFor={`format-option-${f.id}`}
+                  className={`p-3 rounded text-left transition-colors cursor-pointer has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-stone-900 ${
                     active
                       ? "border-2 border-stone-900"
                       : "border border-stone-200 hover:border-stone-400"
                   }`}
                 >
+                  <input
+                    id={`format-option-${f.id}`}
+                    type="radio"
+                    name="print-format"
+                    value={f.id}
+                    checked={active}
+                    onChange={() => setFormat(f.id)}
+                    className="sr-only"
+                  />
                   <div className="font-medium text-stone-900">{f.title}</div>
                   <div className="text-[10px] text-stone-400">
                     {f.sub}
                     {f.id === "digital" ? ` · €${DIGITAL_PRICE_EUR}` : ""}
                   </div>
-                </button>
+                </label>
               );
             })}
           </div>
-        </div>
+        </fieldset>
 
         {!isDigital && (
           <div>

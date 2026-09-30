@@ -90,17 +90,46 @@ test("the component declares no option lists of its own", () => {
   assert.ok(source.includes("CONFIGURATOR_FRAMES"));
 });
 
-test("the format buttons expose their selection with aria-pressed", () => {
+test("the format options are a real radio group", () => {
   // The .tsx file is not importable from node --test, so this checks the
-  // source: the pressed state must come from the same `active` predicate that
-  // drives the border, so a screen reader reports the selection a sighted
-  // user sees. Hardcoded or inverted values here are the whole bug.
+  // source. The options used to be four independent buttons carrying
+  // aria-pressed, which announces "four toggle buttons" rather than "pick
+  // one of these". A native radio group gives the group name, the selection
+  // and arrow-key navigation from the browser, so what we assert is that the
+  // group is still driven by the same `active` predicate that draws the
+  // border — a hardcoded or inverted `checked` is the whole bug.
   const source = fs.readFileSync(
     new URL("../src/components/PrintConfigurator.tsx", import.meta.url),
     "utf8",
   );
   assert.match(source, /const active = format === f\.id;/);
-  assert.match(source, /aria-pressed=\{active\}/);
+  assert.match(source, /type="radio"/);
+  assert.match(source, /checked=\{active\}/);
+  assert.match(source, /onChange=\{\(\) => setFormat\(f\.id\)\}/);
+  // A group without a shared name is not a group: every option must be part
+  // of the same named set for exclusivity and arrow keys to work.
+  assert.match(source, /name="print-format"/);
+  assert.doesNotMatch(source, /aria-pressed/);
+});
+
+test("the format radio inputs have ids unique within the file", () => {
+  // Each option is a label + input pair, and htmlFor/for is what binds them.
+  // A duplicated id silently breaks that binding, and React will not warn.
+  const source = fs.readFileSync(
+    new URL("../src/components/PrintConfigurator.tsx", import.meta.url),
+    "utf8",
+  );
+  const ids = [...source.matchAll(/\bid="([^"]+)"/g)].map((m) => m[1]);
+  const unique = new Set(ids);
+  assert.equal(ids.length, unique.size, `duplicate id in the file: ${ids.join(", ")}`);
+  assert.ok(
+    source.includes('htmlFor={`format-option-${f.id}`}'),
+    "the label should point at the input it labels",
+  );
+  assert.ok(
+    source.includes('id={`format-option-${f.id}`}'),
+    "the option input should be the one the label points at",
+  );
 });
 
 test("the checkout redirect is refused unless it is an https URL", async () => {
