@@ -263,3 +263,21 @@ const FILM_LOOK_CLASS: Record<FilmLook, string> = {
 export function filmLookClass(look: Photo["filmLook"]): string {
   return look ? FILM_LOOK_CLASS[look] : "";
 }
+
+/**
+ * Whether a photo's gallery tile is matted dark.
+ *
+ * The home and story pages each carried a hand-written `dark` boolean next to
+ * per-tile copy, while PhotoCard derived the same thing from
+ * `category === "film"`. The two were the drift, not PhotoCard: adding a
+ * category, or reordering the tiles, would have left the hand-written flags
+ * describing a photo the tile no longer shows.
+ *
+ * Derived from the category, not from the presence of a filmLook. filmLook
+ * drives the CSS filter, the dark matte is a gallery convention, and they
+ * happen to agree today — tying the matte to the filter would make a future
+ * unfiltered film photo render on a pale tile.
+ */
+export function isFilmPhoto(photo: Pick<Photo, "category">): boolean {
+  return photo.category === "film";
+}

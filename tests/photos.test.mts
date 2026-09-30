@@ -4,6 +4,7 @@ import {
   PHOTOS,
   categoryHref,
   getPhoto,
+  isFilmPhoto,
   photosByCategory,
   type PhotoCategory,
 } from "../src/lib/photos.ts";
@@ -59,4 +60,50 @@ test("categoryHref is a complete map, so a new category cannot render href=undef
   for (const photo of PHOTOS) {
     assert.match(categoryHref(photo.category), /^\/[a-z-]+$/, photo.category);
   }
+});
+
+// The dark matte on a gallery tile was hand-written as a `dark` boolean beside
+// each tile's copy on the home and story pages, while PhotoCard derived it.
+// The derivation is now the only spelling, so the drift it replaces would be
+// invisible: a fourth category, or a tile repointed at a photo of another
+// category, would render the wrong matte with nothing failing.
+test("isFilmPhoto is the category, checked against every photo", () => {
+  for (const photo of PHOTOS) {
+    assert.equal(
+      isFilmPhoto(photo),
+      photo.category === "film",
+      `${photo.slug} (${photo.category})`,
+    );
+  }
+  // Non-vacuous in both directions: the walk above is a real comparison, not a
+  // walk over photos that are all one thing.
+  assert.ok(PHOTOS.some((p) => isFilmPhoto(p)), "no film photo to check");
+  assert.ok(PHOTOS.some((p) => !isFilmPhoto(p)), "no non-film photo to check");
+  // A category added to the union but not handled by the helper must not read
+  // as film. Typed as PhotoCategory via a cast, because the point is that a
+  // new union member arrives here before anyone updates isFilmPhoto.
+  assert.equal(
+    isFilmPhoto({ category: "panorama" as PhotoCategory }),
+    false,
+    "an unhandled new category must not fall into the film matte",
+  );
+});
+
+test("every film photo carries a film look, so the filter agrees with the matte", () => {
+  // isFilmPhoto deliberately reads the category, not the presence of a
+  // filmLook, because the matte is a gallery convention and the filter is a
+  // rendering one. They coincide today; this test is what makes the
+  // coincidence a checked fact instead of an assumption, so the day a film
+  // photo ships unfiltered someone sees this fail and can decide whether the
+  // matte should follow.
+  for (const photo of photosByCategory("film")) {
+    assert.ok(photo.filmLook, `${photo.slug} is film with no film look`);
+  }
+  // And the converse, so the check above cannot pass on an empty category.
+  for (const photo of PHOTOS) {
+    if (!isFilmPhoto(photo)) {
+      assert.equal(photo.filmLook, undefined, `${photo.slug} has a film look`);
+    }
+  }
+  assert.ok(photosByCategory("film").length > 0);
 });
