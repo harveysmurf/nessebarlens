@@ -4,6 +4,10 @@ import {
   parseOrderRecord,
   resolveDownload,
 } from "@/lib/fulfillment";
+import {
+  ORDERS_KV_UNAVAILABLE_ERROR,
+  ORDERS_KV_UNAVAILABLE_STATUS,
+} from "@/lib/orders-kv";
 import { NO_STORE_HEADERS } from "@/lib/private-headers";
 import { readWorkerBindings } from "@/lib/worker-bindings";
 
@@ -22,8 +26,8 @@ export async function GET(request: Request) {
   const bindings = await readWorkerBindings();
   if (!bindings.ORDERS) {
     return NextResponse.json(
-      { error: "orders-kv-unavailable" },
-      { status: 503, headers: NO_STORE_HEADERS },
+      { error: ORDERS_KV_UNAVAILABLE_ERROR },
+      { status: ORDERS_KV_UNAVAILABLE_STATUS, headers: NO_STORE_HEADERS },
     );
   }
 
@@ -32,8 +36,8 @@ export async function GET(request: Request) {
     raw = await bindings.ORDERS.get(sessionId);
   } catch {
     return NextResponse.json(
-      { error: "orders-kv-unavailable" },
-      { status: 503, headers: NO_STORE_HEADERS },
+      { error: ORDERS_KV_UNAVAILABLE_ERROR },
+      { status: ORDERS_KV_UNAVAILABLE_STATUS, headers: NO_STORE_HEADERS },
     );
   }
 
