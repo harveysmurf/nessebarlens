@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
+import { readJsonBody } from "@/lib/json-body";
 import { parseQuoteBody } from "@/lib/checkout-body";
 import { DEFAULT_SHIPPING_COUNTRY } from "@/lib/ship-to-countries";
 import { quotePhysical } from "@/lib/prodigi-quote";
 import { prodigiErrorStatus } from "@/lib/prodigi-config";
 
 export async function POST(request: Request) {
-  let raw: unknown;
-  try {
-    raw = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  const body = await readJsonBody(request);
+  if (!body.ok) {
+    return NextResponse.json({ error: body.error }, { status: body.status });
   }
+  const raw = body.value;
 
   const parsed = parseQuoteBody(raw);
   if ("error" in parsed) {
