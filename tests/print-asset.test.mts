@@ -352,6 +352,8 @@ test("the stream has exactly one gate: a key that is not a catalog master never 
 test("a future exp is accepted exactly up to TTL plus the skew pad, and no further", async () => {
   const nowMs = Date.parse("2026-09-28T12:00:00.000Z");
   const nowSec = Math.floor(nowMs / 1000);
+  // Mirrors CLOCK_SKEW_PAD_SECONDS in src/lib/print-asset.ts, which is
+  // module-internal and so not importable here; a second spelling on purpose.
   const PAD = 300;
 
   const at = async (exp: number) =>
