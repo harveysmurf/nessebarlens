@@ -20,10 +20,7 @@ import { MASTERS_BUCKET_NAME } from "../src/lib/derivative-ladder.ts";
 import { MASTERS_BUCKET, MASTER_MARKER } from "../src/lib/master-guard.ts";
 import { FILM_LOOKS, filmLookClass } from "../src/lib/photos.ts";
 import { AWAITING_PRODIGI_REASON } from "../src/lib/fulfillment.ts";
-import {
-  ORDERS_KV_UNAVAILABLE_ERROR,
-  ORDERS_KV_UNAVAILABLE_STATUS,
-} from "../src/lib/orders-kv.ts";
+import { ORDERS_KV_UNAVAILABLE_ERROR } from "../src/lib/orders-kv.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
@@ -544,6 +541,7 @@ test("the orders-kv rejection is spelled once, in orders-kv.ts", () => {
   );
   // Non-vacuous: the owner must actually hold the literal, or the deepEqual
   // above would pass on an empty list after a rename of the constant's value.
+  // The 503 needs no equivalent here — the route tests assert the status
+  // against the live response, which is the side that can actually be wrong.
   assert.equal(sites.length, 1);
-  assert.equal(ORDERS_KV_UNAVAILABLE_STATUS, 503);
 });
