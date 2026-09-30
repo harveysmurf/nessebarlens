@@ -1185,7 +1185,13 @@ test("checkout: a physical order quotes, locks the country, and ships a rate", a
     // or the paid amount will not match the record.
     const params = sessionParams as unknown as Record<string, string>;
     assert.equal(params["metadata[shippingEur]"], "4.99");
-    assert.equal(params["metadata[merchandiseEur]"], "11.4");
+    // quoteEur, not merchandiseEur: the latter was a duplicate of the same
+    // number written only for physical orders, and fulfillment.ts still reads
+    // it as a fallback for sessions created before it was redundant. Asserted
+    // in both directions so a re-add and a silent removal of quoteEur both
+    // fail here rather than at the amount check in the webhook.
+    assert.equal(params["metadata[quoteEur]"], "11.4");
+    assert.equal("metadata[merchandiseEur]" in params, false);
     assert.equal(params["metadata[sku]"], "GLOBAL-FAP-12X16");
     assert.equal(params["metadata[photoSlug]"], "dawn");
     assert.equal(params["shipping_address_collection[allowed_countries][0]"], "BG");
