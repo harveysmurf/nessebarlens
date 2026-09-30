@@ -31,6 +31,7 @@ export function SiteHeader() {
               <Link
                 key={item.href}
                 href={item.href}
+                aria-current={active ? "page" : undefined}
                 className={`py-2 border-b-2 transition-all ${
                   active
                     ? "border-stone-900 text-stone-900"
