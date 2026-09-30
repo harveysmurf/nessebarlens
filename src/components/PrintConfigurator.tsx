@@ -23,13 +23,13 @@ import {
   DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
 } from "@/lib/print-copy";
+import {
+  checkoutUrl,
+  errorMessage,
+  isLiveQuote,
+  type LiveQuote,
+} from "@/lib/api-payloads";
 import { isFrameFinishValue, isPrintSize } from "@/lib/sku-map";
-import { HTTPS_URL_PATTERN } from "@/lib/url-patterns";
-
-type LiveQuote = {
-  merchandiseEur: number;
-  shippingEur: number;
-};
 
 export function PrintConfigurator({
   photoSlug,
@@ -75,9 +75,16 @@ export function PrintConfigurator({
           body: JSON.stringify(body),
           signal: controller.signal,
         });
-        const data = (await res.json()) as LiveQuote & { error?: string };
+        // The quote payload arrives from the network, so it is read as unknown
+        // and each field the UI consumes is checked before use. A cast here
+        // would only assert that the values are numbers; Number.isFinite is
+        // what keeps a NaN from rendering as €NaN at the two price labels.
+        const data: unknown = await res.json();
         if (!res.ok) {
-          throw new Error(data.error || "Quote failed");
+          throw new Error(errorMessage(data) ?? "Quote failed");
+        }
+        if (!isLiveQuote(data)) {
+          throw new Error("Quote failed");
         }
         setQuote({
           merchandiseEur: data.merchandiseEur,
@@ -133,18 +140,16 @@ export function PrintConfigurator({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data = (await res.json()) as { url?: string; error?: string };
-      if (!res.ok || !data.url) {
-        throw new Error(data.error || "Checkout failed");
+      const data: unknown = await res.json();
+      const url = checkoutUrl(data);
+      if (!res.ok || !url) {
+        throw new Error(errorMessage(data) ?? "Checkout failed");
       }
       // The redirect target arrives from the API response, so it is treated as
       // untrusted: anything that is not an absolute https URL is refused here,
       // on the same synchronous path, before the navigation happens. Reuses the
       // repo's HTTPS_URL_PATTERN rather than a second spelling of "is this https".
-      if (!HTTPS_URL_PATTERN.test(data.url)) {
-        throw new Error("Checkout failed");
-      }
-      window.location.href = data.url;
+      window.location.href = url;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Checkout failed");
       setBusy(false);

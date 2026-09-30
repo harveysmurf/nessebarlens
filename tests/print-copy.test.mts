@@ -142,11 +142,22 @@ test("the checkout redirect is refused unless it is an https URL", async () => {
     new URL("../src/components/PrintConfigurator.tsx", import.meta.url),
     "utf8",
   );
-  assert.match(source, /if \(!HTTPS_URL_PATTERN\.test\(data\.url\)\) \{/);
-  const guard = source.indexOf("!HTTPS_URL_PATTERN.test(data.url)");
-  const navigate = source.indexOf("window.location.href = data.url");
+  // The guard itself now lives in checkoutUrl(), which returns null unless the
+  // payload carries an absolute https string. What still has to hold at the
+  // call site is the ordering: the value is narrowed before it is navigated to,
+  // and a null narrowing can never reach the assignment.
+  const { checkoutUrl } = await import("../src/lib/api-payloads.ts");
+  assert.match(source, /const url = checkoutUrl\(data\);/);
+  assert.match(source, /if \(!res\.ok \|\| !url\) \{/);
+  const guard = source.indexOf("checkoutUrl(data)");
+  const navigate = source.indexOf("window.location.href = url");
   assert.ok(guard !== -1 && navigate !== -1, "both the guard and the navigation must exist");
   assert.ok(guard < navigate, "the https guard must run before the navigation");
+  assert.equal(checkoutUrl({ url: "http://checkout.stripe.com/c/pay" }), null);
+  assert.equal(
+    checkoutUrl({ url: "https://checkout.stripe.com/c/pay" }),
+    "https://checkout.stripe.com/c/pay",
+  );
 
   // The pattern itself: anything that is not absolute https is refused.
   for (const bad of [
