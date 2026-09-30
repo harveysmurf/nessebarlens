@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { filmLookClass, type Photo } from "@/lib/photos";
+import { filmLookClass, isFilmPhoto, type Photo } from "@/lib/photos";
 import { WebPhoto } from "@/components/WebPhoto";
 
 export function PhotoCard({ photo }: { photo: Photo }) {
@@ -9,7 +9,7 @@ export function PhotoCard({ photo }: { photo: Photo }) {
     <Link href={`/prints/${photo.slug}`} className="group cursor-pointer space-y-3 block">
       <div
         className={`aspect-[4/3] overflow-hidden rounded-sm ${
-          photo.category === "film" ? "bg-stone-900 p-1" : "bg-stone-200"
+          isFilmPhoto(photo) ? "bg-stone-900 p-1" : "bg-stone-200"
         }`}
       >
         <WebPhoto
@@ -25,7 +25,7 @@ export function PhotoCard({ photo }: { photo: Photo }) {
           <h3 className="font-serif text-base font-normal text-gallery-900">{photo.title}</h3>
           <p
             className={`text-[10px] text-stone-400 ${
-              photo.category === "film" ? "font-mono text-stone-500" : ""
+              isFilmPhoto(photo) ? "font-mono text-stone-500" : ""
             }`}
           >
             {photo.subtitle}

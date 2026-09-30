@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { WebPhoto } from "@/components/WebPhoto";
-import { filmLookClass, getPhoto } from "@/lib/photos";
+import { filmLookClass, getPhoto, isFilmPhoto } from "@/lib/photos";
 
 const CATEGORIES = [
   {
@@ -9,7 +9,6 @@ const CATEGORIES = [
     n: "01",
     title: "Fine Art",
     blurb: "Best high-end portfolio gallery captures",
-    dark: false,
   },
   {
     href: "/archive",
@@ -17,7 +16,6 @@ const CATEGORIES = [
     n: "02",
     title: "Archive",
     blurb: "Everyday street & journalistic moments",
-    dark: false,
   },
   {
     href: "/film",
@@ -25,7 +23,6 @@ const CATEGORIES = [
     n: "03",
     title: "Film Photography",
     blurb: "Authentic 35mm & 120 film stock negatives",
-    dark: true,
   },
 ] as const;
 
@@ -83,7 +80,7 @@ export default function HomePage() {
               <Link key={cat.href} href={cat.href} className="group space-y-3 block">
                 <div
                   className={`aspect-[4/3] overflow-hidden rounded-sm ${
-                    cat.dark ? "bg-stone-900" : "bg-stone-200"
+                    isFilmPhoto(photo) ? "bg-stone-900" : "bg-stone-200"
                   }`}
                 >
                   <WebPhoto

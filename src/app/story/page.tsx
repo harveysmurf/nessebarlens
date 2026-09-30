@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { WebPhoto } from "@/components/WebPhoto";
-import { filmLookClass, getPhoto } from "@/lib/photos";
+import { filmLookClass, getPhoto, isFilmPhoto } from "@/lib/photos";
 
 const BLOCKS = [
   {
@@ -11,7 +11,6 @@ const BLOCKS = [
     body: "My highest-grade artistic works. Carefully composed architecture, dramatic atmospheric coastlines, and pristine color grading tailored for museum Giclée prints.",
     cta: "Browse Fine Art Gallery →",
     flip: false,
-    dark: false,
   },
   {
     href: "/archive",
@@ -21,7 +20,6 @@ const BLOCKS = [
     body: "Photojournalistic records of Nessebar's daily soul — fishermen untangling nets at sunrise, autumn cobblers, seasonal storms, and local town life.",
     cta: "Browse Archival Gallery →",
     flip: true,
-    dark: false,
   },
   {
     href: "/film",
@@ -31,7 +29,6 @@ const BLOCKS = [
     body: "Exclusively analog medium format and 35mm captures. Unfiltered organic grain, authentic light leaks, and Kodak/Ilford film characteristics.",
     cta: "Browse Film Gallery →",
     flip: false,
-    dark: true,
   },
 ] as const;
 
@@ -70,7 +67,7 @@ export default function StoryPage() {
                 <Link
                   href={block.href}
                   className={`aspect-[3/2] overflow-hidden rounded-sm block ${
-                    block.dark ? "bg-stone-900 p-1" : "bg-stone-200"
+                    isFilmPhoto(photo) ? "bg-stone-900 p-1" : "bg-stone-200"
                   }`}
                 >
                   <WebPhoto
