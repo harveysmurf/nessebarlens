@@ -107,10 +107,10 @@ test("prodigiErrorStatus is the one place the 503/502 split is decided", () => {
       path.join(import.meta.dirname, "..", `src/app/api/${route}/route.ts`),
       "utf8",
     );
-    // The routes may call either spelling, but exactly one of them: the point
-    // is that a route never unwraps the message and classifies it itself.
+    // Asserted on the call name only, never on the argument spelling: a route
+    // that renames its catch binding must not break a guard about classification.
     assert.ok(
-      /prodigi(ErrorStatus\(message\)|Failure\(e(,\s*"[^"]*")?\))/.test(routeSource),
+      routeSource.includes("prodigiFailure("),
       `${route} must take its Prodigi status from prodigi-config`,
     );
     assert.equal(
@@ -176,13 +176,13 @@ test("prodigiFailure unwraps the message and classifies it in one step", () => {
   );
 });
 
-test("prodigiFailure falls back for a non-Error throw, and the fallback is routeable", () => {
+test("prodigiFailure falls back to the one message for a non-Error throw", () => {
   assert.deepEqual(prodigiFailure("just a string"), {
     error: "Quote failed",
     status: 502,
   });
-  assert.deepEqual(prodigiFailure(undefined, "Checkout failed"), {
-    error: "Checkout failed",
+  assert.deepEqual(prodigiFailure(undefined), {
+    error: "Quote failed",
     status: 502,
   });
 });

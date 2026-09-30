@@ -124,6 +124,14 @@ export function prodigiErrorStatus(message: string): 502 | 503 {
   return isProdigiUnconfigured(message) ? 503 : 502;
 }
 
+/**
+ * What a failed Prodigi call reports when the throw was not an Error. Both
+ * routes quote Prodigi, so one wording is right for both callers today; a third
+ * caller with a different failure to describe gets its own response, not a
+ * parameter here.
+ */
+const QUOTE_FAILED_MESSAGE = "Quote failed";
+
 /** What a caller has to put in a failed Prodigi response, minus next/server. */
 export type ProdigiFailure = { error: string; status: 502 | 503 };
 
@@ -136,11 +144,8 @@ export type ProdigiFailure = { error: string; status: 502 | 503 };
  * Stays free of `next/server` for the same reason json-body.ts does: the caller
  * owns the NextResponse, so this is unit testable as a plain function.
  */
-export function prodigiFailure(
-  e: unknown,
-  fallback = "Quote failed",
-): ProdigiFailure {
-  const error = e instanceof Error ? e.message : fallback;
+export function prodigiFailure(e: unknown): ProdigiFailure {
+  const error = e instanceof Error ? e.message : QUOTE_FAILED_MESSAGE;
   return { error, status: prodigiErrorStatus(error) };
 }
 
