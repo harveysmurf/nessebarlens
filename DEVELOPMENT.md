@@ -91,6 +91,8 @@ export PATH="$PWD/node-v${PIN}-linux-x64/bin:$PATH"
 node -v                                             # must print v24.21.0
 ```
 
+`linux-x64` is this box's arch; on arm64 use `linux-arm64` in all three lines.
+
 Do not write the tarball to the repo or to `/` — `/` is nearly full on this box.
 
 A **fresh worktree has no `node_modules`** (it is git-ignored), so run `npm ci`
