@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import {
   DEFAULT_SHIPPING_COUNTRY,
+  isShipToCountryCode,
   SHIP_TO_COUNTRIES,
   type ShipToCountryCode,
 } from "@/lib/ship-to-countries";
@@ -22,6 +23,7 @@ import {
   DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
 } from "@/lib/print-copy";
+import { isFrameFinishValue, isPrintSize } from "@/lib/sku-map";
 import { HTTPS_URL_PATTERN } from "@/lib/url-patterns";
 
 type LiveQuote = {
@@ -95,6 +97,24 @@ export function PrintConfigurator({
       clearTimeout(timer);
     };
   }, [format, size, frame, destinationCountry, isDigital]);
+
+  // The three selects previously narrowed their values with `as PrintSize`,
+  // `as FrameFinish` and `as ShipToCountryCode`. A cast asserts; it does not
+  // check, so any string a browser put in the option list would have become a
+  // catalog value. Each handler below validates instead, and the option lists
+  // come from the same sku-map lists the predicates read, so a value that
+  // fails here is a value the selector could not have produced.
+  function selectSize(value: string) {
+    if (isPrintSize(value)) setSize(value);
+  }
+
+  function selectFrame(value: string) {
+    if (isFrameFinishValue(value)) setFrame(value);
+  }
+
+  function selectDestination(value: string) {
+    if (isShipToCountryCode(value)) setDestinationCountry(value);
+  }
 
   async function checkout() {
     setBusy(true);
@@ -221,7 +241,7 @@ export function PrintConfigurator({
             <select
               id="print-size"
               value={size}
-              onChange={(e) => setSize(e.target.value as PrintSize)}
+              onChange={(e) => selectSize(e.target.value)}
               className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900"
             >
               {CONFIGURATOR_SIZES.map((s) => (
@@ -244,7 +264,7 @@ export function PrintConfigurator({
             <select
               id="frame-finish"
               value={frame}
-              onChange={(e) => setFrame(e.target.value as FrameFinish)}
+              onChange={(e) => selectFrame(e.target.value)}
               className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900"
             >
               {CONFIGURATOR_FRAMES.map((f) => (
@@ -267,9 +287,7 @@ export function PrintConfigurator({
             <select
               id="shipping-country"
               value={destinationCountry}
-              onChange={(e) =>
-                setDestinationCountry(e.target.value as ShipToCountryCode)
-              }
+              onChange={(e) => selectDestination(e.target.value)}
               className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900"
             >
               {SHIP_TO_COUNTRIES.map((c) => (
