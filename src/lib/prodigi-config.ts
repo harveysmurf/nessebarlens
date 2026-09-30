@@ -124,6 +124,26 @@ export function prodigiErrorStatus(message: string): 502 | 503 {
   return isProdigiUnconfigured(message) ? 503 : 502;
 }
 
+/** What a caller has to put in a failed Prodigi response, minus next/server. */
+export type ProdigiFailure = { error: string; status: 502 | 503 };
+
+/**
+ * The envelope both Prodigi routes hand back from their catch block: unwrap the
+ * message, classify it with prodigiErrorStatus, and pair the two. They used to
+ * write the same three lines, so a reworded fallback ("Could not reach Prodigi"
+ * in one route) or a changed classification rule could land in one route only.
+ *
+ * Stays free of `next/server` for the same reason json-body.ts does: the caller
+ * owns the NextResponse, so this is unit testable as a plain function.
+ */
+export function prodigiFailure(
+  e: unknown,
+  fallback = "Quote failed",
+): ProdigiFailure {
+  const error = e instanceof Error ? e.message : fallback;
+  return { error, status: prodigiErrorStatus(error) };
+}
+
 export function prodigiQuotesUrl(
   env: Record<string, unknown> = process.env,
 ): string {

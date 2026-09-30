@@ -3,7 +3,7 @@ import { readJsonBody } from "@/lib/json-body";
 import { parseQuoteBody } from "@/lib/checkout-body";
 import { DEFAULT_SHIPPING_COUNTRY } from "@/lib/ship-to-countries";
 import { quotePhysical } from "@/lib/prodigi-quote";
-import { prodigiErrorStatus } from "@/lib/prodigi-config";
+import { prodigiFailure } from "@/lib/prodigi-config";
 
 export async function POST(request: Request) {
   const body = await readJsonBody(request);
@@ -36,9 +36,12 @@ export async function POST(request: Request) {
       shippingEur: quote.shippingEur,
     });
   } catch (e) {
-    const message = e instanceof Error ? e.message : "Quote failed";
-    // An unset key is a deployment problem, not a bad gateway.
-    const status = prodigiErrorStatus(message);
-    return NextResponse.json({ error: message }, { status });
+    // An unset key is a deployment problem, not a bad gateway: prodigiFailure
+    // makes that 503-vs-502 call once, for both Prodigi routes.
+    const failure = prodigiFailure(e);
+    return NextResponse.json(
+      { error: failure.error },
+      { status: failure.status },
+    );
   }
 }
