@@ -16,7 +16,7 @@ import {
   isSellableFormat,
 } from "./sku-map";
 
-export type CheckoutBody = {
+type CheckoutBody = {
   photoSlug: string;
   format: PrintFormat;
   size: PrintSize | null;
@@ -154,7 +154,7 @@ export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string 
   };
 }
 
-export type QuoteBody = {
+type QuoteBody = {
   format: Exclude<PrintFormat, "digital">;
   size: PrintSize;
   frame: FrameFinish | null;
