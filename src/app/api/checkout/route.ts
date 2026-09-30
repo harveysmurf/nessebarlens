@@ -97,8 +97,12 @@ export async function POST(request: Request) {
     frame: parsed.frame ?? "",
     quoteEur: String(quoteEur),
   };
+  // No merchandiseEur here. quoteEur is written unconditionally above and
+  // holds the same number, so the second key was a duplicate that only ever
+  // existed for physical orders. The read side in fulfillment.ts still falls
+  // back to meta.merchandiseEur, and must keep doing: sessions created before
+  // quoteEur was written unconditionally carry that key and nothing else.
   if (isPhysical && destinationCountryCode) {
-    metadata.merchandiseEur = String(quoteEur);
     metadata.shippingEur = String(shippingEur);
     metadata.sku = sku;
     metadata.destinationCountryCode = destinationCountryCode;

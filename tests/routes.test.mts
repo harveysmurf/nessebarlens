@@ -411,6 +411,8 @@ test("download: a KV that throws is a 503, and a foreign record is corrupt", asy
     );
     assert.equal(down.status, 503);
     assert.equal((await body(down)).error, "orders-kv-unavailable");
+    // A private asset route: unlike the webhook's 503, this one is no-store.
+    assert.equal(down.headers.get("Cache-Control"), "private, no-store");
   } finally {
     restore();
   }
@@ -610,6 +612,11 @@ test("webhook: a handled event with no ORDERS binding is a 500, not a silent 200
     // webhook secret, so a deploy misconfig is diagnosable one way.
     assert.equal(response.status, 503);
     assert.equal((await body(response)).error, "orders-kv-unavailable");
+    // The webhook is the one orders-kv 503 that sends no Cache-Control: the
+    // string and status are single-sourced, the headers are not, and pinning
+    // the difference here is what stops a shared response builder from
+    // quietly adding no-store (or dropping it) on one of the two routes.
+    assert.equal(response.headers.get("Cache-Control"), null);
   } finally {
     restore();
   }
@@ -1185,7 +1192,13 @@ test("checkout: a physical order quotes, locks the country, and ships a rate", a
     // or the paid amount will not match the record.
     const params = sessionParams as unknown as Record<string, string>;
     assert.equal(params["metadata[shippingEur]"], "4.99");
-    assert.equal(params["metadata[merchandiseEur]"], "11.4");
+    // quoteEur, not merchandiseEur: the latter was a duplicate of the same
+    // number written only for physical orders, and fulfillment.ts still reads
+    // it as a fallback for sessions created before it was redundant. Asserted
+    // in both directions so a re-add and a silent removal of quoteEur both
+    // fail here rather than at the amount check in the webhook.
+    assert.equal(params["metadata[quoteEur]"], "11.4");
+    assert.equal("metadata[merchandiseEur]" in params, false);
     assert.equal(params["metadata[sku]"], "GLOBAL-FAP-12X16");
     assert.equal(params["metadata[photoSlug]"], "dawn");
     assert.equal(params["shipping_address_collection[allowed_countries][0]"], "BG");
