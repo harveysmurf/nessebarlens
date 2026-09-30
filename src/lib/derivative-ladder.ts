@@ -38,7 +38,7 @@ const SLUG_BODY = PHOTO_SLUG_PATTERN.source.replace(/^\^/, "").replace(/\$$/, ""
 export const MASTERS_BUCKET_NAME = "nessebar-lens-masters";
 export const WEB_BUCKET_NAME = "nessebar-lens-web";
 
-export const MASTER_KEY_PREFIX = "prints/";
+const MASTER_KEY_PREFIX = "prints/";
 
 /** Shape of a private MASTERS object key. The catalog itself is photos.ts imageKey. */
 export const MASTER_KEY_PATTERN = new RegExp(
