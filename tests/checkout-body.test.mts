@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
 import { parseCheckoutBody, parseQuoteBody } from "../src/lib/checkout-body.ts";
 import {
@@ -222,4 +224,27 @@ test("checkout and quote apply the same frame rule, case for case", () => {
       );
     }
   }
+});
+
+test("the body-object rejection is written once, and stays distinct from json-body's", () => {
+  const source = fs.readFileSync(
+    path.join(import.meta.dirname, "..", "src/lib/checkout-body.ts"),
+    "utf8",
+  );
+  // Both parsers go through asBody(), so the string appears once as a constant
+  // and never as a second inline literal. A re-inline would fail this.
+  assert.equal(
+    source.match(/"Invalid JSON body"/g)?.length,
+    1,
+    "the body-object rejection must be single-sourced",
+  );
+  // It is deliberately NOT json-body.ts's "Invalid JSON": that one is a body
+  // that would not parse, this one parsed to a number or a string. Unifying
+  // them would lose the distinction the two endpoints are documented to make.
+  const jsonBody = fs.readFileSync(
+    path.join(import.meta.dirname, "..", "src/lib/json-body.ts"),
+    "utf8",
+  );
+  assert.match(jsonBody, /"Invalid JSON"/);
+  assert.equal(jsonBody.includes('"Invalid JSON body"'), false);
 });
