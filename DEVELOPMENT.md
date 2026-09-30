@@ -61,8 +61,8 @@ npm run cf-typegen   # regenerate cloudflare-env.d.ts from wrangler.toml
 
 **Always `nvm use` before anything else — it is not optional and it is not
 automatic.** A shell whose `node` predates the pin will run the wrong runtime and
-report failures that are not the code's fault: on Node 20 the suite fails all 30
-test files with `ERR_UNKNOWN_FILE_EXTENSION` on `.mts`, which reads exactly like
+report failures that are not the code's fault: on Node 20 the suite fails every
+test file with `ERR_UNKNOWN_FILE_EXTENSION` on `.mts`, which reads exactly like
 a broken rebase or a bad merge but is neither. Check with `node -v` (expect
 `v24.21.0`) before trusting a red run. If the shell is non-interactive (an agent
 harness, a CI step, a cron job) `nvm` may not be on the path at all — source it
@@ -77,6 +77,28 @@ node -v                                # must print v24.21.0
 
 `nvm use` prints `No .nvmrc file found` and changes nothing when run outside the
 repo root — that is the other way to end up on the wrong runtime.
+
+If `nvm` is not installed at all (some agent containers ship bare Node 20), skip
+it rather than debugging the red run. Unpack the exact pin from nodejs.org into
+a scratch dir on the 2TB drive and put it first on `PATH`:
+
+```bash
+PIN=$(cat .nvmrc)
+cd /mnt/storage/.../scratch
+curl -fsSLO "https://nodejs.org/dist/v${PIN}/node-v${PIN}-linux-x64.tar.xz"
+tar -xJf "node-v${PIN}-linux-x64.tar.xz"          # extracts node-v…-linux-x64/bin/node
+export PATH="$PWD/node-v${PIN}-linux-x64/bin:$PATH"
+node -v                                             # must print v24.21.0
+```
+
+`linux-x64` is this box's arch; on arm64 use `linux-arm64` in all three lines.
+
+Do not write the tarball to the repo or to `/` — `/` is nearly full on this box.
+
+A **fresh worktree has no `node_modules`** (it is git-ignored), so run `npm ci`
+once per worktree before `npm test`, `npm run lint`, or `npx tsc --noEmit`.
+Without it, `npx` silently downloads a different `tsc`/`eslint` from the
+registry, which fails on missing packages and looks like a config error.
 
 Environment variables (names only — values live in the `.env.local` symlink):
 
