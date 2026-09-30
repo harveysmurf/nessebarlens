@@ -22,6 +22,7 @@ import {
   DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
 } from "@/lib/print-copy";
+import { HTTPS_URL_PATTERN } from "@/lib/url-patterns";
 
 type LiveQuote = {
   merchandiseEur: number;
@@ -115,6 +116,13 @@ export function PrintConfigurator({
       const data = (await res.json()) as { url?: string; error?: string };
       if (!res.ok || !data.url) {
         throw new Error(data.error || "Checkout failed");
+      }
+      // The redirect target arrives from the API response, so it is treated as
+      // untrusted: anything that is not an absolute https URL is refused here,
+      // on the same synchronous path, before the navigation happens. Reuses the
+      // repo's HTTPS_URL_PATTERN rather than a second spelling of "is this https".
+      if (!HTTPS_URL_PATTERN.test(data.url)) {
+        throw new Error("Checkout failed");
       }
       window.location.href = data.url;
     } catch (e) {

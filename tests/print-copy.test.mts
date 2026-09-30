@@ -102,3 +102,37 @@ test("the format buttons expose their selection with aria-pressed", () => {
   assert.match(source, /const active = format === f\.id;/);
   assert.match(source, /aria-pressed=\{active\}/);
 });
+
+test("the checkout redirect is refused unless it is an https URL", async () => {
+  // The navigation target comes from the API response, so it is untrusted
+  // input. A client-side guard is only a guard if it runs before the
+  // assignment, on the same synchronous path — a check placed after the
+  // window.location line, or in a parallel branch, is theatre.
+  const { HTTPS_URL_PATTERN } = await import("../src/lib/url-patterns.ts");
+  const source = fs.readFileSync(
+    new URL("../src/components/PrintConfigurator.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /if \(!HTTPS_URL_PATTERN\.test\(data\.url\)\) \{/);
+  const guard = source.indexOf("!HTTPS_URL_PATTERN.test(data.url)");
+  const navigate = source.indexOf("window.location.href = data.url");
+  assert.ok(guard !== -1 && navigate !== -1, "both the guard and the navigation must exist");
+  assert.ok(guard < navigate, "the https guard must run before the navigation");
+
+  // The pattern itself: anything that is not absolute https is refused.
+  for (const bad of [
+    "http://checkout.stripe.com/c/pay",
+    "javascript:alert(1)",
+    "data:text/html,<script>alert(1)</script>",
+    "/api/checkout/relative",
+    "//checkout.stripe.com/c/pay",
+    "ftp://checkout.stripe.com/c/pay",
+  ]) {
+    assert.ok(
+      !HTTPS_URL_PATTERN.test(bad),
+      `${bad} must not be treated as an https redirect`,
+    );
+  }
+  assert.ok(HTTPS_URL_PATTERN.test("https://checkout.stripe.com/c/pay"));
+  assert.ok(HTTPS_URL_PATTERN.test("HTTPS://checkout.stripe.com/c/pay"));
+});
