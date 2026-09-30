@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
+import { envStringStrippedSlash } from "@/lib/env";
 import "./globals.css";
 
 const cormorant = localFont({
@@ -83,10 +84,34 @@ const inter = localFont({
   ],
 });
 
+const SITE_TITLE = "Nessebar Lens";
+const SITE_DESCRIPTION =
+  "Fine art, archive, and film photography from Old Town Nessebar. Museum-quality prints and digital downloads.";
+
+// Same helper the Stripe origin uses, so there is one spelling of the site URL
+// and the localhost fallback matches; metadataBase makes relative image paths
+// absolute for the OG/Twitter crawlers.
+const OG_IMAGE = "/og-image.jpg";
+
 export const metadata: Metadata = {
-  title: "Nessebar Lens",
-  description:
-    "Fine art, archive, and film photography from Old Town Nessebar. Museum-quality prints and digital downloads.",
+  title: SITE_TITLE,
+  description: SITE_DESCRIPTION,
+  metadataBase: new URL(
+    envStringStrippedSlash("NEXT_PUBLIC_SITE_URL") ?? "http://localhost:3000",
+  ),
+  openGraph: {
+    type: "website",
+    siteName: SITE_TITLE,
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: [{ url: OG_IMAGE, width: 1200, height: 630, alt: SITE_TITLE }],
+  },
+  twitter: {
+    card: "summary_large_image",
+    title: SITE_TITLE,
+    description: SITE_DESCRIPTION,
+    images: [OG_IMAGE],
+  },
 };
 
 export default function RootLayout({
