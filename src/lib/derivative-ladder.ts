@@ -149,7 +149,7 @@ export function slugFromDroppedName(name: string): string | null {
  * the slug alone. Distinct from the catalog-backed resolver of the same shape
  * in master-key.ts (`masterKeyForSlug`), which returns null for unknown slugs.
  */
-export function masterKeyFromSlug(slug: string): string {
+function masterKeyFromSlug(slug: string): string {
   return `${MASTER_KEY_PREFIX}${slug}.jpg`;
 }
 

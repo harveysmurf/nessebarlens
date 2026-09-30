@@ -6,6 +6,7 @@ import {
   placeholderPhotoSrc,
 } from "../src/lib/placeholder-photo.ts";
 import { PHOTOS } from "../src/lib/photos.ts";
+import { signPrintAssetUrl } from "../src/lib/print-asset.ts";
 import { siteUrl } from "../src/lib/stripe.ts";
 import {
   assertNoMasterLeak,
@@ -13,7 +14,6 @@ import {
   classifyProdigiStatus,
   createProdigiOrder,
   placeholderAssetUrl,
-  resolveOrderAssetUrl,
   type OrderRecipient,
 } from "../src/lib/prodigi-order.ts";
 
@@ -452,20 +452,20 @@ test("an unrecognised Prodigi host is the same retryable unconfigured failure", 
   });
 });
 
-test("resolveOrderAssetUrl returns the signed URL, or null — never a placeholder", async () => {
+test("the order asset path signs, or returns null — never a placeholder", async () => {
   await withProdigiEnv(async () => {
     process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
-    const signed = await resolveOrderAssetUrl("dawn");
+    const signed = await signPrintAssetUrl("dawn");
     assert.equal(signed?.includes("/api/print-asset?"), true);
   });
   await withProdigiEnv(async () => {
-    assert.equal(await resolveOrderAssetUrl("dawn"), null);
+    assert.equal(await signPrintAssetUrl("dawn"), null);
   });
   await withProdigiEnv(async () => {
     // An unknown slug signs to null even with a secret configured. There is no
     // placeholder path left: null means "cannot fulfill this", not "send the
     // 41KB stand-in".
     process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
-    assert.equal(await resolveOrderAssetUrl("not-a-photo"), null);
+    assert.equal(await signPrintAssetUrl("not-a-photo"), null);
   });
 });

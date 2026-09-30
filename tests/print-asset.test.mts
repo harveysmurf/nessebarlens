@@ -12,7 +12,6 @@ import { readWorkerBindings } from "../src/lib/worker-bindings.ts";
 import {
   assertNoMasterLeak,
   buildProdigiOrderBody,
-  resolveOrderAssetUrl,
   type OrderRecipient,
 } from "../src/lib/prodigi-order.ts";
 
@@ -143,7 +142,7 @@ test("sign returns null without secret, and the order asset path has no placehol
   assert.equal(await signPrintAssetUrl("dawn", { secret: null }), null);
   // Null, not a fallback: a paid order must never be fulfilled from the public
   // low-res stand-in. The caller turns this into a retryable failure.
-  assert.equal(await resolveOrderAssetUrl("dawn"), null);
+  assert.equal(await signPrintAssetUrl("dawn"), null);
 });
 
 test("Prodigi body accepts HMAC print-asset URL without master leak", async () => {
