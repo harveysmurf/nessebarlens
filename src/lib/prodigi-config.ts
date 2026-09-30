@@ -62,7 +62,7 @@ export function prodigiApiBase(
   return base;
 }
 
-export function isProdigiSandboxBase(base: string): boolean {
+function isProdigiSandboxBase(base: string): boolean {
   return base === PRODIGI_SANDBOX_API_BASE;
 }
 
