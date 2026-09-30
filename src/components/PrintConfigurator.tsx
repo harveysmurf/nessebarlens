@@ -172,6 +172,7 @@ export function PrintConfigurator({
                 <button
                   key={f.id}
                   type="button"
+                  aria-pressed={active}
                   onClick={() => setFormat(f.id)}
                   className={`p-3 rounded text-left transition-colors ${
                     active

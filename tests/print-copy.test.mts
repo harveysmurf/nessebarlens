@@ -89,3 +89,16 @@ test("the component declares no option lists of its own", () => {
   assert.ok(source.includes("CONFIGURATOR_SIZES"));
   assert.ok(source.includes("CONFIGURATOR_FRAMES"));
 });
+
+test("the format buttons expose their selection with aria-pressed", () => {
+  // The .tsx file is not importable from node --test, so this checks the
+  // source: the pressed state must come from the same `active` predicate that
+  // drives the border, so a screen reader reports the selection a sighted
+  // user sees. Hardcoded or inverted values here are the whole bug.
+  const source = fs.readFileSync(
+    new URL("../src/components/PrintConfigurator.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.match(source, /const active = format === f\.id;/);
+  assert.match(source, /aria-pressed=\{active\}/);
+});
