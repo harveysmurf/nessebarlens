@@ -49,6 +49,31 @@ function sourceFiles(dir: string): string[] {
   return out;
 }
 
+/** Its own type rather than an optional field on Declared, which the regex and shape walks never carry. */
+type LiteralSite = { file: string; line: number; literal: string };
+
+/** Every string literal in src/, as `file:line`, from the AST rather than a grep. */
+function stringLiteralSites(): LiteralSite[] {
+  const sites: LiteralSite[] = [];
+  for (const file of sourceFiles(path.join(root, "src"))) {
+    const source = ts.createSourceFile(
+      file,
+      fs.readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const visit = (node: ts.Node): void => {
+      if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+        const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+        sites.push({ literal: node.text, file: relative(file), line: line + 1 });
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  return sites;
+}
+
 type Declared = { file: string; line: number };
 
 function relative(file: string): string {
@@ -472,5 +497,25 @@ test("the awaiting-prodigi reason marker is spelled once, in fulfillment.ts", ()
   assert.ok(
     owned.length >= 2,
     `expected the writer and the reader to use ${NAME}, saw ${owned.length}`,
+  );
+});
+
+test("the two body rejections stay one literal each, and stay different", () => {
+  const sites = stringLiteralSites();
+  const at = (literal: string) => sites.filter((s) => s.literal === literal);
+
+  // A body that parsed to a number or a string: one declaration, in the module
+  // that owns both parsers. A re-inline in the other parser fails here.
+  assert.deepEqual(
+    at("Invalid JSON body").map((s) => s.file),
+    ["src/lib/checkout-body.ts"],
+  );
+
+  // A body that would not parse at all is a different rejection and a different
+  // string, deliberately: unifying the two would tell the caller nothing about
+  // which of the two happened.
+  assert.deepEqual(
+    at("Invalid JSON").map((s) => s.file),
+    ["src/lib/json-body.ts"],
   );
 });

@@ -85,11 +85,27 @@ function parseDestinationCountry(raw: unknown): Parsed<string | null> {
   return { ok: true, value: raw };
 }
 
-export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string } {
+/**
+ * A checkout/quote body has to be an object, and the rejection is a named
+ * constant rather than json-body.ts's "Invalid JSON": that one is a body that
+ * would not parse at all, this one parsed to a number, a string or null. The
+ * two strings are deliberately different, so this stays here instead of
+ * importing the other module's error.
+ */
+const INVALID_BODY_ERROR = "Invalid JSON body";
+
+/** The object prologue both parsers open with, rejection included. */
+function asBody(raw: unknown): Parsed<Record<string, unknown>> {
   if (!raw || typeof raw !== "object") {
-    return { error: "Invalid JSON body" };
+    return { ok: false, error: INVALID_BODY_ERROR };
   }
-  const body = raw as Record<string, unknown>;
+  return { ok: true, value: raw as Record<string, unknown> };
+}
+
+export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string } {
+  const opened = asBody(raw);
+  if (!opened.ok) return { error: opened.error };
+  const body = opened.value;
   const photoSlug = body.photoSlug;
   const format = body.format;
   const size = body.size ?? null;
@@ -146,10 +162,9 @@ export type QuoteBody = {
 };
 
 export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {
-  if (!raw || typeof raw !== "object") {
-    return { error: "Invalid JSON body" };
-  }
-  const body = raw as Record<string, unknown>;
+  const opened = asBody(raw);
+  if (!opened.ok) return { error: opened.error };
+  const body = opened.value;
   const format = body.format;
   const size = body.size ?? null;
   const frame = body.frame ?? null;
