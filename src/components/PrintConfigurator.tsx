@@ -201,10 +201,14 @@ export function PrintConfigurator({
 
         {!isDigital && (
           <div>
-            <label className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-1">
+            <label
+              htmlFor="print-size"
+              className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-1"
+            >
               Dimensions
             </label>
             <select
+              id="print-size"
               value={size}
               onChange={(e) => setSize(e.target.value as PrintSize)}
               className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none"
@@ -220,10 +224,14 @@ export function PrintConfigurator({
 
         {isFramed && (
           <div>
-            <label className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-1">
+            <label
+              htmlFor="frame-finish"
+              className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-1"
+            >
               Frame Finish
             </label>
             <select
+              id="frame-finish"
               value={frame}
               onChange={(e) => setFrame(e.target.value as FrameFinish)}
               className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none"
