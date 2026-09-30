@@ -183,24 +183,6 @@ export function placeholderAssetUrl(photoSlug: string): string {
   return `${siteUrl()}/placeholders/${photoSlug}.jpg?v=${PLACEHOLDER_VERSION}`;
 }
 
-/**
- * The signed master URL for a paid physical order — or null if we cannot sign.
- *
- * There used to be a fallback to the public placeholder here. That was the
- * dangerous one: /api/checkout now refuses to take payment when signing is
- * impossible, so reaching this function with no secret means the pre-payment
- * guard did not hold (or the secret was removed between payment and
- * fulfillment). Returning null lets the caller mark the order
- * `paid-unfulfilled/asset-unconfigured` and answer 5xx, so Stripe redelivers
- * and a human sees it — instead of shipping a ~41KB, 1600x1200 thumbnail to a
- * customer who paid for a print and recording the order as fulfilled.
- */
-export async function resolveOrderAssetUrl(
-  photoSlug: string,
-): Promise<string | null> {
-  return signPrintAssetUrl(photoSlug);
-}
-
 export function assertNoMasterLeak(value: unknown): void {
   const blob = JSON.stringify(value);
   if (blob.includes(MASTERS_BUCKET)) {
@@ -273,8 +255,16 @@ export function buildProdigiOrderBody(input: {
 }
 
 export const createProdigiOrder: CreateProdigiOrder = async (input) => {
-  const assetUrl =
-    input.assetUrl ?? (await resolveOrderAssetUrl(input.photoSlug));
+  // The signed master URL for a paid physical order — or null if we cannot
+  // sign. There used to be a fallback to the public placeholder here. That was
+  // the dangerous one: /api/checkout now refuses to take payment when signing
+  // is impossible, so reaching here with no secret means the pre-payment guard
+  // did not hold (or the secret was removed between payment and fulfillment).
+  // Null lets us mark the order `paid-unfulfilled/asset-unconfigured` and
+  // answer 5xx, so Stripe redelivers and a human sees it — instead of shipping
+  // a ~41KB, 1600x1200 thumbnail to a customer who paid for a print and
+  // recording the order as fulfilled.
+  const assetUrl = input.assetUrl ?? (await signPrintAssetUrl(input.photoSlug));
 
   // Fail closed before we talk to Prodigi. Retryable, so the webhook answers
   // 5xx and Stripe redelivers once the secret is fixed.
