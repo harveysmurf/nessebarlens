@@ -13,6 +13,7 @@ import {
   type PrintFormat,
   type PrintSize,
 } from "@/lib/pricing";
+import { checkoutRequest, quoteRequest } from "@/lib/request-bodies";
 import {
   CONFIGURATOR_FORMATS,
   CONFIGURATOR_FRAMES,
@@ -61,20 +62,10 @@ export function PrintConfigurator({
       setQuoteLoading(true);
       setQuoteError(null);
       try {
-        const body =
-          format === "framed"
-            ? {
-                format,
-                size,
-                frame,
-                destinationCountryCode: destinationCountry,
-              }
-            : {
-                format,
-                size,
-                frame: null,
-                destinationCountryCode: destinationCountry,
-              };
+        const body = quoteRequest(format, size,
+          frame,
+          destinationCountry,
+        );
         const res = await fetch("/api/quote", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -108,24 +99,13 @@ export function PrintConfigurator({
     setBusy(true);
     setError(null);
     try {
-      const body =
-        format === "digital"
-          ? { photoSlug, format, size: null, frame: null }
-          : format === "framed"
-            ? {
-                photoSlug,
-                format,
-                size,
-                frame,
-                destinationCountryCode: destinationCountry,
-              }
-            : {
-                photoSlug,
-                format,
-                size,
-                frame: null,
-                destinationCountryCode: destinationCountry,
-              };
+      const body = checkoutRequest(
+        photoSlug,
+        format,
+        size,
+        frame,
+        destinationCountry,
+      );
 
       const res = await fetch("/api/checkout", {
         method: "POST",
