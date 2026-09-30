@@ -7,7 +7,7 @@
 import {
   PHOTO_SLUG_PATTERN,
   masterKeyForSlug,
-  type MasterObject,
+  readMasterObject,
   type MastersBucket,
 } from "./master-key";
 import {
@@ -182,19 +182,11 @@ export async function resolvePrintAssetStream(
   if (!masterKey) {
     return { kind: "json", status: 400, body: { error: "invalid-slug" } };
   }
-  if (!masters) {
-    return { kind: "json", status: 503, body: { error: "masters-unavailable" } };
+  const read = await readMasterObject(masterKey, masters);
+  if (!read.ok) {
+    return { kind: "json", status: read.status, body: { error: read.error } };
   }
-
-  let object: MasterObject | null;
-  try {
-    object = await masters.get(masterKey);
-  } catch {
-    return { kind: "json", status: 503, body: { error: "masters-unavailable" } };
-  }
-  if (!object) {
-    return { kind: "json", status: 404, body: { error: "master-not-found" } };
-  }
+  const object = read.object;
 
   return {
     kind: "stream",

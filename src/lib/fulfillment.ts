@@ -8,6 +8,7 @@
 import {
   PHOTO_SLUG_PATTERN,
   masterKeyForSlug,
+  readMasterObject,
   type MasterObject,
   type MastersBucket,
 } from "./master-key";
@@ -407,27 +408,11 @@ export async function resolveDownload(
       },
     };
   }
-  if (!masters) {
-    return {
-      kind: "json",
-      status: 503,
-      body: { error: "masters-unavailable" },
-    };
+  const read = await readMasterObject(order.masterKey, masters);
+  if (!read.ok) {
+    return { kind: "json", status: read.status, body: { error: read.error } };
   }
-
-  let object: MasterObject | null;
-  try {
-    object = await masters.get(order.masterKey);
-  } catch {
-    return {
-      kind: "json",
-      status: 503,
-      body: { error: "masters-unavailable" },
-    };
-  }
-  if (!object) {
-    return { kind: "json", status: 404, body: { error: "master-not-found" } };
-  }
+  const object = read.object;
 
   // The catalog slug grammar, not a second copy of it: this used to inline the
   // same regex, so a slug the catalog rejected could still name the download.

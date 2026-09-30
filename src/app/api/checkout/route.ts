@@ -9,7 +9,7 @@ import { getPhoto } from "@/lib/photos";
 import { DIGITAL_PRICE_EUR, eurToCents, formatLabel } from "@/lib/pricing";
 import { placeholderAssetUrl } from "@/lib/prodigi-order";
 import { quotePhysical } from "@/lib/prodigi-quote";
-import { prodigiErrorStatus } from "@/lib/prodigi-config";
+import { prodigiFailure } from "@/lib/prodigi-config";
 import { canSignMasterAsset } from "@/lib/print-asset";
 import { getStripe, siteUrl } from "@/lib/stripe";
 
@@ -51,9 +51,11 @@ export async function POST(request: Request) {
       shippingEur = quote.shippingEur;
       sku = quote.sku;
     } catch (e) {
-      const message = e instanceof Error ? e.message : "Quote failed";
-      const status = prodigiErrorStatus(message);
-      return NextResponse.json({ error: message }, { status });
+      const failure = prodigiFailure(e);
+      return NextResponse.json(
+        { error: failure.error },
+        { status: failure.status },
+      );
     }
 
     // Fail closed before taking the money. A physical order is fulfilled from

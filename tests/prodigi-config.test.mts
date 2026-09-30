@@ -10,6 +10,7 @@ import {
   prodigiApiBase,
   prodigiApiKey,
   prodigiErrorStatus,
+  prodigiFailure,
   prodigiKeyConfigured,
 } from "../src/lib/prodigi-config.ts";
 
@@ -106,9 +107,16 @@ test("prodigiErrorStatus is the one place the 503/502 split is decided", () => {
       path.join(import.meta.dirname, "..", `src/app/api/${route}/route.ts`),
       "utf8",
     );
+    // Asserted on the call name only, never on the argument spelling: a route
+    // that renames its catch binding must not break a guard about classification.
     assert.ok(
-      routeSource.includes("prodigiErrorStatus(message)"),
-      `${route} must take its status from prodigiErrorStatus`,
+      routeSource.includes("prodigiFailure("),
+      `${route} must take its Prodigi status from prodigi-config`,
+    );
+    assert.equal(
+      /e instanceof Error \? e\.message :/.test(routeSource),
+      false,
+      `${route} re-derives the Prodigi error message`,
     );
     assert.equal(
       /isProdigiUnconfigured\([^)]*\)\s*\?\s*503\s*:\s*502/.test(routeSource),
@@ -149,4 +157,32 @@ test("a configured key is reported as configured on both hosts", () => {
     }),
     true,
   );
+});
+
+test("prodigiFailure unwraps the message and classifies it in one step", () => {
+  assert.deepEqual(
+    prodigiFailure(new Error("Prodigi is not set")),
+    { error: "Prodigi is not set", status: 502 },
+  );
+  // A misconfigured deploy must keep reporting 503, not slip to 502 now that
+  // the message is unwrapped in a different place.
+  assert.deepEqual(
+    prodigiFailure(new Error("PRODIGI_API_KEY is not set")),
+    { error: "PRODIGI_API_KEY is not set", status: 503 },
+  );
+  assert.equal(
+    prodigiFailure(new Error("PRODIGI_SANDBOX_API_KEY is not set")).status,
+    503,
+  );
+});
+
+test("prodigiFailure falls back to the one message for a non-Error throw", () => {
+  assert.deepEqual(prodigiFailure("just a string"), {
+    error: "Quote failed",
+    status: 502,
+  });
+  assert.deepEqual(prodigiFailure(undefined), {
+    error: "Quote failed",
+    status: 502,
+  });
 });
