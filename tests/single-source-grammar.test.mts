@@ -20,6 +20,7 @@ import { MASTERS_BUCKET_NAME } from "../src/lib/derivative-ladder.ts";
 import { MASTERS_BUCKET, MASTER_MARKER } from "../src/lib/master-guard.ts";
 import { FILM_LOOKS, filmLookClass } from "../src/lib/photos.ts";
 import { AWAITING_PRODIGI_REASON } from "../src/lib/fulfillment.ts";
+import { ORDERS_KV_UNAVAILABLE_ERROR } from "../src/lib/orders-kv.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
@@ -518,4 +519,29 @@ test("the two body rejections stay one literal each, and stay different", () => 
     at("Invalid JSON").map((s) => s.file),
     ["src/lib/json-body.ts"],
   );
+});
+
+test("the orders-kv rejection is spelled once, in orders-kv.ts", () => {
+  // The three 503 sites (two in the download route, one in the webhook) all
+  // answer with this string, and it is what an operator greps for when a paid
+  // download fails. Re-inlining it in any of the three is invisible to a
+  // behavioural test while the copies still agree, which is the same blind
+  // spot the awaiting-prodigi guard above exists for. The prose in
+  // prodigi-order.ts and stripe/route.ts mentions the string in a comment;
+  // this walks the AST, so only real literals are counted.
+  const sites = stringLiteralSites().filter(
+    (s) => s.literal === ORDERS_KV_UNAVAILABLE_ERROR,
+  );
+  assert.deepEqual(
+    sites.map((s) => s.file),
+    ["src/lib/orders-kv.ts"],
+    `"${ORDERS_KV_UNAVAILABLE_ERROR}" spelled outside its owner: ${sites
+      .map((s) => `${s.file}:${s.line}`)
+      .join(", ")}`,
+  );
+  // Non-vacuous: the owner must actually hold the literal, or the deepEqual
+  // above would pass on an empty list after a rename of the constant's value.
+  // The 503 needs no equivalent here — the route tests assert the status
+  // against the live response, which is the side that can actually be wrong.
+  assert.equal(sites.length, 1);
 });
