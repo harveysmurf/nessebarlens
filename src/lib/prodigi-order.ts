@@ -140,7 +140,7 @@ export function classifyProdigiStatus(status: number): {
  * Failures we still intend to retry, so the stored order stays eligible for a
  * redelivery instead of being short-circuited as a duplicate.
  */
-export const RETRYABLE_PRODIGI_REASONS: ReadonlySet<ProdigiFailureReason> =
+const RETRYABLE_PRODIGI_REASONS: ReadonlySet<ProdigiFailureReason> =
   new Set<ProdigiFailureReason>([
     "prodigi-auth-error",
     "prodigi-rate-limit",
