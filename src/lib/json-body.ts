@@ -15,7 +15,7 @@
 export const INVALID_JSON_ERROR = "Invalid JSON";
 export const INVALID_JSON_STATUS = 400;
 
-export type ParsedJsonBody =
+type ParsedJsonBody =
   | { ok: true; value: unknown }
   | { ok: false; error: string; status: number };
 
