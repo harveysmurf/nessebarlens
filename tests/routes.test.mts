@@ -411,6 +411,8 @@ test("download: a KV that throws is a 503, and a foreign record is corrupt", asy
     );
     assert.equal(down.status, 503);
     assert.equal((await body(down)).error, "orders-kv-unavailable");
+    // A private asset route: unlike the webhook's 503, this one is no-store.
+    assert.equal(down.headers.get("Cache-Control"), "private, no-store");
   } finally {
     restore();
   }
@@ -610,6 +612,11 @@ test("webhook: a handled event with no ORDERS binding is a 500, not a silent 200
     // webhook secret, so a deploy misconfig is diagnosable one way.
     assert.equal(response.status, 503);
     assert.equal((await body(response)).error, "orders-kv-unavailable");
+    // The webhook is the one orders-kv 503 that sends no Cache-Control: the
+    // string and status are single-sourced, the headers are not, and pinning
+    // the difference here is what stops a shared response builder from
+    // quietly adding no-store (or dropping it) on one of the two routes.
+    assert.equal(response.headers.get("Cache-Control"), null);
   } finally {
     restore();
   }

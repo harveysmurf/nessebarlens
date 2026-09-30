@@ -1,6 +1,10 @@
 import { NextResponse } from "next/server";
 import { fulfillCheckoutSession } from "@/lib/fulfillment";
 import {
+  ORDERS_KV_UNAVAILABLE_ERROR,
+  ORDERS_KV_UNAVAILABLE_STATUS,
+} from "@/lib/orders-kv";
+import {
   readStripeEvent,
   type StripeCheckoutSession,
 } from "@/lib/stripe-event";
@@ -50,7 +54,10 @@ export async function POST(request: Request) {
 
   if (!bindings.ORDERS) {
     console.error("stripe webhook unconfigured: ORDERS KV binding missing");
-    return NextResponse.json({ error: "orders-kv-unavailable" }, { status: 503 });
+    return NextResponse.json(
+      { error: ORDERS_KV_UNAVAILABLE_ERROR },
+      { status: ORDERS_KV_UNAVAILABLE_STATUS },
+    );
   }
 
   const session = event.data.object as StripeCheckoutSession;
