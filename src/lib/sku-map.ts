@@ -1,7 +1,8 @@
 /**
  * Prodigi SKU map — single source for format+size → SKU.
  * Verified 2026-09-27 against api.sandbox.prodigi.com GET /v4.0/products/{sku}.
- * SKU_MAP_READY is true once Phase 2 order creation is wired (see fulfillment.ts).
+ * Every UI format×size resolving to a pinned SKU is enforced by
+ * tests/sku-map.test.mts.
  */
 
 import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";

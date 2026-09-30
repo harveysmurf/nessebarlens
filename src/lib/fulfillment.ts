@@ -35,19 +35,6 @@ import {
 } from "./sku-map";
 import { siteUrl } from "./stripe";
 
-/**
- * The SKU map and the sandbox order path are wired.
- *
- * This used to be read as a runtime gate: buildRecord checked it and had a
- * try/catch around resolveSku, so a format with no pinned SKU would park the
- * order as "sku-map-missing" or "bad-metadata". Both branches were
- * unreachable — the flag is a literal and the isPrintSize/isFrameFinishValue
- * guards above already reject anything resolveSku would refuse. The guarantee is
- * now a test instead (sku-map.test.mts, "every UI format×size resolves to a
- * pinned Prodigi SKU"), which is where it can actually fail loudly.
- */
-export const SKU_MAP_READY = true;
-
 export type { PrintFormat };
 export type OrderFormat = PrintFormat | "unknown";
 export type OrderStatus = "paid" | "paid-unfulfilled";

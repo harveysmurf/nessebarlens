@@ -4,7 +4,6 @@ import path from "node:path";
 import test from "node:test";
 import Stripe from "stripe";
 import {
-  SKU_MAP_READY,
   decideFulfillment,
   expectedAmountCents,
   fulfillCheckoutSession,
@@ -176,7 +175,6 @@ test("parseOrderRecord rejects off-origin asset URLs even with safe paths", () =
 });
 
 test("amounts are cents: merchandise for digital, merchandise plus shipping for physical", () => {
-  assert.equal(SKU_MAP_READY, true);
   assert.equal(expectedAmountCents("digital", 30), 3000);
   assert.equal(expectedAmountCents("giclee", 15, 4.99), 1500 + 499);
   assert.equal(expectedAmountCents("framed", 13.48, 6), 1348 + 600);
