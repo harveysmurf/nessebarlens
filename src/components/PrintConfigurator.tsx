@@ -211,7 +211,7 @@ export function PrintConfigurator({
               id="print-size"
               value={size}
               onChange={(e) => setSize(e.target.value as PrintSize)}
-              className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none"
+              className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900"
             >
               {CONFIGURATOR_SIZES.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -234,7 +234,7 @@ export function PrintConfigurator({
               id="frame-finish"
               value={frame}
               onChange={(e) => setFrame(e.target.value as FrameFinish)}
-              className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none"
+              className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900"
             >
               {CONFIGURATOR_FRAMES.map((f) => (
                 <option key={f.id} value={f.id}>
@@ -259,7 +259,7 @@ export function PrintConfigurator({
               onChange={(e) =>
                 setDestinationCountry(e.target.value as ShipToCountryCode)
               }
-              className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none"
+              className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900"
             >
               {SHIP_TO_COUNTRIES.map((c) => (
                 <option key={c.code} value={c.code}>
