@@ -179,6 +179,57 @@ test("quote: unparseable body, then a body the parser rejects", async () => {
   assert.match(String((await body(rejected)).error), /format/);
 });
 
+test("both routes: a body that will not parse is the same 400 on both", async () => {
+  /* readJsonBody replaced a hand-rolled try/catch per route. These are the
+     cases that could have drifted while they were separate: an empty body, a
+     truncated one, and JSON that parses but is not an object — the last one
+     must fall through to the body parser's own message, not the JSON one, or
+     the helper has swallowed a distinction the routes used to make. */
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    throw new Error("neither Stripe nor Prodigi may be called for a broken body");
+  }) as typeof fetch;
+  try {
+    for (const [path, handler] of [
+      ["/api/quote", quote.POST],
+      ["/api/checkout", checkout.POST],
+    ] as const) {
+      for (const payload of ["", "not json", "{", '{"format":}']) {
+        const response = await handler(
+          new Request(`${SITE}${path}`, { method: "POST", body: payload }),
+        );
+        assert.equal(response.status, 400, `${path} ${JSON.stringify(payload)}`);
+        assert.deepEqual(
+          await body(response),
+          { error: "Invalid JSON" },
+          `${path} ${JSON.stringify(payload)}`,
+        );
+      }
+
+      // `[]` is deliberately absent: an array is an object, so it reaches the
+      // format check and is rejected as a missing format instead. Pinned here
+      // because that is today's behaviour and readJsonBody must not change it.
+      for (const payload of ['"a string"', "42", "null", "true"]) {
+        const response = await handler(
+          new Request(`${SITE}${path}`, {
+            method: "POST",
+            headers: { "content-type": "application/json" },
+            body: payload,
+          }),
+        );
+        assert.equal(response.status, 400, `${path} ${payload}`);
+        assert.deepEqual(
+          await body(response),
+          { error: "Invalid JSON body" },
+          `${path} ${payload}`,
+        );
+      }
+    }
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+});
+
 test("quote: a digital quote is not a thing, and Prodigi decides the status", async () => {
   const saved = { ...process.env };
   const originalFetch = globalThis.fetch;

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { readJsonBody } from "@/lib/json-body";
 import { parseCheckoutBody } from "@/lib/checkout-body";
 import {
   DEFAULT_SHIPPING_COUNTRY,
@@ -13,12 +14,11 @@ import { canSignMasterAsset } from "@/lib/print-asset";
 import { getStripe, siteUrl } from "@/lib/stripe";
 
 export async function POST(request: Request) {
-  let raw: unknown;
-  try {
-    raw = await request.json();
-  } catch {
-    return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  const body = await readJsonBody(request);
+  if (!body.ok) {
+    return NextResponse.json({ error: body.error }, { status: body.status });
   }
+  const raw = body.value;
 
   const parsed = parseCheckoutBody(raw);
   if ("error" in parsed) {
