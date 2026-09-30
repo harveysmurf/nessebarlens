@@ -144,8 +144,12 @@ export function slugFromDroppedName(name: string): string | null {
   return PHOTO_SLUG_PATTERN.test(base) ? base : null;
 }
 
-/** The key the original bytes of a dropped master are stored under. */
-export function masterKeyForSlug(slug: string): string {
+/**
+ * The key the original bytes of a dropped master are stored under, built from
+ * the slug alone. Distinct from the catalog-backed resolver of the same shape
+ * in master-key.ts (`masterKeyForSlug`), which returns null for unknown slugs.
+ */
+export function masterKeyFromSlug(slug: string): string {
   return `${MASTER_KEY_PREFIX}${slug}.jpg`;
 }
 
@@ -182,7 +186,7 @@ export function planDerivatives(
       );
     }
 
-    masters.push({ slug, key: masterKeyForSlug(slug) });
+    masters.push({ slug, key: masterKeyFromSlug(slug) });
 
     let clamped = 0;
     for (const rung of rungs) {
