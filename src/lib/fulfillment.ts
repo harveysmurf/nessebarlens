@@ -49,6 +49,28 @@ export type OrderStatus = "paid" | "paid-unfulfilled";
  */
 export const AWAITING_PRODIGI_REASON = "awaiting-prodigi";
 
+/**
+ * Truncation caps for the values parseRecipient forwards to Prodigi. Each
+ * number is the one its own field can carry, not a shared "field length":
+ * postcode and phone are both 32 today because postal and dial formats happen
+ * to cap alike, and they are named separately so raising one does not silently
+ * raise the other.
+ *
+ * The values are unchanged from the inline literals this replaces — this only
+ * gives each a name at the site that owns it.
+ */
+const ADDRESS_LINE_MAX = 128;
+const POSTCODE_MAX = 32;
+const PHONE_MAX = 32;
+const EMAIL_MAX = 254;
+
+/**
+ * The bound on a stored `size`/`frame` metadata string read back off ORDERS.
+ * Distinct from the recipient caps above: this is a defensive bound on data
+ * already narrowed to a PrintSize/FrameFinish, not a shipping-field limit.
+ */
+const STORED_ENUM_FIELD_MAX = 64;
+
 export type { OrderRecipient };
 
 export type OrderRecord = {
@@ -145,15 +167,18 @@ export function parseRecipient(
     return null;
   }
   return {
-    name: name.slice(0, 128),
-    line1: line1.slice(0, 128),
-    line2: (a.line2 ?? "").trim().slice(0, 128),
-    city: city.slice(0, 128),
-    state: (a.state ?? "").trim().slice(0, 128),
-    postcode: postcode.slice(0, 32),
+    name: name.slice(0, ADDRESS_LINE_MAX),
+    line1: line1.slice(0, ADDRESS_LINE_MAX),
+    line2: (a.line2 ?? "").trim().slice(0, ADDRESS_LINE_MAX),
+    city: city.slice(0, ADDRESS_LINE_MAX),
+    state: (a.state ?? "").trim().slice(0, ADDRESS_LINE_MAX),
+    postcode: postcode.slice(0, POSTCODE_MAX),
     countryCode,
-    email: email && email.includes("@") ? email.trim().slice(0, 254) : null,
-    phone: phone ? phone.trim().slice(0, 32) : null,
+    email:
+      email && email.includes("@")
+        ? email.trim().slice(0, EMAIL_MAX)
+        : null,
+    phone: phone ? phone.trim().slice(0, PHONE_MAX) : null,
   };
 }
 
@@ -578,7 +603,7 @@ function parseFormat(raw: string | undefined): PrintFormat | null {
 
 function clip(raw: string | undefined): string {
   if (!raw) return "";
-  return raw.slice(0, 64);
+  return raw.slice(0, STORED_ENUM_FIELD_MAX);
 }
 
 function isInt(value: unknown): value is number {

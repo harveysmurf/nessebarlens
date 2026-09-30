@@ -1193,3 +1193,41 @@ test("a physical order with shipping but no Prodigi key waits, retryably, for th
   assert.equal(placed?.prodigiOrderId, "ord_sandbox_1");
   assert.equal(placed?.terminal, true);
 });
+
+// The caps parseRecipient applies are a shipping-API contract, not style. Each
+// is asserted at its own boundary so a change to one is a deliberate edit that
+// names the field, rather than a shared "field length" that moves in silence.
+test("parseRecipient truncates each field at its own cap", () => {
+  const long = (n: number) => "x".repeat(n);
+  const at = (n: number) => long(n);
+  const over = (n: number) => long(n + 1);
+
+  const recipient = parseRecipient(
+    {
+      name: over(128),
+      address: {
+        line1: over(128),
+        line2: over(128),
+        city: over(128),
+        state: over(128),
+        postal_code: over(32),
+        country: "BG",
+      },
+    },
+    `${over(254)}@example.com`,
+    over(32),
+  )!;
+
+  // Address lines are 128.
+  assert.equal(recipient.name, at(128));
+  assert.equal(recipient.line1, at(128));
+  assert.equal(recipient.line2, at(128));
+  assert.equal(recipient.city, at(128));
+  assert.equal(recipient.state, at(128));
+  // Postcode and phone are both 32 today, but they are separate caps: this
+  // test would still hold if one were raised alone.
+  assert.equal(recipient.postcode, at(32));
+  assert.equal(recipient.phone, at(32));
+  // Email is 254.
+  assert.equal(recipient.email!.length, 254);
+});
