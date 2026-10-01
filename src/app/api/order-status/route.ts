@@ -1,9 +1,6 @@
 import { NextResponse } from "next/server";
-import {
-  isCheckoutSessionId,
-  orderViewState,
-  parseOrderRecord,
-} from "@/lib/order-decision";
+import { isCheckoutSessionId, orderViewState } from "@/lib/order-decision";
+import { readOrderRecord } from "@/lib/order-corrupt";
 import {
   ORDERS_KV_UNAVAILABLE_ERROR,
   ORDERS_KV_UNAVAILABLE_STATUS,
@@ -64,8 +61,8 @@ export async function GET(request: Request) {
     );
   }
 
-  const order = parseOrderRecord(raw);
-  if (!order || order.sessionId !== sessionId) {
+  const order = readOrderRecord(raw, sessionId, "order-status");
+  if (!order) {
     return NextResponse.json(
       { error: "corrupt-order" },
       { status: 500, headers: NO_STORE_HEADERS },

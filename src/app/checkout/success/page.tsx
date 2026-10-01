@@ -90,9 +90,12 @@ export default async function CheckoutSuccessPage({
           without someone fixing the record.
 
           Unlike digital-unavailable, this does not promise that the team has
-          been notified: nothing logs a corrupt record on the read paths
-          (only order-revocation.ts emits order.corrupt). So it asks the
-          customer to get in touch and leaves the alert to follow up.
+          been notified. lib/order-corrupt.ts does emit order.corrupt for this
+          branch (#140), so an operator now sees it — but that log is ours to
+          read, not a commitment made to the customer in the moment they are
+          told their order is unreadable. The copy asks them to get in touch,
+          which is the one thing we can honour without a human having seen the
+          alert yet.
         */
         <OrderCard reference={reference}>
           <p className="text-xs text-stone-600 leading-relaxed font-light">
