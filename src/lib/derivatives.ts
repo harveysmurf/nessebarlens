@@ -27,17 +27,15 @@ import {
 } from "./derivative-ladder";
 import { envFlag, envString, stripTrailingSlashes } from "./env";
 
-// Rungs, bucket names and key shapes are declared in derivative-ladder.ts so
-// the ingest script reads the same list this module serves. Re-exported here
-// because the site only ever asks for them through this module.
-export {
-  MASTERS_BUCKET_NAME,
-  WEB_BUCKET_NAME,
-  WEB_DEFAULT_WIDTH,
-  WEB_DERIVATIVE_WIDTHS,
-  type WebDerivativeWidth,
-} from "./derivative-ladder";
-
+/**
+ * Public gallery derivative URLs for the site.
+ *
+ * The rung list, bucket names and key shapes are declared in
+ * derivative-ladder.ts, which the ingest script loads directly. Nothing is
+ * re-exported from here: a caller that wants a rung imports it from the module
+ * that owns it, so "which file declares this" has one answer and adding a rung
+ * does not mean editing a second list of names.
+ */
 export type WebDerivativeUrls = {
   /** One URL per entry in WEB_DERIVATIVE_WIDTHS, keyed by that width. */
   urls: Record<WebDerivativeWidth, string>;

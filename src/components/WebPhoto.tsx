@@ -11,7 +11,7 @@
  * 33vw tile. With no ladder there is a single URL and no sizes to declare.
  */
 import { galleryImage } from "@/lib/placeholder-photo";
-import type { WebDerivativeWidth } from "@/lib/derivatives";
+import type { WebDerivativeWidth } from "@/lib/derivative-ladder";
 
 export function WebPhoto({
   slug,

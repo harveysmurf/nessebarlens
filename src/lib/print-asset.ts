@@ -4,8 +4,8 @@
  * no ingest byte-copy. Distinct from /api/download (not digital-gated).
  */
 
+import { PHOTO_SLUG_PATTERN } from "./derivative-ladder";
 import {
-  PHOTO_SLUG_PATTERN,
   masterKeyForSlug,
   readMasterObject,
   type MastersBucket,

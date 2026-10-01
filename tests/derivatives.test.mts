@@ -3,9 +3,8 @@ import test from "node:test";
 import {
   WEB_DEFAULT_WIDTH,
   WEB_DERIVATIVE_WIDTHS,
-  webDerivativeUrls,
-  webImagesBase,
-} from "../src/lib/derivatives.ts";
+} from "../src/lib/derivative-ladder.ts";
+import { webDerivativeUrls, webImagesBase } from "../src/lib/derivatives.ts";
 
 function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
   const saved: Record<string, string | undefined> = {};

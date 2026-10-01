@@ -2,16 +2,15 @@ import { isMasterKey } from "./derivative-ladder";
 import { getPhoto } from "./photos";
 
 /**
- * The slug grammar, the master key shape and their readers live in
- * derivative-ladder.ts, which the ingest script loads directly. Re-exported
- * here so the catalog-facing spelling is still `master-key`.
+ * Reading a master key out of the catalog.
+ *
+ * The slug grammar and the master-key shape live in derivative-ladder.ts,
+ * alongside the rung list, because the ingest script loads that module directly
+ * and must not have to reach through this one. Nothing is re-exported here for
+ * the sake of a shorter import path: a caller that needs `PHOTO_SLUG_PATTERN`
+ * asks derivative-ladder, so "which file owns this grammar" keeps exactly one
+ * answer.
  */
-export {
-  MASTER_KEY_PATTERN,
-  PHOTO_SLUG_PATTERN,
-  isMasterKey,
-  slugFromMasterKey,
-} from "./derivative-ladder";
 
 export function masterKeyForSlug(slug: string): string | null {
   const key = getPhoto(slug)?.imageKey;
