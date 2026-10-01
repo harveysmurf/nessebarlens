@@ -1,22 +1,31 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  getStripe,
-  isConfiguredSiteUrl,
-  siteUrl,
-} from "../src/lib/stripe.ts";
+import { getStripe } from "../src/lib/stripe.ts";
+import { isConfiguredSiteUrl, siteUrl } from "../src/lib/config.ts";
 import { signPrintAssetUrl } from "../src/lib/print-asset.ts";
 
+/**
+ * Sets NEXT_PUBLIC_SITE_URL for the body, with NODE_ENV cleared.
+ *
+ * siteUrl() throws when NODE_ENV says production, so this has to own both keys:
+ * a test asserting the localhost fallback is asserting "not production", and
+ * leaving that to whatever the runner exports makes the assertion environment-
+ * dependent — a CI runner with NODE_ENV=production fails a test about dev.
+ */
 async function withSiteUrl<T>(
   value: string | undefined,
   fn: () => T | Promise<T>,
 ): Promise<T> {
   const saved = process.env.NEXT_PUBLIC_SITE_URL;
+  const savedNodeEnv = process.env.NODE_ENV;
   try {
     if (value === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
     else process.env.NEXT_PUBLIC_SITE_URL = value;
+    delete process.env.NODE_ENV;
     return await fn();
   } finally {
+    if (savedNodeEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = savedNodeEnv;
     if (saved === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
     else process.env.NEXT_PUBLIC_SITE_URL = saved;
   }

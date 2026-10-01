@@ -25,7 +25,7 @@ import {
   WEB_DERIVATIVE_WIDTHS,
   type WebDerivativeWidth,
 } from "./derivative-ladder";
-import { envFlag, envString, stripTrailingSlashes } from "./env";
+import { webDerivativesEnabled, webImagesBase } from "./config";
 
 /**
  * Public gallery derivative URLs for the site.
@@ -45,33 +45,12 @@ export type WebDerivativeUrls = {
 };
 
 /**
- * Public base for nessebar-lens-web derivatives only (absolute https).
- * Real boundary: keep nessebar-lens-masters private (no r2.dev / public access).
- * Point this env at the web bucket public URL only — never the masters bucket.
- * A path regex cannot catch masters: public r2.dev URLs omit the bucket name.
- */
-export function webImagesBase(): string | undefined {
-  const raw = envString("NEXT_PUBLIC_WEB_IMAGES_BASE");
-  if (!raw) return undefined;
-
-  let url: URL;
-  try {
-    url = new URL(raw);
-  } catch {
-    return undefined;
-  }
-  if (url.protocol !== "https:") return undefined;
-
-  return stripTrailingSlashes(`${url.origin}${url.pathname}`);
-}
-
-/**
  * Returns null unless the ladder is explicitly enabled and the base resolves.
  * Production must not fall back to any remote host, and must not serve the
  * ladder from an empty bucket.
  */
 export function webDerivativeUrls(slug: string): WebDerivativeUrls | null {
-  if (!envFlag("NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED")) return null;
+  if (!webDerivativesEnabled()) return null;
   const base = webImagesBase();
   if (!base) return null;
 

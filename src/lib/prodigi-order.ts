@@ -10,13 +10,12 @@ import type { FrameFinish, PrintSize } from "./pricing";
 import {
   detailSuffix,
   PRODIGI_SHIPPING_METHOD,
-  prodigiApiKey,
-  prodigiOrdersUrl,
 } from "./prodigi-config";
+import { prodigiApiKey, prodigiOrdersUrl } from "./config";
 import { PLACEHOLDER_VERSION } from "./placeholder-photo";
 import { signPrintAssetUrl } from "./print-asset";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
-import { siteUrl } from "./stripe";
+import { siteUrl } from "./config";
 import { HTTPS_URL_PATTERN } from "./url-patterns";
 
 export type OrderRecipient = {

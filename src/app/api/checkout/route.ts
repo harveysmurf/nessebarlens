@@ -11,7 +11,8 @@ import { placeholderAssetUrl } from "@/lib/prodigi-order";
 import { quotePhysical } from "@/lib/prodigi-quote";
 import { prodigiFailure } from "@/lib/prodigi-config";
 import { canSignMasterAsset } from "@/lib/print-asset";
-import { getStripe, isConfiguredSiteUrl, siteUrl } from "@/lib/stripe";
+import { getStripe } from "@/lib/stripe";
+import { isConfiguredSiteUrl, siteUrl } from "@/lib/config";
 
 export async function POST(request: Request) {
   const body = await readJsonBody(request);

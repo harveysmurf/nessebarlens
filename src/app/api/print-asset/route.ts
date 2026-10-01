@@ -1,6 +1,5 @@
 import { NextResponse } from "next/server";
 import {
-  printAssetSecret,
   resolvePrintAssetStream,
   verifyPrintAssetRequest,
 } from "@/lib/print-asset";
@@ -21,7 +20,11 @@ export async function GET(request: Request) {
   const sig = url.searchParams.get("sig") ?? "";
 
   const bindings = await readWorkerBindings();
-  const secret = bindings.printAssetSecret ?? printAssetSecret();
+  // No `?? printAssetSecret()` fallback: envString already ends in a
+  // process.env read, so bindings.printAssetSecret is undefined only when the
+  // secret is absent from BOTH sources -- the bare reader would return null
+  // there too. tests/print-asset.test.mts holds that equivalence.
+  const secret = bindings.printAssetSecret;
 
   const verified = await verifyPrintAssetRequest(slug, exp, sig, { secret });
   if (!verified.ok) {

@@ -7,7 +7,7 @@ import {
 } from "../src/lib/placeholder-photo.ts";
 import { PHOTOS } from "../src/lib/photos.ts";
 import { signPrintAssetUrl } from "../src/lib/print-asset.ts";
-import { siteUrl } from "../src/lib/stripe.ts";
+import { siteUrl } from "../src/lib/config.ts";
 import {
   assertNoMasterLeak,
   buildProdigiOrderBody,

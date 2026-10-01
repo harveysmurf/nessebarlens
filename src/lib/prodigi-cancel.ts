@@ -18,7 +18,7 @@
  * be corrected later by anyone.
  */
 
-import { prodigiApiKey, prodigiOrdersUrl } from "./prodigi-config";
+import { prodigiApiKey, prodigiOrdersUrl } from "./config";
 
 /** A thrown value that is not an Error still has to name the failure. */
 function errorMessage(e: unknown, fallback: string): string {
@@ -45,9 +45,17 @@ export function isSafeProdigiOrderId(value: unknown): value is string {
   return typeof value === "string" && PRODIGI_ORDER_ID_PATTERN.test(value);
 }
 
+/**
+ * The order's own cancel endpoint.
+ *
+ * `env` is optional and forwards undefined rather than defaulting to
+ * process.env here: prodigiOrdersUrl() already owns that default, and it is in
+ * config.ts, which is where the AST guard expects the one read. A default in
+ * this signature would be a second, invisible way to reach the environment.
+ */
 export function prodigiCancelUrl(
   prodigiOrderId: string,
-  env: Record<string, unknown> = process.env,
+  env?: Record<string, unknown>,
 ): string {
   if (!isSafeProdigiOrderId(prodigiOrderId)) {
     throw new Error("unsafe Prodigi order id");

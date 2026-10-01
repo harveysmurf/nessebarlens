@@ -99,9 +99,17 @@ function badBaseMessage(): string {
 /**
  * Explicit Prodigi API host. Must be set per environment — never inferred
  * from which API key is present.
+ *
+ * Every reader here takes its env as a required argument and never falls back
+ * to process.env, so this module is a pure function of what it is handed and
+ * the only place a Prodigi value reaches process.env is config.ts. A default
+ * parameter would be a back door around exactly the invariant the AST guard
+ * checks (#119): a call with no argument would read an env var from a module
+ * the AC says must not read env, and a test passing `{}` would silently read
+ * the real process environment instead.
  */
 export function prodigiApiBase(
-  env: Record<string, unknown> = process.env,
+  env: Record<string, unknown>,
 ): string {
   const base = envStringStrippedSlash("PRODIGI_API_BASE", env);
   if (!base || !ALLOWED_BASES.has(base)) {
@@ -110,13 +118,31 @@ export function prodigiApiBase(
   return base;
 }
 
+/**
+ * The allowlisted base, or undefined when unset or not an allowed host. Never
+ * throws, so config.ts can report it without risking an error above a route's
+ * try.
+ *
+ * The non-throwing twin of prodigiApiBase, sharing its ALLOWED_BASES, so the
+ * two cannot disagree about what "configured" means. Without it the config
+ * summary would have to re-implement the allowlist, and a deployment pointing
+ * at the wrong host would read as fully configured until the first request,
+ * which is the opposite of the one-clear-error the summary exists to produce.
+ */
+export function prodigiApiBaseIfAllowed(
+  env: Record<string, unknown>,
+): string | undefined {
+  const base = envStringStrippedSlash("PRODIGI_API_BASE", env);
+  return base && ALLOWED_BASES.has(base) ? base : undefined;
+}
+
 function isProdigiSandboxBase(base: string): boolean {
   return base === PRODIGI_SANDBOX_API_BASE;
 }
 
 /** API key paired to the explicit base — sandbox key for sandbox host, live for live. */
 export function prodigiApiKey(
-  env: Record<string, unknown> = process.env,
+  env: Record<string, unknown>,
 ): string {
   const base = prodigiApiBase(env);
   const name = isProdigiSandboxBase(base)
@@ -198,19 +224,19 @@ export function prodigiFailure(e: unknown): ProdigiFailure {
 }
 
 export function prodigiQuotesUrl(
-  env: Record<string, unknown> = process.env,
+  env: Record<string, unknown>,
 ): string {
   return `${prodigiApiBase(env)}/v4.0/quotes`;
 }
 
 export function prodigiOrdersUrl(
-  env: Record<string, unknown> = process.env,
+  env: Record<string, unknown>,
 ): string {
   return `${prodigiApiBase(env)}/v4.0/orders`;
 }
 
 export function prodigiKeyConfigured(
-  env: Record<string, unknown> = process.env,
+  env: Record<string, unknown>,
 ): boolean {
   try {
     prodigiApiKey(env);

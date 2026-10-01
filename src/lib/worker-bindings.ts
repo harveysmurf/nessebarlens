@@ -1,7 +1,7 @@
 import type { MastersBucket } from "./master-key";
 import type { OrdersKv } from "./fulfillment";
 import { envString } from "./env";
-import { printAssetSecret } from "./print-asset";
+import { printAssetSecret } from "./config";
 import { prodigiKeyConfigured } from "./prodigi-config";
 
 export type WorkerBindings = {
@@ -57,8 +57,10 @@ export async function readWorkerBindings(
 
   const webhookSecret = envString("STRIPE_WEBHOOK_SECRET", env);
   // Same reader as the sign/verify path, so bindings can never accept a
-  // secret that verify would reject (or vice versa).
-  const printAsset = printAssetSecret(env) ?? printAssetSecret();
+  // secret that verify would reject (or vice versa). No `?? printAssetSecret()`
+  // fallback: envString already falls back to process.env, so a null here
+  // means absent from both sources, not "absent from the Worker env".
+  const printAsset = printAssetSecret(env);
 
   return {
     ORDERS: isOrdersKv(env.ORDERS) ? env.ORDERS : undefined,
