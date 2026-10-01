@@ -44,11 +44,30 @@ test("a secret passed as null is the same as no secret at all", async () => {
   const params = new URL(signed!).searchParams;
   const exp = params.get("exp")!;
   const sig = params.get("sig")!;
-  for (const secret of [null, undefined, "", "   "]) {
+  for (const secret of [null, "", "   "]) {
     const result = await verifyPrintAssetRequest("dawn", exp, sig, { secret });
     assert.equal(result.ok, false, JSON.stringify(secret));
     assert.equal(result.status, 503);
     assert.equal(result.error, "print-asset-unavailable");
+  }
+  // `undefined` is the one that means "read this deployment's secret", so it
+  // only proves "unconfigured" when there is none — the env has to be cleared
+  // rather than assumed empty, or a runner with the secret exported verifies
+  // successfully and this assertion is testing the opposite of what it says.
+  {
+    const saved = process.env.PRINT_ASSET_HMAC_SECRET;
+    try {
+      delete process.env.PRINT_ASSET_HMAC_SECRET;
+      const result = await verifyPrintAssetRequest("dawn", exp, sig, {
+        secret: undefined,
+      });
+      assert.equal(result.ok, false);
+      assert.equal(result.status, 503);
+      assert.equal(result.error, "print-asset-unavailable");
+    } finally {
+      if (saved === undefined) delete process.env.PRINT_ASSET_HMAC_SECRET;
+      else process.env.PRINT_ASSET_HMAC_SECRET = saved;
+    }
   }
   // A secret that is only padded still verifies, because it is the same key.
   const padded = await verifyPrintAssetRequest("dawn", exp, sig, {

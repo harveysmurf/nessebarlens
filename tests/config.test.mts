@@ -42,6 +42,33 @@ const SANDBOX = "https://api.sandbox.prodigi.com";
 const LIVE = "https://api.prodigi.com";
 const SECRET = "test-print-asset-hmac-secret-32b-min!!";
 
+/**
+ * Every variable this module reads. A test that passes `{}` to a reader is not
+ * asserting "unset" — envString layers the argument over process.env, so on a
+ * deployment that has these set, `{}` reads the real environment and the
+ * assertion is a lie. Anything asserting absence deletes them first. This is
+ * the same trap #119 removed from prodigi-config.ts, in the tests instead.
+ */
+const ALL_KEYS = [
+  "NEXT_PUBLIC_SITE_URL",
+  "NODE_ENV",
+  "STRIPE_SECRET_KEY",
+  "PRODIGI_API_BASE",
+  "PRODIGI_API_KEY",
+  "PRODIGI_SANDBOX_API_KEY",
+  "PRINT_ASSET_HMAC_SECRET",
+  "NEXT_PUBLIC_WEB_IMAGES_BASE",
+  "NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED",
+] as const;
+
+/** Nothing in the ambient environment: what "unconfigured" actually means. */
+function withCleanEnv<T>(body: () => T): T {
+  return withEnv(
+    Object.fromEntries(ALL_KEYS.map((key) => [key, undefined])),
+    body,
+  );
+}
+
 /** With process.env mutated only for keys the caller names. */
 function withEnv<T>(
   overrides: Record<string, string | undefined>,
@@ -63,7 +90,7 @@ function withEnv<T>(
   }
 }
 
-test("a fully configured deployment reports nothing missing", () => {
+test("a fully configured deployment reports nothing missing", () => withCleanEnv(() => {
   const env = {
     NEXT_PUBLIC_SITE_URL: "https://nessebarlens.com/",
     STRIPE_SECRET_KEY: "sk_test_x",
@@ -86,9 +113,10 @@ test("a fully configured deployment reports nothing missing", () => {
     printAsset: { secret: SECRET },
     flags: { webDerivativesEnabled: false },
   });
-});
+}));
 
-test("an empty deployment names every missing value, in a stable order", () => {
+test("an empty deployment names every missing value, in a stable order", () =>
+  withCleanEnv(() => {
   assert.deepEqual(missingProductionConfig({}), [
     "NEXT_PUBLIC_SITE_URL",
     "STRIPE_SECRET_KEY",
@@ -102,9 +130,9 @@ test("an empty deployment names every missing value, in a stable order", () => {
       "PRODIGI_API_BASE, PRODIGI_API_KEY, PRINT_ASSET_HMAC_SECRET",
   );
   assert.equal(productionConfigError(["A", "B"]), "Missing production config: A, B");
-});
+}));
 
-test("a half-configured deployment names only what is actually absent", () => {
+test("a half-configured deployment names only what is actually absent", () => withCleanEnv(() => {
   const env = {
     NEXT_PUBLIC_SITE_URL: "https://nessebarlens.com",
     STRIPE_SECRET_KEY: "sk_test_x",
@@ -112,15 +140,17 @@ test("a half-configured deployment names only what is actually absent", () => {
     PRODIGI_SANDBOX_API_KEY: "sandbox-key",
   };
   assert.deepEqual(missingProductionConfig(env), ["PRINT_ASSET_HMAC_SECRET"]);
-});
+}));
 
 test("getConfig does not throw when Prodigi is unconfigured", () => {
   // The whole reason the summary carries keyConfigured rather than a key: this
   // runs above a route's try, so a throw here would pre-empt prodigiFailure()
   // and report our misconfiguration as a Prodigi outage.
-  const config = getConfig({});
-  assert.deepEqual(config.prodigi, { apiBase: undefined, keyConfigured: false });
-  assert.equal(config.printAsset.secret, null);
+  withCleanEnv(() => {
+    const config = getConfig({});
+    assert.deepEqual(config.prodigi, { apiBase: undefined, keyConfigured: false });
+    assert.equal(config.printAsset.secret, null);
+  });
 });
 
 test("a sandbox host paired with the live key is not configured", () => {
@@ -143,15 +173,17 @@ test("a base that is not allowlisted is absent from the summary", () => {
   // finds out on the first request.
   const config = getConfig({ PRODIGI_API_BASE: "https://evil.example" });
   assert.deepEqual(config.prodigi, { apiBase: undefined, keyConfigured: false });
-  assert.deepEqual(
-    missingProductionConfig({ PRODIGI_API_BASE: "https://evil.example" }),
-    [
-      "NEXT_PUBLIC_SITE_URL",
-      "STRIPE_SECRET_KEY",
-      "PRODIGI_API_BASE",
-      "PRODIGI_API_KEY",
-      "PRINT_ASSET_HMAC_SECRET",
-    ],
+  withCleanEnv(() =>
+    assert.deepEqual(
+      missingProductionConfig({ PRODIGI_API_BASE: "https://evil.example" }),
+      [
+        "NEXT_PUBLIC_SITE_URL",
+        "STRIPE_SECRET_KEY",
+        "PRODIGI_API_BASE",
+        "PRODIGI_API_KEY",
+        "PRINT_ASSET_HMAC_SECRET",
+      ],
+    ),
   );
   // Still reported before any money moves, and by the throwing reader that owns
   // the message: the summary delegates to the same allowlist.
@@ -184,7 +216,7 @@ test("the throwing Prodigi readers read through config, message and all", () => 
   });
 });
 
-test("siteUrl falls back to localhost only outside production", () => {
+test("siteUrl falls back to localhost only outside production", () => withCleanEnv(() => {
   assert.equal(siteUrl({ NEXT_PUBLIC_SITE_URL: "https://a.example" }), "https://a.example");
   assert.equal(siteUrl({}), "http://localhost:3000");
   assert.equal(siteUrl({ NEXT_PUBLIC_SITE_URL: "  " }), "http://localhost:3000");
@@ -199,17 +231,18 @@ test("siteUrl falls back to localhost only outside production", () => {
   );
   assert.equal(isProduction({ NODE_ENV: "production" }), true);
   assert.equal(isProduction({}), false);
-});
+}));
 
-test("configuredSiteUrl and isConfiguredSiteUrl answer before the fallback", () => {
+test("configuredSiteUrl and isConfiguredSiteUrl answer before the fallback", () => withCleanEnv(() => {
   // A route must be able to decide "not configured" without building a Stripe
   // session it is going to discard, and without the localhost fallback hiding
   // the absence.
   assert.equal(configuredSiteUrl({ NEXT_PUBLIC_SITE_URL: "https://a.example/" }), "https://a.example");
   assert.equal(configuredSiteUrl({ NEXT_PUBLIC_SITE_URL: "/" }), undefined);
   assert.equal(isConfiguredSiteUrl({ NEXT_PUBLIC_SITE_URL: "https://a.example" }), true);
+  assert.equal(configuredSiteUrl({}), undefined);
   assert.equal(isConfiguredSiteUrl({}), false);
-});
+}));
 
 test("the readers default to the deployment's own environment", () => {
   // The default-argument paths, which is where process.env is read. Asserted
@@ -250,15 +283,15 @@ test("the readers default to the deployment's own environment", () => {
   assert.match(productionConfigError(), /^Missing production config: /);
 });
 
-test("webImagesBase is https-only and never carries a trailing slash", () => {
+test("webImagesBase is https-only and never carries a trailing slash", () => withCleanEnv(() => {
   assert.equal(webImagesBase({ NEXT_PUBLIC_WEB_IMAGES_BASE: "https://cdn.example/b/" }), "https://cdn.example/b");
   assert.equal(webImagesBase({ NEXT_PUBLIC_WEB_IMAGES_BASE: "http://cdn.example" }), undefined);
   assert.equal(webImagesBase({ NEXT_PUBLIC_WEB_IMAGES_BASE: "not a url" }), undefined);
   assert.equal(webImagesBase({ NEXT_PUBLIC_WEB_IMAGES_BASE: "   " }), undefined);
   assert.equal(webImagesBase({}), undefined);
-});
+}));
 
-test("usablePrintAssetSecret rejects whitespace and short keys, and trims", () => {
+test("usablePrintAssetSecret rejects whitespace and short keys, and trims", () => withCleanEnv(() => {
   assert.equal(usablePrintAssetSecret(SECRET), SECRET);
   assert.equal(usablePrintAssetSecret(`  ${SECRET}  `), SECRET);
   assert.equal(usablePrintAssetSecret("x".repeat(PRINT_ASSET_SECRET_MIN_LENGTH - 1)), null);
@@ -274,4 +307,5 @@ test("usablePrintAssetSecret rejects whitespace and short keys, and trims", () =
     SECRET,
   );
   assert.equal(printAssetSecret({ PRINT_ASSET_HMAC_SECRET: "short" }), null);
-});
+  assert.equal(printAssetSecret({}), null);
+}));
