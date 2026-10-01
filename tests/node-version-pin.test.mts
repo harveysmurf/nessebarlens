@@ -1,13 +1,15 @@
 /**
  * The node version is written down in three places -- .nvmrc, package.json
- * `engines`, and the `node-version:` of every workflow's setup-node step --
- * and nothing kept them in agreement. CI floated on "24" while the local pin
- * was 24.21.0, so a developer on 24.10 and CI on 24.21 were both "the pinned
- * version" by their own lights. That is how a green local suite and a red CI
- * suite coexist: 24.10 fails tests/routes.test.mts on a loader change.
+ * `engines`, and the setup-node step that every workflow reaches through the
+ * shared composite action -- and nothing kept them in agreement. CI floated on
+ * "24" while the local pin was 24.21.0, so a developer on 24.10 and CI on
+ * 24.21 were both "the pinned version" by their own lights. That is how a
+ * green local suite and a red CI suite coexist: 24.10 fails
+ * tests/routes.test.mts on a loader change.
  *
- * The invariant is that the three say the same thing, and that the agreed
- * version is new enough for the route tests. Same shape as
+ * The invariant is that .nvmrc and engines agree, that no workflow or
+ * composite action inlines a literal `node-version`, and that the shared
+ * setup action pins via `node-version-file: .nvmrc`. Same shape as
  * single-source-grammar.test.mts: a value duplicated in N places is only safe
  * while a test holds the copies to the same value.
  */
@@ -88,26 +90,52 @@ test("engines.node admits the pinned version and refuses the ones that break", (
   );
 });
 
-const workflowDir = path.join(root, ".github", "workflows");
-
-const workflows = fs
-  .readdirSync(workflowDir)
-  .filter((name) => name.endsWith(".yml"))
-  .map((name) => ({ name, text: fs.readFileSync(path.join(workflowDir, name), "utf8") }));
-
-test("every workflow pins setup-node to exactly the .nvmrc version", (t) => {
-  const pinnedLine = `node-version: "${nvmrc.trim()}"`;
-  for (const { name, text } of workflows) {
-    const steps = [...text.matchAll(/node-version:\s*"?([^"\n]+)"?/g)].map((m) => m[1].trim());
-    assert.ok(steps.length > 0, `${name} has no setup-node step to pin`);
-    for (const step of steps) {
-      assert.equal(
-        step,
-        nvmrc.trim(),
-        `${name} sets setup-node to ${JSON.stringify(step)}, which floats independently of .nvmrc (${nvmrc.trim()})`,
-      );
+function collectYaml(dir: string): { rel: string; text: string }[] {
+  const out: { rel: string; text: string }[] = [];
+  function walk(current: string) {
+    if (!fs.existsSync(current)) return;
+    for (const name of fs.readdirSync(current)) {
+      const full = path.join(current, name);
+      if (fs.statSync(full).isDirectory()) {
+        walk(full);
+        continue;
+      }
+      if (name.endsWith(".yml") || name.endsWith(".yaml")) {
+        out.push({ rel: path.relative(root, full), text: fs.readFileSync(full, "utf8") });
+      }
     }
   }
-  assert.ok(workflows.length > 0, "no workflows found -- the glob went stale");
-  t.diagnostic(`${workflows.length} workflows checked; expected literal: ${pinnedLine}`);
+  walk(dir);
+  return out;
+}
+
+const githubYamls = [
+  ...collectYaml(path.join(root, ".github", "workflows")),
+  ...collectYaml(path.join(root, ".github", "actions")),
+];
+
+test("no workflow or composite action inlines a literal node-version", (t) => {
+  for (const { rel, text } of githubYamls) {
+    const literals = [...text.matchAll(/^\s*node-version:\s*(.+)$/gm)].map((m) =>
+      m[1].trim(),
+    );
+    assert.deepEqual(
+      literals,
+      [],
+      `${rel} inlines node-version ${JSON.stringify(literals)}; use node-version-file: .nvmrc in the shared setup action instead`,
+    );
+  }
+  assert.ok(githubYamls.length > 0, "no .github yml files found -- the glob went stale");
+  t.diagnostic(`${githubYamls.length} .github yml files checked for literal node-version`);
+});
+
+test("the shared setup action pins Node via node-version-file: .nvmrc", () => {
+  const setup = path.join(root, ".github", "actions", "setup", "action.yml");
+  assert.ok(fs.existsSync(setup), "missing .github/actions/setup/action.yml");
+  const text = fs.readFileSync(setup, "utf8");
+  assert.match(
+    text,
+    /node-version-file:\s*\.nvmrc/,
+    "setup action must pin via node-version-file: .nvmrc so it tracks the local pin",
+  );
 });

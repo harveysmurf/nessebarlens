@@ -30,20 +30,7 @@ jobs:
     env:
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          # Exact, not a "24" range: a floating major lets CI and .nvmrc
-          # disagree, which is the failure tests/node-version-pin.test.mts
-          # exists to prevent.
-          node-version: "24.21.0"
-          cache: npm
-
-      - name: Install
-        run: npm ci
+      - uses: ./.github/actions/setup
 
       - name: Confirm the key is test mode before anything else
         # The script refuses a non-sk_test_ key too. This fails the run at the

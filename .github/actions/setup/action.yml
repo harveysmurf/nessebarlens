@@ -1,0 +1,28 @@
+name: Setup
+description: Checkout, pin Node from .nvmrc, and npm ci
+
+inputs:
+  install-args:
+    description: Extra arguments forwarded to npm ci
+    required: false
+    default: ""
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Node
+      uses: actions/setup-node@v4
+      with:
+        # Exact pin via .nvmrc, not a "24" range: 24.10 fails
+        # tests/routes.test.mts on a loader change, so a floating major lets
+        # CI and .nvmrc disagree. tests/node-version-pin.test.mts holds every
+        # workflow and this action to node-version-file: .nvmrc.
+        node-version-file: .nvmrc
+        cache: npm
+
+    - name: Install
+      shell: bash
+      run: npm ci ${{ inputs.install-args }}
