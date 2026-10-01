@@ -56,7 +56,7 @@ function truncateDetail(value: string): string | null {
     : collapsed;
 }
 
-export function prodigiDetail(raw: string): string | null {
+function prodigiDetail(raw: string): string | null {
   let parsed: unknown;
   try {
     parsed = JSON.parse(raw);
