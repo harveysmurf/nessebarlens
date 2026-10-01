@@ -81,8 +81,14 @@ test("each scalar guard on a stored record rejects its own value", () => {
     { terminal: "true" },
     { terminal: 1 },
     { terminal: null },
-    { status: "refunded" },
+    // "refunded"/"disputed" are real statuses now (#101). These are the
+    // near-misses that must still not pass: an older reader that writes the
+    // revoked status with different casing, or a status invented upstream.
+    { status: "Refunded" },
+    { status: "refund" },
     { status: "unpaid" },
+    { status: 1 },
+    { status: null },
     { format: "poster" },
     { format: "" },
     { photoSlug: 7 },

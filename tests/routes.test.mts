@@ -1835,3 +1835,490 @@ test("webhook: a store that throws mid-fulfilment is a 500, not a lost order", a
     restore();
   }
 });
+
+/* --- refunds and disputes (#101) ------------------------------------------
+
+   The revocation path is the one place the webhook resolves an order through
+   Stripe rather than through the event: ORDERS is keyed by session id and a
+   charge event carries a payment intent. These drive it through the real
+   handler with globalThis.fetch answering the Stripe lookup, because the
+   interesting failures are all in the glue — a partial refund must not revoke,
+   a Stripe outage must not answer 200, and a dispute must survive the extra
+   charge hop. */
+
+const REFUND_SESSION = "cs_test_refunded01";
+const REFUND_INTENT = "pi_3AbcDefGh12345678";
+
+function paidDigitalRecord(sessionId: string): string {
+  return JSON.stringify({
+    v: 1,
+    sessionId,
+    merchantReference: sessionId,
+    terminal: true,
+    status: "paid",
+    photoSlug: "dawn",
+    format: "digital",
+    size: "",
+    frame: "",
+    quoteEur: 30,
+    amountTotal: 3000,
+    currency: "eur",
+    reason: null,
+    masterKey: "prints/dawn.jpg",
+    recipient: null,
+    prodigiOrderId: null,
+    prodigiStage: null,
+    assetUrl: null,
+    updatedAt: "2026-09-27T12:00:00.000Z",
+  });
+}
+
+/** A fetch that answers the sessions.list lookup and nothing else. */
+function stripeLookupFetch(sessions: unknown[] = [{ id: REFUND_SESSION }]): typeof fetch {
+  return (async (url: unknown) => {
+    const target = String(url);
+    if (target.includes("/checkout/sessions")) {
+      return new Response(JSON.stringify({ object: "list", data: sessions, has_more: false }), {
+        status: 200,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error(`unexpected fetch: ${target}`);
+  }) as typeof fetch;
+}
+
+async function postEvent(
+  event: Record<string, unknown>,
+  secret: string,
+  bindings: Fake,
+): Promise<Response> {
+  const payload = JSON.stringify(event);
+  const signature = await sign(payload, secret);
+  const restore = withBindings(bindings);
+  try {
+    return await stripe.POST(
+      new Request(`${SITE}/api/webhooks/stripe`, {
+        method: "POST",
+        headers: { "stripe-signature": signature },
+        body: payload,
+      }),
+    );
+  } finally {
+    restore();
+  }
+}
+
+test("webhook: a full refund revokes the order", async () => {
+  const secret = "whsec_test_route_secret";
+  const saved = { ...process.env };
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = stripeLookupFetch();
+  const kv = memoryKv({ [REFUND_SESSION]: paidDigitalRecord(REFUND_SESSION) });
+  try {
+    const response = await postEvent(
+      {
+        id: "evt_refund_1",
+        object: "event",
+        type: "charge.refunded",
+        data: {
+          object: {
+            id: "ch_3AbcDefGh",
+            payment_intent: REFUND_INTENT,
+            amount: 3000,
+            amount_refunded: 3000,
+          },
+        },
+      },
+      secret,
+      { webhookSecret: secret, ORDERS: kv, prodigiKeyConfigured: false },
+    );
+    assert.equal(response.status, 200);
+    const parsed = await body(response);
+    assert.equal(parsed.revoked, true);
+    assert.equal(parsed.status, "refunded");
+    // Read back through get, which is the only contract OrdersKv has.
+    const record = JSON.parse((await kv.get(REFUND_SESSION))!) as Record<string, unknown>;
+    assert.equal(record.status, "refunded");
+    assert.equal(record.masterKey, null);
+    assert.equal(record.photoSlug, "dawn", "the refund stays auditable");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (saved.STRIPE_SECRET_KEY === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved.STRIPE_SECRET_KEY;
+  }
+});
+
+test("webhook: a partial refund is logged and revokes nothing", async () => {
+  const secret = "whsec_test_route_secret";
+  const saved = { ...process.env };
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    throw new Error("a partial refund must not reach Stripe at all");
+  }) as typeof fetch;
+  const kv = memoryKv({ [REFUND_SESSION]: paidDigitalRecord(REFUND_SESSION) });
+  const errors: string[] = [];
+  const originalError = console.error;
+  console.error = (...args: unknown[]) => {
+    errors.push(args.map(String).join(" "));
+  };
+  try {
+    const response = await postEvent(
+      {
+        id: "evt_refund_partial",
+        object: "event",
+        type: "charge.refunded",
+        data: {
+          object: {
+            id: "ch_3AbcDefGh",
+            payment_intent: REFUND_INTENT,
+            amount: 3000,
+            amount_refunded: 1000,
+          },
+        },
+      },
+      secret,
+      { webhookSecret: secret, ORDERS: kv, prodigiKeyConfigured: false },
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await body(response), { received: true, ignored: "partial-refund" });
+    const record = JSON.parse((await kv.get(REFUND_SESSION))!) as Record<string, unknown>;
+    assert.equal(record.status, "paid", "a partial refund must not revoke the download");
+  } finally {
+    console.error = originalError;
+    globalThis.fetch = originalFetch;
+    if (saved.STRIPE_SECRET_KEY === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved.STRIPE_SECRET_KEY;
+  }
+  assert.match(errors.join("\n"), /order\.partial-refund/);
+  assert.match(errors.join("\n"), /1000/);
+});
+
+test("webhook: a Stripe lookup failure is a 500, not a silent 200", async () => {
+  const secret = "whsec_test_route_secret";
+  const saved = { ...process.env };
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  const errors: string[] = [];
+  globalThis.fetch = (async () =>
+    new Response(JSON.stringify({ error: { type: "api_error" } }), {
+      status: 500,
+      headers: { "content-type": "application/json" },
+    })) as typeof fetch;
+  console.error = (...args: unknown[]) => {
+    errors.push(args.map(String).join(" "));
+  };
+  const kv = memoryKv({ [REFUND_SESSION]: paidDigitalRecord(REFUND_SESSION) });
+  try {
+    const response = await postEvent(
+      {
+        id: "evt_refund_500",
+        object: "event",
+        type: "charge.refunded",
+        data: {
+          object: {
+            id: "ch_3AbcDefGh",
+            payment_intent: REFUND_INTENT,
+            amount: 3000,
+            amount_refunded: 3000,
+          },
+        },
+      },
+      secret,
+      { webhookSecret: secret, ORDERS: kv, prodigiKeyConfigured: false },
+    );
+    // The whole mechanism fails silently if this is a 200: the refund is real,
+    // the buyer keeps the master file, and every log line looks healthy.
+    assert.equal(response.status, 500);
+    assert.deepEqual(await body(response), { error: "revocation-lookup-failed" });
+    const record = JSON.parse((await kv.get(REFUND_SESSION))!) as Record<string, unknown>;
+    assert.equal(record.status, "paid", "nothing is written when the lookup failed");
+  } finally {
+    console.error = originalError;
+    globalThis.fetch = originalFetch;
+    if (saved.STRIPE_SECRET_KEY === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved.STRIPE_SECRET_KEY;
+  }
+  assert.match(errors.join("\n"), /order\.revocation-lookup-failed/);
+});
+
+test("webhook: a KV failure during revocation is a 500 with its own error", async () => {
+  const secret = "whsec_test_route_secret";
+  const saved = { ...process.env };
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  globalThis.fetch = stripeLookupFetch();
+  console.error = () => {};
+  try {
+    const response = await postEvent(
+      {
+        id: "evt_refund_kv",
+        object: "event",
+        type: "charge.refunded",
+        data: {
+          object: {
+            id: "ch_3AbcDefGh",
+            payment_intent: REFUND_INTENT,
+            amount: 3000,
+            amount_refunded: 3000,
+          },
+        },
+      },
+      secret,
+      {
+        webhookSecret: secret,
+        prodigiKeyConfigured: false,
+        ORDERS: {
+          async get() {
+            throw new Error("kv offline");
+          },
+          async put() {
+            throw new Error("kv offline");
+          },
+        },
+      },
+    );
+    // Distinct from fulfillment-failed so the log points at the revocation
+    // path rather than at Prodigi.
+    assert.equal(response.status, 500);
+    assert.deepEqual(await body(response), { error: "revocation-failed" });
+  } finally {
+    console.error = originalError;
+    globalThis.fetch = originalFetch;
+    if (saved.STRIPE_SECRET_KEY === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved.STRIPE_SECRET_KEY;
+  }
+});
+
+test("webhook: a dispute resolves through the charge hop and revokes", async () => {
+  const secret = "whsec_test_route_secret";
+  const saved = { ...process.env };
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  const originalFetch = globalThis.fetch;
+  const seen: string[] = [];
+  globalThis.fetch = (async (url: unknown, init?: { method?: string }) => {
+    const target = String(url);
+    seen.push(`${init?.method ?? "GET"} ${target}`);
+    if (target.includes("/charges/")) {
+      return new Response(
+        JSON.stringify({ id: "ch_3AbcDefGh", payment_intent: REFUND_INTENT }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    if (target.includes("/checkout/sessions")) {
+      return new Response(
+        JSON.stringify({ object: "list", data: [{ id: REFUND_SESSION }], has_more: false }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    throw new Error(`unexpected fetch: ${target}`);
+  }) as typeof fetch;
+  const kv = memoryKv({ [REFUND_SESSION]: paidDigitalRecord(REFUND_SESSION) });
+  try {
+    const response = await postEvent(
+      {
+        id: "evt_dispute_1",
+        object: "event",
+        type: "charge.dispute.created",
+        data: {
+          // The Dispute object names a Charge, not a PaymentIntent. Without
+          // the hop every dispute resolves to "no payment intent" and no
+          // order is ever revoked.
+          object: { id: "dp_1", object: "dispute", charge: "ch_3AbcDefGh", amount: 3000 },
+        },
+      },
+      secret,
+      { webhookSecret: secret, ORDERS: kv, prodigiKeyConfigured: false },
+    );
+    assert.equal(response.status, 200);
+    const parsed = await body(response);
+    assert.equal(parsed.status, "disputed");
+    const record = JSON.parse((await kv.get(REFUND_SESSION))!) as Record<string, unknown>;
+    assert.equal(record.status, "disputed");
+    assert.ok(seen.some((line) => line.includes("/charges/ch_3AbcDefGh")));
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (saved.STRIPE_SECRET_KEY === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved.STRIPE_SECRET_KEY;
+  }
+});
+
+test("webhook: a dispute whose charge lookup fails transiently is a 500, not a silent 200", async () => {
+  // The gap this pins: a dispute needs two hops, and the first one used to
+  // swallow any failure into `null`, which the route answered 200
+  // "no-payment-intent". Stripe does not redeliver a 200, so the disputed
+  // buyer kept the master file with every log line looking healthy.
+  const secret = "whsec_test_route_secret";
+  const saved = { ...process.env };
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  globalThis.fetch = (async (url: unknown) => {
+    const target = String(url);
+    if (target.includes("/charges/")) {
+      // A Stripe outage, not a missing charge. 404 would be ignorable; this
+      // must be redelivered.
+      return new Response(JSON.stringify({ error: { type: "api_error" } }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error(`unexpected fetch: ${target}`);
+  }) as typeof fetch;
+  console.error = () => {};
+  const kv = memoryKv({ [REFUND_SESSION]: paidDigitalRecord(REFUND_SESSION) });
+  try {
+    const response = await postEvent(
+      {
+        id: "evt_dispute_500",
+        object: "event",
+        type: "charge.dispute.created",
+        data: {
+          object: { id: "dp_500", object: "dispute", charge: "ch_3AbcDefGh", amount: 3000 },
+        },
+      },
+      secret,
+      { webhookSecret: secret, ORDERS: kv, prodigiKeyConfigured: false },
+    );
+    assert.equal(response.status, 500);
+    assert.deepEqual(await body(response), { error: "revocation-lookup-failed" });
+    const record = JSON.parse((await kv.get(REFUND_SESSION))!) as Record<string, unknown>;
+    assert.equal(record.status, "paid", "nothing is written when the lookup failed");
+  } finally {
+    console.error = originalError;
+    globalThis.fetch = originalFetch;
+    if (saved.STRIPE_SECRET_KEY === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved.STRIPE_SECRET_KEY;
+  }
+});
+
+test("webhook: a dispute for an unknown charge is acknowledged, not retried forever", async () => {
+  const secret = "whsec_test_route_secret";
+  const saved = { ...process.env };
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  // The charge resolves to a real payment intent, but no Checkout Session
+  // came from it: another Stripe account's dispute reaching this endpoint.
+  // Retrying that forever helps nobody, so it is a 200.
+  globalThis.fetch = (async (url: unknown) => {
+    const target = String(url);
+    if (target.includes("/charges/")) {
+      return new Response(
+        JSON.stringify({ id: "ch_unknown1", payment_intent: REFUND_INTENT }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    return stripeLookupFetch([])(target);
+  }) as typeof fetch;
+  console.error = () => {};
+  try {
+    const response = await postEvent(
+      {
+        id: "evt_dispute_unknown",
+        object: "event",
+        type: "charge.dispute.created",
+        data: { object: { id: "dp_2", object: "dispute", charge: "ch_unknown1" } },
+      },
+      secret,
+      { webhookSecret: secret, ORDERS: memoryKv(), prodigiKeyConfigured: false },
+    );
+    assert.equal(response.status, 200);
+    assert.equal((await body(response)).ignored, "unknown-payment-intent");
+  } finally {
+    console.error = originalError;
+    globalThis.fetch = originalFetch;
+    if (saved.STRIPE_SECRET_KEY === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved.STRIPE_SECRET_KEY;
+  }
+});
+
+test("webhook: a refund for a session with no ORDERS binding is still 503", async () => {
+  // The binding check runs before the revocation branch, so a misconfigured
+  // deploy is diagnosed the same way for every handled event.
+  const secret = "whsec_test_route_secret";
+  const response = await postEvent(
+    {
+      id: "evt_refund_nokv",
+      object: "event",
+      type: "charge.refunded",
+      data: { object: { id: "ch_1", payment_intent: REFUND_INTENT, amount: 1, amount_refunded: 1 } },
+    },
+    secret,
+    { webhookSecret: secret, prodigiKeyConfigured: false },
+  );
+  assert.equal(response.status, 503);
+  assert.equal((await body(response)).error, "orders-kv-unavailable");
+});
+
+test("webhook: a refund event with no amounts is not treated as a partial refund", async () => {
+  // `amount_refunded: 0` is what Stripe sends for the first partial refund of
+  // several, and some dashboard re-sends carry no amounts at all. Reading
+  // "no numbers" as "not partial" is the safe direction only because the
+  // alternative — guessing a revocation — cannot be undone.
+  const secret = "whsec_test_route_secret";
+  const saved = { ...process.env };
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = stripeLookupFetch();
+  const kv = memoryKv({ [REFUND_SESSION]: paidDigitalRecord(REFUND_SESSION) });
+  try {
+    const response = await postEvent(
+      {
+        id: "evt_refund_zero",
+        object: "event",
+        type: "charge.refunded",
+        data: { object: { id: "ch_1", payment_intent: REFUND_INTENT } },
+      },
+      secret,
+      { webhookSecret: secret, ORDERS: kv, prodigiKeyConfigured: false },
+    );
+    assert.equal(response.status, 200);
+    assert.equal((await body(response)).revoked, true);
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (saved.STRIPE_SECRET_KEY === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved.STRIPE_SECRET_KEY;
+  }
+});
+
+test("webhook: a partial refund with no payment intent is still only logged", async () => {
+  // The log line must survive a charge that names no intent, otherwise the
+  // one record of "we chose not to revoke this" comes out as `null` with no
+  // way to tell it apart from a shape we did not expect.
+  const secret = "whsec_test_route_secret";
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  const errors: string[] = [];
+  globalThis.fetch = (async () => {
+    throw new Error("a partial refund must not reach Stripe");
+  }) as typeof fetch;
+  console.error = (...args: unknown[]) => {
+    errors.push(args.map(String).join(" "));
+  };
+  try {
+    const response = await postEvent(
+      {
+        id: "evt_refund_partial_nointent",
+        object: "event",
+        type: "charge.refunded",
+        data: { object: { id: "ch_1", amount: 3000, amount_refunded: 500 } },
+      },
+      secret,
+      {
+        webhookSecret: secret,
+        ORDERS: memoryKv(),
+        prodigiKeyConfigured: false,
+      },
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await body(response), { received: true, ignored: "partial-refund" });
+  } finally {
+    console.error = originalError;
+    globalThis.fetch = originalFetch;
+  }
+  assert.match(errors.join("\n"), /"paymentIntent":null/);
+});

@@ -38,7 +38,49 @@ import { siteUrl } from "./stripe";
 
 export type { PrintFormat };
 export type OrderFormat = PrintFormat | "unknown";
-export type OrderStatus = "paid" | "paid-unfulfilled";
+export type OrderStatus =
+  | "paid"
+  | "paid-unfulfilled"
+  /** Stripe money returned in full. Terminal: no download, no retry. */
+  | "refunded"
+  /** A cardholder dispute is open. Treated exactly like a refund. */
+  | "disputed";
+
+/**
+ * The two statuses that take an order away from a customer for money reasons,
+ * as opposed to our own failure to deliver.
+ *
+ * Distinct from `paid-unfulfilled` on purpose: there we owe the customer and
+ * Stripe may redeliver, here the customer has been (or is claiming to have been)
+ * made whole and re-serving the file would be the actual harm. Both end in
+ * "not downloadable", so `isRevoked` — not a string comparison at each use — is
+ * the single predicate for that.
+ */
+export type RevokedStatus = "refunded" | "disputed";
+
+const REVOKED_STATUSES: ReadonlySet<string> = new Set<RevokedStatus>([
+  "refunded",
+  "disputed",
+]);
+
+export function isRevoked(status: OrderStatus): status is RevokedStatus {
+  return REVOKED_STATUSES.has(status);
+}
+
+/**
+ * Narrows an unknown value from KV to an OrderStatus. parseOrderRecord reads
+ * untrusted JSON, so the status check has to survive not being a string —
+ * a bare `isRevoked(row.status)` on a number is a Set lookup that quietly
+ * returns false and lets a junk record through to be re-serialised later.
+ */
+export function isOrderStatus(value: unknown): value is OrderStatus {
+  return (
+    typeof value === "string" &&
+    (value === "paid" ||
+      value === "paid-unfulfilled" ||
+      REVOKED_STATUSES.has(value))
+  );
+}
 
 /**
  * Internal marker reason for a physical order that decideFulfillment has
@@ -372,7 +414,9 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
   }
   if (row.merchantReference !== row.sessionId) return null;
   if (typeof row.terminal !== "boolean") return null;
-  if (row.status !== "paid" && row.status !== "paid-unfulfilled") return null;
+  if (typeof row.status !== "string" || !isOrderStatus(row.status)) {
+    return null;
+  }
   if (!isOrderFormat(row.format)) return null;
   if (typeof row.photoSlug !== "string") return null;
   if (typeof row.size !== "string" || typeof row.frame !== "string") return null;
@@ -392,16 +436,32 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
   const recipient = parseStoredRecipient(row.recipient);
   if (recipient === undefined) return null;
 
-  if (row.status === "paid") {
+  if (row.status === "paid" || isRevoked(row.status)) {
+    // A revoked order is validated exactly like a paid one, with one
+    // difference: masterKey must be null. That is the point of revoking —
+    // the record keeps enough to identify and audit the order (and, for a
+    // print, the Prodigi id needed to cancel it) but no longer names the file.
     if (row.format === "digital") {
       const expectedKey = masterKeyForSlug(row.photoSlug);
       if (
         !expectedKey ||
-        row.masterKey !== expectedKey ||
+        (row.status === "paid" && row.masterKey !== expectedKey) ||
+        (isRevoked(row.status) && row.masterKey !== null) ||
         row.prodigiOrderId !== null ||
         row.assetUrl !== null ||
         recipient !== null
       ) {
+        return null;
+      }
+    } else if (isRevoked(row.status)) {
+      // A revoked print is not held to the paid shape. A print revoked before
+      // Prodigi ever accepted it (paid-unfulfilled, no order id, no asset url)
+      // cannot satisfy those checks, and requiring them would make revocation
+      // of such an order write a record this parser throws away — the order
+      // would read as absent rather than revoked. What is present is already
+      // type-checked above, so anything present is kept for the audit trail
+      // and the Prodigi cancel; nothing is required.
+      if (row.masterKey !== null) {
         return null;
       }
     } else {
