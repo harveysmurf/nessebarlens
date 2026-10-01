@@ -103,6 +103,23 @@ export function isGatedFile(file) {
   return isLibFile(file) || /(^|\/)src\/app\/api\/.+\/route\.[cm]?[jt]sx?$/.test(file);
 }
 
+/**
+ * The exit code the coverage gate must fail with, or null when the test run
+ * itself is fine.
+ *
+ * A failing test still produces a full coverage report, so the gate used to
+ * read the rows, find the floors met and exit 0 — a broken test reported as a
+ * green coverage run. `spawnSync` distinguishes the two ways a run can go bad:
+ * `error` when it never started (ENOENT, EACCES), and a non-zero `status` for
+ * an ordinary assertion failure. `signal` is also non-zero when the child was
+ * killed, and carries no exit code of its own, so that case falls back to 1.
+ */
+export function testRunExitCode(result) {
+  if (result.error) return 1;
+  if (result.signal) return 1;
+  return result.status === 0 ? null : (result.status ?? 1);
+}
+
 /** Mean of one metric over the given rows. */
 export function mean(rows, key) {
   if (rows.length === 0) return 0;
