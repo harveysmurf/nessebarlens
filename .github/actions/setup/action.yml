@@ -1,5 +1,5 @@
 name: Setup
-description: Checkout, pin Node from .nvmrc, and npm ci
+description: Pin Node from .nvmrc and install dependencies
 
 inputs:
   install-args:
@@ -10,9 +10,6 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
     - name: Setup Node
       uses: actions/setup-node@v4
       with:

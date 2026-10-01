@@ -23,13 +23,13 @@ const workflows = fs
     text: fs.readFileSync(path.join(workflowDir, name), "utf8"),
   }));
 
-test("no workflow inlines actions/checkout, actions/setup-node, or bare npm ci", () => {
+test("no workflow inlines setup-node or bare npm ci, and checks out exactly once per job", () => {
+  // Checkout is the one step the shared action cannot absorb: a local action is
+  // read from the working tree, so it has to be on disk before it can run.
+  // Pinning it to exactly one per job, immediately before the setup call,
+  // keeps that exception from widening back into a duplicated setup block.
+  const checkoutStep = /^\s*-\s*(?:name:\s*Checkout\s*\n\s*)?uses:\s*actions\/checkout@/gm;
   for (const { name, text } of workflows) {
-    assert.doesNotMatch(
-      text,
-      /uses:\s*actions\/checkout@/,
-      `${name} inlines actions/checkout; use ${setupAction}`,
-    );
     assert.doesNotMatch(
       text,
       /uses:\s*actions\/setup-node@/,
@@ -40,6 +40,29 @@ test("no workflow inlines actions/checkout, actions/setup-node, or bare npm ci",
       /^\s*run:\s*npm ci\b/m,
       `${name} runs bare npm ci; use ${setupAction} (with install-args if needed)`,
     );
+
+    // A reusable-workflow caller job has `uses:` and no steps of its own; it
+    // runs no actions in this repo, so it has no checkout to pin.
+    const jobsText = text.slice(text.search(/^jobs:[ \t]*$/m));
+    for (const block of jobsText.split(/\n {2}(?=[a-z][\w-]*:\n)/).slice(1)) {
+      if (/^\s*uses:\s*\.\/\.github\/workflows\//m.test(block)) continue;
+      const count = [...block.matchAll(checkoutStep)].length;
+      assert.equal(
+        count,
+        1,
+        `${name} has a job with ${count} checkout steps; exactly one is expected (the composite action cannot do the checkout that loads it)`,
+      );
+      assert.ok(
+        block.includes(setupAction),
+        `${name} has a job that checks out but never calls ${setupAction}`,
+      );
+      const [firstCheckout] = [...block.matchAll(checkoutStep)];
+      const setupIdx = block.indexOf(setupAction);
+      assert.ok(
+        (firstCheckout?.index ?? -1) < setupIdx,
+        `${name} calls ${setupAction} before its checkout, so the action is not on disk yet`,
+      );
+    }
   }
   assert.ok(workflows.length > 0, "no workflows found -- the glob went stale");
 });

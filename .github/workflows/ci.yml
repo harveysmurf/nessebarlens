@@ -23,6 +23,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # A local action must exist on disk before it can run, so the checkout
+      # that loads it cannot itself live inside it.
+      - uses: actions/checkout@v4
+
       - uses: ./.github/actions/setup
 
       - name: Lint

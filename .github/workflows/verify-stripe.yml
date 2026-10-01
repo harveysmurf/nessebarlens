@@ -30,6 +30,10 @@ jobs:
     env:
       STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
     steps:
+      # A local action must exist on disk before it can run, so the checkout
+      # that loads it cannot itself live inside it.
+      - uses: actions/checkout@v4
+
       - uses: ./.github/actions/setup
 
       - name: Confirm the key is test mode before anything else
