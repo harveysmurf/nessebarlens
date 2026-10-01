@@ -683,20 +683,59 @@ test("the pure half of fulfillment reaches no effect", () => {
   // answers what an order *means*, fulfillment reaches for KV and Prodigi. The
   // seam is only worth having if it holds — a single `createProdigiOrder` call
   // inside the pure half makes every decision rule untestable without a stub
-  // factory again, which is what the split was for. Proved here by importing
-  // the module with a poisoned global: anything that reached for fetch or a
-  // Cloudflare binding would trip before a single rule ran.
-  const BANNED =
-    /\b(createProdigiOrder|fetch\(|readWorkerBindings|cancelProdigiOrder)\b/;
-  const src = fs.readFileSync(
+  // factory again, which is what the split was for.
+  //
+  // Walked on the AST, not grepped: a comment naming createProdigiOrder to
+  // explain why the pure half must not call it is exactly the comment this
+  // module wants, and a text match would fail on it. Only real references
+  // count -- a value import, or a call.
+  const BANNED_VALUES = new Set([
+    "createProdigiOrder",
+    "fetch",
+    "readWorkerBindings",
+    "cancelProdigiOrder",
+  ]);
+  // A value import from one of these modules is the effect arriving through
+  // the door. A type-only import is not: `type OrderRecipient` names a shape,
+  // and shapes are what the pure half is for.
+  const BANNED_MODULES = new Set(["./prodigi-order", "./worker-bindings"]);
+  const source = ts.createSourceFile(
     path.join(root, "src/lib/order-decision.ts"),
-    "utf8",
+    fs.readFileSync(path.join(root, "src/lib/order-decision.ts"), "utf8"),
+    ts.ScriptTarget.Latest,
+    true,
   );
-  const offender = BANNED.exec(src);
-  assert.equal(
-    offender,
-    null,
-    `order-decision.ts reaches an effect (${offender?.[0]}): the pure half must decide, not act`,
+  const offenders: string[] = [];
+  const lineOf = (node: ts.Node): number =>
+    source.getLineAndCharacterOfPosition(node.getStart()).line + 1;
+  const visit = (node: ts.Node): void => {
+    if (
+      ts.isImportDeclaration(node) &&
+      node.importClause?.isTypeOnly !== true
+    ) {
+      const spec = node.moduleSpecifier;
+      if (ts.isStringLiteral(spec) && BANNED_MODULES.has(spec.text)) {
+        offenders.push(
+          `order-decision.ts:${lineOf(node)} imports ${spec.text}`,
+        );
+      }
+    }
+    if (
+      ts.isCallExpression(node) &&
+      ts.isIdentifier(node.expression) &&
+      BANNED_VALUES.has(node.expression.text)
+    ) {
+      offenders.push(
+        `order-decision.ts:${lineOf(node)} calls ${node.expression.text}()`,
+      );
+    }
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  assert.deepEqual(
+    offenders,
+    [],
+    `the pure half reaches an effect: ${offenders.join(", ")}`,
   );
 
   // Non-vacuous in the other direction: the half that owns the effects must
