@@ -86,3 +86,68 @@ export function errorMessage(value: unknown): string | null {
   const message = value.error;
   return typeof message === "string" && message !== "" ? message : null;
 }
+
+/**
+ * A body that arrived and was not JSON. A distinct value rather than null,
+ * because `null` is a legitimate JSON payload and "the server sent HTML" is a
+ * different failure from "the server sent JSON null" — the caller reports them
+ * differently.
+ */
+const NOT_JSON: unique symbol = Symbol("not-json");
+export type NonJsonBody = typeof NOT_JSON;
+
+/**
+ * Read a response body as JSON without ever throwing.
+ *
+ * `res.json()` rejects on anything that is not JSON, and the configurator
+ * called it before checking `res.ok`. A 502 answered by the edge or a proxy
+ * with an HTML error page therefore surfaced to the customer as
+ * `Unexpected token '<'` — a JavaScript parse error, at a 4px red label under
+ * "Shipping estimate", describing our own client rather than the outage that
+ * actually happened. Reading the text and parsing it by hand turns the same
+ * response into a message naming the status.
+ *
+ * A body that cannot even be read (a dropped connection) is also NOT_JSON: the
+ * status is the only thing left to report, and it is still the useful half.
+ */
+export async function readJsonResponse(res: Response): Promise<unknown | NonJsonBody> {
+  let text: string;
+  try {
+    text = await res.text();
+  } catch {
+    return NOT_JSON;
+  }
+  // An empty body is a valid response to some failures and parses to nothing;
+  // treating it as "no payload" keeps `errorMessage` on the fallback path
+  // instead of reporting a parse failure that never happened.
+  if (text === "") return null;
+  try {
+    return JSON.parse(text) as unknown;
+  } catch {
+    return NOT_JSON;
+  }
+}
+
+/** Whether a body from readJsonResponse arrived as something other than JSON. */
+export function isNonJsonBody(value: unknown): value is NonJsonBody {
+  return value === NOT_JSON;
+}
+
+/**
+ * The message to show for a failed request: the server's own string when it
+ * sent one, and the transport status otherwise.
+ *
+ * Both call sites need this and both got it wrong independently before — one
+ * could echo nothing, the other nothing but a parser error — so the fallback
+ * carries the status on purpose. "Checkout failed (502)" tells a customer what
+ * happened and a developer which request to look for; "Checkout failed" tells
+ * neither.
+ */
+export function requestErrorMessage(
+  value: unknown,
+  status: number,
+  fallback: string,
+): string {
+  if (isNonJsonBody(value)) return `${fallback} (${status})`;
+  return errorMessage(value) ?? `${fallback} (${status})`;
+}

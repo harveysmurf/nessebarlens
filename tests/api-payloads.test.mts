@@ -4,6 +4,9 @@ import {
   checkoutUrl,
   errorMessage,
   isLiveQuote,
+  isNonJsonBody,
+  readJsonResponse,
+  requestErrorMessage,
 } from "../src/lib/api-payloads.ts";
 
 test("isLiveQuote accepts a well-formed quote", () => {
@@ -85,4 +88,60 @@ test("errorMessage reads only a usable string, so the error path cannot throw", 
   assert.equal(errorMessage({}), null);
   assert.equal(errorMessage(null), null);
   assert.equal(errorMessage("plain string"), null);
+});
+
+/**
+ * #130: the configurator called res.json() before checking res.ok, so a 502
+ * answered with an HTML error page surfaced to the customer as
+ * `Unexpected token '<'` — a JavaScript parse error describing our own client
+ * instead of the outage that happened.
+ */
+test("a non-JSON body is reported as such rather than thrown", async () => {
+  const html = new Response("<!DOCTYPE html><html>502</html>", { status: 502 });
+  assert.equal(isNonJsonBody(await readJsonResponse(html)), true);
+});
+
+test("a JSON body is parsed whatever it is, including null and a list", async () => {
+  assert.deepEqual(await readJsonResponse(Response.json({ a: 1 })), { a: 1 });
+  assert.deepEqual(await readJsonResponse(Response.json([1, 2])), [1, 2]);
+  assert.deepEqual(await readJsonResponse(Response.json(null)), null);
+});
+
+test("an empty body is a missing payload, not a parse failure", async () => {
+  // The two are different reports: "the server sent nothing" versus "the
+  // server sent something that was not JSON".
+  assert.equal(isNonJsonBody(await readJsonResponse(new Response("", { status: 500 }))), false);
+});
+
+test("a body that cannot be read at all is still reportable by status", async () => {
+  const broken = {
+    ok: false,
+    status: 500,
+    text: async () => {
+      throw new Error("connection reset");
+    },
+  } as unknown as Response;
+  assert.equal(isNonJsonBody(await readJsonResponse(broken)), true);
+});
+
+test("the error message names the status when the server sent no usable string", async () => {
+  assert.equal(
+    requestErrorMessage({ error: "Unknown photoSlug" }, 404, "Quote failed"),
+    "Unknown photoSlug",
+  );
+  // The reported failure: an HTML 502 page has no `error` field to read. The
+  // sentinel is the module's own, obtained the way the component gets it.
+  const notJson = await readJsonResponse(
+    new Response("<!DOCTYPE html>", { status: 502 }),
+  );
+  assert.equal(
+    requestErrorMessage(notJson, 502, "Quote failed"),
+    "Quote failed (502)",
+  );
+  assert.equal(requestErrorMessage(null, 400, "Checkout failed"), "Checkout failed (400)");
+  assert.equal(requestErrorMessage({}, 503, "Checkout failed"), "Checkout failed (503)");
+  assert.equal(
+    requestErrorMessage({ error: "Checkout is not configured" }, 503, "Checkout failed"),
+    "Checkout is not configured",
+  );
 });
