@@ -141,8 +141,12 @@ test("every select is named by a label, and every label names a select", () => {
     new URL("../src/components/PrintConfigurator.tsx", import.meta.url),
     "utf8",
   );
-  const labelled = [...source.matchAll(/<select[\s\S]{0,200}?\bid="([^"]+)"/g)].map((m) => m[1]);
-  const pointing = [...source.matchAll(/<label[\s\S]{0,200}?\bhtmlFor="([^"]+)"/g)].map((m) => m[1]);
+  // Each match is scoped to a single opening tag (up to its `>`), so the
+  // attribute is found no matter how the JSX is wrapped across lines — a
+  // character-count window would silently stop matching a reformatted tag and
+  // drop it from the set, turning a real regression into a green run.
+  const labelled = [...source.matchAll(/<select\b[^>]*?\bid="([^"]+)"/g)].map((m) => m[1]);
+  const pointing = [...source.matchAll(/<label\b[^>]*?\bhtmlFor="([^"]+)"/g)].map((m) => m[1]);
 
   assert.deepEqual(labelled, ["print-size", "frame-finish", "shipping-country"]);
   assert.deepEqual(pointing, labelled, "each select needs a label with a matching htmlFor");
