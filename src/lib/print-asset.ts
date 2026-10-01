@@ -65,7 +65,11 @@ function usableSecret(secret: string | null | undefined): string | null {
   return trimmed.length >= PRINT_ASSET_SECRET_MIN_LENGTH ? trimmed : null;
 }
 
-/** HMAC secret for /api/print-asset. Min 32 chars; unset → placeholder fallback. */
+/**
+ * HMAC secret for /api/print-asset. Min 32 chars; unset returns null, which
+ * callers read as "not configured" rather than as a usable default — see
+ * signPrintAssetUrl for why there is no placeholder path here.
+ */
 export function printAssetSecret(
   env: Record<string, unknown> = process.env,
 ): string | null {
@@ -107,8 +111,15 @@ export function isPhotoSlug(value: string): boolean {
 }
 
 /**
- * Signed Worker URL for Prodigi. Returns null if secret unset or slug invalid
- * (caller falls back to placeholder).
+ * Signed Worker URL for Prodigi. Returns null if the secret is unset or the slug
+ * is invalid.
+ *
+ * The placeholder default in `buildProdigiOrderBody` is not a reachable
+ * production path: its only caller (createProdigiOrder) already fails closed
+ * when signing returns null, and never reaches it. It stays as a direct-call
+ * default for tests. The checkout path cannot get here either way —
+ * /api/checkout calls canSignMasterAsset() and answers 503 before creating a
+ * Stripe session, so no paid order is fulfilled from a placeholder.
  */
 export async function signPrintAssetUrl(
   slug: string,
