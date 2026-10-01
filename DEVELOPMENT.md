@@ -7,15 +7,16 @@ branch or a pull request. It is the operating manual, not a wish list.
 
 ## 1. What this is
 
-A minimalist photography showcase for the Old Town of Nessebar. Three galleries
-(Fine Art, Archive, Film), no cart, no checkout page. Visitors pick a format and
-submit an order inquiry; payment is a Stripe Checkout session and fulfillment is
-recorded (Prodigi) rather than executed in code.
+A minimalist photography storefront for the Old Town of Nessebar. Three galleries
+(Fine Art, Archive, Film). Visitors configure a photo — size, frame, paper — see a
+live price, and buy: payment is a Stripe Checkout Session, and a print is
+fulfilled by Prodigi with a digitally-delivered file as the alternative. Fulfillment
+is driven by the Stripe webhook, which records the order in KV.
 
 Stack:
 
-- **Next.js 15** App Router (React 19) on **Cloudflare Workers** via
-  `@opennextjs/cloudflare`.
+- **Next.js 15** App Router (React 19), built with `@opennextjs/cloudflare` and
+  deployed to **Cloudflare Pages** (see §5 — not Workers).
 - **Tailwind CSS 4** for styling. **Inter** (sans) + **Cormorant Garamond**
   (serif) are vendored locally in `src/fonts/` — builds are offline.
 - **TypeScript 5**, **ESLint 9** (next/core-web-vitals), **node:test** for tests.
@@ -29,11 +30,13 @@ Stack:
 - Origin: `git@github.com:harveysmurf/nessebarlens.git`. The Buzz repo card has no
   clone URL; use the git origin above.
 - One agent owns a writable checkout at a time. For concurrent work use separate
-  worktrees under `PROJECTS/.worktrees/nessebar-lens-*/` and separate branches.
+  worktrees beside the main checkout (`REPOS/nessebarlens-wt-<branch>/`) and
+  separate branches.
 - **Never** discard, reset, clean, force-push, or delete another agent's branch or
   worktree without Simo's explicit say-so.
-- Work on a branch, run tests, open a Buzz PR in the `nessebar-lens-website`
-  channel. Merges to `main` happen after approval.
+- Work on a branch, run tests, open a **GitHub** PR into `main` (§9), and announce
+  it in the `nessebar-lens-website` channel. Merges happen after approval — see §9
+  for who approves and what "approved" means.
 - Secrets live at `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`, symlinked
   into the checkout as `.env.local`. `.env*` is git-ignored. Never commit a token.
 
@@ -109,7 +112,7 @@ Environment variables (names only — values live in the `.env.local` symlink):
 | `PRODIGI_API_BASE` | Explicit Prodigi host: `https://api.sandbox.prodigi.com` or `https://api.prodigi.com` (never inferred from key presence) |
 | `PRODIGI_SANDBOX_API_KEY` | Prodigi key used when `PRODIGI_API_BASE` is sandbox |
 | `PRODIGI_API_KEY` | Prodigi key used when `PRODIGI_API_BASE` is live |
-| `PRINT_ASSET_HMAC_SECRET` | ≥32-char HMAC secret for `/api/print-asset` (Prodigi). Optional — when unset, physical orders use `/placeholders/*.jpg` |
+| `PRINT_ASSET_HMAC_SECRET` | ≥32-char HMAC secret for `/api/print-asset` (Prodigi). **Required for physical checkout, not optional** — `/api/checkout` calls `canSignMasterAsset()` and answers **503** rather than take the money for a print it cannot fulfill, and `/api/print-asset` answers 503 `print-asset-unavailable` when unset. A short or whitespace-only value is treated as unset. |
 | `NEXT_PUBLIC_SITE_URL` | Canonical public origin (used by `src/lib/stripe.ts`). **Required for any production build** — `next.config.ts` fails the build without it, because `NEXT_PUBLIC_*` is inlined at build time and a silent `http://localhost:3000` fallback would ship a checkout that redirects to localhost. `next dev` and `npm test` do not need it. |
 | `NEXT_PUBLIC_WEB_IMAGES_BASE` | Base URL for gallery `<img>` srcset |
 | `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` | Opt-in gate for the R2 derivative ladder. Unset = placeholders. Only `true`/`1` enable it — a configured base alone does **not**. |
@@ -121,10 +124,14 @@ Environment variables (names only — values live in the `.env.local` symlink):
 
 ## 4. Testing
 
-`npm test` runs `node --test` against `tests/fulfillment.test.mts` on **node 24**,
-with types stripped by node itself and one resolve hook
+`npm test` runs `node --test tests/*.test.mts` — the **whole suite** — on
+**node 24**, with types stripped by node itself and one resolve hook
 (`tests/register.mjs` → `tests/resolve-hooks.mjs`) for extensionless relative
 imports. Tests are **Node-native, no test runner framework**.
+
+`npm run coverage` enforces the floors in `scripts/coverage.mjs` (lines 99.95%,
+branches 99.9%, functions 100%) and is a **separate CI step** — a green
+`npm test` says nothing about coverage, and CI runs both.
 
 Because stripping happens in place, `src/` must stay erasable-syntax only — no
 `enum`, `namespace`, or `declare module`. `tests/resolve-hooks.test.mts` fails
@@ -205,7 +212,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → test |
+| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors** |
 | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → Pages preview → **smoke test** (`scripts/smoke.sh`) → PR comment; cleanup on close |
 | `.github/workflows/prod.yml` | push to `main` + `workflow_dispatch` | production Environment → build → Pages `main` → `sync-pages-secrets.sh production` |
 
