@@ -1,0 +1,60 @@
+name: Verify Stripe integration
+
+# The refund/dispute revocation path (#101) resolves an order by asking Stripe
+# which Checkout Session a payment came from, and a dispute's payload shape to
+# get there. Both were written against documented API shapes and unit-tested
+# against stubs -- a stub that disagrees with the real API is indistinguishable
+# from a correct one. This runs the real test-mode API so those two assumptions
+# are executed rather than assumed.
+#
+# Deliberately NOT part of ci.yml: it needs the staging environment's secrets
+# and creates real objects in the Stripe test environment, so it runs on its own
+# schedule and on demand rather than gating every unrelated pull request.
+on:
+  workflow_dispatch:
+  schedule:
+    # Off the hour on weekdays: catches a Stripe-side change to these shapes
+    # within a day rather than at deploy time.
+    - cron: "37 6 * * 1-5"
+
+concurrency:
+  group: verify-stripe-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: Verify Stripe test-mode integration
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    environment: staging
+    env:
+      STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          # Exact, not a "24" range: a floating major lets CI and .nvmrc
+          # disagree, which is the failure tests/node-version-pin.test.mts
+          # exists to prevent.
+          node-version: "24.21.0"
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Confirm the key is test mode before anything else
+        # The script refuses a non-sk_test_ key too. This fails the run at the
+        # step level so a live-mode key cannot reach a script that creates
+        # disputes, even if that script's own guard is later broken.
+        run: |
+          set -euo pipefail
+          case "$STRIPE_SECRET_KEY" in
+            sk_test_*) echo "key is test mode" ;;
+            *) echo "::error::STRIPE_SECRET_KEY is not a test key — refusing to run"; exit 1 ;;
+          esac
+
+      - name: Verify Stripe integration
+        run: node scripts/verify-stripe-integration.mjs
