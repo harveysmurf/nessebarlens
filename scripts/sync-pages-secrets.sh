@@ -66,8 +66,11 @@ export TARGET
 export PROJECT=nessebar-lens
 export PRODIGI_API_BASE="$BASE"
 
-# Optional Phase 3 print-asset HMAC (Worker streams masters to Prodigi).
-# When unset, physical orders keep using public /placeholders/*.jpg.
+# Print-asset HMAC (the Worker streams masters to Prodigi). Synced only when the
+# value is present and >=32 chars; the same rule print-asset.ts applies, so a
+# short or blank value is dropped here and reads as unset at runtime — which now
+# means /api/checkout answers 503 for physical formats rather than falling back to
+# /placeholders/*.jpg. See #114 for the drop being silent.
 PRINT_SECRET="${PRINT_ASSET_HMAC_SECRET:-}"
 if [[ -n "$PRINT_SECRET" && ${#PRINT_SECRET} -ge 32 ]]; then
   export PRINT_ASSET_HMAC_SECRET="$PRINT_SECRET"

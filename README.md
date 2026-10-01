@@ -1,36 +1,55 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# Nessebar Lens
 
-## Getting Started
+A minimalist photography storefront for the Old Town of Nessebar. Three galleries —
+Fine Art, Archive, Film — with a configurator that prices a print in EUR, a Stripe
+Checkout flow, and fulfillment through Prodigi for physical orders.
 
-First, run the development server:
+## Stack
+
+- **Next.js 15** App Router (React 19), built with `@opennextjs/cloudflare`
+- **Tailwind CSS 4**; Inter + Cormorant Garamond vendored in `src/fonts/` (offline builds)
+- **TypeScript 5**, **ESLint 9**, **node:test** — no test runner framework
+- Cloudflare Pages, with KV (`ORDERS`) and R2 (`WEB` derivatives, `MASTERS` masters)
+- Stripe for payments, Prodigi for print fulfillment
+
+## Run it locally
+
+Node **24.21.0** exactly — pinned in `.nvmrc`, and not every 24.x works.
 
 ```bash
+nvm use          # first, always: a wrong runtime fails the suite for unrelated-looking reasons
+npm install
 npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+Checks:
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+```bash
+npm run lint
+npm run typecheck
+npm test
+npm run coverage   # enforced floors: lines 99.95%, branches 99.9%, functions 100%
+```
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+## Deploy model
 
-## Learn More
+Canonical path is GitHub Actions. A PR gets a Cloudflare Pages preview and a
+smoke test against it; a merge to `main` deploys production. Stripe and Prodigi
+credentials live in the GitHub `staging` and `production` Environments and are
+synced to Pages by `scripts/sync-pages-secrets.sh`. Preview/staging is always
+Stripe sandbox + Prodigi sandbox; the host is selected by an explicit
+`PRODIGI_API_BASE`, never inferred from which key is present.
 
-To learn more about Next.js, take a look at the following resources:
+## Where the details live
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+**[DEVELOPMENT.md](./DEVELOPMENT.md)** is the operating manual: environment
+variables, testing, deploy and secret-rotation procedure, photo ingest, the
+data-flow invariants, and the release checklist. Read it before opening a branch.
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+Two things worth knowing before you touch the payment or fulfillment path:
 
-## Deploy on Vercel
-
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
-
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+- Prices are per-photo and per-Prodigi-quote with a flat EUR shipping amount, so
+  adaptive pricing is explicitly **disabled** on Checkout sessions — a converted
+  local amount is one we neither set nor reconcile.
+- Fulfillment is driven by the Stripe webhook, which records the order to KV.
+  Unconfigured config fails as a retryable 503, never as an upstream 502.
