@@ -3,12 +3,19 @@ name: CI
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
+  # No push trigger on purpose: prod.yml calls this workflow as a reusable
+  # workflow and gates deploy on it, so a main push already runs the suite
+  # through prod's `checks` job. Leaving `push` here ran it twice per merge.
+  workflow_call:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Namespaced by ref, not by workflow name: `github.workflow` resolves to the
+  # CALLER's name inside a reusable workflow, so a prod-called run and a
+  # pull-request run of the same file would not share a group. Pull requests
+  # are superseded freely; the production caller does not use this workflow's
+  # concurrency (prod.yml serializes with cancel-in-progress: false).
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint-and-test:
@@ -16,20 +23,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      # A local action must exist on disk before it can run, so the checkout
+      # that loads it cannot itself live inside it.
+      - uses: actions/checkout@v4
 
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          # Exact, not a "24" range: 24.10 fails tests/routes.test.mts on a
-          # loader change, so a floating major lets CI and .nvmrc disagree.
-          # tests/node-version-pin.test.mts holds every workflow to .nvmrc.
-          node-version: "24.21.0"
-          cache: npm
-
-      - name: Install
-        run: npm ci
+      - uses: ./.github/actions/setup
 
       - name: Lint
         run: npm run lint
