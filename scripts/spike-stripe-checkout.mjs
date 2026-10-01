@@ -80,23 +80,32 @@ page.on("response", (r) => {
 });
 
 await page.goto(session.url, { waitUntil: "domcontentloaded" });
-
-// Stripe's hosted form runs in an iframe; the card fields only exist once the
-// embedded bundle has booted, so a bare goto can pass and still be unusable.
-const cardFrame = page.frameLocator("iframe").first();
-await cardFrame.locator("input[name=cardnumber], input[autocomplete=cc-number]").waitFor({
-  timeout: 30_000,
-});
+await page.locator("input[name=email]").fill("spike@example.com");
 console.log("OK   hosted checkout page reachable in headless chromium");
 
 if (blocked.length) console.warn(`WARN stripe returned 403: ${blocked.join(", ")}`);
 
-// 3. Does the test card go through? 4242… is Stripe's own documented test card
+// 3. Select the card method. The accordion row exposes an accessible button with
+//    a zero-size bounding box, so neither Playwright's own click nor a locator
+//    click lands: a coordinate click on the row is the only thing that selects
+//    the radio. Getting this wrong looks exactly like Stripe blocking us — the
+//    card fields simply never mount, with no error anywhere.
+const cardRow = page.getByRole("button", { name: "Pay with card" });
+const rowBox = await cardRow.boundingBox();
+if (!rowBox) fail("no card row on the hosted page");
+await page.mouse.click(rowBox.x + 5, rowBox.y + 5);
+
+// The card inputs are in the top frame's DOM, not inside the
+// `checkout-inner-origin-frame` iframe, so query the page directly.
+await page.locator('input[autocomplete="cc-number"]').waitFor({ timeout: 30_000 });
+
+// 4. Does the test card go through? 4242… is Stripe's own documented test card
 //    and cannot charge a real account.
-await cardFrame.locator("input[name=cardnumber], input[autocomplete=cc-number]").fill("4242424242424242");
-await cardFrame.locator("input[name=exp-date], input[autocomplete=cc-exp]").fill("1230");
-await cardFrame.locator("input[name=cvc], input[autocomplete=cc-csc]").fill("314");
-await page.getByRole("button", { name: /pay|submit/i }).first().click();
+await page.locator('input[autocomplete="cc-number"]').fill("4242424242424242");
+await page.locator('input[autocomplete="cc-exp"]').fill("1230");
+await page.locator('input[autocomplete="cc-csc"]').fill("314");
+await page.locator('input[autocomplete="cc-name"]').fill("Spike Tester");
+await page.getByRole("button", { name: /^Pay$/ }).click();
 
 await page.waitForURL(/spike\/(paid|cancelled)/, { timeout: 60_000 }).catch(() => {
   fail(`never reached the success_url; landed on ${page.url()}`);
