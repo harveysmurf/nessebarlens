@@ -1241,6 +1241,10 @@ test("checkout: a physical order quotes, locks the country, and ships a rate", a
       `${SITE}/placeholders/dawn.jpg?v=${PLACEHOLDER_VERSION}`,
     );
     assert.equal(params["shipping_options[0][shipping_rate_data][fixed_amount][amount]"], "499");
+    // Stated in the create params rather than left to the Stripe dashboard
+    // toggle, so the amount semantics the webhook's `amount-mismatch` check
+    // depends on are visible in the code. See tests/adaptive-pricing.test.mts.
+    assert.equal(params["adaptive_pricing[enabled]"], "false");
   } finally {
     globalThis.fetch = originalFetch;
     restore();
