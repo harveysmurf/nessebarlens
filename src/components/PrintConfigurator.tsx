@@ -141,9 +141,15 @@ export function PrintConfigurator({
         body: JSON.stringify(body),
       });
       const data: unknown = await res.json();
-      const url = checkoutUrl(data);
-      if (!res.ok || !url) {
+      // The transport status is checked first so the server's own error string
+      // is the message on every non-ok response, whatever the payload's `url`
+      // happens to be.
+      if (!res.ok) {
         throw new Error(errorMessage(data) ?? "Checkout failed");
+      }
+      const url = checkoutUrl(data);
+      if (!url) {
+        throw new Error("Checkout failed");
       }
       // The redirect target arrives from the API response, so it is treated as
       // untrusted: `checkoutUrl` has already refused anything that is not an

@@ -148,7 +148,8 @@ test("the checkout redirect is refused unless it is an https URL", async () => {
   // and a null narrowing can never reach the assignment.
   const { checkoutUrl } = await import("../src/lib/api-payloads.ts");
   assert.match(source, /const url = checkoutUrl\(data\);/);
-  assert.match(source, /if \(!res\.ok \|\| !url\) \{/);
+  assert.match(source, /if \(!res\.ok\) \{/);
+  assert.match(source, /if \(!url\) \{/);
   const guard = source.indexOf("checkoutUrl(data)");
   const navigate = source.indexOf("window.location.href = url");
   assert.ok(guard !== -1 && navigate !== -1, "both the guard and the navigation must exist");
