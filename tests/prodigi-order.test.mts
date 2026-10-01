@@ -273,7 +273,10 @@ test("auth and rate-limit failures retry; a bad request does not", async () => {
         assert.equal(result.ok === false && result.status, status);
         assert.equal(
           result.ok === false && result.message,
-          `Prodigi order HTTP ${status}`,
+          // The upstream reason is appended (#135). The stub returns
+          // { error: "nope" }, so this also proves the body is read and not
+          // discarded the way it was before.
+          `Prodigi order HTTP ${status}: nope`,
         );
       } finally {
         stub.restore();
@@ -319,6 +322,95 @@ test("a non-JSON 200 body is a failure, not a crash", async () => {
       const result = await createProdigiOrder(ORDER_INPUT);
       assert.equal(result.ok, false);
       assert.equal(result.ok === false && result.message, "Prodigi order missing id");
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+test("a failed order carries Prodigi's own detail, not just our status", async () => {
+  // #135: the order path used to discard the body, so a rejected order was
+  // logged as a bare "Prodigi order HTTP 400" — indistinguishable from a
+  // transient upstream error. Prodigi names the field it objected to, and that
+  // is the only thing separating "fix our order body" from "check Prodigi".
+  await withProdigiEnv(async () => {
+    process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
+    const stub = stubFetch(() =>
+      json({ detail: "SKU GLOBAL-CAN-12X16 is not available" }, 400),
+    );
+    try {
+      const result = await createProdigiOrder(ORDER_INPUT);
+      assert.equal(result.ok, false);
+      assert.equal(
+        result.ok === false && result.message,
+        "Prodigi order HTTP 400: SKU GLOBAL-CAN-12X16 is not available",
+      );
+      // Classification is decided by the status, not by the appended text, so
+      // an upstream reason can never flip a retryable failure into a permanent one.
+      assert.equal(result.ok === false && result.reason, "prodigi-validation-error");
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+test("an HTML error page does not crash or confuse the order failure", async () => {
+  // The original defect: res.json() threw on this, the catch dropped it to {},
+  // and the caller got a bare status with no hint the body was never JSON. The
+  // message must now degrade to the plain status and still classify correctly.
+  await withProdigiEnv(async () => {
+    process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
+    const stub = stubFetch(() => new Response("<html>502 Bad Gateway</html>", { status: 502 }));
+    try {
+      const result = await createProdigiOrder(ORDER_INPUT);
+      assert.equal(result.ok, false);
+      assert.equal(result.ok === false && result.message, "Prodigi order HTTP 502");
+      assert.equal(result.ok === false && result.kind, "server");
+      assert.equal(result.ok === false && result.reason, "prodigi-unavailable");
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+test("an unreadable order body leaves the message exactly as it was", async () => {
+  // A dropped connection still answers with a status, and that status is still
+  // the useful half. A body we cannot read must not turn into a thrown
+  // TypeError that escapes createProdigiOrder's result contract.
+  await withProdigiEnv(async () => {
+    process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
+    const stub = stubFetch(() => ({
+      ok: false,
+      status: 503,
+      text: () => Promise.reject(new Error("ECONNRESET")),
+    }) as unknown as Response);
+    try {
+      const result = await createProdigiOrder(ORDER_INPUT);
+      assert.equal(result.ok, false);
+      assert.equal(result.ok === false && result.message, "Prodigi order HTTP 503");
+      assert.equal(result.ok === false && result.reason, "prodigi-unavailable");
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+test("an empty order error body adds nothing, rather than inventing a reason", async () => {
+  // Observed against api.sandbox.prodigi.com on 2026-10-01: the orders endpoint
+  // answers a rejected order with an *empty* body (0 bytes) for a bad SKU, a
+  // missing required attribute, an unknown shipping method and an unknown
+  // currency alike -- unlike /v4.0/quotes, which returns a JSON validation body.
+  // So on this path the suffix is usually correctly absent, and the status is
+  // genuinely all there is. Pinned so a future "always append something" change
+  // cannot start fabricating a reason for a body that had none.
+  await withProdigiEnv(async () => {
+    process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
+    const stub = stubFetch(() => new Response("", { status: 400 }));
+    try {
+      const result = await createProdigiOrder(ORDER_INPUT);
+      assert.equal(result.ok, false);
+      assert.equal(result.ok === false && result.message, "Prodigi order HTTP 400");
+      assert.equal(result.ok === false && result.reason, "prodigi-validation-error");
     } finally {
       stub.restore();
     }
