@@ -54,6 +54,22 @@ test("every workflow uses the shared setup composite action", () => {
   }
 });
 
+test("ci.yml has no push trigger -- prod.yml calls it and gates deploy on it", () => {
+  const ci = workflows.find((w) => w.name === "ci.yml");
+  assert.ok(ci, "ci.yml is gone");
+
+  // Slice past the `on:` line itself, then stop at the next top-level key:
+  // splitting from the `on:` line would split on it and yield an empty block.
+  const onIdx = ci.text.search(/^on:[ \t]*$/m);
+  assert.ok(onIdx >= 0, "ci.yml has no top-level on: block");
+  const onBlock = ci.text.slice(onIdx).split(/\n\S/)[0];
+  assert.doesNotMatch(
+    onBlock,
+    /^\s{2}push:/m,
+    "ci.yml triggers on push, so every main merge runs the suite twice: once from this trigger and once from prod.yml's checks job",
+  );
+});
+
 test("prod.yml deploy needs a job that calls ci.yml", () => {
   const prod = workflows.find((w) => w.name === "prod.yml");
   assert.ok(prod, "prod.yml is gone");

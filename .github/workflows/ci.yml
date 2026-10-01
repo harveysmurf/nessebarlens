@@ -3,13 +3,19 @@ name: CI
 on:
   pull_request:
     branches: [main]
-  push:
-    branches: [main]
+  # No push trigger on purpose: prod.yml calls this workflow as a reusable
+  # workflow and gates deploy on it, so a main push already runs the suite
+  # through prod's `checks` job. Leaving `push` here ran it twice per merge.
   workflow_call:
 
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # Namespaced by ref, not by workflow name: `github.workflow` resolves to the
+  # CALLER's name inside a reusable workflow, so a prod-called run and a
+  # pull-request run of the same file would not share a group. Pull requests
+  # are superseded freely; the production caller does not use this workflow's
+  # concurrency (prod.yml serializes with cancel-in-progress: false).
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lint-and-test:
