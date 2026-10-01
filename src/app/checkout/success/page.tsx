@@ -78,6 +78,29 @@ export default async function CheckoutSuccessPage({
             longer available.
           </p>
         </OrderCard>
+      ) : state === "unavailable" ? (
+        /*
+          A record exists under this session id but cannot be parsed, so
+          resolveCheckoutPageState returns "unavailable" and
+          /api/order-status answers 500 corrupt-order for it. Distinct from
+          "processing" on purpose: that branch's poller would retry the same
+          failing endpoint until its deadline, and "we are preparing your
+          download" is a claim we cannot make — the order record is already
+          there and it is broken. No poller, because nothing can change
+          without someone fixing the record.
+
+          Unlike digital-unavailable, this does not promise that the team has
+          been notified: nothing logs a corrupt record on the read paths
+          (only order-revocation.ts emits order.corrupt). So it asks the
+          customer to get in touch and leaves the alert to follow up.
+        */
+        <OrderCard reference={reference}>
+          <p className="text-xs text-stone-600 leading-relaxed font-light">
+            We could not read this order, so we cannot show you its status here.
+            Please contact us and quote the reference below — your payment went
+            through and we will get your order to the right place.
+          </p>
+        </OrderCard>
       ) : state === "digital-unavailable" ? (
         <OrderCard reference={reference}>
           <p className="text-xs text-stone-600 leading-relaxed font-light">
@@ -87,7 +110,7 @@ export default async function CheckoutSuccessPage({
           </p>
         </OrderCard>
       ) : (
-        // processing, and every degraded case that cannot assert anything yet.
+        // processing, and the degraded cases that cannot assert anything yet.
         <OrderCard reference={reference} sessionId={sessionId}>
           <p className="text-xs text-stone-600 leading-relaxed font-light">
             We are preparing your download. This page updates on its own — no need

@@ -430,9 +430,36 @@ test("every page state has a branch, so none falls through to a bare thank-you",
     "digital-ready",
     "revoked",
     "digital-unavailable",
+    "unavailable",
   ]) {
     assert.match(PAGE, new RegExp(`"${state}"`), `no branch for ${state}`);
   }
+});
+
+test("the unavailable branch tells the truth and does not poll", () => {
+  // "unavailable" means a record exists under this session id and cannot be
+  // parsed. It used to fall through to the processing branch, which claimed we
+  // were preparing the download and mounted a poller that then retried
+  // /api/order-status -- a guaranteed 500 corrupt-order -- until its deadline.
+  const start = PAGE.indexOf('state === "unavailable"');
+  assert.ok(start > 0, 'no branch for "unavailable"');
+  const branch = PAGE.slice(start, PAGE.indexOf('state === "digital-unavailable"', start));
+
+  // No poller: nothing about a corrupt record changes on its own, so retrying
+  // only spends the customer's two minutes to reach the same 500.
+  assert.doesNotMatch(
+    branch,
+    /sessionId=\{sessionId\}/,
+    "the unavailable branch must not mount OrderStatusPoller",
+  );
+  // And it must not claim the order is still being prepared.
+  assert.doesNotMatch(
+    branch,
+    /preparing your download/i,
+    "a corrupt record is not a processing order",
+  );
+  // The reference is still shown, so the customer has something to quote.
+  assert.match(branch, /reference=\{reference\}/);
 });
 
 test("the page prints a short reference, never the raw session id", () => {
