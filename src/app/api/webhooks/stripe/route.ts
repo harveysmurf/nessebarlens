@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { fulfillCheckoutSession } from "@/lib/fulfillment";
 import {
+  defaultStripeLookup,
+  paymentIntentForDispute,
+  revokeOrderByPaymentIntent,
+} from "@/lib/order-revocation";
+import {
   ORDERS_KV_UNAVAILABLE_ERROR,
   ORDERS_KV_UNAVAILABLE_STATUS,
 } from "@/lib/orders-kv";
@@ -14,10 +19,41 @@ export const dynamic = "force-dynamic";
 // OpenNext runs this inside the Worker via nodejs_compat. Not a separate Node server.
 export const runtime = "nodejs";
 
-const HANDLED = new Set([
+const CHECKOUT_EVENTS = new Set([
   "checkout.session.completed",
   "checkout.session.async_payment_succeeded",
 ]);
+
+/** The two money-events that take an order away from a customer. */
+const REVOCATION_EVENTS = new Set(["charge.refunded", "charge.dispute.created"]);
+
+/** The subset of a Charge this handler reads. */
+type StripeCharge = {
+  payment_intent?: string | null;
+  amount?: number | null;
+  amount_refunded?: number | null;
+};
+
+/**
+ * A partial refund does not revoke anything.
+ *
+ * A customer who got 40% back still holds the balance that paid for the file,
+ * and revoking on a partial takes a paid download away from someone who is not
+ * out of pocket. The amounts are logged so the decision is visible rather than
+ * silent — the alternative failure mode is an operator assuming partials were
+ * considered and finding they were not.
+ */
+function partialRefundAmounts(
+  charge: StripeCharge,
+): { amount: number; amountRefunded: number } | null {
+  const amount = charge.amount;
+  const refunded = charge.amount_refunded;
+  // Amounts missing entirely is treated as "not partial": an event we cannot
+  // read the numbers off is not evidence of a partial refund, and guessing
+  // either way revokes or spares a purchase on a coin toss.
+  if (typeof amount !== "number" || typeof refunded !== "number") return null;
+  return refunded > 0 && refunded < amount ? { amount, amountRefunded: refunded } : null;
+}
 
 export async function POST(request: Request) {
   const rawBody = await request.text();
@@ -48,7 +84,9 @@ export async function POST(request: Request) {
     return NextResponse.json({ error: "invalid-signature" }, { status: 400 });
   }
 
-  if (!HANDLED.has(event.type)) {
+  const isCheckout = CHECKOUT_EVENTS.has(event.type);
+  const isRevocation = REVOCATION_EVENTS.has(event.type);
+  if (!isCheckout && !isRevocation) {
     return NextResponse.json({ received: true, ignored: event.type });
   }
 
@@ -58,6 +96,10 @@ export async function POST(request: Request) {
       { error: ORDERS_KV_UNAVAILABLE_ERROR },
       { status: ORDERS_KV_UNAVAILABLE_STATUS },
     );
+  }
+
+  if (isRevocation) {
+    return handleRevocation(event.type, event.data.object, bindings.ORDERS);
   }
 
   const session = event.data.object as StripeCheckoutSession;
@@ -93,5 +135,52 @@ export async function POST(request: Request) {
       { error: "fulfillment-failed" },
       { status: 500 },
     );
+  }
+}
+
+async function handleRevocation(
+  type: string,
+  object: unknown,
+  kv: NonNullable<Awaited<ReturnType<typeof readWorkerBindings>>["ORDERS"]>,
+) {
+  // Both branches resolve to a payment intent; the dispute needs one extra hop
+  // because its object names a Charge, not a PaymentIntent.
+  let paymentIntent: string | null | undefined;
+  if (type === "charge.refunded") {
+    const charge = object as StripeCharge;
+    const partial = partialRefundAmounts(charge);
+    if (partial) {
+      console.error(
+        JSON.stringify({
+          event: "order.partial-refund",
+          paymentIntent: charge.payment_intent ?? null,
+          amount: partial.amount,
+          amountRefunded: partial.amountRefunded,
+        }),
+      );
+      return NextResponse.json({ received: true, ignored: "partial-refund" });
+    }
+    paymentIntent = charge.payment_intent;
+  } else {
+    paymentIntent = await paymentIntentForDispute(
+      object as { charge?: string | null },
+      defaultStripeLookup(),
+    );
+  }
+
+  try {
+    const result = await revokeOrderByPaymentIntent({
+      kv,
+      status: type === "charge.refunded" ? "refunded" : "disputed",
+      paymentIntent,
+      now: new Date().toISOString(),
+    });
+    return NextResponse.json(result.body, { status: result.httpStatus });
+  } catch (e) {
+    // KV get/put threw. Same reasoning as the fulfillment catch: a revoked
+    // buyer must not keep the master file because our storage was briefly
+    // unavailable, so this is a redelivery, not a drop.
+    console.error("stripe webhook revocation failed", e);
+    return NextResponse.json({ error: "revocation-failed" }, { status: 500 });
   }
 }
