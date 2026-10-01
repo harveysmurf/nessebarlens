@@ -127,10 +127,27 @@ test("the format radio inputs have ids unique within the file", () => {
     "the label should point at the input it labels",
   );
   assert.ok(
-    source.includes('id={`format-option-${f.id}`}'),
+    source.includes("id={`format-option-${f.id}`}"),
     "the option input should be the one the label points at",
   );
 });
+
+test("every select is named by a label, and every label names a select", () => {
+  // Renaming a select's id without its htmlFor silently un-associates the
+  // field: the label and the control are siblings, so nothing else binds them
+  // and a screen reader announces an unlabelled dropdown. Matching both sets
+  // is what catches that, in either direction.
+  const source = fs.readFileSync(
+    new URL("../src/components/PrintConfigurator.tsx", import.meta.url),
+    "utf8",
+  );
+  const labelled = [...source.matchAll(/<select[\s\S]{0,200}?\bid="([^"]+)"/g)].map((m) => m[1]);
+  const pointing = [...source.matchAll(/<label[\s\S]{0,200}?\bhtmlFor="([^"]+)"/g)].map((m) => m[1]);
+
+  assert.deepEqual(labelled, ["print-size", "frame-finish", "shipping-country"]);
+  assert.deepEqual(pointing, labelled, "each select needs a label with a matching htmlFor");
+});
+
 
 test("the checkout redirect is refused unless it is an https URL", async () => {
   // The navigation target comes from the API response, so it is untrusted
