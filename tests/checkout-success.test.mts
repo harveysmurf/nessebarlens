@@ -45,8 +45,8 @@ registerHooks({
 const { resolveCheckoutPageState } = await import(
   "../src/app/checkout/success/order-state.ts"
 );
-const { orderViewState } = await import("../src/lib/fulfillment.ts");
-type OrderRecord = import("../src/lib/fulfillment.ts").OrderRecord;
+const { orderViewState } = await import("../src/lib/order-decision.ts");
+type OrderRecord = import("../src/lib/order-decision.ts").OrderRecord;
 const orderStatus = await import("../src/app/api/order-status/route.ts");
 
 const SESSION = "cs_test_abcdefgh";
@@ -145,7 +145,7 @@ async function withBindings<T>(next: Fake, run: () => Promise<T>): Promise<T> {
 // ---- orderViewState: the closed set the page and the route share. ----
 
 test("a physical order is physical, whatever its status", async () => {
-  const { parseOrderRecord } = await import("../src/lib/fulfillment.ts");
+  const { parseOrderRecord } = await import("../src/lib/order-decision.ts");
   // Checked for every status, because the page showed a download link to these
   // buyers and a status-dependent answer here would put it back for some of them.
   for (const status of ["paid", "paid-unfulfilled", "refunded", "disputed"]) {

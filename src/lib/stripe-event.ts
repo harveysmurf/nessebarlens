@@ -4,7 +4,7 @@ import {
   hmacSha256Hex,
   timingSafeEqualHex,
 } from "./crypto-hex";
-import type { StripeShippingDetails } from "./fulfillment";
+import type { StripeShippingDetails } from "./order-decision";
 
 const TOLERANCE_SECONDS = 300;
 

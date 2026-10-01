@@ -4,18 +4,19 @@ import path from "node:path";
 import test from "node:test";
 import Stripe from "stripe";
 import {
+  fulfillCheckoutSession,
+  type OrdersKv,
+} from "../src/lib/fulfillment.ts";
+import {
   decideFulfillment,
   expectedAmountCents,
-  fulfillCheckoutSession,
   parseOrderRecord,
   parseRecipient,
   resolveDownload,
-  type MastersBucket,
   type OrderRecord,
-  type OrdersKv,
   type StripeShippingDetails,
-} from "../src/lib/fulfillment.ts";
-import { masterKeyForSlug } from "../src/lib/master-key.ts";
+} from "../src/lib/order-decision.ts";
+import { masterKeyForSlug, type MastersBucket } from "../src/lib/master-key.ts";
 import { getPhoto } from "../src/lib/photos.ts";
 import { FRAME_FINISHES, PHYSICAL_FORMATS, PRINT_SIZES } from "../src/lib/sku-map.ts";
 import { readStripeEvent } from "../src/lib/stripe-event.ts";
@@ -702,6 +703,7 @@ test("webhook + download routes still do not call Prodigi; order module is the o
   const root = path.join(import.meta.dirname, "..");
   for (const rel of [
     "src/lib/fulfillment.ts",
+    "src/lib/order-decision.ts",
     "src/lib/master-key.ts",
     "src/lib/print-asset.ts",
     "src/lib/crypto-hex.ts",
@@ -816,57 +818,60 @@ test("fulfillment metadata validation tracks the sku-map lists", () => {
   }
 });
 
-test("fulfillment reuses the pricing/sku-map types instead of redeclaring them", () => {
-  const src = fs.readFileSync(
-    path.join(import.meta.dirname, "..", "src/lib/fulfillment.ts"),
-    "utf8",
-  );
-  // The union must be imported from pricing.ts, not restated here: a private
-  // copy would leave the fulfillment validator behind when a format is added.
-  // Either shape is fine as long as every one of the three unions is imported
-  // from pricing.ts rather than restated here.
-  const pricingImport = /import (type )?\{([^}]*)\} from "\.\/pricing"/.exec(src);
-  assert.ok(pricingImport, "fulfillment must import from ./pricing");
+test("the fulfillment pair reuses the pricing/sku-map types instead of redeclaring them", () => {
+  const root = path.join(import.meta.dirname, "..", "src/lib");
+  const decision = fs.readFileSync(path.join(root, "order-decision.ts"), "utf8");
+  const effects = fs.readFileSync(path.join(root, "fulfillment.ts"), "utf8");
+  const both = decision + effects;
+
+  // The unions must be imported from pricing.ts, not restated: a private copy
+  // would leave the order validator behind when a format is added. The two
+  // halves own different ones — order-decision narrows PrintFormat,
+  // fulfillment casts the physical fields back on the way to Prodigi — so each
+  // name has to arrive from ./pricing somewhere in the pair.
+  const pricingImports = [...both.matchAll(/import (type )?\{([^}]*)\} from "\.\/pricing"/g)]
+    .map((m) => m[2]!)
+    .join(",");
+  assert.ok(pricingImports.length > 0, "the pair must import from ./pricing");
   for (const name of ["FrameFinish", "PrintFormat", "PrintSize"]) {
     assert.ok(
-      pricingImport[2]!.includes(name),
+      pricingImports.includes(name),
       `${name} must be imported from pricing.ts`,
     );
   }
   assert.equal(
-    src.includes('export type PrintFormat = "giclee" | "framed" | "canvas" | "digital"'),
+    both.includes('type PrintFormat = "giclee" | "framed" | "canvas" | "digital"'),
     false,
   );
   // No alias arrays re-wrapping the sku-map lists.
-  assert.equal(/const SIZES\s*:/.test(src), false);
-  assert.equal(/const FRAMES\s*:/.test(src), false);
+  assert.equal(/const SIZES\s*:/.test(both), false);
+  assert.equal(/const FRAMES\s*:/.test(both), false);
   // The allow-list is read through sku-map's predicate, not through a local
   // alias array. The alias was not itself the bug -- it pointed at the shared
   // list -- but the two format guards each cast their way through it, so the
   // cast rather than the check decided what a stored format could be. Reading
   // isSellableFormat narrows once and cannot be pointed at a different list.
   assert.ok(
-    src.includes("isSellableFormat"),
-    "fulfillment must validate formats with sku-map's isSellableFormat",
+    decision.includes("isSellableFormat"),
+    "order-decision must validate formats with sku-map's isSellableFormat",
   );
   assert.equal(
-    /const FORMATS\s*:/.test(src),
+    /const FORMATS\s*:/.test(both),
     false,
     "no local alias of the sellable format list",
   );
   assert.equal(
-    /as readonly string\[\]/.test(src),
+    /as readonly string\[\]/.test(both),
     false,
-    "no cast-through-string[] membership test in fulfillment",
+    "no cast-through-string[] membership test in the pair",
   );
   // SELLABLE_FORMATS is the one place "digital" joins the physical formats.
   assert.equal(
-    /\[\.\.\.PHYSICAL_FORMATS, "digital"\]/.test(src),
+    /\[\.\.\.PHYSICAL_FORMATS, "digital"\]/.test(both),
     false,
-    'do not re-spell [...PHYSICAL_FORMATS, "digital"] in fulfillment',
+    'do not re-spell [...PHYSICAL_FORMATS, "digital"] in the pair',
   );
 });
-
 
 test("EUR→cents rounding is eurToCents everywhere, fractional inputs included", () => {
   // Stripe, the webhook amount check and the stored record all have to agree

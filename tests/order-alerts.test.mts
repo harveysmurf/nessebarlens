@@ -12,13 +12,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  AWAITING_PRODIGI_REASON,
   fulfillCheckoutSession,
+  type OrdersKv,
+} from "../src/lib/fulfillment.ts";
+import {
+  AWAITING_PRODIGI_REASON,
   isUnfulfilledOutcome,
   type OrderRecord,
-  type OrdersKv,
   type StripeShippingDetails,
-} from "../src/lib/fulfillment.ts";
+} from "../src/lib/order-decision.ts";
 import type { CreateProdigiOrder } from "../src/lib/prodigi-order.ts";
 
 const SESSION = "cs_test_abcdefgh";

@@ -2,10 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   fulfillCheckoutSession,
-  parseRecipient,
   type OrdersKv,
-  type StripeShippingDetails,
 } from "../src/lib/fulfillment.ts";
+import {
+  parseRecipient,
+  type StripeShippingDetails,
+} from "../src/lib/order-decision.ts";
 
 /* The last edges the report could still name. Each is a branch production takes
    and no test had: an address Stripe can send without a country, a framed

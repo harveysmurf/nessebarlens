@@ -21,13 +21,13 @@
  * write happens after the lookup rather than being skipped on failure.
  */
 
+import { type OrdersKv } from "./fulfillment";
 import {
   isRevoked,
   parseOrderRecord,
-  type OrdersKv,
   type OrderRecord,
   type RevokedStatus,
-} from "./fulfillment";
+} from "./order-decision";
 import { cancelProdigiOrder, type CancelProdigiOrder } from "./prodigi-cancel";
 import { getStripe } from "./stripe";
 
@@ -70,7 +70,8 @@ export function isStripeNotFound(e: unknown): boolean {
     code?: unknown;
   };
   if (statusCode === 404) return true;
-  if (type === "StripeInvalidRequestError" && statusCode === undefined) return true;
+  if (type === "StripeInvalidRequestError" && statusCode === undefined)
+    return true;
   return code === "resource_missing";
 }
 
@@ -88,7 +89,9 @@ export function defaultStripeLookup(): StripeSessionLookup {
       const stripe = getStripe();
       try {
         const charge = await stripe.charges.retrieve(chargeId);
-        return isPaymentIntentId(charge.payment_intent) ? charge.payment_intent : null;
+        return isPaymentIntentId(charge.payment_intent)
+          ? charge.payment_intent
+          : null;
       } catch (e) {
         // "No such charge" is a legitimate answer — the charge is not ours, or
         // is gone. A 5xx/timeout/network failure is not: that is our outage,
@@ -136,7 +139,10 @@ export async function revokeOrderByPaymentIntent(
 ): Promise<RevocationOutcome> {
   const paymentIntent = input.paymentIntent;
   if (!isPaymentIntentId(paymentIntent)) {
-    return { httpStatus: 200, body: { received: true, ignored: "no-payment-intent" } };
+    return {
+      httpStatus: 200,
+      body: { received: true, ignored: "no-payment-intent" },
+    };
   }
 
   const lookup = input.stripe ?? defaultStripeLookup();
@@ -163,12 +169,18 @@ export async function revokeOrderByPaymentIntent(
   }
 
   if (!sessionId) {
-    return { httpStatus: 200, body: { received: true, ignored: "unknown-payment-intent" } };
+    return {
+      httpStatus: 200,
+      body: { received: true, ignored: "unknown-payment-intent" },
+    };
   }
 
   const raw = await input.kv.get(sessionId);
   if (raw === null) {
-    return { httpStatus: 200, body: { received: true, ignored: "unknown-order", sessionId } };
+    return {
+      httpStatus: 200,
+      body: { received: true, ignored: "unknown-order", sessionId },
+    };
   }
 
   const order = parseOrderRecord(raw);
@@ -179,13 +191,21 @@ export async function revokeOrderByPaymentIntent(
     console.error(
       JSON.stringify({ event: "order.corrupt", sessionId, path: "revoke" }),
     );
-    return { httpStatus: 200, body: { received: true, ignored: "corrupt-order", sessionId } };
+    return {
+      httpStatus: 200,
+      body: { received: true, ignored: "corrupt-order", sessionId },
+    };
   }
 
   if (isRevoked(order.status)) {
     return {
       httpStatus: 200,
-      body: { received: true, duplicate: true, status: order.status, sessionId },
+      body: {
+        received: true,
+        duplicate: true,
+        status: order.status,
+        sessionId,
+      },
     };
   }
 
@@ -257,7 +277,9 @@ export async function paymentIntentForDispute(
   const charge = dispute.charge;
   if (!charge) return null;
   if (typeof charge !== "string") {
-    return isPaymentIntentId(charge.payment_intent) ? charge.payment_intent : null;
+    return isPaymentIntentId(charge.payment_intent)
+      ? charge.payment_intent
+      : null;
   }
   if (!isChargeId(charge)) return null;
   // Deliberately no catch here. A charge that resolves to no payment intent is

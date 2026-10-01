@@ -5,7 +5,7 @@ import {
   parseOrderRecord,
   type OrderRecord,
   type StripeShippingDetails,
-} from "../src/lib/fulfillment.ts";
+} from "../src/lib/order-decision.ts";
 
 /* The validator that reads ORDERS back. The store is key-value text that
    anything can write, so every field it accepts is re-checked on the way out —

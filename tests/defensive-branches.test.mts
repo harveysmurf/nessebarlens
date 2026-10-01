@@ -7,7 +7,10 @@ import {
 import { verifyPrintAssetRequest } from "../src/lib/print-asset.ts";
 import { signPrintAssetUrl } from "../src/lib/print-asset.ts";
 import { parseQuoteBody } from "../src/lib/checkout-body.ts";
-import { decideFulfillment, type OrderRecord } from "../src/lib/fulfillment.ts";
+import {
+  decideFulfillment,
+  type OrderRecord,
+} from "../src/lib/order-decision.ts";
 
 /* The remaining defensive branches: the paths taken when a value is absent,
    the wrong type, or not an Error at all. Each was unreachable from the tests

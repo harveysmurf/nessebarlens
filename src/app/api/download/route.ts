@@ -3,7 +3,7 @@ import {
   isCheckoutSessionId,
   parseOrderRecord,
   resolveDownload,
-} from "@/lib/fulfillment";
+} from "@/lib/order-decision";
 import {
   ORDERS_KV_UNAVAILABLE_ERROR,
   ORDERS_KV_UNAVAILABLE_STATUS,

@@ -7,7 +7,11 @@ import {
   isMasterKey,
 } from "../src/lib/derivative-ladder.ts";
 import { assertNoMasterLeak } from "../src/lib/prodigi-order.ts";
-import { decideFulfillment, parseOrderRecord, resolveDownload } from "../src/lib/fulfillment.ts";
+import {
+  decideFulfillment,
+  parseOrderRecord,
+  resolveDownload,
+} from "../src/lib/order-decision.ts";
 import { masterKeyForSlug } from "../src/lib/master-key.ts";
 import { isPhotoSlug } from "../src/lib/print-asset.ts";
 import { PHOTOS, getPhoto } from "../src/lib/photos.ts";
