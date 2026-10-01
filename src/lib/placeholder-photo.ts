@@ -17,9 +17,20 @@
  * height following the photo's own ratio, so portrait and landscape both fit
  * the same rung; a tile that must look uniform sets `aspect-ratio` and
  * `object-fit: cover`, and the photo page drops both to show it uncropped.
+ *
+ * `preferred` picks which rung is the `src` — the image a browser loads before
+ * it has parsed the srcSet, and the one a client that ignores srcSet gets
+ * forever. It does NOT narrow the srcSet: the ladder stays complete so the
+ * browser can still pick a different rung for a different viewport. A call site
+ * asking for 2500 is saying "this is the largest thing on the page", which is
+ * different from "only ever offer 2500".
  */
 
-import { webDerivativeUrls } from "./derivatives";
+import {
+  WEB_DEFAULT_WIDTH,
+  webDerivativeUrls,
+  type WebDerivativeWidth,
+} from "./derivatives";
 import { PHOTO_SLUG_PATTERN } from "./master-key";
 
 /**
@@ -58,12 +69,19 @@ export function placeholderPhotoSrc(slug: string): string | null {
  * being off is a normal state, not a failure, and degrades to the
  * placeholder rather than to nothing.
  */
-export function galleryImage(slug: string): GalleryImage | null {
+export function galleryImage(
+  slug: string,
+  preferred: WebDerivativeWidth = WEB_DEFAULT_WIDTH,
+): GalleryImage | null {
   if (!PHOTO_SLUG_PATTERN.test(slug)) return null;
 
   const ladder = webDerivativeUrls(slug);
   if (ladder) {
-    return { src: ladder.src, srcSet: ladder.srcSet, source: "ladder" };
+    // Only take a rung the ladder actually has. A caller asking for a width
+    // that is not in WEB_DERIVATIVE_WIDTHS falls back to the default rather
+    // than building a URL for an object ingest never writes.
+    const rung = ladder.urls[preferred] ? preferred : WEB_DEFAULT_WIDTH;
+    return { src: ladder.urls[rung], srcSet: ladder.srcSet, source: "ladder" };
   }
 
   // The slug is already known good here, so this cannot be null.

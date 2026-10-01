@@ -21,7 +21,7 @@ import {
   placeholderPhotoSrc,
 } from "../src/lib/placeholder-photo.ts";
 import { PHOTOS } from "../src/lib/photos.ts";
-import { WEB_DEFAULT_WIDTH } from "../src/lib/derivatives.ts";
+import { WEB_DEFAULT_WIDTH, WEB_DERIVATIVE_WIDTHS } from "../src/lib/derivatives.ts";
 
 const root = path.join(import.meta.dirname, "..");
 const BASE = "NEXT_PUBLIC_WEB_IMAGES_BASE";
@@ -122,6 +122,53 @@ test("with the ladder on, the image is a CDN derivative with a real srcSet", () 
     for (const part of image.srcSet.split(", ")) {
       assert.match(part, /^\S+ \d+w$/);
     }
+  });
+});
+
+test("preferred picks the src rung without narrowing the srcSet", () => {
+  withEnv(LADDER_ON, () => {
+    const slug = PHOTOS[0].slug;
+    for (const width of [750, 1500, 2500] as const) {
+      const image = galleryImage(slug, width);
+      assert.ok(image);
+      assert.equal(
+        image.src,
+        `https://cdn.example.com/gallery/${slug}/${width}.jpg`,
+        `preferred ${width} did not reach the src`,
+      );
+      // The browser can still choose a different rung for a different viewport:
+      // a hero asking for 2500 is not asking to be offered only 2500.
+      assert.equal(image.srcSet?.split(", ").length, WEB_DERIVATIVE_WIDTHS.length);
+    }
+  });
+});
+
+test("preferred is ignored while the placeholder is the only source", () => {
+  // One image exists, so every rung spelling the same file would be a lie
+  // about a ladder that does not exist. `preferred` must not invent a second
+  // URL or a srcSet here.
+  withEnv(PLACEHOLDER_ONLY, () => {
+    const image = galleryImage(PHOTOS[0].slug, 2500);
+    assert.ok(image);
+    assert.equal(image.source, "placeholder");
+    assert.equal(image.src, `/placeholders/${PHOTOS[0].slug}.jpg?v=${PLACEHOLDER_VERSION}`);
+    assert.equal(image.srcSet, null);
+  });
+});
+
+test("a preferred rung the ladder does not have falls back to the default", () => {
+  // Ingest writes only WEB_DERIVATIVE_WIDTHS. A width outside that set must not
+  // produce a URL for an object that will never exist — the 404-in-a-screenshot
+  // failure this file exists to prevent.
+  withEnv(LADDER_ON, () => {
+    const slug = PHOTOS[0].slug;
+    const image = galleryImage(slug, 4000 as never);
+    assert.ok(image);
+    assert.equal(
+      image.src,
+      `https://cdn.example.com/gallery/${slug}/${WEB_DEFAULT_WIDTH}.jpg`,
+    );
+    assert.ok(image.srcSet);
   });
 });
 
