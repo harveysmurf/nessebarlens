@@ -328,6 +328,16 @@ script.
   record's `reason` says which, so an operator can tell "rotate the key" from
   "back off" from "fix the deploy". No auto-refund: a stuck paid order is
   alerted for a human.
+- **Every unfulfilled order logs.** `fulfillCheckoutSession` writes through
+  `storeOrder`, the only ORDERS write in the order path, which emits one
+  structured `console.error` whenever the stored record is `paid-unfulfilled`:
+  `{"event":"order.unfulfilled","sessionId","reason","terminal","format"}`, plus
+  `"detail"` carrying the upstream message on a retryable Prodigi failure. KV has
+  no operator view, so that line is the only trace of an order we took money for
+  and did not ship. Find them with `wrangler tail` on the production worker, or
+  in Cloudflare **Workers Logs** filtered on `order.unfulfilled`; locally, run
+  `npm test` and read stderr. `AWAITING_PRODIGI_REASON` is excluded — it is an
+  internal marker rewritten by the same call, not an outcome.
 - **One payment, one Prodigi order.** `idempotencyKey` is the Stripe session id, so
   a redelivery that re-attempts gets Prodigi's `alreadyExists` with the original
   order rather than a second print.
