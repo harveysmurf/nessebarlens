@@ -53,7 +53,7 @@ export default function HomePage() {
                 {hero.title}
               </h1>
               <p className="text-xs text-stone-300 font-light max-w-md">
-                Limited Medium Format Giclée Capture • Fine Art Collection
+                {hero.heroCaption}
               </p>
             </div>
           </div>

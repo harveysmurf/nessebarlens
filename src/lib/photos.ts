@@ -12,6 +12,8 @@ export type Photo = {
   categoryLabel: string;
   subtitle: string;
   description: string;
+  /** Homepage hero caption. Set on the featured photo only; copy lives here, not in the page. */
+  heroCaption?: string;
   /** Private master object key in MASTERS — never used in gallery UI. */
   imageKey: string;
   /** Film gallery uses dark matte + filter. */
@@ -28,6 +30,8 @@ export const PHOTOS: Photo[] = [
     subtitle: "Medium Format Digital",
     description:
       "Flagship gallery capture at first light over the Byzantine basilica ruins in Old Town Nessebar. Printed on Hahnemühle Photo Rag 308gsm.",
+    heroCaption:
+      "Limited Medium Format Giclée Capture • Fine Art Collection",
     imageKey: "prints/dawn.jpg",
   },
   {
