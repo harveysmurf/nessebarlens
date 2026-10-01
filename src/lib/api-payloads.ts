@@ -45,15 +45,35 @@ export function isLiveQuote(value: unknown): value is LiveQuote {
 }
 
 /**
+ * Origins Stripe actually hosts Checkout Sessions on. The redirect target is
+ * navigated to with `window.location.href`, so the scheme check alone would
+ * happily pass `https://evil.example`. Origins are compared as full
+ * `scheme://host[:port]` strings — no suffix or `includes` test, because
+ * `evil-checkout.stripe.com` and `checkout.stripe.com.evil.example` both sail
+ * past those.
+ */
+const CHECKOUT_REDIRECT_ORIGINS: ReadonlySet<string> = new Set([
+  "https://checkout.stripe.com",
+]);
+
+/**
  * The checkout redirect target, or `null` when the payload does not carry one.
- * The https rule is enforced here rather than at the call site so the value
- * cannot be read, and accidentally navigated to, without passing it first.
+ * The https-plus-known-origin rule is enforced here rather than at the call
+ * site so the value cannot be read, and accidentally navigated to, without
+ * passing it first.
  */
 export function checkoutUrl(value: unknown): string | null {
   if (!isRecord(value)) return null;
   const url = value.url;
   if (typeof url !== "string") return null;
-  return HTTPS_URL_PATTERN.test(url) ? url : null;
+  if (!HTTPS_URL_PATTERN.test(url)) return null;
+  let origin: string;
+  try {
+    origin = new URL(url).origin;
+  } catch {
+    return null;
+  }
+  return CHECKOUT_REDIRECT_ORIGINS.has(origin) ? url : null;
 }
 
 /**
