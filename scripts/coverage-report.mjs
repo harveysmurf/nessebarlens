@@ -107,9 +107,9 @@ export function isGatedFile(file) {
  * The exit code the coverage gate must fail with, or null when the test run
  * itself is fine.
  *
- * A failing test still produces a full coverage report, so the gate used to
- * read the rows, find the floors met and exit 0 — a broken test reported as a
- * green coverage run. `spawnSync` distinguishes the two ways a run can go bad:
+ * A failing test still produces a full coverage report, so a gate that read
+ * the rows and exited on the floors would report a broken test as a green
+ * coverage run. `spawnSync` distinguishes the two ways a run can go bad:
  * `error` when it never started (ENOENT, EACCES), and a non-zero `status` for
  * an ordinary assertion failure. `signal` is also non-zero when the child was
  * killed, and carries no exit code of its own, so that case falls back to 1.

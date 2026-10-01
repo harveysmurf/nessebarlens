@@ -2,8 +2,8 @@ import Stripe from "stripe";
 import { envString, envStringStrippedSlash } from "./env";
 
 /**
- * envString, not process.env: a whitespace-only key is truthy, so the old
- * `if (!key)` check built a Stripe client that failed every request with a
+ * envString, not process.env: a whitespace-only key is truthy, so a bare
+ * `if (!key)` check would build a Stripe client that fails every request with a
  * confusing 401 instead of failing here.
  */
 export function getStripe(): Stripe {

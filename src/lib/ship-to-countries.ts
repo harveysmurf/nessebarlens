@@ -249,7 +249,7 @@ export const DEFAULT_SHIPPING_COUNTRY: ShipToCountryCode = "BG";
 /**
  * Two-letter ISO country code. Owned here because three modules validate one:
  * checkout-body.ts (client input) and twice in fulfillment.ts (the stored
- * recipient). Each used to carry its own copy of the literal.
+ * recipient) all validate against this one literal, not a copy each.
  */
 export const ISO_ALPHA2_PATTERN = /^[A-Z]{2}$/;
 

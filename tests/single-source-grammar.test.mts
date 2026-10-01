@@ -82,10 +82,29 @@ function relative(file: string): string {
 }
 
 /**
- * src/ and scripts/ together. The ops scripts are excluded for no reason
- * other than that they used to be: an ingest script that re-inlines the
- * ladder flag's `true|1` grammar would refuse runs the site is serving from,
- * and no src-only test can see that.
+ * Every comment the parser recognises in the file, leading and trailing.
+ * Comment trivia is not reachable by walking statements, so this drives
+ * `ts.forEachChild` over the whole tree and asks for the comment ranges
+ * attached to each node.
+ */
+function commentRanges(source: ts.SourceFile): ts.CommentRange[] {
+  const ranges: ts.CommentRange[] = [];
+  const visit = (node: ts.Node): void => {
+    const text = source.getFullText();
+    ranges.push(
+      ...(ts.getLeadingCommentRanges(text, node.getFullStart()) ?? []),
+      ...(ts.getTrailingCommentRanges(text, node.end) ?? []),
+    );
+    ts.forEachChild(node, visit);
+  };
+  visit(source);
+  return ranges;
+}
+
+/**
+ * src/ and scripts/ together. The ops scripts belong in scope because an
+ * ingest script that re-inlines the ladder flag's `true|1` grammar would
+ * refuse runs the site is serving from, and no src-only test can see that.
  */
 function allSourceFiles(): string[] {
   return [
@@ -582,5 +601,44 @@ test("no module re-exports a symbol it does not define", () => {
     offenders,
     [],
     `re-exported symbols have no owner in the file that names them: ${offenders.join(", ")}`,
+  );
+});
+
+test("no comment narrates change history instead of an invariant", () => {
+  // Comments that say "used to" / "previously" describe a state the code is
+  // not in, so they go stale and push the reason the code exists now out of
+  // view. History belongs in commit messages and PRs; a comment earns its
+  // place only by stating a constraint that still holds.
+  //
+  // This reads real comment ranges from the AST rather than regexing the raw
+  // text: the product copy in photos.ts legitimately contains "The Old
+  // Windmill" and "the old quarter", and a file-level grep would force a rename
+  // of a photo title to satisfy a rule about code comments. Using the parser's
+  // own comment ranges also closes the mirror-image hole — a string, regex or
+  // template literal containing "// used to ..." is not a comment and must not
+  // be flagged.
+  const NARRATION = /\b(used to|previously|the old)\b/i;
+  const offenders: string[] = [];
+  for (const file of allSourceFiles()) {
+    const source = ts.createSourceFile(
+      file,
+      fs.readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const seen = new Set<number>();
+    for (const range of commentRanges(source)) {
+      if (seen.has(range.pos)) continue;
+      seen.add(range.pos);
+      const text = source.getFullText().slice(range.pos, range.end);
+      if (!NARRATION.test(text)) continue;
+      const { line } = source.getLineAndCharacterOfPosition(range.pos);
+      offenders.push(`${relative(file)}:${line + 1}`);
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `comments narrate change history rather than the current invariant: ${offenders.join(", ")}`,
   );
 });

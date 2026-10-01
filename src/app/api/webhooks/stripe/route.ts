@@ -140,7 +140,7 @@ export async function POST(request: Request) {
     });
     return NextResponse.json(result.body, { status: result.httpStatus });
   } catch (e) {
-    // The bare catch used to answer "orders-kv-unavailable" for *any* throw.
+    // The bare catch must not answer "orders-kv-unavailable" for *any* throw.
     // That is the one thing this handler must not do: a bug in fulfillment, a
     // bad PRODIGI_API_BASE, or a KV write failure all presented as a missing
     // binding, so the log pointed at the wrong subsystem entirely. Log the real

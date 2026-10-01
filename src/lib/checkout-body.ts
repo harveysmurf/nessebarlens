@@ -60,8 +60,8 @@ function parseFrame(
 }
 
 /**
- * Returns a tagged result rather than string | null | { error }. The old shape
- * mixed a value and an error object in one union, so every caller needed an
+ * Returns a tagged result rather than string | null | { error }. A bare union
+ * mixing a value and an error object forces every caller into an
  * `"error" in x` test plus a cast back to `string | null` — a cast the
  * compiler could not check, and one more place for a rejection to slip past.
  */

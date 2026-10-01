@@ -20,8 +20,8 @@ export function masterKeyForSlug(slug: string): string | null {
 
 /**
  * Shape of a private MASTERS object. Owned here so the two readers (the
- * download path and the print-asset path) cannot drift — they used to each
- * declare their own copy of these two types.
+ * download path and the print-asset path) cannot drift, rather than each
+ * declaring its own copy of these two types.
  */
 export type MasterObject = {
   body: ReadableStream<Uint8Array>;
@@ -49,8 +49,9 @@ export type MasterRead =
 
 /**
  * The read + error mapping both master-serving paths share: missing bucket or
- * a throwing get() are a 503, a null object is a 404. The two paths used to
- * carry byte-identical copies of these three branches.
+ * a throwing get() are a 503, a null object is a 404. Both master-serving
+ * paths share these three branches rather than carrying byte-identical
+ * copies.
  */
 export async function readMasterObject(
   key: string,

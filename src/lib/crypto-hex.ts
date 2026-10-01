@@ -2,7 +2,7 @@
 
 /**
  * A SHA-256 signature as hex. Owned here because two modules verify HMACs with
- * it — stripe-event.ts and print-asset.ts — and each used to carry its own
+ * it — stripe-event.ts and print-asset.ts — rather than each carrying its own
  * copy of the same literal.
  */
 export const HEX_64_PATTERN = /^[0-9a-f]{64}$/i;

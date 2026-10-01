@@ -109,12 +109,12 @@ export function PrintConfigurator({
     };
   }, [format, size, frame, destinationCountry, isDigital]);
 
-  // The three selects previously narrowed their values with `as PrintSize`,
-  // `as FrameFinish` and `as ShipToCountryCode`. A cast asserts; it does not
-  // check, so any string a browser put in the option list would have become a
-  // catalog value. Each handler below validates instead, and the option lists
-  // come from the same sku-map lists the predicates read, so a value that
-  // fails here is a value the selector could not have produced.
+  // The three selects validate with `isPrintSize` / `isFrameFinish` /
+  // `isShipToCountryCode` rather than narrowing with `as`. A cast asserts; it
+  // does not check, so any string a browser put in the option list would
+  // become a catalog value. The option lists come from the same sku-map lists
+  // the predicates read, so a value that fails here is a value the selector
+  // could not have produced.
   function selectSize(value: string) {
     if (isPrintSize(value)) setSize(value);
   }
