@@ -52,6 +52,28 @@ export function isChargeId(value: unknown): value is string {
   return typeof value === "string" && CHARGE_ID_PATTERN.test(value);
 }
 
+/**
+ * Is this Stripe error the "that resource does not exist" answer?
+ *
+ * Structural on purpose rather than `instanceof Stripe.StripeInvalidRequestError`:
+ * the stripe package is a runtime dependency of this module already, but the
+ * webhook's error classification is a property worth being able to test without
+ * constructing Stripe errors, and Stripe errors carry the status on the object.
+ * A 404 status and the invalid-request type are both definitive not-found; a
+ * 5xx, a rate limit and a connection error are all transient and must rethrow.
+ */
+export function isStripeNotFound(e: unknown): boolean {
+  if (typeof e !== "object" || e === null) return false;
+  const { statusCode, type, code } = e as {
+    statusCode?: unknown;
+    type?: unknown;
+    code?: unknown;
+  };
+  if (statusCode === 404) return true;
+  if (type === "StripeInvalidRequestError" && statusCode === undefined) return true;
+  return code === "resource_missing";
+}
+
 export function defaultStripeLookup(): StripeSessionLookup {
   return {
     findSessionIdByPaymentIntent: async (paymentIntent) => {
@@ -64,8 +86,26 @@ export function defaultStripeLookup(): StripeSessionLookup {
     },
     findPaymentIntentForCharge: async (chargeId) => {
       const stripe = getStripe();
-      const charge = await stripe.charges.retrieve(chargeId);
-      return isPaymentIntentId(charge.payment_intent) ? charge.payment_intent : null;
+      try {
+        const charge = await stripe.charges.retrieve(chargeId);
+        return isPaymentIntentId(charge.payment_intent) ? charge.payment_intent : null;
+      } catch (e) {
+        // "No such charge" is a legitimate answer — the charge is not ours, or
+        // is gone. A 5xx/timeout/network failure is not: that is our outage,
+        // and treating it as "not ours" drops a real dispute on the floor.
+        // Only the definitive not-found classes are swallowed.
+        if (isStripeNotFound(e)) {
+          console.error(
+            JSON.stringify({
+              event: "order.dispute-charge-not-found",
+              charge: chargeId,
+              detail: e instanceof Error ? e.message : "unknown",
+            }),
+          );
+          return null;
+        }
+        throw e;
+      }
     },
   };
 }
@@ -220,16 +260,11 @@ export async function paymentIntentForDispute(
     return isPaymentIntentId(charge.payment_intent) ? charge.payment_intent : null;
   }
   if (!isChargeId(charge)) return null;
-  try {
-    return await lookup.findPaymentIntentForCharge(charge);
-  } catch (e) {
-    console.error(
-      JSON.stringify({
-        event: "order.dispute-charge-lookup-failed",
-        charge,
-        detail: e instanceof Error ? e.message : "unknown",
-      }),
-    );
-    return null;
-  }
+  // Deliberately no catch here. A charge that resolves to no payment intent is
+  // a different thing from a lookup that failed: the first means the charge is
+  // not ours (200, ignore), the second means Stripe was unreachable and the
+  // dispute is real, so it must propagate to the route and be answered 5xx so
+  // Stripe redelivers. Swallowing it as `null` used to answer 200
+  // "no-payment-intent" and leave a disputed buyer holding the master file.
+  return lookup.findPaymentIntentForCharge(charge);
 }

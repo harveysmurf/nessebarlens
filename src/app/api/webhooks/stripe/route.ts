@@ -98,8 +98,23 @@ export async function POST(request: Request) {
     );
   }
 
-  if (isRevocation) {
-    return handleRevocation(event.type, event.data.object, bindings.ORDERS);
+  try {
+    // Resolution happens inside this try on purpose. A dispute needs two hops
+    // and either can fail transiently; a throw from either must answer 5xx so
+    // Stripe redelivers, exactly like the refund path's single hop.
+    if (isRevocation) {
+      // await, not a bare return: a promise returned from inside a try block
+      // settles after the block has already exited, so without this the catch
+      // below never sees a rejected lookup and the error escapes as an
+      // unhandled rejection instead of becoming a 500.
+      return await handleRevocation(event.type, event.data.object, bindings.ORDERS);
+    }
+  } catch (e) {
+    // Lookup threw. Same reasoning as the KV catch below: a revoked buyer must
+    // not keep the master file because Stripe was briefly unreachable, so this
+    // is a redelivery, not a drop.
+    console.error("stripe webhook revocation lookup failed", e);
+    return NextResponse.json({ error: "revocation-lookup-failed" }, { status: 500 });
   }
 
   const session = event.data.object as StripeCheckoutSession;

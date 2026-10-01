@@ -2146,6 +2146,55 @@ test("webhook: a dispute resolves through the charge hop and revokes", async () 
   }
 });
 
+test("webhook: a dispute whose charge lookup fails transiently is a 500, not a silent 200", async () => {
+  // The gap this pins: a dispute needs two hops, and the first one used to
+  // swallow any failure into `null`, which the route answered 200
+  // "no-payment-intent". Stripe does not redeliver a 200, so the disputed
+  // buyer kept the master file with every log line looking healthy.
+  const secret = "whsec_test_route_secret";
+  const saved = { ...process.env };
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  const originalFetch = globalThis.fetch;
+  const originalError = console.error;
+  globalThis.fetch = (async (url: unknown) => {
+    const target = String(url);
+    if (target.includes("/charges/")) {
+      // A Stripe outage, not a missing charge. 404 would be ignorable; this
+      // must be redelivered.
+      return new Response(JSON.stringify({ error: { type: "api_error" } }), {
+        status: 500,
+        headers: { "content-type": "application/json" },
+      });
+    }
+    throw new Error(`unexpected fetch: ${target}`);
+  }) as typeof fetch;
+  console.error = () => {};
+  const kv = memoryKv({ [REFUND_SESSION]: paidDigitalRecord(REFUND_SESSION) });
+  try {
+    const response = await postEvent(
+      {
+        id: "evt_dispute_500",
+        object: "event",
+        type: "charge.dispute.created",
+        data: {
+          object: { id: "dp_500", object: "dispute", charge: "ch_3AbcDefGh", amount: 3000 },
+        },
+      },
+      secret,
+      { webhookSecret: secret, ORDERS: kv, prodigiKeyConfigured: false },
+    );
+    assert.equal(response.status, 500);
+    assert.deepEqual(await body(response), { error: "revocation-lookup-failed" });
+    const record = JSON.parse((await kv.get(REFUND_SESSION))!) as Record<string, unknown>;
+    assert.equal(record.status, "paid", "nothing is written when the lookup failed");
+  } finally {
+    console.error = originalError;
+    globalThis.fetch = originalFetch;
+    if (saved.STRIPE_SECRET_KEY === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved.STRIPE_SECRET_KEY;
+  }
+});
+
 test("webhook: a dispute for an unknown charge is acknowledged, not retried forever", async () => {
   const secret = "whsec_test_route_secret";
   const saved = { ...process.env };

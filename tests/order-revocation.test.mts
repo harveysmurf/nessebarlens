@@ -24,6 +24,7 @@ import {
 import {
   isChargeId,
   isPaymentIntentId,
+  isStripeNotFound,
   paymentIntentForDispute,
   revokeOrderByPaymentIntent,
   type StripeSessionLookup,
@@ -409,17 +410,41 @@ test("a dispute already carrying a payment intent skips the extra hop", async ()
   assert.equal(found, INTENT);
 });
 
-test("a dispute whose charge lookup fails resolves to null, not a guess", async () => {
-  const lines = await captureErrors(async () => {
-    const found = await paymentIntentForDispute({ charge: "ch_3AbcDefGh" }, {
+test("a transient dispute charge lookup propagates instead of resolving to null", async () => {
+  // Must NOT be swallowed. Resolving to null here made the route answer 200
+  // "no-payment-intent", so Stripe did not redeliver and a disputed buyer kept
+  // the master file. The throw is what becomes the 500.
+  await assert.rejects(
+    paymentIntentForDispute({ charge: "ch_3AbcDefGh" }, {
       findSessionIdByPaymentIntent: async () => null,
       findPaymentIntentForCharge: async () => {
         throw new Error("stripe 500");
       },
-    });
-    assert.equal(found, null);
-  });
-  assert.match(lines.join("\n"), /order\.dispute-charge-lookup-failed/);
+    }),
+    /stripe 500/,
+  );
+});
+
+test("a dispute with no charge at all is ignorable, not an error", async () => {
+  // Nothing to look up and nothing that could fail: this is a 200.
+  assert.equal(
+    await paymentIntentForDispute({}, lookup()),
+    null,
+  );
+});
+
+test("isStripeNotFound separates a missing charge from a Stripe outage", () => {
+  // Definitive not-found: the charge is not ours, ignore it.
+  assert.equal(isStripeNotFound({ statusCode: 404 }), true);
+  assert.equal(isStripeNotFound({ type: "StripeInvalidRequestError" }), true);
+  assert.equal(isStripeNotFound({ code: "resource_missing" }), true);
+  // Transient: these must rethrow so Stripe redelivers.
+  assert.equal(isStripeNotFound({ statusCode: 500 }), false);
+  assert.equal(isStripeNotFound({ statusCode: 429 }), false);
+  assert.equal(isStripeNotFound({ type: "StripeAPIError", statusCode: 503 }), false);
+  assert.equal(isStripeNotFound(new Error("network down")), false);
+  assert.equal(isStripeNotFound(null), false);
+  assert.equal(isStripeNotFound("nope"), false);
 });
 
 test("malformed ids are rejected before they reach an API", () => {
