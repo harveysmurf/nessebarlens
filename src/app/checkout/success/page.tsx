@@ -1,4 +1,16 @@
 import Link from "next/link";
+import OrderStatusPoller from "./OrderStatusPoller";
+import { resolveCheckoutPageState } from "./order-state";
+
+/**
+ * A short reference the customer can quote in support, derived from the session
+ * id already in their URL. The full id is printed nowhere: it is a bearer
+ * credential for the download route (#111), and a customer with nothing to
+ * quote in an email is worse than one with a short handle.
+ */
+function orderReference(sessionId: string): string {
+  return sessionId.slice(-8).toUpperCase();
+}
 
 export default async function CheckoutSuccessPage({
   searchParams,
@@ -6,6 +18,8 @@ export default async function CheckoutSuccessPage({
   searchParams: Promise<{ session_id?: string }>;
 }) {
   const { session_id: sessionId } = await searchParams;
+  const state = await resolveCheckoutPageState(sessionId);
+  const reference = sessionId ? orderReference(sessionId) : "";
 
   return (
     <section className="fade-in max-w-lg mx-auto px-6 py-20 text-center space-y-6">
@@ -15,34 +29,71 @@ export default async function CheckoutSuccessPage({
       <h1 className="font-serif text-3xl font-light text-stone-900">
         Thank you
       </h1>
-      <p className="text-xs text-stone-600 leading-relaxed font-light">
-        Your Stripe Checkout completed. Physical prints ship after fulfillment.
-        Digital downloads become available once the order is marked paid — this
-        page does not deliver the file.
-      </p>
 
-      {sessionId ? (
-        <div className="bg-white border border-stone-200 rounded-sm p-5 space-y-3 text-left">
-          <p className="text-[10px] uppercase tracking-widest text-stone-400">
-            Session
+      {state === "missing-session" ? (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded p-3">
+          We could not read your order reference from this link. Open it from the
+          Stripe receipt email if you need your download.
+        </p>
+      ) : state === "invalid-session" ? (
+        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded p-3">
+          That order reference is not valid. Open this page from the Stripe
+          receipt email.
+        </p>
+      ) : state === "physical" ? (
+        <OrderCard reference={reference}>
+          <p className="text-xs text-stone-600 leading-relaxed font-light">
+            Your print is being produced and will ship from our partner studio.
+            You do not need to do anything else.
           </p>
-          <code className="text-[11px] text-stone-700 break-all block">
-            {sessionId}
-          </code>
-          <Link
+        </OrderCard>
+      ) : state === "digital-ready" && sessionId ? (
+        <OrderCard reference={reference}>
+          <p className="text-xs text-stone-600 leading-relaxed font-light">
+            Your download is ready.
+          </p>
+          {/*
+            A plain <a>, deliberately not <Link>.
+
+            <Link> to a Route Handler prefetches as soon as it scrolls into view,
+            so merely rendering this page issued a GET to /api/download — running
+            the KV lookup and starting to stream the full-resolution master before
+            any click (#103). <Link> gains nothing here: a file download has no
+            client navigation to preserve, and the route's response is not RSC,
+            so Next fell back to a hard navigation regardless. `download` tells
+            the browser to save rather than navigate, which is what this is.
+          */}
+          <a
             href={`/api/download?session_id=${encodeURIComponent(sessionId)}`}
+            download
             className="inline-block w-full text-center bg-stone-900 hover:bg-stone-800 text-white font-medium py-3 rounded text-xs uppercase tracking-widest transition-all"
           >
-            Go to download
-          </Link>
-          <p className="text-[10px] text-stone-400 text-center">
-            If fulfillment is still processing, the download route will say so.
+            Download your file
+          </a>
+        </OrderCard>
+      ) : state === "revoked" ? (
+        <OrderCard reference={reference}>
+          <p className="text-xs text-stone-600 leading-relaxed font-light">
+            This order was refunded or is under dispute, so the download is no
+            longer available.
           </p>
-        </div>
+        </OrderCard>
+      ) : state === "digital-unavailable" ? (
+        <OrderCard reference={reference}>
+          <p className="text-xs text-stone-600 leading-relaxed font-light">
+            Your payment went through but we could not prepare the download. Our
+            team has been notified — quote the reference below and we will sort it
+            out.
+          </p>
+        </OrderCard>
       ) : (
-        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded p-3">
-          Missing session_id. Open this page from the Stripe success redirect.
-        </p>
+        // processing, and every degraded case that cannot assert anything yet.
+        <OrderCard reference={reference} sessionId={sessionId}>
+          <p className="text-xs text-stone-600 leading-relaxed font-light">
+            We are preparing your download. This page updates on its own — no need
+            to refresh.
+          </p>
+        </OrderCard>
       )}
 
       <Link
@@ -52,5 +103,23 @@ export default async function CheckoutSuccessPage({
         Back to gallery
       </Link>
     </section>
+  );
+}
+
+function OrderCard(props: {
+  reference: string;
+  sessionId?: string | undefined;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="bg-white border border-stone-200 rounded-sm p-5 space-y-3 text-left">
+      {props.children}
+      {props.reference ? (
+        <p className="text-[10px] text-stone-400 text-center">
+          Order reference <span className="font-medium">{props.reference}</span>
+        </p>
+      ) : null}
+      {props.sessionId ? <OrderStatusPoller sessionId={props.sessionId} /> : null}
+    </div>
   );
 }

@@ -1,0 +1,67 @@
+import {
+  isCheckoutSessionId,
+  orderViewState,
+  parseOrderRecord,
+  type OrderViewState,
+} from "@/lib/fulfillment";
+import { readWorkerBindings } from "@/lib/worker-bindings";
+
+/**
+ * The order state the success page renders from, widened with the two cases
+ * that exist before any KV lookup can answer: no reference in the URL at all,
+ * and a reference that is not shaped like a Checkout Session.
+ *
+ * "processing" covers every case where we cannot yet assert anything about the
+ * order — including a missing KV binding or a throwing get(). The page says
+ * "we are preparing your download" there, which is a claim we can actually make,
+ * where a 500 would tell a customer with money already taken that their payment
+ * failed.
+ */
+export type CheckoutPageState =
+  | "missing-session"
+  | "invalid-session"
+  | "unavailable"
+  | "processing"
+  | OrderViewState;
+
+/**
+ * Read the order behind a Checkout Session for the success page.
+ *
+ * Never throws. A page that 500s after Stripe took the money is worse than one
+ * that says "preparing", so every failure below degrades to a state the page can
+ * render honestly rather than propagating.
+ */
+export async function resolveCheckoutPageState(
+  sessionId: string | undefined,
+): Promise<CheckoutPageState> {
+  if (!sessionId) return "missing-session";
+
+  // Parsed here as well as in the download route rather than trusting the
+  // caller: this value arrives from the query string, and this function is the
+  // only thing between it and a KV read under a key we did not validate.
+  if (!isCheckoutSessionId(sessionId)) return "invalid-session";
+
+  // No try/catch around readWorkerBindings: it already swallows a throwing env
+  // reader and returns no ORDERS rather than propagating, so a catch here would
+  // be a branch nothing can reach. The KV get() below is the call that really
+  // can throw at runtime, and that one is handled.
+  const bindings = await readWorkerBindings();
+  if (!bindings.ORDERS) return "processing";
+
+  let raw: string | null;
+  try {
+    raw = await bindings.ORDERS.get(sessionId);
+  } catch {
+    return "processing";
+  }
+
+  // No record yet is the ordinary first seconds after payment: the webhook has
+  // not run. Not an error, and deliberately indistinguishable here from the
+  // degraded cases above, because the page says the same thing for all of them.
+  if (raw === null) return "processing";
+
+  const order = parseOrderRecord(raw);
+  if (!order || order.sessionId !== sessionId) return "unavailable";
+
+  return orderViewState(order);
+}
