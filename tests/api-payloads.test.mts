@@ -63,6 +63,13 @@ test("checkoutUrl refuses https urls outside the Stripe checkout origin", () => 
   assert.equal(checkoutUrl({ url: "https://checkout.stripe.com:8443/pay" }), null);
 });
 
+test("checkoutUrl returns null when the https url cannot be parsed", () => {
+  // Passes the scheme pattern but is not a parseable URL, so the catch path
+  // must return null rather than fall through to the redirect sink.
+  assert.equal(checkoutUrl({ url: "https://" }), null);
+  assert.equal(checkoutUrl({ url: "https:///" }), null);
+});
+
 test("checkoutUrl rejects missing or non-string urls", () => {
   assert.equal(checkoutUrl({}), null);
   assert.equal(checkoutUrl({ url: 42 }), null);
