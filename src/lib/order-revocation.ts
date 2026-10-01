@@ -22,6 +22,7 @@
  */
 
 import { type OrdersKv } from "./fulfillment";
+import { describeCorruptOrder, reportCorruptOrder } from "./order-corrupt";
 import {
   isRevoked,
   parseOrderRecord,
@@ -188,8 +189,10 @@ export async function revokeOrderByPaymentIntent(
     // A record we cannot parse is also one we must not overwrite: writing a
     // status over it would replace whatever a human is looking at. Answer 200
     // and complain loudly; this is not a redelivery Stripe can fix.
-    console.error(
-      JSON.stringify({ event: "order.corrupt", sessionId, path: "revoke" }),
+    reportCorruptOrder(
+      sessionId,
+      "revoke",
+      describeCorruptOrder(raw, sessionId),
     );
     return {
       httpStatus: 200,

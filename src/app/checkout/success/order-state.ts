@@ -1,9 +1,9 @@
 import {
   isCheckoutSessionId,
   orderViewState,
-  parseOrderRecord,
   type OrderViewState,
 } from "@/lib/order-decision";
+import { readOrderRecord } from "@/lib/order-corrupt";
 import { readWorkerBindings } from "@/lib/worker-bindings";
 
 /**
@@ -60,8 +60,8 @@ export async function resolveCheckoutPageState(
   // degraded cases above, because the page says the same thing for all of them.
   if (raw === null) return "processing";
 
-  const order = parseOrderRecord(raw);
-  if (!order || order.sessionId !== sessionId) return "unavailable";
+  const order = readOrderRecord(raw, sessionId, "page");
+  if (!order) return "unavailable";
 
   return orderViewState(order);
 }

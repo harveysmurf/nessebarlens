@@ -20,10 +20,10 @@ import {
   AWAITING_PRODIGI_REASON,
   decideFulfillment,
   isUnfulfilledOutcome,
-  parseOrderRecord,
   type FulfillmentInput,
   type OrderRecord,
 } from "./order-decision";
+import { readOrderRecord } from "./order-corrupt";
 import type { FrameFinish, PrintSize } from "./pricing";
 import type { PhysicalFormat } from "./sku-map";
 
@@ -74,8 +74,14 @@ export async function fulfillCheckoutSession(
   // the paid-but-unfulfilled state is visible to a human. Everything else that
   // is already stored is done, and re-running Prodigi would place a second
   // order for one payment.
+  // A stored record we cannot parse is one we must not overwrite and must not
+  // treat as a duplicate either: this answers 200 below, so Stripe stops
+  // redelivering and a paid-but-unreadable order becomes invisible without a
+  // trace. Logged through the one shape every read path uses.
   const retryRecord =
-    existingRaw !== null ? parseOrderRecord(existingRaw) : null;
+    existingRaw !== null
+      ? readOrderRecord(existingRaw, decision.record.sessionId, "webhook")
+      : null;
   const isRetry =
     retryRecord !== null &&
     retryRecord.status === "paid-unfulfilled" &&
