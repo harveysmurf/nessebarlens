@@ -9,7 +9,10 @@ import { PHOTOS } from "./photos";
 import type { FrameFinish, PrintSize } from "./pricing";
 import {
   detailSuffix,
+  isProdigiTimeout,
+  PRODIGI_ORDER_TIMEOUT_MS,
   PRODIGI_SHIPPING_METHOD,
+  prodigiTimeoutSignal,
 } from "./prodigi-config";
 import { prodigiApiKey, prodigiOrdersUrl } from "./config";
 import { PLACEHOLDER_VERSION } from "./placeholder-photo";
@@ -80,6 +83,15 @@ export type ProdigiFailureReason =
   | "prodigi-rate-limit"
   /** 5xx — Prodigi is down or erroring. */
   | "prodigi-unavailable"
+  /**
+   * Prodigi accepted the connection and then went quiet past our deadline
+   * (#104). Distinct from prodigi-unavailable because the answer differs: an
+   * unreachable Prodigi is worth retrying later, whereas a timeout may mean the
+   * order was created and the response lost — which is exactly what the
+   * idempotency key on sessionId is for, so a redelivery is safe and is the
+   * only way the customer gets their print.
+   */
+  | "prodigi-timeout"
   /** 4xx that is our fault and will never succeed on retry (bad request body). */
   | "prodigi-validation-error"
   /** 2xx with no order id in the body — a contract change, not a status code. */
@@ -145,6 +157,7 @@ const RETRYABLE_PRODIGI_REASONS: ReadonlySet<ProdigiFailureReason> =
     "prodigi-auth-error",
     "prodigi-rate-limit",
     "prodigi-unavailable",
+    "prodigi-timeout",
     "prodigi-asset-unconfigured",
     "prodigi-unconfigured",
   ]);
@@ -152,8 +165,9 @@ const RETRYABLE_PRODIGI_REASONS: ReadonlySet<ProdigiFailureReason> =
 export function isRetryableProdigiReason(
   reason: string | null,
 ): reason is ProdigiFailureReason {
-  return reason !== null && RETRYABLE_PRODIGI_REASONS.has(
-    reason as ProdigiFailureReason,
+  return (
+    reason !== null &&
+    RETRYABLE_PRODIGI_REASONS.has(reason as ProdigiFailureReason)
   );
 }
 
@@ -312,6 +326,10 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
     };
   }
 
+  // Bounded, so a hung Prodigi cannot outrun Stripe's response window (#104).
+  // Below the deadline rather than at it: the answer has to reach Stripe as a
+  // 5xx with time to spare, not at the moment it stops listening.
+  const signal = prodigiTimeoutSignal(PRODIGI_ORDER_TIMEOUT_MS);
   let res: Response;
   try {
     res = await fetch(ordersUrl, {
@@ -321,8 +339,22 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
         "X-API-Key": apiKey,
       },
       body: JSON.stringify(body),
+      signal,
     });
   } catch (e) {
+    // A timeout is retryable and says so: the order may well have been created
+    // and the response lost, so the record keeps terminal:false and the webhook
+    // answers 5xx. Redelivery re-sends the same idempotency key, which is what
+    // makes retrying safe here rather than a way to place two prints.
+    if (isProdigiTimeout(e, signal)) {
+      return {
+        ok: false,
+        kind: "server",
+        reason: "prodigi-timeout",
+        message: `Prodigi order timed out after ${PRODIGI_ORDER_TIMEOUT_MS}ms`,
+        status: null,
+      };
+    }
     return {
       ok: false,
       kind: "server",
@@ -343,7 +375,39 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   // An unreadable body (a dropped connection) is not an error here: the status
   // is still the useful half, and the parse below already tolerates a non-JSON
   // body by yielding no order id.
-  const raw = await res.text().catch(() => "");
+  let readFailure: unknown = null;
+  const raw = await res.text().then(
+    (text) => text,
+    (e: unknown) => {
+      // The rejection is kept, not discarded: a runtime that rejects the body
+      // read with a TimeoutError without marking the signal is diagnosable
+      // only from the error, so the empty string stands in for a body we never
+      // read while `readFailure` stands in for why.
+      readFailure = e;
+      return "";
+    },
+  );
+
+  // The signal outlives the headers: a Prodigi that sends a 200 and then stalls
+  // aborts mid-body-read, and the handler above turns that into an empty body.
+  // An empty body with a healthy status is indistinguishable from "success with
+  // no order id" — a terminal path — so the abort has to be ruled out here, while
+  // the order may already exist at Prodigi. Retryable, for the same reason the
+  // fetch-level abort is: re-sending the same idempotency key is what makes the
+  // second attempt safe.
+  //
+  // Checked before the status guard because a mid-read abort is a worse fact
+  // than whatever status arrived with it. An aborted body with a non-2xx status
+  // is still prodigi-timeout: the status is the truncated remnant, not an answer.
+  if (isProdigiTimeout(readFailure, signal)) {
+    return {
+      ok: false,
+      kind: "server",
+      reason: "prodigi-timeout",
+      message: `Prodigi order timed out after ${PRODIGI_ORDER_TIMEOUT_MS}ms`,
+      status: res.status,
+    };
+  }
 
   if (!res.ok) {
     const { kind, reason } = classifyProdigiStatus(res.status);

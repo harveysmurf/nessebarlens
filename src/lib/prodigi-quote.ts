@@ -7,7 +7,10 @@ import {
 } from "./pricing";
 import {
   detailSuffix,
+  isProdigiTimeout,
+  PRODIGI_QUOTE_TIMEOUT_MS,
   PRODIGI_SHIPPING_METHOD,
+  prodigiTimeoutSignal,
 } from "./prodigi-config";
 import { prodigiApiKey, prodigiQuotesUrl } from "./config";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
@@ -63,26 +66,45 @@ export async function quotePhysical(opts: {
   const quotesUrl = prodigiQuotesUrl();
   const apiKey = prodigiApiKey();
 
-  const res = await fetch(quotesUrl, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "X-API-Key": apiKey,
-    },
-    body: JSON.stringify({
-      shippingMethod: PRODIGI_SHIPPING_METHOD,
-      destinationCountryCode,
-      currencyCode: "EUR",
-      items: [
-        {
-          sku: entry.sku,
-          copies: 1,
-          attributes: entry.attributes,
-          assets: [{ printArea: "default" }],
-        },
-      ],
-    }),
-  });
+  // Bounded, so a hung Prodigi answers the customer's spinner with an error
+  // instead of an open request (#104). The message says it timed out rather
+  // than naming the deadline, because prodigiErrorStatus reads this string and
+  // the timeout is upstream slowness -- a 502 that sends an operator to Prodigi's
+  // status page is the right destination here.
+  const signal = prodigiTimeoutSignal(PRODIGI_QUOTE_TIMEOUT_MS);
+
+  let res: Response;
+  try {
+    res = await fetch(quotesUrl, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "X-API-Key": apiKey,
+      },
+      signal,
+      body: JSON.stringify({
+        shippingMethod: PRODIGI_SHIPPING_METHOD,
+        destinationCountryCode,
+        currencyCode: "EUR",
+        items: [
+          {
+            sku: entry.sku,
+            copies: 1,
+            attributes: entry.attributes,
+            assets: [{ printArea: "default" }],
+          },
+        ],
+      }),
+    });
+  } catch (e) {
+    // The timeout is re-thrown with its own wording rather than left as the
+    // platform's. Both reach the route's catch and become a 502 either way, but
+    // "Prodigi quote timed out" tells an operator to look at Prodigi's latency
+    // while "fetch failed" tells them nothing about which deadline was hit.
+    throw isProdigiTimeout(e, signal)
+      ? new Error("Prodigi quote timed out")
+      : e;
+  }
 
   // The body is read once, before the status is judged, because a Prodigi error
   // names the field it objected to ("SKU GLOBAL-CAN-12X16 not found") and that
