@@ -52,6 +52,17 @@ test("checkoutUrl refuses anything that is not an absolute https url", () => {
   assert.equal(checkoutUrl({ url: "/pay" }), null);
 });
 
+test("checkoutUrl refuses https urls outside the Stripe checkout origin", () => {
+  assert.equal(checkoutUrl({ url: "https://evil.example/pay" }), null);
+  // Suffix, subdomain-suffix and userinfo tricks all resolve to a different
+  // origin than the one allowlisted.
+  assert.equal(checkoutUrl({ url: "https://evil-checkout.stripe.com/pay" }), null);
+  assert.equal(checkoutUrl({ url: "https://checkout.stripe.com.evil.example/pay" }), null);
+  assert.equal(checkoutUrl({ url: "https://checkout.stripe.com@evil.example/pay" }), null);
+  assert.equal(checkoutUrl({ url: "https://stripe.com/c/pay/cs_123" }), null);
+  assert.equal(checkoutUrl({ url: "https://checkout.stripe.com:8443/pay" }), null);
+});
+
 test("checkoutUrl rejects missing or non-string urls", () => {
   assert.equal(checkoutUrl({}), null);
   assert.equal(checkoutUrl({ url: 42 }), null);

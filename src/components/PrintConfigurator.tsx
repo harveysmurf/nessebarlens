@@ -146,9 +146,9 @@ export function PrintConfigurator({
         throw new Error(errorMessage(data) ?? "Checkout failed");
       }
       // The redirect target arrives from the API response, so it is treated as
-      // untrusted: anything that is not an absolute https URL is refused here,
-      // on the same synchronous path, before the navigation happens. Reuses the
-      // repo's HTTPS_URL_PATTERN rather than a second spelling of "is this https".
+      // untrusted: `checkoutUrl` has already refused anything that is not an
+      // absolute https URL on the Stripe checkout origin, on the same
+      // synchronous path, before the navigation happens.
       window.location.href = url;
     } catch (e) {
       setError(e instanceof Error ? e.message : "Checkout failed");
