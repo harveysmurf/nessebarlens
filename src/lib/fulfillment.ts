@@ -196,6 +196,50 @@ export function decideFulfillment(
   return { action: "write", record: buildRecord(input) };
 }
 
+/**
+ * The single place an order is written to ORDERS, so no path can store a
+ * paid-but-unfulfilled order without saying so.
+ *
+ * Before this, only the retryable Prodigi server failure logged; every other
+ * unfulfilled outcome (bad metadata, unknown photo, amount mismatch, missing
+ * shipping, and a terminal Prodigi client error) was written and answered 200
+ * in silence. We keep the money, ship nothing, Stripe stops redelivering, and
+ * there is no operator view over KV — so the order disappears until the
+ * customer complains.
+ *
+ * `AWAITING_PRODIGI_REASON` is deliberately not alerted on: it is the internal
+ * marker written by buildRecord on the way to Prodigi and rewritten by the same
+ * call, not an outcome. Alerting on it would page for every healthy print.
+ */
+export function isUnfulfilledOutcome(record: OrderRecord): boolean {
+  return (
+    record.status === "paid-unfulfilled" &&
+    record.reason !== AWAITING_PRODIGI_REASON
+  );
+}
+
+function reportUnfulfilled(record: OrderRecord, detail?: string): void {
+  console.error(
+    JSON.stringify({
+      event: "order.unfulfilled",
+      sessionId: record.sessionId,
+      reason: record.reason,
+      terminal: record.terminal,
+      format: record.format,
+      ...(detail === undefined ? {} : { detail }),
+    }),
+  );
+}
+
+async function storeOrder(
+  kv: OrdersKv,
+  record: OrderRecord,
+  detail?: string,
+): Promise<void> {
+  await kv.put(record.sessionId, JSON.stringify(record));
+  if (isUnfulfilledOutcome(record)) reportUnfulfilled(record, detail);
+}
+
 export async function fulfillCheckoutSession(
   input: FulfillmentInput & {
     kv: OrdersKv;
@@ -266,10 +310,7 @@ export async function fulfillCheckoutSession(
         prodigiStage: null,
         assetUrl: null,
       };
-      await input.kv.put(record.sessionId, JSON.stringify(record));
-      console.error(
-        `paid order ${record.sessionId} unfulfilled: ${result.reason} (${result.message}) — needs a human refund or retry`,
-      );
+      await storeOrder(input.kv, record, result.message);
       return {
         httpStatus: 500,
         body: { error: result.reason, message: result.message },
@@ -304,7 +345,7 @@ export async function fulfillCheckoutSession(
     }
   }
 
-  await input.kv.put(record.sessionId, JSON.stringify(record));
+  await storeOrder(input.kv, record);
   return {
     httpStatus: 200,
     body: {
