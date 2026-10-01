@@ -425,3 +425,107 @@ test("every config-failure message is recognised as ours, not as a 502", async (
     assert.equal(isProdigiUnconfigured(message), false, message);
   }
 });
+
+/**
+ * #130: a Prodigi error body names the field it objected to, and we were
+ * throwing that body away. `Prodigi quote HTTP 400` alone cannot tell an
+ * operator whether Prodigi is unwell or we sent a request it will never
+ * accept — which is the difference between checking Prodigi's status page and
+ * checking our own SKU map.
+ */
+async function quoteErrorMessageFrom(status: number, raw: string) {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () =>
+    new Response(raw, { status })) as typeof fetch;
+  process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
+  process.env.PRODIGI_SANDBOX_API_KEY = "sandbox";
+  try {
+    await quotePhysical({ format: "canvas", size: "30x40" });
+    assert.fail(`expected a throw for HTTP ${status}`);
+  } catch (e) {
+    return e instanceof Error ? e.message : String(e);
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.PRODIGI_SANDBOX_API_KEY;
+    delete process.env.PRODIGI_API_BASE;
+  }
+}
+
+test("a failed quote carries Prodigi's own detail, not just our status", async () => {
+  const detail = await quoteErrorMessageFrom(
+    400,
+    JSON.stringify({ detail: "SKU GLOBAL-CAN-12X16 is not available" }),
+  );
+  assert.equal(detail, "Prodigi quote HTTP 400: SKU GLOBAL-CAN-12X16 is not available");
+});
+
+test("Prodigi's detail is read from message and error too", async () => {
+  assert.equal(
+    await quoteErrorMessageFrom(400, JSON.stringify({ message: "bad request" })),
+    "Prodigi quote HTTP 400: bad request",
+  );
+  assert.equal(
+    await quoteErrorMessageFrom(401, JSON.stringify({ error: "invalid api key" })),
+    "Prodigi quote HTTP 401: invalid api key",
+  );
+  assert.equal(
+    await quoteErrorMessageFrom(400, JSON.stringify("plain string body")),
+    "Prodigi quote HTTP 400: plain string body",
+  );
+});
+
+test("an unreadable error body leaves the message exactly as it was", async () => {
+  for (const raw of [
+    "<html>502</html>",
+    "{}",
+    JSON.stringify({ detail: "" }),
+    // Whitespace-only collapses to nothing, so it contributes no suffix.
+    JSON.stringify({ detail: "   \n  " }),
+
+    "",
+    // A JSON scalar is a body we understood and have nothing to say about,
+    // which is different from a body we could not read at all.
+    "null",
+    "42",
+  ]) {
+    assert.equal(
+      await quoteErrorMessageFrom(500, raw),
+      "Prodigi quote HTTP 500",
+      JSON.stringify(raw),
+    );
+  }
+});
+
+test("an upstream detail never makes a Prodigi failure look like our config", async () => {
+  // The detail is appended to our message, and isProdigiUnconfigured is exact
+  // equality against our own config messages — so an upstream body that quotes
+  // one of our config strings must still be classified as Prodigi's problem.
+  const message = await quoteErrorMessageFrom(
+    400,
+    JSON.stringify({ detail: "PRODIGI_SANDBOX_API_KEY is not set" }),
+  );
+  assert.equal(
+    isProdigiUnconfigured(message),
+    false,
+    "an upstream detail that echoes a config message must not be read as ours",
+  );
+});
+
+test("an upstream detail is whitespace-collapsed before it is shown", async () => {
+  // A detail spanning several lines would otherwise break the log line it is
+  // appended to, and a log that needs reformatting to read is a log nobody
+  // reads.
+  assert.equal(
+    await quoteErrorMessageFrom(400, JSON.stringify({ detail: "  SKU\n  not\n found  " })),
+    "Prodigi quote HTTP 400: SKU not found",
+  );
+});
+
+test("an unbounded upstream detail is truncated", async () => {
+  const message = await quoteErrorMessageFrom(
+    400,
+    JSON.stringify({ detail: "x".repeat(5000) }),
+  );
+  assert.ok(message.length < 260, `message was ${message.length} chars`);
+  assert.ok(message.endsWith("…"));
+});

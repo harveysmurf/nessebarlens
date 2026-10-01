@@ -4,6 +4,7 @@ import test from "node:test";
 import { PRODIGI_SHIPPING_METHOD } from "../src/lib/prodigi-config.ts";
 import type { FrameFinish } from "../src/lib/pricing.ts";
 import {
+  CANVAS_WRAP,
   FRAME_COLOR,
   FRAME_FINISHES,
   PHYSICAL_FORMATS,
@@ -61,7 +62,19 @@ test("framed requires a frame color; giclee/canvas reject needing color", () => 
   assert.deepEqual(giclee.attributes, {});
   const canvas = resolveSku("canvas", "30x40", null);
   assert.equal(canvas.sku, "GLOBAL-CAN-12X16");
-  assert.deepEqual(canvas.attributes, {});
+  // Prodigi rejects a CAN quote with 400 MissingRequiredAttributes unless `wrap`
+  // is present, so this is not decorative: an empty map means canvas never quotes.
+  assert.deepEqual(canvas.attributes, { wrap: CANVAS_WRAP });
+});
+
+test("every canvas SKU carries the required wrap attribute", () => {
+  // Asserted per-format rather than on one entry because the defect was in the
+  // format branch: a single resolveSku("canvas", ...) would have passed while
+  // some other size drifted. Prodigi validates per SKU, so all three must hold.
+  for (const size of PRINT_SIZES) {
+    const entry = resolveSku("canvas", size, null);
+    assert.equal(entry.attributes.wrap, CANVAS_WRAP, `${entry.sku} has no wrap`);
+  }
 });
 
 test("SKU table: format / cm / in / sku", () => {

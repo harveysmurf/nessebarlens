@@ -25,8 +25,9 @@ import {
 } from "@/lib/print-copy";
 import {
   checkoutUrl,
-  errorMessage,
   isLiveQuote,
+  readJsonResponse,
+  requestErrorMessage,
   type LiveQuote,
 } from "@/lib/api-payloads";
 import { isFrameFinishValue, isPrintSize } from "@/lib/sku-map";
@@ -79,9 +80,12 @@ export function PrintConfigurator({
         // and each field the UI consumes is checked before use. A cast here
         // would only assert that the values are numbers; Number.isFinite is
         // what keeps a NaN from rendering as €NaN at the two price labels.
-        const data: unknown = await res.json();
+        // The read tolerates a non-JSON body: the unguarded response parse
+        // rejected on the HTML an edge 502 answers with, and that rejection
+        // surfaced to the customer as "Unexpected token '<'".
+        const data: unknown = await readJsonResponse(res);
         if (!res.ok) {
-          throw new Error(errorMessage(data) ?? "Quote failed");
+          throw new Error(requestErrorMessage(data, res.status, "Quote failed"));
         }
         if (!isLiveQuote(data)) {
           throw new Error("Quote failed");
@@ -140,12 +144,14 @@ export function PrintConfigurator({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(body),
       });
-      const data: unknown = await res.json();
+      const data: unknown = await readJsonResponse(res);
       // The transport status is checked first so the server's own error string
       // is the message on every non-ok response, whatever the payload's `url`
       // happens to be.
       if (!res.ok) {
-        throw new Error(errorMessage(data) ?? "Checkout failed");
+        throw new Error(
+          requestErrorMessage(data, res.status, "Checkout failed"),
+        );
       }
       const url = checkoutUrl(data);
       if (!url) {

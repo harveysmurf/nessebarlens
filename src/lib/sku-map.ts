@@ -39,6 +39,23 @@ export const FRAME_COLOR: Record<FrameFinish, string> = {
   brown: "brown",
 };
 
+/**
+ * Prodigi CAN `wrap` attribute — how the artwork meets the stretcher-bar edge.
+ *
+ * Prodigi lists this as a *required* attribute on every GLOBAL-CAN-* SKU, so an
+ * omitted `wrap` makes /v4.0/quotes reject the whole request with
+ * MissingRequiredAttributes and HTTP 400. That is why every canvas size failed
+ * to quote: resolveSku sent `attributes: {}` and Prodigi had no default to fall
+ * back on.
+ *
+ * `ImageWrap` continues the artwork around the 38mm edge, which is what a gallery
+ * canvas is. The other three (Black/White/MirrorWrap) all quote at the same
+ * price — verified 2026-10-01 against api.sandbox.prodigi.com — so this is an
+ * aesthetic choice, not a cost one. It is a constant rather than a UI option
+ * because nothing in the product currently exposes a wrap choice.
+ */
+export const CANVAS_WRAP = "ImageWrap";
+
 // Derived from the attribute map so a finish cannot exist in one and not the
 // other; the two used to be hand-listed side by side with nothing tying them.
 export const FRAME_FINISHES = Object.keys(FRAME_COLOR) as FrameFinish[];
@@ -99,6 +116,9 @@ export function resolveSku(
       );
     }
     attributes.color = FRAME_COLOR[frame];
+  }
+  if (format === "canvas") {
+    attributes.wrap = CANVAS_WRAP;
   }
   return { sku, sizeCm: size, sizeIn, attributes };
 }

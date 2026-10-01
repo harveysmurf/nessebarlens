@@ -198,3 +198,37 @@ test("the checkout redirect is refused unless it is an https URL", async () => {
   assert.ok(HTTPS_URL_PATTERN.test("https://checkout.stripe.com/c/pay"));
   assert.ok(HTTPS_URL_PATTERN.test("HTTPS://checkout.stripe.com/c/pay"));
 });
+
+test("the configurator never calls res.json() unguarded", async () => {
+  // #130: both fetches parsed the response unguarded, before checking
+  // `res.ok`. A 502
+  // answered with an HTML error page made that reject, and the rejection was
+  // caught and rendered as the customer-facing message — so a Prodigi outage
+  // showed up as `Unexpected token '<'` under "Shipping estimate". The read is
+  // now the tolerant readJsonResponse, and this pins the ordering: the body
+  // read cannot throw, so the status check is what decides the message.
+  const source = fs.readFileSync(
+    new URL("../src/components/PrintConfigurator.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(
+    source,
+    /await (?:res|response)\.json\(/,
+    "an unguarded response parse can reject on a non-JSON error body",
+  );
+  const { readJsonResponse, requestErrorMessage } = await import(
+    "../src/lib/api-payloads.ts"
+  );
+  assert.equal(typeof readJsonResponse, "function");
+  assert.equal(typeof requestErrorMessage, "function");
+  // And both fetches report through it, so neither regresses alone.
+  assert.equal(
+    [...source.matchAll(/readJsonResponse\(/g)].length,
+    2,
+    "quote and checkout both need the tolerant read",
+  );
+  assert.equal(
+    [...source.matchAll(/requestErrorMessage\(/g)].length,
+    2,
+  );
+});
