@@ -11,14 +11,12 @@ const ALLOWED_BASES = new Set([
 /**
  * The unconfigured-message grammar, written once.
  *
- * These strings used to be produced at the throw sites and re-derived as a
- * regex by isProdigiUnconfigured, so the classification depended on a second
- * copy of the wording staying in step with the first. Rewording a throw site
- * to "PRODIGI_API_KEY is missing" would have turned a 503 into a 502 -- a
+ * The throw sites and the predicate must build both halves from these
+ * functions. If a throw site were reworded to "PRODIGI_API_KEY is missing"
+ * the classification would not follow it, turning a 503 into a 502 -- a
  * deployment problem reported as Prodigi being unhealthy, which is the exact
- * misdiagnosis the predicate exists to prevent. The throw sites and the
- * predicate now build both halves from these functions, so the copies cannot
- * drift. tests/prodigi-config.test.mts checks that everything this module can
+ * misdiagnosis the predicate exists to prevent, and the copies could drift.
+ * tests/prodigi-config.test.mts checks that everything this module can
  * throw is still classified, which is what catches a *new* throw site.
  *
  * Indexed rather than a name-to-slot map: the first name is the sandbox key
@@ -140,17 +138,17 @@ export function prodigiApiKey(
  *   - PRODIGI_SANDBOX_API_KEY / PRODIGI_API_KEY missing → "<NAME>_API_KEY is not set"
  *   - PRODIGI_API_BASE unset or not an allowlisted host → "PRODIGI_API_BASE must be ..."
  *
- * The base case used to fall through to 502, which is the one status that
- * means "something upstream is unhealthy": a human reading the logs would go
- * look at Prodigi's status page for a misconfigured deploy of ours. Same
- * failure shape as the webhook's catch-all, one layer over.
+ * An unconfigured deployment must never fall through to 502, which is the one
+ * status that means "something upstream is unhealthy": a human reading the logs
+ * would go look at Prodigi's status page for a misconfigured deploy of ours.
+ * Same failure shape as the webhook's catch-all, one layer over.
  *
  * Matching on the message rather than an error subclass is deliberate. The
  * value crosses a bundler, and a module duplicated across two chunks yields
  * two copies of a class that fail an instanceof check -- which would turn a
  * 503 back into the 502 this predicate exists to prevent. Exact equality also
  * means a Prodigi error that merely contains these words cannot be mistaken
- * for ours; the old regex would have matched inside one.
+ * for ours; a substring regex would match inside one.
  */
 export function isProdigiUnconfigured(message: string): boolean {
   return (
@@ -187,9 +185,9 @@ export type ProdigiFailure = { error: string; status: 502 | 503 };
 
 /**
  * The envelope both Prodigi routes hand back from their catch block: unwrap the
- * message, classify it with prodigiErrorStatus, and pair the two. They used to
- * write the same three lines, so a reworded fallback ("Could not reach Prodigi"
- * in one route) or a changed classification rule could land in one route only.
+ * message, classify it with prodigiErrorStatus, and pair the two. One module
+ * owns all three lines, so a reworded fallback ("Could not reach Prodigi") or a
+ * changed classification rule cannot land in one route only.
  *
  * Stays free of `next/server` for the same reason json-body.ts does: the caller
  * owns the NextResponse, so this is unit testable as a plain function.

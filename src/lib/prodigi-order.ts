@@ -103,9 +103,9 @@ export type ProdigiOrderFailure = {
   /**
    * "server" means retryable: the webhook answers 5xx so Stripe redelivers.
    *
-   * 401/403/429 were previously "client" and therefore terminal. That made a
-   * wrong sandbox key unrecoverable: the customer had paid, the record was
-   * written, the webhook answered 200, and every later delivery hit the
+   * 401/403/429 are "server", not "client": a "client" auth failure makes a
+   * wrong sandbox key unrecoverable. The customer has paid, the record is
+   * written, the webhook answers 200, and every later delivery hits the
    * duplicate branch — also 200. Stripe retries for ~3 days, so retrying a
    * genuinely permanent auth failure only buys the window to fix the key.
    */
@@ -257,14 +257,14 @@ export function buildProdigiOrderBody(input: {
 
 export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   // The signed master URL for a paid physical order — or null if we cannot
-  // sign. There used to be a fallback to the public placeholder here. That was
-  // the dangerous one: /api/checkout now refuses to take payment when signing
-  // is impossible, so reaching here with no secret means the pre-payment guard
-  // did not hold (or the secret was removed between payment and fulfillment).
-  // Null lets us mark the order `paid-unfulfilled/asset-unconfigured` and
-  // answer 5xx, so Stripe redelivers and a human sees it — instead of shipping
-  // a ~41KB, 1600x1200 thumbnail to a customer who paid for a print and
-  // recording the order as fulfilled.
+  // sign, and there is no public-placeholder fallback. /api/checkout refuses to
+  // take payment when signing is impossible, so reaching here with no secret
+  // means the pre-payment guard did not hold (or the secret was removed
+  // between payment and fulfillment). A placeholder here would ship a ~41KB,
+  // 1600x1200 thumbnail to a customer who paid for a print and record the
+  // order as fulfilled. Null lets us mark the order
+  // `paid-unfulfilled/asset-unconfigured` and answer 5xx, so Stripe
+  // redelivers and a human sees it.
   const assetUrl = input.assetUrl ?? (await signPrintAssetUrl(input.photoSlug));
 
   // Fail closed before we talk to Prodigi. Retryable, so the webhook answers
@@ -334,10 +334,10 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   }
 
   // The body is read once, as text, before the status is judged, for the same
-  // reason prodigi-quote.ts does it (#133) and the same reason this path used to
-  // get it wrong (#135): `res.json()` threw on an HTML error page from the edge,
-  // the `catch {}` swallowed that into `{}`, and the operator was left with a
-  // bare "Prodigi order HTTP 502" that could not be told apart from our own bad
+  // reason prodigi-quote.ts does it (#133): `res.json()` throws on an HTML
+  // error page from the edge, the `catch {}` swallows that into `{}` (#135), and
+  // the operator is left with a
+  // bare "Prodigi order HTTP 502" that cannot be told apart from our own bad
   // request. Prodigi names the field it objected to, and that string is the only
   // thing distinguishing "fix our order body" from "check Prodigi's status page".
   //

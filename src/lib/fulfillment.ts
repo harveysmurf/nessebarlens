@@ -569,8 +569,8 @@ export async function resolveDownload(
   }
   const object = read.object;
 
-  // The catalog slug grammar, not a second copy of it: this used to inline the
-  // same regex, so a slug the catalog rejected could still name the download.
+  // The catalog slug grammar, not a second copy of it: an inlined regex here
+  // would let a slug the catalog rejected still name the download.
   const filename = PHOTO_SLUG_PATTERN.test(order.photoSlug)
     ? `${order.photoSlug}.jpg`
     : "download.jpg";
@@ -694,10 +694,10 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
   }
 
   if (!input.prodigiKeyConfigured) {
-    // Retryable, not terminal. This used to be written with the shell's
-    // terminal:true and the reason "prodigi-key-unset", which made it
-    // indistinguishable from a done order: the webhook answered 200, Stripe
-    // never redelivered, and a customer who paid for a print got nothing with
+    // Retryable, not terminal. Marking it terminal (the shell's `terminal:true`
+    // with the reason "prodigi-key-unset") makes it indistinguishable from a
+    // done order: the webhook answers 200, Stripe
+    // never redelivers, and a customer who paid for a print gets nothing with
     // no log line anywhere. A missing key is deployment config, fixable inside
     // Stripe's ~3-day redelivery window, and the address is already valid — so
     // keep it and let a redelivery place the order.

@@ -57,7 +57,8 @@ export const FRAME_COLOR: Record<FrameFinish, string> = {
 export const CANVAS_WRAP = "ImageWrap";
 
 // Derived from the attribute map so a finish cannot exist in one and not the
-// other; the two used to be hand-listed side by side with nothing tying them.
+// other; hand-listing them side by side would let a finish exist in one and
+// not the other.
 export const FRAME_FINISHES = Object.keys(FRAME_COLOR) as FrameFinish[];
 
 export const PHYSICAL_FORMATS: PhysicalFormat[] = ["giclee", "framed", "canvas"];
@@ -79,10 +80,10 @@ export function formatListLabel(
 export const PRINT_SIZES: PrintSize[] = ["30x40", "50x70", "70x100"];
 
 // Membership tests for the allow-lists above, owned here because this module
-// owns the lists. Callers used to cast their way to one —
+// owns the lists. Callers must not cast their way to one —
 // `PRINT_SIZES.includes(size as PrintSize)` followed by a second
-// `size as PrintSize` at the use — so the cast, not the check, was what made
-// the value valid. A predicate narrows once and holds at every later use, and
+// `size as PrintSize` at the use — because the cast, not the check, would be
+// what makes the value valid. A predicate narrows once and holds at every later use, and
 // adding a format or size cannot leave a caller validating against a
 // hand-typed union that has drifted from the list.
 export function isSellableFormat(value: unknown): value is PrintFormat {

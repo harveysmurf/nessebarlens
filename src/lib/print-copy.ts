@@ -1,12 +1,11 @@
 /**
  * The copy behind the print configurator's three selectors.
  *
- * The component used to declare its own FORMATS, SIZES and FRAMES arrays. Two
- * of those were hand-typed duplicates of the sku-map lists, so adding a format
- * to the catalog — which is what happens when a Prodigi SKU is pinned —
- * produced a configurator that silently could not offer it, with no type error
- * and no test. The home and story pages already carry partial copies of the
- * same idea.
+ * FORMATS, SIZES and FRAMES are keyed off the sku-map lists, never hand-typed
+ * here: a hand-typed duplicate of those lists produces a configurator that
+ * silently cannot offer a newly pinned Prodigi SKU, with no type error and no
+ * test. The home and story pages already carry partial copies of the same
+ * idea.
  *
  * These are Records keyed by the id, not arrays of id/label pairs, which is
  * the whole point: adding a format, size or frame finish to the catalog makes

@@ -6,9 +6,10 @@
  * (binding missing). Same deploy-time fact, same status, same body, three
  * literals, and the string is what an operator greps for when a paid download
  * 503s. A reworded literal landing in one site would make the three
- * indistinguishable in the logs, which is the exact diagnosis that just failed
- * once already: the webhook's bare catch used to answer with this string for
- * any throw, so a real bug in fulfillment was logged as a missing binding.
+ * indistinguishable in the logs. The string is narrow on purpose: only a
+ * missing binding may produce it. The webhook's bare catch answering with this
+ * string for any throw is exactly the misdiagnosis to avoid — a real bug in
+ * fulfillment logged as a missing binding points at the wrong subsystem.
  *
  * The two routes answer with different headers and that asymmetry is
  * deliberate, not an oversight: download is a private asset route and wraps

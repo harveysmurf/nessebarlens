@@ -1,10 +1,10 @@
 /**
  * One definition of "this value points at private master media".
  *
- * Three call sites used to each carry their own copy — two case-insensitive
- * regexes and one case-sensitive `includes` pair — so the same string could be
- * rejected by the Prodigi order body and accepted by the stored-record
- * validator. Masters live in the private bucket; nothing outside this module
+ * Three call sites check through this one module rather than each spelling the
+ * rule — two case-insensitive regexes and one case-sensitive `includes` pair
+ * would let the same string be rejected by the Prodigi order body and
+ * accepted by the stored-record validator. Masters live in the private bucket; nothing outside this module
  * should ever name one.
  */
 

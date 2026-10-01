@@ -584,3 +584,38 @@ test("no module re-exports a symbol it does not define", () => {
     `re-exported symbols have no owner in the file that names them: ${offenders.join(", ")}`,
   );
 });
+
+test("no comment narrates change history instead of an invariant", () => {
+  // Comments that say "used to" / "previously" describe a state the code is
+  // not in, so they go stale and push the reason the code exists now out of
+  // view. History belongs in commit messages and PRs; a comment earns its
+  // place only by stating a constraint that still holds.
+  //
+  // This walks the AST for comment text rather than grepping the file: the
+  // product copy in photos.ts legitimately contains "The Old Windmill" and
+  // "the old quarter", and a file-level grep would force a rename of a photo
+  // title to satisfy a rule about code comments.
+  const NARRATION = /\b(used to|previously|the old)\b/i;
+  const offenders: string[] = [];
+  for (const file of allSourceFiles()) {
+    const source = ts.createSourceFile(
+      file,
+      fs.readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    for (const range of [
+      ...source.getFullText().matchAll(/\/\*[\s\S]*?\*\//g),
+      ...source.getFullText().matchAll(/\/\/[^\n]*/g),
+    ]) {
+      if (!NARRATION.test(range[0])) continue;
+      const { line } = source.getLineAndCharacterOfPosition(range.index);
+      offenders.push(`${relative(file)}:${line + 1}`);
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `comments narrate change history rather than the current invariant: ${offenders.join(", ")}`,
+  );
+});

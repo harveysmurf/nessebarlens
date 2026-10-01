@@ -21,10 +21,9 @@ export function eurToCents(eur: number): number {
  * stored order metadata). Returns null for anything that is not a plain
  * non-negative amount with at most two decimals.
  *
- * This grammar used to be written down twice, in fulfillment.ts and
- * prodigi-quote.ts, and the copies had already drifted: the stored-record copy
- * capped the integer part at six digits, the Prodigi copy did not. A >6-digit
- * amount was therefore readable from a quote and rejected from a record, and
+ * This grammar is written down once. Two copies already drifted: a stored-record
+ * copy capping the integer part at six digits and a Prodigi copy that did not
+ * made a >6-digit amount readable from a quote and rejected from a record, and
  * which one you got depended on which module you were in.
  */
 export function parseEurAmount(raw: string | null | undefined): number | null {

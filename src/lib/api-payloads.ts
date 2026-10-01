@@ -3,10 +3,10 @@
  *
  * `res.json()` returns whatever the network produced: a proxy's HTML error
  * page, a 5xx JSON object, a field silently coerced to `null`, a number the
- * edge mangled into `NaN`. The configurator used to `as` both payloads into a
- * hand-written shape, which asserts that the values are the right type rather
- * than checking that they are — so an `NaN` reached the price label and printed
- * as €NaN, and a non-string `url` reached the redirect assignment.
+ * edge mangled into `NaN`. `as`-ing a payload into a hand-written shape
+ * asserts that the values are the right type rather than checking that they
+ * are — so an `NaN` would reach the price label and print
+ * as €NaN, and a non-string `url` would reach the redirect assignment.
  *
  * These are pure and unit-testable on purpose: each function takes `unknown`,
  * and returns either the narrowed value or nothing, so the caller branches once

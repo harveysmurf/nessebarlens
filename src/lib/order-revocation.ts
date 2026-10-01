@@ -264,7 +264,7 @@ export async function paymentIntentForDispute(
   // a different thing from a lookup that failed: the first means the charge is
   // not ours (200, ignore), the second means Stripe was unreachable and the
   // dispute is real, so it must propagate to the route and be answered 5xx so
-  // Stripe redelivers. Swallowing it as `null` used to answer 200
+  // Stripe redelivers. Swallowing it as `null` would answer 200
   // "no-payment-intent" and leave a disputed buyer holding the master file.
   return lookup.findPaymentIntentForCharge(charge);
 }
