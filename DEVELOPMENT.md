@@ -140,8 +140,8 @@ imports.
 
 - Always run `npm test` before opening a PR and again before a deploy.
 - CI (see §6) blocks deploy on a failing test run.
-- Add a test whenever you change `src/lib/fulfillment.ts`, `pricing.ts`, or any
-  quote/order logic.
+- Add a test whenever you change `src/lib/order-decision.ts`,
+  `src/lib/fulfillment.ts`, `pricing.ts`, or any quote/order logic.
 
 ### Preview smoke test
 
@@ -328,7 +328,10 @@ script.
   `paymentIntents.confirm` probes — ignore them.
 - **Stripe webhooks** are verified with Web Crypto (`src/lib/stripe-event.ts`), and
   master keys are read from `photos.ts` (commit `cdac0eb`).
-- **Fulfillment is recorded, not executed.** `src/lib/fulfillment.ts` writes the
+- **Fulfillment is recorded, not executed.** The rules live in
+  `src/lib/order-decision.ts` (pure: what a session means, what a stored record
+  says, whether a customer may download) and the effects in
+  `src/lib/fulfillment.ts`, which writes the
   order to KV `ORDERS`. A *retryable* failure (Prodigi 401/403/429/5xx, an
   unconfigured key or asset secret) is written `terminal: false` and the webhook
   answers 5xx so Stripe redelivers for ~3 days; a terminal one answers 200. The

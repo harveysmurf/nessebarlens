@@ -15,12 +15,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  type OrdersKv,
+} from "../src/lib/fulfillment.ts";
+import {
   isOrderStatus,
   isRevoked,
   parseOrderRecord,
   resolveDownload,
-  type OrdersKv,
-} from "../src/lib/fulfillment.ts";
+} from "../src/lib/order-decision.ts";
 import {
   isChargeId,
   isPaymentIntentId,

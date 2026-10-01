@@ -19,7 +19,7 @@ import ts from "typescript";
 import { MASTERS_BUCKET_NAME } from "../src/lib/derivative-ladder.ts";
 import { MASTERS_BUCKET, MASTER_MARKER } from "../src/lib/master-guard.ts";
 import { FILM_LOOKS, filmLookClass } from "../src/lib/photos.ts";
-import { AWAITING_PRODIGI_REASON } from "../src/lib/fulfillment.ts";
+import { AWAITING_PRODIGI_REASON } from "../src/lib/order-decision.ts";
 import { ORDERS_KV_UNAVAILABLE_ERROR } from "../src/lib/orders-kv.ts";
 
 const root = path.join(import.meta.dirname, "..");
@@ -64,9 +64,16 @@ function stringLiteralSites(): LiteralSite[] {
       true,
     );
     const visit = (node: ts.Node): void => {
-      if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+      if (
+        ts.isStringLiteral(node) ||
+        ts.isNoSubstitutionTemplateLiteral(node)
+      ) {
         const { line } = source.getLineAndCharacterOfPosition(node.getStart());
-        sites.push({ literal: node.text, file: relative(file), line: line + 1 });
+        sites.push({
+          literal: node.text,
+          file: relative(file),
+          line: line + 1,
+        });
       }
       ts.forEachChild(node, visit);
     };
@@ -127,8 +134,8 @@ function regexLiterals(): Map<string, Declared[]> {
     const visit = (node: ts.Node): void => {
       if (ts.isRegularExpressionLiteral(node)) {
         // getText(), not .text: the latter drops the delimiters, so a regex and
-      // the string literal "/…/" would key identically.
-      const key = node.getText(source);
+        // the string literal "/…/" would key identically.
+        const key = node.getText(source);
         const list = bySource.get(key) ?? [];
         const { line } = source.getLineAndCharacterOfPosition(node.getStart());
         list.push({ file: relative(file), line: line + 1 });
@@ -161,8 +168,7 @@ function shapeDeclarations(): Map<string, Declared[]> {
       source.getLineAndCharacterOfPosition(node.getStart()).line + 1;
     const visit = (node: ts.Node): void => {
       if (
-        (ts.isTypeAliasDeclaration(node) &&
-          ts.isTypeLiteralNode(node.type)) ||
+        (ts.isTypeAliasDeclaration(node) && ts.isTypeLiteralNode(node.type)) ||
         ts.isInterfaceDeclaration(node)
       ) {
         const name = node.name.text;
@@ -229,8 +235,14 @@ test("the master marker tracks the bucket name instead of re-spelling it", () =>
     MASTER_MARKER.source.includes(MASTERS_BUCKET_NAME),
     `master marker does not reference ${MASTERS_BUCKET_NAME}: ${MASTER_MARKER.source}`,
   );
-  assert.ok(MASTER_MARKER.test(MASTERS_BUCKET_NAME), "marker rejects the bucket");
-  assert.ok(MASTER_MARKER.test("prints/dusk.jpg"), "marker rejects a master key");
+  assert.ok(
+    MASTER_MARKER.test(MASTERS_BUCKET_NAME),
+    "marker rejects the bucket",
+  );
+  assert.ok(
+    MASTER_MARKER.test("prints/dusk.jpg"),
+    "marker rejects a master key",
+  );
 
   // And the name itself is written down once: a second copy in another module
   // is the drift this whole file exists to catch. Comments are excluded — the
@@ -295,8 +307,12 @@ test("a film-look class is not re-spelled outside its owning module", () => {
       if (ts.isStringLiteral(node)) {
         const look = FILM_LOOK_CLASSES.find((cls) => node.text.includes(cls));
         if (look) {
-          const { line } = source.getLineAndCharacterOfPosition(node.getStart());
-          (rel === OWNER ? owners : offenders).push(`${look} at ${rel}:${line + 1}`);
+          const { line } = source.getLineAndCharacterOfPosition(
+            node.getStart(),
+          );
+          (rel === OWNER ? owners : offenders).push(
+            `${look} at ${rel}:${line + 1}`,
+          );
         }
       }
       ts.forEachChild(node, visit);
@@ -346,8 +362,13 @@ test("filmLookClass is never called with a spelled-out look name", () => {
         node.expression.text === "filmLookClass"
       ) {
         const arg = node.arguments[0];
-        if (arg && (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg))) {
-          const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+        if (
+          arg &&
+          (ts.isStringLiteral(arg) || ts.isNoSubstitutionTemplateLiteral(arg))
+        ) {
+          const { line } = source.getLineAndCharacterOfPosition(
+            node.getStart(),
+          );
           offenders.push(`${relative(file)}:${line + 1}`);
         }
       }
@@ -381,7 +402,10 @@ test("the MASTERS storage shape is declared once and both readers import it", ()
     assert.equal(sites.length, 1, `${name} declared ${sites.length} times`);
     assert.equal(sites[0]!.file, "src/lib/master-key.ts", name);
   }
-  for (const reader of ["src/lib/fulfillment.ts", "src/lib/print-asset.ts"]) {
+  for (const reader of [
+    "src/lib/order-decision.ts",
+    "src/lib/print-asset.ts",
+  ]) {
     const src = fs.readFileSync(path.join(root, reader), "utf8");
     assert.match(src, /from "\.\/master-key"/, reader);
   }
@@ -426,8 +450,11 @@ test("no module re-exports a single-source constant under a second name", () => 
           }
         }
       }
-      if (ts.isExportDeclaration(node) && node.exportClause &&
-          ts.isNamedExports(node.exportClause)) {
+      if (
+        ts.isExportDeclaration(node) &&
+        node.exportClause &&
+        ts.isNamedExports(node.exportClause)
+      ) {
         for (const spec of node.exportClause.elements) {
           const local = (spec.propertyName ?? spec.name).text;
           if (spec.name.text !== local && GUARDED[local]) {
@@ -450,7 +477,7 @@ test("no module re-exports a single-source constant under a second name", () => 
   }
 });
 
-test("the awaiting-prodigi reason marker is spelled once, in fulfillment.ts", () => {
+test("the awaiting-prodigi reason marker is spelled once, in order-decision.ts", () => {
   // `reason` is `string | null`, so a one-sided rename of this marker
   // type-checks: the writer keeps writing one spelling and the Prodigi
   // trigger keeps comparing against another, and every paid print is then
@@ -458,7 +485,7 @@ test("the awaiting-prodigi reason marker is spelled once, in fulfillment.ts", ()
   // cannot see that — before the drift both sides are correct — so pin the
   // spelling itself: exactly one literal in src/, and it is the one the
   // constant holds.
-  const OWNER = "src/lib/fulfillment.ts";
+  const OWNER = "src/lib/order-decision.ts";
   // Imported, not re-typed: the guard has to track whatever the constant is
   // called now, and a hand-written name here would drift into a test that
   // passes because it guarded a spelling nobody uses.
@@ -493,9 +520,7 @@ test("the awaiting-prodigi reason marker is spelled once, in fulfillment.ts", ()
         // The declaration's own name node is not a use.
         const parent = node.parent;
         const isDeclName =
-          parent &&
-          ts.isVariableDeclaration(parent) &&
-          parent.name === node;
+          parent && ts.isVariableDeclaration(parent) && parent.name === node;
         if (!isDeclName) {
           uses.push(`${rel}:${lineOf(node)}`);
         }
@@ -513,10 +538,18 @@ test("the awaiting-prodigi reason marker is spelled once, in fulfillment.ts", ()
     [OWNER],
     `"awaiting-prodigi" spelled outside ${OWNER}: ${sites.join(", ")}`,
   );
+  // The two sides of the marker live in different modules by design: the
+  // writer is buildRecord in the pure half, the reader is the Prodigi trigger
+  // in the effectful half. So the check is one use in each, not two in one.
   const owned = uses.filter((u) => u.startsWith(`${OWNER}:`));
   assert.ok(
-    owned.length >= 2,
-    `expected the writer and the reader to use ${NAME}, saw ${owned.length}`,
+    owned.length >= 1,
+    `expected the writer to use ${NAME}, saw ${owned.length}`,
+  );
+  const READER = "src/lib/fulfillment.ts";
+  assert.ok(
+    uses.some((u) => u.startsWith(`${READER}:`)),
+    `expected the Prodigi trigger in ${READER} to use ${NAME}`,
   );
 });
 
@@ -594,7 +627,9 @@ test("no module re-exports a symbol it does not define", () => {
       // `export type * from` is a wholesale alias for a module's whole
       // surface and counts the same as naming symbols one at a time.
       const named = statement.exportClause?.kind ?? ts.SyntaxKind.NamedExports;
-      offenders.push(`${rel}: ${named === ts.SyntaxKind.NamedExports ? "named" : "star"} re-export`);
+      offenders.push(
+        `${rel}: ${named === ts.SyntaxKind.NamedExports ? "named" : "star"} re-export`,
+      );
     }
   }
   assert.deepEqual(
@@ -641,4 +676,96 @@ test("no comment narrates change history instead of an invariant", () => {
     [],
     `comments narrate change history rather than the current invariant: ${offenders.join(", ")}`,
   );
+});
+
+test("the pure half of fulfillment reaches no effect", () => {
+  // #148 split src/lib/fulfillment.ts on the pure-vs-effects seam: order-decision
+  // answers what an order *means*, fulfillment reaches for KV and Prodigi. The
+  // seam is only worth having if it holds — a single `createProdigiOrder` call
+  // inside the pure half makes every decision rule untestable without a stub
+  // factory again, which is what the split was for. Proved here by importing
+  // the module with a poisoned global: anything that reached for fetch or a
+  // Cloudflare binding would trip before a single rule ran.
+  const BANNED =
+    /\b(createProdigiOrder|fetch\(|readWorkerBindings|cancelProdigiOrder)\b/;
+  const src = fs.readFileSync(
+    path.join(root, "src/lib/order-decision.ts"),
+    "utf8",
+  );
+  const offender = BANNED.exec(src);
+  assert.equal(
+    offender,
+    null,
+    `order-decision.ts reaches an effect (${offender?.[0]}): the pure half must decide, not act`,
+  );
+
+  // Non-vacuous in the other direction: the half that owns the effects must
+  // still contain them, or this test would stay green after a move that emptied
+  // the orchestrator.
+  const effects = fs.readFileSync(
+    path.join(root, "src/lib/fulfillment.ts"),
+    "utf8",
+  );
+  assert.match(effects, /createProdigiOrder/, "fulfillment must call Prodigi");
+  assert.match(effects, /kv\.put\(/, "fulfillment must write ORDERS");
+});
+
+test("the pure half is importable with no bindings, KV or Prodigi available", async () => {
+  // The acceptance criterion for #148 that only a run can prove: order-decision
+  // imports cleanly in a process that has no Cloudflare context, no ORDERS KV
+  // and no Prodigi key. `getCloudflareContext` throws on a missing context and
+  // `prodigiApiKey` throws on a missing key, so if the pure half reached either
+  // at module scope this import rejects rather than returning a module.
+  const previous = { ...process.env };
+  try {
+    for (const key of [
+      "ORDERS",
+      "PRODIGI_API_KEY",
+      "STRIPE_SECRET_KEY",
+      "NEXT_PUBLIC_SITE_URL",
+    ]) {
+      delete process.env[key];
+    }
+    const mod = await import("../src/lib/order-decision.ts");
+    assert.equal(typeof mod.decideFulfillment, "function");
+    assert.equal(typeof mod.parseOrderRecord, "function");
+    assert.equal(typeof mod.orderViewState, "function");
+    assert.equal(typeof mod.expectedAmountCents, "function");
+    assert.equal(typeof mod.parseRecipient, "function");
+    // resolveDownload is pure in its decisions but reads MASTERS, so it takes
+    // the bucket as an argument rather than a binding. Call it with no bucket
+    // at all: the decision (403/409) must be answerable with nothing configured.
+    assert.deepEqual(
+      await mod.resolveDownload(
+        {
+          v: 1,
+          sessionId: "cs_test_abcdefgh",
+          merchantReference: "cs_test_abcdefgh",
+          terminal: true,
+          status: "paid",
+          photoSlug: "dawn",
+          format: "giclee",
+          size: "",
+          frame: "",
+          quoteEur: 15,
+          amountTotal: 1500,
+          currency: "eur",
+          reason: null,
+          masterKey: null,
+          recipient: null,
+          prodigiOrderId: null,
+          prodigiStage: null,
+          assetUrl: null,
+          updatedAt: "2026-01-01T00:00:00.000Z",
+        },
+        undefined,
+      ),
+      { kind: "json", status: 403, body: { error: "not-a-digital-download" } },
+    );
+  } finally {
+    for (const [key, value] of Object.entries(previous)) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
 });

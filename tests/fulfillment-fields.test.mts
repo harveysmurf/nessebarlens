@@ -6,7 +6,7 @@ import {
   parseRecipient,
   type OrderRecord,
   type StripeShippingDetails,
-} from "../src/lib/fulfillment.ts";
+} from "../src/lib/order-decision.ts";
 
 /* Every scalar in a stored record is re-checked on the way out of KV. These
    are the guards that had no case at all: a record that fails one of them is
