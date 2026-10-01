@@ -11,7 +11,7 @@ import { placeholderAssetUrl } from "@/lib/prodigi-order";
 import { quotePhysical } from "@/lib/prodigi-quote";
 import { prodigiFailure } from "@/lib/prodigi-config";
 import { canSignMasterAsset } from "@/lib/print-asset";
-import { getStripe, siteUrl } from "@/lib/stripe";
+import { getStripe, isConfiguredSiteUrl, siteUrl } from "@/lib/stripe";
 
 export async function POST(request: Request) {
   const body = await readJsonBody(request);
@@ -28,6 +28,17 @@ export async function POST(request: Request) {
   const photo = getPhoto(parsed.photoSlug);
   if (!photo) {
     return NextResponse.json({ error: "Unknown photoSlug" }, { status: 404 });
+  }
+
+  // Checked before anything with a cost attached — a Prodigi quote, a Stripe
+  // session. Without the site url we cannot build the success_url or the signed
+  // print-asset URL Prodigi fetches, so the order is unserviceable either way;
+  // refusing here means the customer is never charged.
+  if (!isConfiguredSiteUrl()) {
+    return NextResponse.json(
+      { error: "Checkout is not configured" },
+      { status: 503 },
+    );
   }
 
   const isPhysical = parsed.format !== "digital";

@@ -1,6 +1,10 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getStripe, siteUrl } from "../src/lib/stripe.ts";
+import {
+  getStripe,
+  isConfiguredSiteUrl,
+  siteUrl,
+} from "../src/lib/stripe.ts";
 import { signPrintAssetUrl } from "../src/lib/print-asset.ts";
 
 async function withSiteUrl<T>(
@@ -37,6 +41,44 @@ test("siteUrl falls back to localhost when unset or blank", async () => {
     await withSiteUrl(raw, () => {
       assert.equal(siteUrl(), "http://localhost:3000");
     });
+  }
+});
+
+test("siteUrl throws in production instead of returning localhost", async () => {
+  for (const raw of [undefined, "", "   "]) {
+    await withSiteUrl(raw, () => {
+      const savedEnv = process.env.NODE_ENV;
+      try {
+        process.env.NODE_ENV = "production";
+        assert.throws(() => siteUrl(), /NEXT_PUBLIC_SITE_URL is not set/);
+        // Never a localhost URL, whatever the caller does with the throw.
+        assert.equal(isConfiguredSiteUrl(), false);
+      } finally {
+        if (savedEnv === undefined) delete process.env.NODE_ENV;
+        else process.env.NODE_ENV = savedEnv;
+      }
+    });
+  }
+});
+
+test("isConfiguredSiteUrl follows the stripped value, in any environment", async () => {
+  const savedEnv = process.env.NODE_ENV;
+  try {
+    for (const raw of ["https://nessebarlens.com", "https://nessebarlens.com/"]) {
+      process.env.NODE_ENV = "production";
+      await withSiteUrl(raw, () => {
+        assert.equal(isConfiguredSiteUrl(), true, raw);
+        assert.equal(siteUrl(), "https://nessebarlens.com", raw);
+      });
+    }
+    process.env.NODE_ENV = "development";
+    await withSiteUrl(undefined, () => {
+      assert.equal(isConfiguredSiteUrl(), false);
+      assert.equal(siteUrl(), "http://localhost:3000");
+    });
+  } finally {
+    if (savedEnv === undefined) delete process.env.NODE_ENV;
+    else process.env.NODE_ENV = savedEnv;
   }
 });
 

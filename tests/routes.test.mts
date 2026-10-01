@@ -490,6 +490,34 @@ test("checkout: a bad body is a 400 and a missing slug never reaches Stripe", as
   }
 });
 
+test("checkout: an unset site url is a 503 before Stripe or Prodigi is called", async () => {
+  const savedSite = process.env.NEXT_PUBLIC_SITE_URL;
+  const savedFetch = globalThis.fetch;
+  delete process.env.NEXT_PUBLIC_SITE_URL;
+  globalThis.fetch = (async () => {
+    throw new Error("nothing may be called when the site url is unset");
+  }) as typeof fetch;
+  try {
+    for (const payload of [
+      { photoSlug: "dawn", format: "digital" },
+      { photoSlug: "dawn", format: "giclee", size: "30x40" },
+    ]) {
+      const res = await checkout.POST(
+        jsonRequest(`${SITE}/api/checkout`, payload),
+      );
+      assert.equal(res.status, 503, JSON.stringify(payload));
+      // Generic: the customer must not learn which env var is missing.
+      const parsed = await body(res);
+      assert.equal(parsed.error, "Checkout is not configured");
+      assert.ok(!JSON.stringify(parsed).includes("NEXT_PUBLIC_SITE_URL"));
+    }
+  } finally {
+    globalThis.fetch = savedFetch;
+    if (savedSite === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = savedSite;
+  }
+});
+
 test("webhook: no signature, no secret, bad signature — in that order", async () => {
   const saved = { ...process.env };
   delete process.env.STRIPE_WEBHOOK_SECRET;
