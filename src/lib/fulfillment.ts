@@ -503,6 +503,41 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
   };
 }
 
+/**
+ * What the customer should be shown for an order, as a closed set of cases the
+ * success page renders one way each.
+ *
+ * Exists because the page and the download route were deciding this separately:
+ * the page showed "Go to download" for every order regardless of format, so a
+ * physical buyer got a link that 403s `not-a-digital-download` (#103). Deriving
+ * both from one resolver is what keeps the page from offering something
+ * resolveDownload will refuse.
+ *
+ * The cases are ordered to match resolveDownload's own checks, deliberately:
+ * a physical order is reported as physical before any status question, so the
+ * page cannot say "your download is processing" about an order that has no
+ * download to process.
+ */
+export type OrderViewState =
+  /** A physical order: being produced, no file to hand over. */
+  | "physical"
+  /** A digital order whose file is ready to download now. */
+  | "digital-ready"
+  /** A digital order still being fulfilled — the webhook has not finished. */
+  | "digital-pending"
+  /** Paid, but we could not deliver; the reason is worth showing, not the raw code. */
+  | "digital-unavailable"
+  /** Money returned or disputed: there is nothing to hand over and nothing to promise. */
+  | "revoked";
+
+export function orderViewState(order: OrderRecord): OrderViewState {
+  if (order.format !== "digital") return "physical";
+  if (isRevoked(order.status)) return "revoked";
+  if (order.status === "paid" && order.masterKey) return "digital-ready";
+  if (!order.terminal) return "digital-pending";
+  return "digital-unavailable";
+}
+
 export type DownloadResolution =
   | { kind: "json"; status: number; body: Record<string, string> }
   | {
