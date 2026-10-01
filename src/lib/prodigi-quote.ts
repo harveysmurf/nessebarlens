@@ -8,9 +8,8 @@ import {
 import {
   detailSuffix,
   PRODIGI_SHIPPING_METHOD,
-  prodigiApiKey,
-  prodigiQuotesUrl,
 } from "./prodigi-config";
+import { prodigiApiKey, prodigiQuotesUrl } from "./config";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
 
 export type PhysicalQuote = {

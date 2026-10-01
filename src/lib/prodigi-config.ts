@@ -99,9 +99,17 @@ function badBaseMessage(): string {
 /**
  * Explicit Prodigi API host. Must be set per environment — never inferred
  * from which API key is present.
+ *
+ * Every reader here takes its env as a required argument and never falls back
+ * to process.env, so this module is a pure function of what it is handed and
+ * the only place a Prodigi value reaches process.env is config.ts. The `= 
+ * process.env` defaults this replaced were a back door around exactly the
+ * invariant the AST guard checks (#119): a call with no argument read an env
+ * var from a module the AC says must not read env, and a test that passed
+ * `{}` was silently reading the real process environment instead.
  */
 export function prodigiApiBase(
-  env: Record<string, unknown> = process.env,
+  env: Record<string, unknown>,
 ): string {
   const base = envStringStrippedSlash("PRODIGI_API_BASE", env);
   if (!base || !ALLOWED_BASES.has(base)) {
@@ -116,7 +124,7 @@ function isProdigiSandboxBase(base: string): boolean {
 
 /** API key paired to the explicit base — sandbox key for sandbox host, live for live. */
 export function prodigiApiKey(
-  env: Record<string, unknown> = process.env,
+  env: Record<string, unknown>,
 ): string {
   const base = prodigiApiBase(env);
   const name = isProdigiSandboxBase(base)
@@ -198,19 +206,19 @@ export function prodigiFailure(e: unknown): ProdigiFailure {
 }
 
 export function prodigiQuotesUrl(
-  env: Record<string, unknown> = process.env,
+  env: Record<string, unknown>,
 ): string {
   return `${prodigiApiBase(env)}/v4.0/quotes`;
 }
 
 export function prodigiOrdersUrl(
-  env: Record<string, unknown> = process.env,
+  env: Record<string, unknown>,
 ): string {
   return `${prodigiApiBase(env)}/v4.0/orders`;
 }
 
 export function prodigiKeyConfigured(
-  env: Record<string, unknown> = process.env,
+  env: Record<string, unknown>,
 ): boolean {
   try {
     prodigiApiKey(env);

@@ -18,7 +18,7 @@
  * be corrected later by anyone.
  */
 
-import { prodigiApiKey, prodigiOrdersUrl } from "./prodigi-config";
+import { defaultEnv, prodigiApiKey, prodigiOrdersUrl } from "./config";
 
 /** A thrown value that is not an Error still has to name the failure. */
 function errorMessage(e: unknown, fallback: string): string {
@@ -47,7 +47,7 @@ export function isSafeProdigiOrderId(value: unknown): value is string {
 
 export function prodigiCancelUrl(
   prodigiOrderId: string,
-  env: Record<string, unknown> = process.env,
+  env: Record<string, unknown> = defaultEnv(),
 ): string {
   if (!isSafeProdigiOrderId(prodigiOrderId)) {
     throw new Error("unsafe Prodigi order id");

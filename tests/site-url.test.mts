@@ -1,10 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  getStripe,
-  isConfiguredSiteUrl,
-  siteUrl,
-} from "../src/lib/stripe.ts";
+import { getStripe } from "../src/lib/stripe.ts";
+import { isConfiguredSiteUrl, siteUrl } from "../src/lib/config.ts";
 import { signPrintAssetUrl } from "../src/lib/print-asset.ts";
 
 async function withSiteUrl<T>(

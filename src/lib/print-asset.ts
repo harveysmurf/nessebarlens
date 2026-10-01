@@ -15,8 +15,12 @@ import {
   hmacSha256Hex,
   timingSafeEqualHex,
 } from "./crypto-hex";
-import { envString, stripTrailingSlashes } from "./env";
-import { siteUrl } from "./stripe";
+import { stripTrailingSlashes } from "./env";
+import {
+  printAssetSecret,
+  siteUrl,
+  usablePrintAssetSecret,
+} from "./config";
 
 /** Prodigi may re-fetch during fulfillment; start at 7d, tighten after a live order. */
 export const PRINT_ASSET_TTL_SECONDS = 7 * 24 * 60 * 60;
@@ -48,46 +52,19 @@ export type PrintAssetStream =
       size: number;
     };
 
-/** Min chars for the print-asset HMAC secret. Single source of truth. */
-export const PRINT_ASSET_SECRET_MIN_LENGTH = 32;
-
-/**
- * A secret is usable only if it survives trimming and is long enough.
- *
- * A Worker binding can hold a value no env reader would produce — `wrangler
- * secret put` keeps a trailing newline, and a paste can carry a leading space.
- * "   " is truthy, so a bare length check signed URLs with a key of whitespace
- * and every legitimate request came back 401 bad-signature instead of the 503
- * that says the deployment is not configured.
- */
-function usableSecret(secret: string | null | undefined): string | null {
-  const trimmed = secret?.trim() ?? "";
-  return trimmed.length >= PRINT_ASSET_SECRET_MIN_LENGTH ? trimmed : null;
-}
-
-/**
- * HMAC secret for /api/print-asset. Min 32 chars; unset returns null, which
- * callers read as "not configured" rather than as a usable default — see
- * signPrintAssetUrl for why there is no placeholder path here.
- */
-export function printAssetSecret(
-  env: Record<string, unknown> = process.env,
-): string | null {
-  return usableSecret(envString("PRINT_ASSET_HMAC_SECRET", env));
-}
-
 /**
  * The secret the signer and the verifier must agree on.
  *
  * Both paths resolve it identically on purpose: an explicit `undefined` means
  * "use this deployment's configured secret", while an explicit null or string
- * is taken as given (and still run through usableSecret, so a whitespace-only
- * override is rejected the same way a whitespace-only binding is). If the two
+ * is taken as given (and still run through usablePrintAssetSecret, so a
+ * whitespace-only override is rejected the same way a whitespace-only binding
+ * is). If the two
  * ever picked differently, URLs would be signed with one key and verified with
  * another, and every legitimate download would 401.
  */
 function resolveSecret(secret: string | null | undefined): string | null {
-  return secret === undefined ? printAssetSecret() : usableSecret(secret);
+  return secret === undefined ? printAssetSecret() : usablePrintAssetSecret(secret);
 }
 
 /**

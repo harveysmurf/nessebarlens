@@ -4,7 +4,8 @@ import {
   WEB_DEFAULT_WIDTH,
   WEB_DERIVATIVE_WIDTHS,
 } from "../src/lib/derivative-ladder.ts";
-import { webDerivativeUrls, webImagesBase } from "../src/lib/derivatives.ts";
+import { webDerivativeUrls } from "../src/lib/derivatives.ts";
+import { webImagesBase } from "../src/lib/config.ts";
 
 function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
   const saved: Record<string, string | undefined> = {};
