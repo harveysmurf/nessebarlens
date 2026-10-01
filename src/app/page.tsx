@@ -52,9 +52,11 @@ export default function HomePage() {
               <h1 className="font-serif text-3xl sm:text-5xl font-light">
                 {hero.title}
               </h1>
-              <p className="text-xs text-stone-300 font-light max-w-md">
-                {hero.heroCaption}
-              </p>
+              {hero.heroCaption && (
+                <p className="text-xs text-stone-300 font-light max-w-md">
+                  {hero.heroCaption}
+                </p>
+              )}
             </div>
           </div>
         </Link>
