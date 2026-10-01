@@ -121,6 +121,14 @@ export async function POST(request: Request) {
 
   const sessionParams: Parameters<typeof stripe.checkout.sessions.create>[0] = {
     mode: "payment",
+    // Adaptive Pricing off, stated here rather than left to the dashboard
+    // toggle. With it on, Stripe shows the buyer a converted local amount,
+    // while `amount_total` on the session stays in the integration currency
+    // (eur) — the behaviour the webhook's `amount-mismatch` check relies on.
+    // That guarantee is an API-version property, so it is asserted in
+    // tests/adaptive-pricing.test.mts and would fail loudly if the Stripe
+    // SDK upgrade changed the version the amount semantics depend on.
+    adaptive_pricing: { enabled: false },
     success_url: `${base}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${base}/checkout/cancel?slug=${encodeURIComponent(photo.slug)}`,
     // The line item is built inline rather than from a Stripe price_… ID on
