@@ -8,6 +8,7 @@ import { MASTERS_BUCKET, referencesMasters } from "./master-guard";
 import { PHOTOS } from "./photos";
 import type { FrameFinish, PrintSize } from "./pricing";
 import {
+  detailSuffix,
   PRODIGI_SHIPPING_METHOD,
   prodigiApiKey,
   prodigiOrdersUrl,
@@ -332,15 +333,18 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
     };
   }
 
-  let data: {
-    outcome?: string;
-    order?: { id?: string; status?: { stage?: string } };
-  } = {};
-  try {
-    data = (await res.json()) as typeof data;
-  } catch {
-    data = {};
-  }
+  // The body is read once, as text, before the status is judged, for the same
+  // reason prodigi-quote.ts does it (#133) and the same reason this path used to
+  // get it wrong (#135): `res.json()` threw on an HTML error page from the edge,
+  // the `catch {}` swallowed that into `{}`, and the operator was left with a
+  // bare "Prodigi order HTTP 502" that could not be told apart from our own bad
+  // request. Prodigi names the field it objected to, and that string is the only
+  // thing distinguishing "fix our order body" from "check Prodigi's status page".
+  //
+  // An unreadable body (a dropped connection) is not an error here: the status
+  // is still the useful half, and the parse below already tolerates a non-JSON
+  // body by yielding no order id.
+  const raw = await res.text().catch(() => "");
 
   if (!res.ok) {
     const { kind, reason } = classifyProdigiStatus(res.status);
@@ -348,9 +352,19 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
       ok: false,
       kind,
       reason,
-      message: `Prodigi order HTTP ${res.status}`,
+      message: `Prodigi order HTTP ${res.status}${detailSuffix(raw)}`,
       status: res.status,
     };
+  }
+
+  let data: {
+    outcome?: string;
+    order?: { id?: string; status?: { stage?: string } };
+  };
+  try {
+    data = JSON.parse(raw) as typeof data;
+  } catch {
+    data = {};
   }
 
   const orderId = data.order?.id;

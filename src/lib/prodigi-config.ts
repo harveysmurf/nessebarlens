@@ -30,6 +30,56 @@ const UNCONFIGURED_KEY_NAMES = [
 ] as const;
 
 /**
+ * The one string in a Prodigi error body worth showing a human.
+ *
+ * Prodigi reports errors in one of `detail`, `message` or `error` depending on
+ * the endpoint, and as a JSON object or a bare string depending on the layer
+ * that rejected it. All four shapes are read; anything else contributes
+ * nothing, because the point is to add the upstream reason when there is one,
+ * not to guess at a body we do not understand.
+ *
+ * Bounded and whitespace-collapsed: this string ends up in a log line and in
+ * the JSON body the route hands an unauthenticated caller, and an unbounded
+ * upstream payload pasted into either is its own problem.
+ *
+ * Lives here, not in prodigi-quote, because both Prodigi callers need it and
+ * the order path needed it badly enough to have grown its own throwaway parse
+ * first (see #135). One reader, so the two failure messages cannot drift.
+ */
+const DETAIL_LIMIT = 200;
+
+function truncateDetail(value: string): string | null {
+  const collapsed = value.replace(/\s+/g, " ").trim();
+  if (collapsed === "") return null;
+  return collapsed.length > DETAIL_LIMIT
+    ? `${collapsed.slice(0, DETAIL_LIMIT)}…`
+    : collapsed;
+}
+
+export function prodigiDetail(raw: string): string | null {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch {
+    return null;
+  }
+  if (typeof parsed === "string") return truncateDetail(parsed);
+  if (typeof parsed !== "object" || parsed === null) return null;
+  const record = parsed as Record<string, unknown>;
+  for (const key of ["detail", "message", "error"]) {
+    const value = record[key];
+    if (typeof value === "string" && value !== "") return truncateDetail(value);
+  }
+  return null;
+}
+
+/** The upstream reason appended to a Prodigi status message, or "" when there is none. */
+export function detailSuffix(raw: string): string {
+  const detail = prodigiDetail(raw);
+  return detail ? `: ${detail}` : "";
+}
+
+/**
  * The Prodigi shipping method we quote with and buy with.
  *
  * It appeared as a literal in the quote body, the order body and the
