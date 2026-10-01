@@ -31,7 +31,7 @@ import { spawnSync } from "node:child_process";
 import { readdirSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
-import { isGatedFile, mean, parseCoverage } from "./coverage-report.mjs";
+import { isGatedFile, mean, parseCoverage, testRunExitCode } from "./coverage-report.mjs";
 
 const ROOT = path.join(import.meta.dirname, "..");
 
@@ -52,6 +52,16 @@ const result = spawnSync(
 );
 
 const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
+// A failing test still emits a full coverage report, so the floors below can be
+// met on a red suite. The suite's own verdict decides before the floors do.
+const testExit = testRunExitCode(result);
+if (testExit !== null) {
+  if (result.error) process.stderr.write(String(result.error));
+  process.stderr.write("coverage.mjs: the test run failed, so the floors were not checked\n");
+  process.stderr.write(output.slice(-4000));
+  process.exit(testExit);
+}
+
 const rows = parseCoverage(output);
 if (rows.length === 0) {
   process.stderr.write("coverage.mjs: no file rows in the coverage report\n");

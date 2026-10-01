@@ -5,6 +5,7 @@ import {
   isLibFile,
   mean,
   parseCoverage,
+  testRunExitCode,
 } from "../scripts/coverage-report.mjs";
 
 /* The report is node's own text, so it changes shape between node majors.
@@ -220,4 +221,19 @@ test("the '..' rows node emits for a deep path never become a path prefix", () =
 ℹ    loader.mjs                  | 100.00 |   100.00 |  100.00 | 
 `);
   assert.deepEqual(rows.map((row) => row.file), ["tmp/loader.mjs"]);
+});
+
+test("the gate fails on a red suite, and only on one", () => {
+  // A failing test still emits a complete coverage report, so the gate used to
+  // meet its floors on a broken suite and exit 0. The suite's own verdict has
+  // to decide first.
+  assert.equal(testRunExitCode({ status: 0, signal: null }), null);
+  assert.equal(testRunExitCode({ status: 1, signal: null }), 1);
+  assert.equal(testRunExitCode({ status: 7, signal: null }), 7);
+  // Never started at all: no child, so no status and no report.
+  assert.equal(testRunExitCode({ error: new Error("spawnSync ENOENT") }), 1);
+  // Killed, so it has a signal but no exit code of its own to propagate.
+  assert.equal(testRunExitCode({ status: null, signal: "SIGKILL" }), 1);
+  // A signalled run that also reports a status is still a failure.
+  assert.equal(testRunExitCode({ status: 0, signal: "SIGTERM" }), 1);
 });
