@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { MASTERS_BUCKET, referencesMasters } from "../src/lib/master-guard.ts";
-import { MASTERS_BUCKET_NAME } from "../src/lib/derivative-ladder.ts";
-import { assertNoMasterLeak } from "../src/lib/prodigi-order.ts";
-import { decideFulfillment, parseOrderRecord, resolveDownload } from "../src/lib/fulfillment.ts";
 import {
+  MASTERS_BUCKET_NAME,
   PHOTO_SLUG_PATTERN,
   isMasterKey,
-  masterKeyForSlug,
-} from "../src/lib/master-key.ts";
+} from "../src/lib/derivative-ladder.ts";
+import { assertNoMasterLeak } from "../src/lib/prodigi-order.ts";
+import { decideFulfillment, parseOrderRecord, resolveDownload } from "../src/lib/fulfillment.ts";
+import { masterKeyForSlug } from "../src/lib/master-key.ts";
 import { isPhotoSlug } from "../src/lib/print-asset.ts";
 import { PHOTOS, getPhoto } from "../src/lib/photos.ts";
 

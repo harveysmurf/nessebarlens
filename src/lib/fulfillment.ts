@@ -5,11 +5,10 @@
  * (or placeholder). Masters never leave photos.ts / MASTERS binding.
  */
 
+import { PHOTO_SLUG_PATTERN } from "./derivative-ladder";
 import {
-  PHOTO_SLUG_PATTERN,
   masterKeyForSlug,
   readMasterObject,
-  type MasterObject,
   type MastersBucket,
 } from "./master-key";
 import { referencesMasters } from "./master-guard";
@@ -36,7 +35,6 @@ import {
 } from "./sku-map";
 import { siteUrl } from "./stripe";
 
-export type { PrintFormat };
 export type OrderFormat = PrintFormat | "unknown";
 export type OrderStatus =
   | "paid"
@@ -113,8 +111,6 @@ const EMAIL_MAX = 254;
  */
 const STORED_ENUM_FIELD_MAX = 64;
 
-export type { OrderRecipient };
-
 export type OrderRecord = {
   v: 1;
   sessionId: string;
@@ -149,8 +145,6 @@ export type OrdersKv = {
   get(key: string): Promise<string | null>;
   put(key: string, value: string): Promise<void>;
 };
-
-export type { MasterObject, MastersBucket };
 
 export type StripeShippingDetails = {
   name?: string | null;

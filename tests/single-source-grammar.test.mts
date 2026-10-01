@@ -545,3 +545,42 @@ test("the orders-kv rejection is spelled once, in orders-kv.ts", () => {
   // against the live response, which is the side that can actually be wrong.
   assert.equal(sites.length, 1);
 });
+
+test("no module re-exports a symbol it does not define", () => {
+  // derivative-ladder.ts owned the rung list and the slug grammar, and both
+  // master-key.ts and derivatives.ts re-exported them so callers could take a
+  // shorter path. Three names for one declaration meant "which file owns this"
+  // had three answers, and adding a rung meant editing a list of names in
+  // modules that had no other reason to change. This walks the AST for
+  // `export ... from "./other"` and names the one case that is allowed: an
+  // index.ts barrel, which exists to re-export on purpose.
+  const offenders: string[] = [];
+  for (const file of allSourceFiles()) {
+    const rel = relative(file);
+    if (/(^|\/)index\.tsx?$/.test(rel)) continue;
+
+    const source = ts.createSourceFile(
+      file,
+      fs.readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    for (const statement of source.statements) {
+      if (
+        !ts.isExportDeclaration(statement) ||
+        statement.moduleSpecifier === undefined
+      ) {
+        continue;
+      }
+      // `export type * from` is a wholesale alias for a module's whole
+      // surface and counts the same as naming symbols one at a time.
+      const named = statement.exportClause?.kind ?? ts.SyntaxKind.NamedExports;
+      offenders.push(`${rel}: ${named === ts.SyntaxKind.NamedExports ? "named" : "star"} re-export`);
+    }
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `re-exported symbols have no owner in the file that names them: ${offenders.join(", ")}`,
+  );
+});

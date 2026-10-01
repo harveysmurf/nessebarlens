@@ -21,7 +21,7 @@ import {
   placeholderPhotoSrc,
 } from "../src/lib/placeholder-photo.ts";
 import { PHOTOS } from "../src/lib/photos.ts";
-import { WEB_DEFAULT_WIDTH, WEB_DERIVATIVE_WIDTHS } from "../src/lib/derivatives.ts";
+import { WEB_DEFAULT_WIDTH, WEB_DERIVATIVE_WIDTHS } from "../src/lib/derivative-ladder.ts";
 
 const root = path.join(import.meta.dirname, "..");
 const BASE = "NEXT_PUBLIC_WEB_IMAGES_BASE";

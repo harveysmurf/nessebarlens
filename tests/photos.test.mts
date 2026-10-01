@@ -8,7 +8,8 @@ import {
   photosByCategory,
   type PhotoCategory,
 } from "../src/lib/photos.ts";
-import { PHOTO_SLUG_PATTERN, isMasterKey, masterKeyForSlug } from "../src/lib/master-key.ts";
+import { PHOTO_SLUG_PATTERN, isMasterKey } from "../src/lib/derivative-ladder.ts";
+import { masterKeyForSlug } from "../src/lib/master-key.ts";
 
 const CATEGORIES: PhotoCategory[] = ["fine-art", "archive", "film"];
 

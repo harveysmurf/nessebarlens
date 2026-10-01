@@ -26,12 +26,9 @@
  * different from "only ever offer 2500".
  */
 
-import {
-  WEB_DEFAULT_WIDTH,
-  webDerivativeUrls,
-  type WebDerivativeWidth,
-} from "./derivatives";
-import { PHOTO_SLUG_PATTERN } from "./master-key";
+import { PHOTO_SLUG_PATTERN, WEB_DEFAULT_WIDTH } from "./derivative-ladder";
+import { webDerivativeUrls } from "./derivatives";
+import type { WebDerivativeWidth } from "./derivative-ladder";
 
 /**
  * Bump when the placeholder JPEGs change so browsers skip stale CDN copies.

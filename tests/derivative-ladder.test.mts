@@ -9,8 +9,11 @@ import {
   planDerivatives,
   slugFromDroppedName,
 } from "../src/lib/derivative-ladder.ts";
-import { slugFromMasterKey } from "../src/lib/master-key.ts";
-import { MASTERS_BUCKET_NAME, WEB_BUCKET_NAME } from "../src/lib/derivatives.ts";
+import {
+  MASTERS_BUCKET_NAME,
+  WEB_BUCKET_NAME,
+  slugFromMasterKey,
+} from "../src/lib/derivative-ladder.ts";
 
 const RUNGS = [750, 1500, 2500];
 

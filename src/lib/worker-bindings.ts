@@ -1,4 +1,5 @@
-import type { MastersBucket, OrdersKv } from "./fulfillment";
+import type { MastersBucket } from "./master-key";
+import type { OrdersKv } from "./fulfillment";
 import { envString } from "./env";
 import { printAssetSecret } from "./print-asset";
 import { prodigiKeyConfigured } from "./prodigi-config";
