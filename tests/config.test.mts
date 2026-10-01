@@ -137,11 +137,32 @@ test("a sandbox host paired with the live key is not configured", () => {
 });
 
 test("a base that is not allowlisted is absent from the summary", () => {
-  // getConfig reports it as unset rather than throwing; prodigiApiBase() is
-  // the throwing reader and stays at the call site.
+  // Unset *and* not-allowlisted are the same thing to the summary, because both
+  // are "this deployment is misconfigured". Reporting the wrong host as present
+  // would mean the one-clear-error path never names it and the operator only
+  // finds out on the first request.
   const config = getConfig({ PRODIGI_API_BASE: "https://evil.example" });
-  assert.equal(config.prodigi.apiBase, "https://evil.example");
-  assert.equal(config.prodigi.keyConfigured, false);
+  assert.deepEqual(config.prodigi, { apiBase: undefined, keyConfigured: false });
+  assert.deepEqual(
+    missingProductionConfig({ PRODIGI_API_BASE: "https://evil.example" }),
+    [
+      "NEXT_PUBLIC_SITE_URL",
+      "STRIPE_SECRET_KEY",
+      "PRODIGI_API_BASE",
+      "PRODIGI_API_KEY",
+      "PRINT_ASSET_HMAC_SECRET",
+    ],
+  );
+  // Still reported before any money moves, and by the throwing reader that owns
+  // the message: the summary delegates to the same allowlist.
+  assert.throws(
+    () => prodigiQuotesUrl({ PRODIGI_API_BASE: "https://evil.example" }),
+    /PRODIGI_API_BASE must be/,
+  );
+  assert.equal(
+    getConfig({ PRODIGI_API_BASE: SANDBOX }).prodigi.apiBase,
+    SANDBOX,
+  );
 });
 
 test("the throwing Prodigi readers read through config, message and all", () => {

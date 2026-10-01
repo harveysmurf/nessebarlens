@@ -69,6 +69,63 @@ function memberChain(expr: ts.Expression): string[] {
 type Offence = { file: string; line: number; what: string };
 
 /**
+ * A default parameter that is a call, or that touches process.env, outside the
+ * allowlist.
+ *
+ * This is the shape note 2 was about. A default reading process.env directly
+ * is caught by the member walk; a default calling a helper that returns it —
+ * `env = defaultEnv()` — is not, because from this module the call is just a
+ * name. So the rule is structural instead of lexical: outside the allowlist, a
+ * parameter default may only be a literal. Object-literal defaults (`opts:
+ * { ... } = {}`) and `undefined` still pass, because they read nothing.
+ */
+function defaultParameterOffences(): Offence[] {
+  const offences: Offence[] = [];
+  for (const file of sourceFiles(srcDir)) {
+    if (ALLOWED.has(path.basename(file))) continue;
+    const source = ts.createSourceFile(
+      file,
+      fs.readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const report = (node: ts.Node, what: string): void => {
+      const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+      offences.push({ file: path.relative(root, file), line: line + 1, what });
+    };
+    const visit = (node: ts.Node): void => {
+      const params =
+        (ts.isFunctionDeclaration(node) && node.parameters) ||
+        (ts.isMethodDeclaration(node) && node.parameters) ||
+        (ts.isFunctionExpression(node) && node.parameters) ||
+        (ts.isArrowFunction(node) && node.parameters) ||
+        undefined;
+      for (const param of params ?? []) {
+        const init = param.initializer;
+        if (init === undefined) continue;
+        // A call is only an env read if it reads like one. `nowMs = Date.now()`
+        // is a default that reaches the clock, which is a different question and
+        // is allowed; `env = defaultEnv()` is the one this guards.
+        const callee = ts.isCallExpression(init) ? init.expression : undefined;
+        const looksLikeEnvRead =
+          (callee !== undefined &&
+            ts.isIdentifier(callee) &&
+            /env/i.test(callee.text)) ||
+          (callee !== undefined && ts.isPropertyAccessExpression(callee)
+            ? /env/i.test(callee.name.text)
+            : false);
+        if (looksLikeEnvRead || memberChain(init).includes("env")) {
+          report(init, `default parameter for "${param.name.getText()}"`);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  return offences;
+}
+
+/**
  * Reads of environment outside the allowlist.
  *
  * Two shapes, and the second matters as much as the first: `envString("X")`
@@ -168,6 +225,16 @@ test("the walk is not vacuous — prodigi-config.ts has no default env parameter
     defaults,
     [],
     `prodigi-config.ts readers must require their env argument, but these default one: ${defaults.join(", ")}`,
+  );
+});
+
+test("only the allowlist can give a parameter default that reads something", () => {
+  const offences = defaultParameterOffences();
+  assert.deepEqual(
+    offences,
+    [],
+    `a default parameter reads outside the allowlist:\n` +
+      offences.map((o) => `  ${o.file}:${o.line} ${o.what}`).join("\n"),
   );
 });
 

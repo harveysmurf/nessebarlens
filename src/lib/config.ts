@@ -26,6 +26,7 @@
 
 import { envFlag, envString, envStringStrippedSlash, stripTrailingSlashes } from "./env";
 import {
+  prodigiApiBaseIfAllowed,
   prodigiApiKey as prodigiApiKeyOf,
   prodigiKeyConfigured,
   prodigiOrdersUrl as prodigiOrdersUrlOf,
@@ -53,10 +54,13 @@ export type Config = {
   };
   prodigi: {
     /**
-     * The API base, or undefined when unset or not an allowlisted host. Like
-     * keyConfigured this never throws: prodigiApiBase() is the throwing
-     * reader and stays at the call site, so its message and the allowlist
-     * stay in one file.
+     * The API base, or undefined when unset or not an allowlisted host — the
+     * two ways a deployment is misconfigured. Like keyConfigured this never
+     * throws: prodigiApiBase() is the throwing reader and stays at the call
+     * site, so its message and the allowlist stay in one file, and it delegates
+     * to prodigiApiBaseIfAllowed here rather than re-reading the variable, so
+     * "configured" has one answer. A wrong host therefore reads as missing
+     * here, which is what makes missingProductionConfig able to name it.
      */
     apiBase: string | undefined;
     keyConfigured: boolean;
@@ -193,14 +197,6 @@ export function printAssetSecret(
 }
 
 /**
- * The deployment's own environment, for a function whose own signature carries
- * a default and must not spell process.env itself.
- */
-export function defaultEnv(): ConfigEnv {
-  return process.env;
-}
-
-/**
  * The deployment's own environment, for callers that must reach an env read
  * they are not allowed to make themselves.
  *
@@ -236,7 +232,7 @@ export function getConfig(env: ConfigEnv = process.env): Config {
     stripe: { secretKey: stripeSecretKey(env) },
     prodigi: {
       // The non-throwing pair on purpose — see the module docblock.
-      apiBase: envStringStrippedSlash("PRODIGI_API_BASE", env),
+      apiBase: prodigiApiBaseIfAllowed(env),
       keyConfigured: prodigiKeyConfigured(env),
     },
     // Delegates rather than re-reading PRINT_ASSET_HMAC_SECRET: the
