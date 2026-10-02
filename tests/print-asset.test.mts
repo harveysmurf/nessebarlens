@@ -180,7 +180,13 @@ test("resolvePrintAssetStream serves catalog master only", async () => {
   const masters = {
     async get(key: string) {
       gotKey = key;
-      return { body, size: 10, contentType: "image/jpeg" };
+      // A PNG master's metadata is deliberately not honoured here: Prodigi is
+      // documented to want a JPEG, so the header is forced, not inherited.
+      return {
+        body,
+        size: 10,
+        httpMetadata: { contentType: "image/png" },
+      };
     },
   };
   const resolved = await resolvePrintAssetStream("dawn", masters);

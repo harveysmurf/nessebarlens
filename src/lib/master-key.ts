@@ -1,3 +1,5 @@
+import type { R2ObjectBody } from "@cloudflare/workers-types";
+
 import { isMasterKey } from "./derivative-ladder";
 import { getPhoto } from "./photos";
 
@@ -19,17 +21,31 @@ export function masterKeyForSlug(slug: string): string | null {
 }
 
 /**
- * Shape of a private MASTERS object. Owned here so the two readers (the
- * download path and the print-asset path) cannot drift, rather than each
- * declaring its own copy of these two types.
+ * The three fields of a private MASTERS object this code actually reads, named
+ * off the real `R2ObjectBody` rather than declared from scratch.
+ *
+ * Hand-rolling the shape is what caused #109: the invented `contentType`
+ * field is not on R2ObjectBody — the real one is
+ * `httpMetadata?.contentType` — so the download route's `object.contentType`
+ * read was always `undefined` and every master was served as `image/jpeg`.
+ * Deriving the field types from the platform's own means a wrong name here is
+ * a typecheck error rather than a silent `undefined`.
+ *
+ * The body stream is the one field re-typed rather than indexed, because R2
+ * declares it unparameterised (`ReadableStream<any>`) and both serving paths
+ * hand it straight to a `NextResponse`, which wants `ReadableStream<Uint8Array>`.
  */
 export type MasterObject = {
   body: ReadableStream<Uint8Array>;
-  size: number;
-  contentType?: string;
+  size: R2ObjectBody["size"];
+  httpMetadata: R2ObjectBody["httpMetadata"];
 };
 
-/** R2 binding contract: read-only, so get() is the whole surface. */
+/**
+ * R2 binding contract: read-only, so get() is the whole surface. The declared
+ * return is narrowed to the three fields read above, which a real `R2Bucket`
+ * satisfies structurally — its `get` resolves to a superset of this object.
+ */
 export type MastersBucket = {
   get(key: string): Promise<MasterObject | null>;
 };

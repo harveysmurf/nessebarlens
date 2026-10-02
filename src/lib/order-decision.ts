@@ -440,7 +440,7 @@ export async function resolveDownload(
   return {
     kind: "stream",
     body: object.body,
-    contentType: object.contentType || "image/jpeg",
+    contentType: object.httpMetadata?.contentType || "image/jpeg",
     size: object.size,
     filename,
   };
