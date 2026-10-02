@@ -79,3 +79,17 @@ test("preview warns but does not fail without the secret", () => {
   assert.equal(result.status, 0);
   assert.match(result.stderr, /warning: PRINT_ASSET_HMAC_SECRET/);
 });
+
+test("production fails when padding hides a short secret", () => {
+  // The two guards must judge the same string: Python strips before measuring,
+  // so bash has to strip too. Otherwise 31 real chars + a pasted newline passes
+  // bash at "32" and is dropped downstream -- deploy green, checkout 503ing.
+  const result = run("production", "s".repeat(MIN_LENGTH - 1) + "\n");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /at least 32 characters/);
+});
+
+test("production accepts a padded secret that is genuinely long enough", () => {
+  const result = run("production", `  ${valid}\n`);
+  assert.equal(result.status, 0);
+});

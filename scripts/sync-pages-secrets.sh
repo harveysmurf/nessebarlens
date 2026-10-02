@@ -73,6 +73,12 @@ export PRODIGI_API_BASE="$BASE"
 # leaves the deploy green and the site 503ing. Preview only warns: a preview
 # build legitimately runs without physical checkout.
 PRINT_SECRET="${PRINT_ASSET_HMAC_SECRET:-}"
+# Trim before measuring, so this guard and the Python guard below judge the same
+# string. Without it a 31-char secret with a trailing newline passes here (32
+# chars) and is stripped to 31 downstream -- silently dropped, deploy green,
+# the #114 symptom one character later.
+PRINT_SECRET="${PRINT_SECRET#"${PRINT_SECRET%%[![:space:]]*}"}"
+PRINT_SECRET="${PRINT_SECRET%"${PRINT_SECRET##*[![:space:]]}"}"
 if [[ ${#PRINT_SECRET} -lt 32 ]]; then
   if [[ "$TARGET" == "production" ]]; then
     echo "production requires PRINT_ASSET_HMAC_SECRET with at least 32 characters (got ${#PRINT_SECRET})" >&2
