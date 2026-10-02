@@ -21,7 +21,37 @@ import {
  * notice it was unclassified, so an unset secret would report itself as 502 —
  * "Prodigi is down" — when it means "this deploy is misconfigured".
  */
+/**
+ * Every variable prodigi-config reads. Its readers layer the passed env over
+ * process.env, so an env of `{}` means "unset" only if the ambient environment
+ * does not have them. Without this a developer machine or a CI runner with
+ * PRODIGI_API_KEY exported makes "unset" read as configured, and the test that
+ * says every throw is classified stops exercising the throw at all.
+ */
+const PRODIGI_KEYS = [
+  "PRODIGI_API_BASE",
+  "PRODIGI_API_KEY",
+  "PRODIGI_SANDBOX_API_KEY",
+] as const;
+
+function withCleanEnv<T>(body: () => T): T {
+  const saved: Record<string, string | undefined> = {};
+  for (const key of PRODIGI_KEYS) {
+    saved[key] = process.env[key];
+    delete process.env[key];
+  }
+  try {
+    return body();
+  } finally {
+    for (const key of PRODIGI_KEYS) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+}
+
 function throwableMessages(): string[] {
+  return withCleanEnv(() => {
   const messages: string[] = [];
 
   for (const env of [
@@ -51,6 +81,7 @@ function throwableMessages(): string[] {
   }
 
   return messages;
+  });
 }
 
 test("every message this module can throw is classified as unconfigured", () => {
@@ -127,7 +158,7 @@ test("prodigiErrorStatus is the one place the 503/502 split is decided", () => {
   assert.match(source, /export function prodigiErrorStatus/);
 });
 
-test("a configured key is reported as configured on both hosts", () => {
+test("a configured key is reported as configured on both hosts", () => withCleanEnv(() => {
   assert.equal(prodigiKeyConfigured({}), false);
   assert.equal(
     prodigiKeyConfigured({ PRODIGI_API_BASE: PRODIGI_SANDBOX_API_BASE }),
@@ -157,7 +188,7 @@ test("a configured key is reported as configured on both hosts", () => {
     }),
     true,
   );
-});
+}));
 
 test("prodigiFailure unwraps the message and classifies it in one step", () => {
   assert.deepEqual(

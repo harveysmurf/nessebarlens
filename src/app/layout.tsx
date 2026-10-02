@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
-import { envStringStrippedSlash } from "@/lib/env";
+import { configuredSiteUrl } from "@/lib/config";
 import "./globals.css";
 
 const cormorant = localFont({
@@ -97,7 +97,7 @@ export const metadata: Metadata = {
   title: SITE_TITLE,
   description: SITE_DESCRIPTION,
   metadataBase: new URL(
-    envStringStrippedSlash("NEXT_PUBLIC_SITE_URL") ?? "http://localhost:3000",
+    configuredSiteUrl() ?? "http://localhost:3000",
   ),
   openGraph: {
     type: "website",

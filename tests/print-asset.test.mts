@@ -1,13 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  PRINT_ASSET_SECRET_MIN_LENGTH,
   PRINT_ASSET_TTL_SECONDS,
-  printAssetSecret,
   resolvePrintAssetStream,
   signPrintAssetUrl,
   verifyPrintAssetRequest,
 } from "../src/lib/print-asset.ts";
+import {
+  PRINT_ASSET_SECRET_MIN_LENGTH,
+  printAssetSecret,
+} from "../src/lib/config.ts";
 import { readWorkerBindings } from "../src/lib/worker-bindings.ts";
 import {
   assertNoMasterLeak,

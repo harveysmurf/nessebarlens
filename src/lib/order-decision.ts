@@ -27,7 +27,7 @@ import { HTTPS_URL_PATTERN } from "./url-patterns";
 import type { OrderRecipient } from "./prodigi-order";
 import { eurToCents, parseEurAmount, type PrintFormat } from "./pricing";
 import { isFrameFinishValue, isPrintSize, isSellableFormat } from "./sku-map";
-import { siteUrl } from "./stripe";
+import { siteUrl } from "./config";
 
 export type OrderFormat = PrintFormat | "unknown";
 export type OrderStatus =
