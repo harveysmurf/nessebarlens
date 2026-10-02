@@ -27,6 +27,7 @@
     "@aws-sdk/client-s3": "^3.984.0",
     "@eslint/eslintrc": "^3",
     "@opennextjs/cloudflare": "^1.20.6",
+    "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24.19.0",
     "@types/react": "^19",
