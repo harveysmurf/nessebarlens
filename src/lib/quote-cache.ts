@@ -10,11 +10,13 @@
  * Two deliberate properties:
  *
  * - Only the two public numbers are cached. merchandiseEur and shippingEur are
- *   exactly what /api/quote returns over the wire; sku and unitCostEur (our
- *   wholesale cost and the 1.2x margin) never enter the cache, so a cache
- *   layer can never become a place the margin leaks from. Checkout does not
- *   read this cache at all — it quotes live, because price integrity at the
- *   point of payment is worth one upstream call.
+ *   exactly what /api/quote returns over the wire; unitCostEur (our wholesale
+ *   cost, and with it the 1.2x margin) never enters the cached *value*, so the
+ *   cache can never become a place the margin leaks from. The sku does appear
+ *   in the cache *key* — the key has to name the product being priced — but the
+ *   key is server-side on an `.invalid` origin and is never returned to a
+ *   caller. Checkout does not read this cache at all — it quotes live, because
+ *   price integrity at the point of payment is worth one upstream call.
  *
  * - A cache failure is never a request failure. `caches.default` is absent in
  *   `next dev` and on a misconfigured deploy; every read and write here

@@ -327,8 +327,10 @@ script.
   otherwise 429 Prodigi and break checkout for real customers. `src/lib/quote-cache.ts`
   caches the two public numbers (`merchandiseEur`, `shippingEur`) per
   `(SKU, attributes, destinationCountry)` for 30 minutes in `caches.default`.
-  Three invariants: (1) `sku` and `unitCostEur` never enter the cache — the
-  wholesale cost and the margin stay server-side; (2) `/api/checkout` keeps
+Three invariants: (1) `sku` and `unitCostEur` never enter the cached
+   *value* — the wholesale cost and the margin stay server-side. (The `sku`
+   necessarily appears in the cache *key*, which is server-side on an `.invalid`
+   origin and never returned to a caller); (2) `/api/checkout` keeps
   quoting live, so the price charged is the price Prodigi just returned; (3) any
   cache error degrades to a live quote, never to a 5xx. Covered by
   `tests/quote-cache.test.mts` and `tests/routes.test.mts`.
