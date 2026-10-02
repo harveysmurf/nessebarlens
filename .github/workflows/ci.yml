@@ -127,6 +127,14 @@ jobs:
       # Without a key the Stripe specs skip themselves and the job reports
       # nothing but a skip — a partial pass that looks green. Failing here says
       # the secret is missing, which is the thing to fix.
+      #
+      # What this guard no longer does, now that the job is continue-on-error: it
+      # no longer blocks. A missing or wrong key turns the job orange with the
+      # message above rather than failing the run, so a staged secret can be
+      # removed without anyone being stopped by it. That is consistent with the
+      # job being best-effort, and the message is the signal — but do not read
+      # these two steps as gates. The check that has real teeth is the live-key
+      # guard test in the required job, which fails closed with no key at all.
       - name: Require a Stripe test key
         run: |
           if [ -z "$STRIPE_SECRET_KEY" ]; then
