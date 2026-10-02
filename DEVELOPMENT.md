@@ -161,6 +161,45 @@ bash scripts/smoke.sh http://127.0.0.1:8788
 It never calls Prodigi — the live quote path is intentionally out of scope
 because sandbox latency makes it flaky per-PR.
 
+### Browser E2E flow (#143)
+
+`npm run test:e2e` (Playwright) drives the one flow a customer takes: home →
+photo → configurator → price → Stripe checkout → success page. It runs against
+**`next dev`**, never the deployed preview — a preview deploy verifies a
+deployment, and a smoke flow coupled to one has two possible causes for every
+red run. `preview.yml` stays browser-free; the flow lives in its own
+pull-request-only `e2e-smoke` job in `ci.yml`.
+
+Needs `npx playwright install chromium` once, and a **sandbox** Stripe key:
+
+```bash
+npx playwright install chromium
+STRIPE_SECRET_KEY=sk_test_… npm run test:e2e
+```
+
+Without a key the Stripe specs **skip themselves** and only the success-page
+states run — a partial pass that looks green. CI fails the job outright instead
+of skipping, and asserts the key is `sk_test_` before spending anything.
+`e2e/support/stripe.ts` throws on a non-test key before a browser starts, so a
+live key is refused rather than warned about.
+
+The success page's three states are **seeded** rather than reached through the
+webhook: ORDERS is a KV namespace, and the one a dev server gets from
+`initOpenNextCloudflareForDev` is genuinely empty, so a dev server can only ever
+render "processing". `playwright.config.ts` sets `ORDERS_DEV_SEED` to
+`e2e/fixtures/orders-seed.json`, which `src/lib/orders-dev-seed.ts` serves
+in-memory. The seed takes precedence over the dev namespace when the flag is
+set, and that module refuses to run under `NODE_ENV=production`, so fabricated
+orders can never reach a deployed build. The webhook's own round trip is a
+separate handler-level concern and is not covered here — see §10.
+
+To see a seeded state by hand:
+
+```bash
+ORDERS_DEV_SEED=e2e/fixtures/orders-seed.json npm run dev
+# then open /checkout/success?session_id=cs_test_e2edigitalpaid00000001
+```
+
 ---
 
 ## 5. Build & deploy
@@ -212,7 +251,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors** |
+| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a pull-request-only `e2e-smoke` job (`npm ci` → **install chromium** → **require a stripe test key** → **E2E smoke flow**: `npm run test:e2e`) |
 | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → Pages preview → **smoke test** (`scripts/smoke.sh`) → PR comment; cleanup on close |
 | `.github/workflows/prod.yml` | push to `main` + `workflow_dispatch` | production Environment → build → Pages `main` → `sync-pages-secrets.sh production` |
 
@@ -467,3 +506,10 @@ the guard to keep the honest copy honest.
 - `PRODIGI_SHIPPING_METHOD` ("Budget") is the value we quote and buy with, and
   no unit test can confirm Prodigi still accepts that string for the pinned SKUs.
   It is a sandbox check, not a test.
+- The Stripe **webhook round trip is not covered end to end** (#143). The browser
+  flow seeds ORDERS rather than standing up a receiver, so what the suite proves
+  is "the page renders every state", not "the webhook writes them". The right
+  coverage is a handler-level test against the dev Worker env — mock the Stripe
+  signature, POST to `/api/webhooks/stripe`, assert the record. It does not
+  exist yet; log it rather than folding it into the browser smoke, which would
+  put signature timing and a network loop into a job that should stay cheap.

@@ -130,3 +130,77 @@ test("prod.yml deploy needs a job that calls ci.yml", () => {
     `prod.yml deploy needs ${JSON.stringify(neededIds)}, but the ci.yml caller(s) are ${JSON.stringify(callers)}`,
   );
 });
+
+/* #143: the browser smoke flow's CI job.
+
+   Three things about it are decisions rather than defaults, so they are pinned
+   here instead of left to the next person editing the YAML:
+
+   - it is a job of its own, not a step in lint-and-test, because it downloads
+     a browser and starts a server;
+   - it does not run in `preview.yml`, because a smoke flow coupled to a deploy
+     has two possible causes for every red run;
+   - it is pull_request-only, because prod.yml calls ci.yml as a reusable
+     workflow and a browser flow before every production merge buys nothing. */
+
+test("the E2E flow is its own job in ci.yml, not a step in lint-and-test", () => {
+  const ci = workflows.find((w) => w.name === "ci.yml");
+  assert.ok(ci, "ci.yml is gone");
+
+  const job = ci.text.match(
+    /^ {2}e2e-smoke:\n((?:(?: {4}|\t).*\n|\n)*)/m,
+  );
+  assert.ok(job, "ci.yml has no e2e-smoke job");
+  const body = job[1];
+
+  // A browser download and a dev server inside the lint job would make a lint
+  // failure indistinguishable from a Chromium download failure.
+  assert.doesNotMatch(
+    ci.text.slice(0, ci.text.indexOf("  e2e-smoke:")),
+    /playwright/,
+    "the lint-and-test job must stay free of Playwright",
+  );
+  assert.match(body, /playwright install/, "e2e-smoke must install its browser");
+  assert.match(body, /run:\s*npm run test:e2e/);
+});
+
+test("the E2E job is pull_request-only, so a production merge does not re-run a browser", () => {
+  const ci = workflows.find((w) => w.name === "ci.yml");
+  const job = ci.text.match(/^ {2}e2e-smoke:\n((?:(?: {4}|\t).*\n|\n)*)/m);
+  assert.ok(job);
+  // prod.yml gates deploy on the ci.yml caller job; without this guard every
+  // production merge pays for a Chromium download to re-test the same commit.
+  assert.match(
+    job[1],
+    /if:\s*github\.event_name\s*==\s*'pull_request'/,
+    "e2e-smoke must not run when ci.yml is called by prod.yml",
+  );
+});
+
+test("no workflow other than ci.yml runs Playwright", () => {
+  for (const { name, text } of workflows) {
+    if (name === "ci.yml") continue;
+    assert.doesNotMatch(
+      text,
+      /playwright|npm run test:e2e/,
+      `${name} runs the browser flow; it belongs in ci.yml (Architect, #143)`,
+    );
+  }
+});
+
+test("the E2E job refuses to run without a Stripe TEST key", () => {
+  const ci = workflows.find((w) => w.name === "ci.yml");
+  const job = ci.text.match(/^ {2}e2e-smoke:\n((?:(?: {4}|\t).*\n|\n)*)/m);
+  assert.ok(job);
+  const body = job[1];
+
+  // The specs skip themselves with no key, so without this the job would go
+  // green having tested only the seeded success-page states.
+  assert.match(body, /STRIPE_TEST_SECRET_KEY/, "must read the test-only key");
+  assert.doesNotMatch(
+    body,
+    /secrets\.STRIPE_SECRET_KEY/,
+    "the E2E job must use the test key, never the live one",
+  );
+  assert.match(body, /sk_test_\*/, "must reject a non-test key before paying");
+});
