@@ -81,13 +81,36 @@ jobs:
             bash scripts/sync-worker-secrets.sh production
 
           # The sha and message arrive via env, never interpolated straight into
-          # the script. A commit message is free-form text: backticks in it
-          # became command substitution inside the double quotes and wrangler
-          # died on the shell's output. This failed the deploy of a merge whose
-          # message quoted a file path.
+          # the script. Passing them through env was always necessary -- a
+          # backtick in a commit message became command substitution inside
+          # double quotes, which failed a real deploy -- but it is NOT sufficient
+          # here, and the comment above used to claim it was.
+          #
+          # opennextjs-cloudflare re-spawns wrangler with `shell: true`
+          # (run-wrangler.js) without escaping passthrough args, so this shell's
+          # quoting is discarded and a second shell re-parses the text. A commit
+          # message is free-form, so it can contain a `#`, a backtick or a `;`
+          # that the first shell handled correctly and the second one will not.
+          # Any merge whose message contains one of those would take production
+          # down with a mangled command.
+          #
+          # So the value is reduced here to something both shells pass through
+          # unchanged. Measured against a stand-in for opennextjs's `shell: true`
+          # re-parse, not assumed: a space arrives as several arguments, a `;`
+          # runs a second command, and a backtick executes. Stripping
+          # metacharacters alone is not enough -- spaces split too, and `(` `)`
+          # are themselves metacharacters, so my first two attempts at this
+          # allowlist both still failed. What is left is alphanumeric plus
+          # `._/,-`, verified to survive every one of: a `#`, a `;`, a backtick,
+          # a `$(...)`, a quote of either kind, and a multi-line body.
+          SAFE_MESSAGE="$(printf '%s' "$COMMIT_MESSAGE" | head -n 1)"
+          SAFE_MESSAGE="$(printf '%s' "$SAFE_MESSAGE" | tr -cd 'A-Za-z0-9._/,-' | tr -d '[:space:]')"
+          SAFE_MESSAGE="${SAFE_MESSAGE:0:72}"
+          [ -n "$SAFE_MESSAGE" ] || SAFE_MESSAGE="deploy-$COMMIT_SHA"
+
           npx opennextjs-cloudflare deploy \
             --secrets-file=prod-secrets.json \
             --commit-dirty=true \
             --commit-hash="$COMMIT_SHA" \
-            --commit-message="$COMMIT_MESSAGE"
+            --commit-message="$SAFE_MESSAGE"
           rm -f prod-secrets.json

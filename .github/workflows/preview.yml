@@ -65,6 +65,7 @@ jobs:
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          SUBDOMAIN: ${{ vars.WORKERS_SUBDOMAIN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
@@ -87,12 +88,26 @@ jobs:
           SYNC_SCOPE=version-only SECRETS_OUT=preview-secrets.json \
             bash scripts/sync-worker-secrets.sh preview
 
+          # No `#` anywhere in these arguments, and that is deliberate.
+          # opennextjs-cloudflare re-spawns wrangler with `shell: true`
+          # (run-wrangler.js) and applies its quoteShellMeta() helper only to the
+          # deployment-mapping var, never to passthrough args. So the string is
+          # re-parsed by a shell that never sees our quoting, and a `#` starts a
+          # comment there: `--message="preview PR #172"` reached wrangler as
+          # `--message=preview` plus a bare `PR`, which it took as the
+          # entry-point path -- `The entry-point file at "PR" was not found`.
+          # Quoting harder in this step cannot fix it; the character is the
+          # problem. Keep both values free of shell metacharacters.
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          # No --commit-hash/--commit-dirty here: those are Pages deploy flags and
+          # `versions upload` rejects them outright ("Unknown arguments:
+          # commit-dirty, commit-hash"). --tag and --message are the version
+          # identity on Workers, and the head sha is recorded in the message so
+          # a version can still be traced to its commit.
           npx opennextjs-cloudflare upload \
             --secrets-file=preview-secrets.json \
-            --tag="pr-${{ github.event.pull_request.number }}-$BRANCH" \
-            --message="preview PR #${{ github.event.pull_request.number }}" \
-            --commit-dirty=true \
-            --commit-hash="$HEAD_SHA"
+            --tag="pr-$PR_NUMBER-$BRANCH" \
+            --message="preview-PR-$PR_NUMBER-$HEAD_SHA"
 
           # A version has no stable hostname, so the smoke test and the PR
           # comment both address it by id. The id is resolved from the tag we
@@ -112,9 +127,16 @@ jobs:
                   print(v["id"]); break
           else:
               sys.exit("no version tagged " + tag)
-          ' "pr-${{ github.event.pull_request.number }}-$BRANCH")"
+          ' "pr-$PR_NUMBER-$BRANCH")"
           echo "version_id=$vid" >> "$GITHUB_OUTPUT"
-          echo "url=https://$vid.${{ vars.WORKERS_SUBDOMAIN }}.workers.dev" >> "$GITHUB_OUTPUT"
+          # A missing WORKERS_SUBDOMAIN would silently produce
+          # https://<id>..workers.dev and the smoke test would fail with a DNS
+          # error that reads like a bad deploy, so name it here.
+          if [[ -z "$SUBDOMAIN" ]]; then
+            echo "::error::Repository variable WORKERS_SUBDOMAIN is not set; cannot build a version URL"
+            exit 1
+          fi
+          echo "url=https://$vid.$SUBDOMAIN.workers.dev" >> "$GITHUB_OUTPUT"
           rm -f preview-secrets.json
 
       - name: Smoke test the deployed preview
