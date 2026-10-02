@@ -44,33 +44,26 @@ jobs:
 
 
 
-      # The sha and message arrive via env, never interpolated straight into the
-      # script. A commit message
-      # is free-form text: backticks in it became command substitution inside
-      # the double quotes and wrangler died on the shell's output. This failed
-      # the deploy of a merge whose message quoted a file path.
+      # The secrets go on the version this step deploys, via --secrets-file.
+      # The order here is deliberate and is the reverse of the Pages workflow:
+      #
+      #   * syncing first would describe a version the deploy then replaced, and
+      #   * syncing after is worse than useless. `wrangler versions secret bulk`
+      #     PATCHes versions/latest, which mints a NEW version rather than
+      #     editing the deployed one. Run after the deploy it would leave the
+      #     rotated key sitting on a version that never serves, and prod would
+      #     keep running the old key with a green run.
+      #
+      # --secrets-file has no such window: the deploying version carries its own
+      # secrets from the moment it starts serving. It also matches what the
+      # preview job does, so there is one mechanism to reason about.
+      #
+      # The script runs in version-only mode -- every #114 guard executes and
+      # the JSON is written, but nothing is applied here. `deploy` applies it.
       - name: Deploy production (OpenNext)
         env:
           COMMIT_SHA: ${{ github.sha }}
           COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
-        run: |
-          npx opennextjs-cloudflare deploy \
-            --commit-dirty=true \
-            --commit-hash="$COMMIT_SHA" \
-            --commit-message="$COMMIT_MESSAGE"
-
-      # Deploy BEFORE the sync, which is the reverse of the Pages order and the
-      # reason the comment used to say the opposite. Worker secrets are not
-      # frozen into a deployment: `versions secret bulk` attaches secrets to the
-      # Worker Version and `secret bulk` updates the deployed Worker in place,
-      # so a sync placed *before* the deploy would be describing a version the
-      # deploy then replaced. Deploying first and syncing second means the
-      # secrets land on what is actually serving.
-      #
-      # NEXT_PUBLIC_* are unaffected either way: those bake at build from the
-      # GitHub Environment secrets, not from this script.
-      - name: Sync production runtime secrets
-        env:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           PRINT_ASSET_HMAC_SECRET: ${{ secrets.PRINT_ASSET_HMAC_SECRET }}
@@ -78,8 +71,23 @@ jobs:
           PRODIGI_API_BASE: https://api.prodigi.com
           PRODIGI_API_KEY: ${{ secrets.PRODIGI_API_KEY }}
           PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
-          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
           NEXT_PUBLIC_WEB_IMAGES_BASE: ${{ secrets.NEXT_PUBLIC_WEB_IMAGES_BASE }}
-        run: bash scripts/sync-worker-secrets.sh production
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: |
+          set -euo pipefail
+          SYNC_SCOPE=version-only SECRETS_OUT=prod-secrets.json \
+            bash scripts/sync-worker-secrets.sh production
+
+          # The sha and message arrive via env, never interpolated straight into
+          # the script. A commit message is free-form text: backticks in it
+          # became command substitution inside the double quotes and wrangler
+          # died on the shell's output. This failed the deploy of a merge whose
+          # message quoted a file path.
+          npx opennextjs-cloudflare deploy \
+            --secrets-file=prod-secrets.json \
+            --commit-dirty=true \
+            --commit-hash="$COMMIT_SHA" \
+            --commit-message="$COMMIT_MESSAGE"
+          rm -f prod-secrets.json

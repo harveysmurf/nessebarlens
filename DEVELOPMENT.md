@@ -279,14 +279,21 @@ deployed site.
 
 ```bash
 SITE_URL=https://nessebarlens.com npx opennextjs-cloudflare build
-npx opennextjs-cloudflare deploy
-bash scripts/sync-worker-secrets.sh production
+SYNC_SCOPE=version-only SECRETS_OUT=prod-secrets.json \
+  bash scripts/sync-worker-secrets.sh production
+npx opennextjs-cloudflare deploy --secrets-file=prod-secrets.json
+rm -f prod-secrets.json
 ```
 
-Deploy first, then sync. Worker secrets are not frozen into a build the way Pages
-`env_vars` were, so the ordering here is the reverse of what this section used to
-say: `secret bulk` updates the deployed Worker in place, and doing it first would
-describe a version the deploy then replaced.
+Secrets go on the version being deployed, in the same step. Do **not** "deploy
+then sync" — that reads naturally and is wrong. `wrangler versions secret bulk`
+PATCHes `versions/latest`, which mints a *new* version rather than editing the
+deployed one, so a post-deploy sync leaves a rotated key on a version that never
+serves: green run, production still on the old key. Syncing first is wrong the
+other way, describing a version the deploy then replaces.
+
+`--secrets-file` has no window at all, and it is the same mechanism previews use,
+so there is one thing to reason about rather than two.
 
 Production and preview both target the **same Worker**, `nessebar-lens`, and are
 separated by version rather than by project. Apex `nessebarlens.com` / `www`
@@ -353,7 +360,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 |----------|---------|--------------|
 | `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a `workflow-audit` job (**install zizmor** → **gate on workflow script injection**, scoped to `template-injection` at Medium confidence and up — the other 40 findings are reported, not gated); plus two pull-request-only browser jobs — **required** `e2e-smoke` (no secrets: `npm ci` → **install chromium** → **e2e smoke flow (seeded)**: `npm run test:e2e -- --grep-invert @hosted` → **upload the failure trace** on failure) and **best-effort** `e2e-hosted-checkout` (`continue-on-error`; staging Environment → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **e2e hosted checkout** (`npm run test:e2e -- --grep @hosted`, headed under Xvfb) → **upload the trace** every run) |
 | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → **Worker Version upload** (secrets attached via `--secrets-file`) → **smoke test** the version URL (`scripts/smoke.sh`) → PR comment; `versions delete` on close |
-| `.github/workflows/prod.yml` | push to `main` + `workflow_dispatch` | production Environment → checks (`ci.yml`) → build → `opennextjs-cloudflare deploy` → `sync-worker-secrets.sh production` |
+| `.github/workflows/prod.yml` | push to `main` + `workflow_dispatch` | production Environment → checks (`ci.yml`) → build → `opennextjs-cloudflare deploy --secrets-file` (guards run first in `version-only` mode) |
 
 ### The workflow audit job
 
