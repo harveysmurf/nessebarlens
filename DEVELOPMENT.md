@@ -407,18 +407,31 @@ npm run lint && node scripts/zizmor-gate.mjs
 
 ### Rotating a credential
 
-Update the GitHub Environment secret, then **Run workflow** on `prod.yml`
-(`workflow_dispatch`). That one build is what applies it — no code commit, no
-Cloudflare dashboard, no PR.
+Two paths, and the difference matters during an incident.
 
-A deploy is unavoidable and this is not a design gap: Pages `env_vars` are
-frozen into a deployment when it is created, so a synced value does not reach
-traffic until the next deploy. `wrangler pages secret put` does not help — it
-PATCHes the same `deployment_configs[env].env_vars` map with
-`type: secret_text` (it does support `--env production|preview`). There is no
-deploy-free rotation path on Pages. A standalone sync-without-deploy workflow
-existed briefly and was deleted: it changed config that nothing served, which
-is a silent-failure trap.
+**No rebuild (preferred).** `wrangler secret put <NAME>` PATCHes the deployed
+Worker in place, so the new value is live as soon as the command returns:
+
+```bash
+npx wrangler secret put STRIPE_SECRET_KEY
+```
+
+This is a capability Pages did not have — Pages `env_vars` are frozen into a
+deployment, so a rotated key there needed a full build and redeploy to take
+effect. That constraint is what the deleted sync-without-deploy workflow existed
+to work around, and why it was a silent-failure trap.
+
+**Through CI.** Update the GitHub Environment secret, then **Run workflow** on
+`prod.yml` (`workflow_dispatch`). This rebuilds and redeploys, carrying the
+secrets on the deploying version via `--secrets-file`.
+
+Prefer the first unless the rotation is bundled with a code change — a deploy
+also picks up whatever else is on `main`, which is not something you want
+happening while you are rotating a key under pressure.
+
+Do **not** reach for `bash scripts/sync-worker-secrets.sh production` expecting
+the deployed version to change: its default scope mints a new version rather than
+editing the one serving traffic.
 
 Expect a few minutes between merge and the deploy starting — that is GitHub
 Actions queue latency, not a dropped run. Check the Actions tab before

@@ -34,6 +34,7 @@ function shimDir(): string {
 function run(
   target: "preview" | "production",
   secret: string | undefined,
+  drop?: "token" | "account",
 ): { status: number | null; stderr: string; stdout: string } {
   const dir = shimDir();
   const result = spawnSync("bash", [script, target], {
@@ -41,8 +42,8 @@ function run(
     env: {
       ...process.env,
       PATH: `${dir}:${process.env.PATH}`,
-      CLOUDFLARE_API_TOKEN: "test-token",
-      CLOUDFLARE_ACCOUNT_ID: "test-account",
+      CLOUDFLARE_API_TOKEN: drop === "token" ? "" : "test-token",
+      CLOUDFLARE_ACCOUNT_ID: drop === "account" ? "" : "test-account",
       STRIPE_SECRET_KEY:
         target === "production" ? "sk_live_test" : "sk_test_test",
       STRIPE_WEBHOOK_SECRET: "whsec_test",
@@ -99,4 +100,21 @@ test("production fails when padding hides a short secret", () => {
 test("production accepts a padded secret that is genuinely long enough", () => {
   const result = run("production", `  ${valid}\n`);
   assert.equal(result.status, 0);
+});
+
+test("a missing Cloudflare token fails loudly instead of reaching wrangler", () => {
+  // This guard was written as `: "${CLOUDFLARE_API_TOKEN:-...}"`, which expands
+  // to empty and always succeeds -- so it guarded nothing and a manual run fell
+  // through to wrangler's opaque auth error. Asserting the name is the only way
+  // a `:?`-shaped regression gets caught; a source grep cannot tell a working
+  // guard from a decorative one.
+  const result = run("production", valid, "token");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /CLOUDFLARE_API_TOKEN/);
+});
+
+test("a missing Cloudflare account id fails loudly too", () => {
+  const result = run("production", valid, "account");
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /CLOUDFLARE_ACCOUNT_ID/);
 });

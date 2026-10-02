@@ -37,7 +37,9 @@ Canonical path is GitHub Actions. A PR gets a Cloudflare Workers version preview
 (addressed by version id, not a branch alias) and a smoke test against it; a merge
 to `main` deploys production. Stripe and Prodigi
 credentials live in the GitHub `staging` and `production` Environments and are
-synced to Pages by `scripts/sync-pages-secrets.sh`. Preview/staging is always
+attached to the deploying Worker Version by `scripts/sync-worker-secrets.sh`
+(guards run first; `--secrets-file` carries them on the version that serves).
+Preview/staging is always
 Stripe sandbox + Prodigi sandbox; the host is selected by an explicit
 `PRODIGI_API_BASE`, never inferred from which key is present.
 

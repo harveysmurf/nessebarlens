@@ -17,11 +17,20 @@ if [[ "$TARGET" != "preview" && "$TARGET" != "production" ]]; then
   exit 1
 fi
 
-# Wrangler reads CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID itself; the
-# CF_* names existed for the Pages REST call and are kept only as the input
-# contract so the workflow's env block reads the same as before.
-: "${CLOUDFLARE_API_TOKEN:-${CF_API_TOKEN:-}}"
-: "${CLOUDFLARE_ACCOUNT_ID:-${CF_ACCOUNT_ID:-}}"
+# Wrangler reads CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID itself; the CF_*
+# names existed for the Pages REST call and stay as a fallback so the workflow's
+# env block reads the same as before. `:?` and not `:-` -- `:-` defaults to empty,
+# so the expansion always succeeds and the "guard" silently guards nothing,
+# turning a missing token into wrangler's opaque auth error instead of naming
+# the variable. Either name is acceptable, not neither.
+if [[ -z "${CLOUDFLARE_API_TOKEN:-}" && -z "${CF_API_TOKEN:-}" ]]; then
+  echo "CLOUDFLARE_API_TOKEN (or CF_API_TOKEN) is required" >&2
+  exit 1
+fi
+if [[ -z "${CLOUDFLARE_ACCOUNT_ID:-}" && -z "${CF_ACCOUNT_ID:-}" ]]; then
+  echo "CLOUDFLARE_ACCOUNT_ID (or CF_ACCOUNT_ID) is required" >&2
+  exit 1
+fi
 : "${STRIPE_SECRET_KEY:?}"
 : "${STRIPE_WEBHOOK_SECRET:?}"
 : "${PRODIGI_API_BASE:?}"
@@ -146,25 +155,33 @@ with open(out_path, "w") as fh:
 print("prepared secrets: " + ", ".join(sorted(secrets)))
 PY
 
-# SYNC_SCOPE selects how the prepared secrets reach Cloudflare:
-#   version-only  run every guard and write the JSON file, apply nothing.
-#                 preview.yml passes this path to `upload --secrets-file`, which
-#                 attaches the secrets to the version being uploaded.
-#   version       `wrangler versions secret bulk` (default) — version-scoped.
+# SYNC_SCOPE selects how the prepared secrets reach Cloudflare. The two
+# workflows both use version-only, and that is the mode to reach for:
+#   version-only  run every guard and write the JSON file, apply nothing. The
+#                 caller passes it to `deploy`/`upload --secrets-file`, so the
+#                 secrets ride on the version that actually serves. prod.yml
+#                 and preview.yml both do this.
+#   version       `wrangler versions secret bulk` (default) — MINTS A NEW
+#                 version holding the secrets; it neither edits the deployed
+#                 version nor deploys what it mints. See the branch below.
 #   worker        `wrangler secret bulk` — mutates the deployed Worker in place.
-#                 Only correct when the worker is not also serving another
-#                 environment; on a shared worker this overwrites live secrets.
+#                 This is the genuine no-rebuild rotation path, but on a worker
+#                 that also serves another environment it overwrites live
+#                 secrets, so never point it at production from a PR.
 if [[ "${SYNC_SCOPE:-version}" == "version-only" ]]; then
   echo "secrets prepared at $SECRETS_FILE (not applied; caller passes it to --secrets-file)"
   trap - EXIT
   exit 0
 elif [[ "${SYNC_SCOPE:-version}" == "version" ]]; then
-  # `versions secret bulk` targets the Worker Version rather than the deployed
-  # Worker. That distinction is the whole reason this is safe on a shared worker:
-  # a plain `secret bulk` would overwrite the live production secrets in place,
-  # so a PR preview running on sandbox keys would break the live site until the
-  # next production deploy. Version-scoped writes attach the secrets to the
-  # version being uploaded and leave the deployed version alone.
+  # NOT what the name suggests, and the reason this default is not what either
+  # workflow uses: `versions secret bulk` PATCHes /versions/latest, which MINTS
+  # A NEW VERSION carrying the secrets. It does not edit the version already
+  # deployed, and it does not deploy what it mints. So a rotated key applied
+  # this way sits on a version that never serves -- a green run with the old
+  # key still live. Neither prod.yml nor preview.yml uses this scope; both use
+  # version-only plus `deploy`/`upload --secrets-file`, which puts the secrets
+  # on the version that actually serves. Kept because it is the correct
+  # primitive for a standalone secret change with no accompanying build.
   npx wrangler versions secret bulk "$SECRETS_FILE"
 elif [[ "${SYNC_SCOPE:-version}" == "worker" ]]; then
   npx wrangler secret bulk "$SECRETS_FILE"
