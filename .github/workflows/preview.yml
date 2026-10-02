@@ -98,7 +98,7 @@ jobs:
           # entry-point path -- `The entry-point file at "PR" was not found`.
           # Quoting harder in this step cannot fix it; the character is the
           # problem. Keep both values free of shell metacharacters.
-          PR_NUMBER: ${{ github.event.pull_request.number }}
+          #
           # No --commit-hash/--commit-dirty here: those are Pages deploy flags and
           # `versions upload` rejects them outright ("Unknown arguments:
           # commit-dirty, commit-hash"). --tag and --message are the version
