@@ -43,6 +43,11 @@ const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const GATED_RULE = "template-injection";
 const GATED_CONFIDENCE = new Set(["High", "Medium"]);
 
+/* GitHub accepts both extensions, so the gate must too: a future .yaml
+   workflow would otherwise be skipped by the job meant to cover it. */
+const WORKFLOW_EXTENSIONS = [".yml", ".yaml"];
+const isWorkflow = (name) => WORKFLOW_EXTENSIONS.some((ext) => name.endsWith(ext));
+
 function workflowFiles() {
   const dirs = [
     join(root, ".github", "workflows"),
@@ -53,11 +58,11 @@ function workflowFiles() {
     if (!existsSync(dir)) continue;
     for (const entry of readdirSync(dir)) {
       const full = join(dir, entry);
-      if (entry.endsWith(".yml") && statSync(full).isFile()) {
+      if (isWorkflow(entry) && statSync(full).isFile()) {
         files.push(full);
       } else if (statSync(full).isDirectory()) {
         for (const nested of readdirSync(full)) {
-          if (nested.endsWith(".yml")) files.push(join(full, nested));
+          if (isWorkflow(nested)) files.push(join(full, nested));
         }
       }
     }
