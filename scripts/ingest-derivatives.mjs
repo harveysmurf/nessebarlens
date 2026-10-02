@@ -5,6 +5,7 @@
  *   npm run ingest                  # dry run, writes nothing
  *   npm run ingest -- --apply       # upload masters and rungs
  *   npm run ingest -- --apply --only alley-cat
+ *   npm run ingest -- --apply --only alley-cat,seagulls
  *
  * Drop JPEGs into the gitignored `ingest/` folder at the repo root, named for
  * the catalog slug they are (`alley-cat.jpg`). The original goes to
@@ -32,6 +33,7 @@
 import { readdir, readFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import sharp from "sharp";
@@ -53,6 +55,9 @@ import {
 // the guard would refuse a run the site is happily serving from, or allow
 // one it is not.
 import { envFlag } from "../src/lib/env.ts";
+// The catalog, for the same single-source reason: a --only slug that no photo
+// declares uploads a master the site can never render.
+import { PHOTOS } from "../src/lib/photos.ts";
 
 const DROP_DIR = "ingest";
 /** A week, never `immutable`: a re-ingest overwrites the same key, and an
@@ -63,6 +68,32 @@ const CACHE_CONTROL = "public, max-age=604800";
 function arg(name) {
   const i = process.argv.indexOf(name);
   return i === -1 ? undefined : process.argv[i + 1];
+}
+
+/** `alley-cat.jpg` -> `alley-cat`. The extension is not part of a slug's
+ *  identity; only the stem is compared. */
+const stemOf = (name) => name.replace(/\.[^.]+$/, "");
+
+/** `--only` is a slug list, comma-separated, not a substring needle: a needle
+ *  makes `--only cat` pick up alley-cat.jpg and cathedral.jpg alike (#108). */
+export function parseOnly(only) {
+  const slugs = (only ?? "")
+    .split(",")
+    .map((part) => part.trim())
+    .filter(Boolean);
+  return slugs.length > 0 ? slugs : undefined;
+}
+
+/** Names whose stem is one of the requested slugs. */
+export function selectDrops(names, slugs) {
+  if (!slugs) return names;
+  return names.filter((name) => slugs.includes(stemOf(name)));
+}
+
+/** Requested slugs the catalog does not have. Uploading a master for a slug the
+ *  site cannot render is the failure this catches, so it is worth an abort. */
+export function unknownSlugs(slugs, catalog) {
+  return (slugs ?? []).filter((slug) => !catalog.includes(slug));
 }
 
 function requiredEnv(...names) {
@@ -115,7 +146,17 @@ async function readDrops(dir) {
 
 async function main() {
   const apply = process.argv.includes("--apply");
-  const only = arg("--only");
+  const only = parseOnly(arg("--only"));
+
+  // Before any read of the drop folder or any R2 call, so an unknown slug costs
+  // nothing and cannot half-write.
+  const unknown = unknownSlugs(only, PHOTOS.map((photo) => photo.slug));
+  if (unknown.length > 0) {
+    throw new Error(
+      `--only ${unknown.join(", ")} is not in the catalog (src/lib/photos.ts) — ` +
+        `add the slug there first, or check the spelling.`,
+    );
+  }
 
   const endpoint = requiredEnv("R2_S3_ENDPOINT", "R2_ENDPOINT");
   const client = new S3Client({
@@ -135,10 +176,13 @@ async function main() {
   });
 
   const found = await readDrops(DROP_DIR);
-  const drops = only ? found.filter((d) => d.name.includes(only)) : found;
+  const drops = selectDrops(
+    found.map((d) => d.name),
+    only,
+  ).map((name) => found.find((d) => d.name === name));
   if (drops.length === 0) {
     throw new Error(
-      `no files in ${DROP_DIR}/${only ? ` matching ${only}` : ""}`,
+      `no files in ${DROP_DIR}/ matching ${only?.join(", ") ?? "every slug"}`,
     );
   }
 
@@ -217,7 +261,14 @@ async function main() {
   console.log(`done: ${written} object(s) written`);
 }
 
-main().catch((error) => {
-  console.error(`ingest failed: ${error?.message ?? error}`);
-  process.exitCode = 1;
-});
+// Exported for tests; the guard keeps importing this file from running an
+// ingest against the operator's real credentials.
+if (
+  process.argv[1] &&
+  path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)
+) {
+  main().catch((error) => {
+    console.error(`ingest failed: ${error?.message ?? error}`);
+    process.exitCode = 1;
+  });
+}
