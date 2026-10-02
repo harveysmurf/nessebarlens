@@ -193,3 +193,48 @@ test("the drop folder is gitignored, so masters never reach a commit", () => {
   );
   assert.match(gitignore, /^\/ingest\/$/m);
 });
+
+/* #108: `--only cat` used substring matching, so it picked up alley-cat.jpg and
+   any other name containing "cat", and the script never checked the slug against
+   the catalog at all. */
+
+test("--only matches whole slugs, not substrings", async () => {
+  const { selectDrops, parseOnly } = await import(
+    "../scripts/ingest-derivatives.mjs"
+  );
+  const names = [
+    "alley-cat.jpg",
+    "cat.jpg",
+    "cathedral.jpg",
+    "seagulls.jpg",
+  ];
+  assert.deepEqual(selectDrops(names, parseOnly("cat")), ["cat.jpg"]);
+  assert.deepEqual(selectDrops(names, parseOnly("alley-cat")), ["alley-cat.jpg"]);
+  assert.deepEqual(selectDrops(names, parseOnly("cat,seagulls")), [
+    "cat.jpg",
+    "seagulls.jpg",
+  ]);
+  assert.deepEqual(selectDrops(names, undefined), names);
+});
+
+test("an unknown --only slug is reported before anything is read or written", async () => {
+  const { unknownSlugs } = await import("../scripts/ingest-derivatives.mjs");
+  const { PHOTOS } = await import("../src/lib/photos.ts");
+  const catalog = PHOTOS.map((photo) => photo.slug);
+  assert.deepEqual(unknownSlugs(["alley-cat"], catalog), []);
+  assert.deepEqual(
+    unknownSlugs(["alley-cat", "cathedrall", "dawn"], catalog),
+    ["cathedrall"],
+  );
+  assert.ok(catalog.includes("alley-cat") && catalog.includes("dawn"));
+});
+
+test("the catalog check reads the real catalog, not a copy", async () => {
+  const script = readFileSync(
+    new URL("../scripts/ingest-derivatives.mjs", import.meta.url),
+    "utf8",
+  );
+  assert.match(script, /import \{ PHOTOS \} from "\.\.\/src\/lib\/photos\.ts"/);
+  // The substring match is the actual bug; refuse it by name.
+  assert.doesNotMatch(script, /name\.includes\(only\)/);
+});
