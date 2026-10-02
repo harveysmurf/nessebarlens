@@ -116,3 +116,17 @@ jobs:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
           PRINT_ASSET_HMAC_SECRET: ${{ secrets.PRINT_ASSET_HMAC_SECRET }}
+
+      # The failure that motivates this is unreadable without it: a Stripe
+      # timeout in a browser flow reports a line number and a URL regex, and
+      # the page state that explains it lives only in the trace. Uploading on
+      # failure rather than always keeps a green run free of a Chromium-sized
+      # artifact nobody downloads.
+      - name: Upload the failure trace
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-trace
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
