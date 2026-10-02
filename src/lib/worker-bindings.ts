@@ -3,6 +3,7 @@ import type { OrdersKv } from "./fulfillment";
 import { envString } from "./env";
 import { printAssetSecret } from "./config";
 import { prodigiKeyConfigured } from "./prodigi-config";
+import { devOrdersSeed } from "./orders-dev-seed";
 
 export type WorkerBindings = {
   ORDERS?: OrdersKv;
@@ -62,8 +63,18 @@ export async function readWorkerBindings(
   // means absent from both sources, not "absent from the Worker env".
   const printAsset = printAssetSecret(env);
 
+  // The dev seed wins *over* a binding, not only in its absence. `next dev`
+  // mounts a real local KV proxy for ORDERS through initOpenNextCloudflareForDev,
+  // so isOrdersKv passes and the namespace is genuinely empty — the three
+  // success-page states are then unreachable on any dev server, with or without
+  // wrangler. The seed is opt-in (ORDERS_DEV_SEED must name a JSON file) and
+  // already refuses to run under NODE_ENV=production, so preferring it cannot
+  // reach a deployed build; a developer who sets the flag has asked for the
+  // fixture over whatever namespace their dev server happens to have.
+  const seeded = devOrdersSeed(env);
+
   return {
-    ORDERS: isOrdersKv(env.ORDERS) ? env.ORDERS : undefined,
+    ORDERS: seeded ?? (isOrdersKv(env.ORDERS) ? env.ORDERS : undefined),
     MASTERS: isMastersBucket(env.MASTERS) ? env.MASTERS : undefined,
     webhookSecret,
     printAssetSecret: printAsset ?? undefined,

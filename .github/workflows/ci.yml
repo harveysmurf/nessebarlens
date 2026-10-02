@@ -46,3 +46,60 @@ jobs:
 
       - name: Coverage floors
         run: npm run coverage
+
+  # #143: the browser smoke flow. A separate job rather than a step in
+  # lint-and-test because it needs a Chromium download (~150MB) and a running
+  # dev server, and neither should be able to fail a lint.
+  #
+  # `if: pull_request` is deliberate: prod.yml calls this workflow as a reusable
+  # workflow before deploying, and re-running a browser flow on every production
+  # merge buys nothing — lint-and-test already gates the deploy, and the flow
+  # tests the same commit that pull_request validated.
+  e2e-smoke:
+    name: E2E smoke flow
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+
+      # The flow drives a real Stripe sandbox checkout page, so the browser is a
+      # hard dependency rather than something to skip when it is slow.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Without a key the Stripe specs skip themselves and only the success-page
+      # states run — a partial pass that looks green. Failing here says the
+      # secret is missing, which is the thing to fix.
+      - name: Require a Stripe test key
+        run: |
+          if [ -z "$STRIPE_SECRET_KEY" ]; then
+            echo "::error::STRIPE_TEST_SECRET_KEY is not set. The checkout flow skips itself without a key, so the job would pass having tested nothing." >&2
+            exit 1
+          fi
+          case "$STRIPE_SECRET_KEY" in
+            sk_test_*) ;;
+            *) echo "::error::STRIPE_TEST_SECRET_KEY is not an sk_test_ key. This job must never drive a live card path." >&2; exit 1 ;;
+          esac
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+
+      # The same partial-green trap the Stripe guard blocks one step earlier:
+      # the physical-print spec test.skips() without this key, so a missing
+      # Prodigi secret would leave the job green having never quoted Prodigi.
+      - name: Require a Prodigi sandbox key
+        run: |
+          if [ -z "$PRODIGI_SANDBOX_API_KEY" ]; then
+            echo "::error::PRODIGI_SANDBOX_API_KEY is not set. The physical-print spec skips itself without a key, so the job would pass having quoted nothing." >&2
+            exit 1
+          fi
+        env:
+          PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
+
+      - name: E2E smoke flow
+        run: npm run test:e2e
+        env:
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
