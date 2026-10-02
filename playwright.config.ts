@@ -37,7 +37,20 @@ export default defineConfig({
     // zero-size box; both are handled explicitly in the specs, so no global
     // force/click hacks are needed anywhere.
   },
-  projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
+  projects: [
+    {
+      name: "chromium",
+      use: {
+        ...devices["Desktop Chrome"],
+        // Stripe's hosted checkout gates its submit on an hCaptcha token, and
+        // headless Chromium on a runner does not get one — the click resolves
+        // and the page never navigates. `HEADED=1` (ci.yml runs it under Xvfb)
+        // is the opt-in; a local run stays headless because it needs no display
+        // and gets a token either way.
+        headless: process.env.HEADED !== "1",
+      },
+    },
+  ],
   webServer: {
     command: "npm run dev",
     url: baseURL,

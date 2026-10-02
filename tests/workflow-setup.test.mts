@@ -161,7 +161,13 @@ test("the E2E flow is its own job in ci.yml, not a step in lint-and-test", () =>
     "the lint-and-test job must stay free of Playwright",
   );
   assert.match(body, /playwright install/, "e2e-smoke must install its browser");
-  assert.match(body, /run:\s*npm run test:e2e/);
+  // The xvfb-run wrapper is not incidental: Stripe gates the hosted-checkout
+  // submit on an hCaptcha token that headless Chromium on a runner never
+  // receives. The assertion is on the command underneath the wrapper, and
+  // HEADED=1 is what tells playwright.config.ts to open a real window.
+  assert.match(body, /npm run test:e2e/);
+  assert.match(body, /xvfb-run/, "the browser must run headed; hCaptcha refuses headless");
+  assert.match(body, /HEADED: "1"/, "HEADED=1 must reach the Playwright config");
 });
 
 test("the E2E job is pull_request-only, so a production merge does not re-run a browser", () => {

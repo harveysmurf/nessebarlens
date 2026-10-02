@@ -110,9 +110,16 @@ jobs:
       # enable. No guard step for the same reason as the two above — the spec
       # itself asserts the failure, so a missing secret is a red test, not a
       # silent skip.
+      # Headed under Xvfb, not headless. Stripe gates the hosted-checkout submit
+      # on an hCaptcha token, and on a runner the token never arrives: the
+      # network trace of the last red run shows `getcaptcha` with no matching
+      # `checkcaptcha`, and the page simply never leaves after Pay. A real
+      # display and a real window is the closest a runner gets to a browser a
+      # person would use, which is what the bot check is measuring.
       - name: E2E smoke flow
-        run: npm run test:e2e
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24" npm run test:e2e
         env:
+          HEADED: "1"
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
           PRINT_ASSET_HMAC_SECRET: ${{ secrets.PRINT_ASSET_HMAC_SECRET }}
