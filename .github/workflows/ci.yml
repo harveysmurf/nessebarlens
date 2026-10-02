@@ -47,17 +47,65 @@ jobs:
       - name: Coverage floors
         run: npm run coverage
 
-  # #143: the browser smoke flow. A separate job rather than a step in
-  # lint-and-test because it needs a Chromium download (~150MB) and a running
-  # dev server, and neither should be able to fail a lint.
+  # #143: the browser smoke flow, split by what it can actually promise.
   #
-  # `if: pull_request` is deliberate: prod.yml calls this workflow as a reusable
-  # workflow before deploying, and re-running a browser flow on every production
-  # merge buys nothing — lint-and-test already gates the deploy, and the flow
-  # tests the same commit that pull_request validated.
+  # Everything that stays on our own pages — the five seeded success-page states
+  # and the live-key guard — is the gate. It is deterministic, needs no Stripe or
+  # Prodigi secret, and is the coverage a red PR can honestly be read against.
+  #
+  # The specs that leave for checkout.stripe.com are not. Stripe gates that page
+  # behind an hCaptcha token and an explicit "I am an AI agent" attestation, and
+  # the attestation is a question whose answer is supposed to be a human's, so
+  # there is no acceptable automated way through it. They run, they report, and
+  # they do not block: see `e2e-hosted-checkout` below.
   e2e-smoke:
     name: E2E smoke flow
     if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+
+      # The seeded states are read through a real page render, so this job still
+      # needs a browser even though it never touches a third party.
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # No secret guards in this job, deliberately. Every spec it runs is
+      # seeded, so there is no key whose absence could turn a spec into a skip
+      # that still reads green — which is exactly what the two guard steps below
+      # exist to prevent. A consequence worth keeping: this gate also runs on
+      # fork pull requests, where GitHub withholds environment and repository
+      # secrets, and it needs none.
+      - name: E2E smoke flow (seeded)
+        run: npm run test:e2e -- --grep-invert @hosted
+
+      - name: Upload the failure trace
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-trace
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
+
+  # The hosted round-trip: configurator → Stripe's own checkout page → our
+  # success page. Genuinely useful when it works, and structurally outside our
+  # control, so it is `continue-on-error` rather than skipped.
+  #
+  # `continue-on-error`, not `if: always()` on the specs and not a skip. A skip
+  # would go green while testing nothing, which is the silent-untested trap: the
+  # next red would have no way to say whether Stripe's gate moved or our
+  # redirect broke. Attempting the run keeps the trace and the test list, so a
+  # human can tell those two apart. The cost is that this job reports orange
+  # whenever the gate bites, which is the point — the signal stays visible
+  # instead of disappearing into a green check.
+  e2e-hosted-checkout:
+    name: E2E hosted checkout (best effort)
+    if: github.event_name == 'pull_request'
+    continue-on-error: true
     # The sandbox Stripe and Prodigi keys are staging Environment secrets, not
     # repository ones. Without this line `secrets.*` resolves to the repository
     # scope, both guard steps fail on every pull request, and the flow never
@@ -76,9 +124,17 @@ jobs:
       - name: Install Chromium
         run: npx playwright install --with-deps chromium
 
-      # Without a key the Stripe specs skip themselves and only the success-page
-      # states run — a partial pass that looks green. Failing here says the
-      # secret is missing, which is the thing to fix.
+      # Without a key the Stripe specs skip themselves and the job reports
+      # nothing but a skip — a partial pass that looks green. Failing here says
+      # the secret is missing, which is the thing to fix.
+      #
+      # What this guard no longer does, now that the job is continue-on-error: it
+      # no longer blocks. A missing or wrong key turns the job orange with the
+      # message above rather than failing the run, so a staged secret can be
+      # removed without anyone being stopped by it. That is consistent with the
+      # job being best-effort, and the message is the signal — but do not read
+      # these two steps as gates. The check that has real teeth is the live-key
+      # guard test in the required job, which fails closed with no key at all.
       - name: Require a Stripe test key
         run: |
           if [ -z "$STRIPE_SECRET_KEY" ]; then
@@ -111,29 +167,30 @@ jobs:
       # itself asserts the failure, so a missing secret is a red test, not a
       # silent skip.
       # Headed under Xvfb, not headless. Stripe gates the hosted-checkout submit
-      # on an hCaptcha token, and on a runner the token never arrives: the
-      # network trace of the last red run shows `getcaptcha` with no matching
+      # on a bot check, and on a runner the token never arrives: the network
+      # trace of the last red run shows `getcaptcha` with no matching
       # `checkcaptcha`, and the page simply never leaves after Pay. A real
       # display and a real window is the closest a runner gets to a browser a
-      # person would use, which is what the bot check is measuring.
-      - name: E2E smoke flow
-        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24" npm run test:e2e
+      # person would use, which is what the bot check is measuring. It is worth
+      # saying plainly that this is not expected to be enough — a later run
+      # added an attestation dialog in front of the same submit. It stays because
+      # the job no longer depends on it, not because it is believed to hold.
+      - name: E2E hosted checkout
+        run: xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24" npm run test:e2e -- --grep @hosted
         env:
           HEADED: "1"
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
           PRINT_ASSET_HMAC_SECRET: ${{ secrets.PRINT_ASSET_HMAC_SECRET }}
 
-      # The failure that motivates this is unreadable without it: a Stripe
-      # timeout in a browser flow reports a line number and a URL regex, and
-      # the page state that explains it lives only in the trace. Uploading on
-      # failure rather than always keeps a green run free of a Chromium-sized
-      # artifact nobody downloads.
-      - name: Upload the failure trace
-        if: failure()
+      # Uploaded unconditionally, not `if: failure()`. This job is soft-failed,
+      # so a Stripe gate block is a run that a human is expected to read, and
+      # the page state that explains it lives only in the trace.
+      - name: Upload the trace
+        if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: e2e-trace
+          name: e2e-hosted-trace
           path: test-results/
           retention-days: 7
           if-no-files-found: ignore

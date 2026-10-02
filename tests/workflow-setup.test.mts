@@ -131,17 +131,23 @@ test("prod.yml deploy needs a job that calls ci.yml", () => {
   );
 });
 
-/* #143: the browser smoke flow's CI job.
+/* #143: the browser smoke flow's CI jobs.
 
-   Three things about it are decisions rather than defaults, so they are pinned
+   Five things about them are decisions rather than defaults, so they are pinned
    here instead of left to the next person editing the YAML:
 
-   - it is a job of its own, not a step in lint-and-test, because it downloads
-     a browser and starts a server;
-   - it does not run in `preview.yml`, because a smoke flow coupled to a deploy
+   - they are jobs of their own, not steps in lint-and-test, because they
+     download a browser and start a server;
+   - they do not run in `preview.yml`, because a smoke flow coupled to a deploy
      has two possible causes for every red run;
-   - it is pull_request-only, because prod.yml calls ci.yml as a reusable
-     workflow and a browser flow before every production merge buys nothing. */
+   - they are pull_request-only, because prod.yml calls ci.yml as a reusable
+     workflow and a browser flow before every production merge buys nothing;
+   - the seeded specs are the gate and the hosted-checkout specs are
+     best-effort, because Stripe gates its own page behind a bot check and an
+     "I am an AI agent" attestation (Architect, #160 review);
+   - the hosted job keeps the key guards and the headed run, because it is the
+     only one that can use them. The required job runs no third party and needs
+     no secret. */
 
 test("the E2E flow is its own job in ci.yml, not a step in lint-and-test", () => {
   const ci = workflows.find((w) => w.name === "ci.yml");
@@ -161,26 +167,44 @@ test("the E2E flow is its own job in ci.yml, not a step in lint-and-test", () =>
     "the lint-and-test job must stay free of Playwright",
   );
   assert.match(body, /playwright install/, "e2e-smoke must install its browser");
+  assert.match(body, /npm run test:e2e/, "e2e-smoke must run the suite");
+  assert.doesNotMatch(
+    body,
+    /xvfb-run|HEADED/,
+    "the required job runs only seeded specs, so it needs no display and no key",
+  );
+
+  // The hosted job, and only it, drives a real Stripe sandbox checkout page.
+  const hosted = ci.text.match(
+    /^ {2}e2e-hosted-checkout:\n((?:(?: {4}|\t).*\n|\n)*)/m,
+  );
+  assert.ok(hosted, "ci.yml has no e2e-hosted-checkout job");
   // The xvfb-run wrapper is not incidental: Stripe gates the hosted-checkout
-  // submit on an hCaptcha token that headless Chromium on a runner never
-  // receives. The assertion is on the command underneath the wrapper, and
-  // HEADED=1 is what tells playwright.config.ts to open a real window.
-  assert.match(body, /npm run test:e2e/);
-  assert.match(body, /xvfb-run/, "the browser must run headed; hCaptcha refuses headless");
-  assert.match(body, /HEADED: "1"/, "HEADED=1 must reach the Playwright config");
+  // submit on a bot check that headless Chromium on a runner never satisfies.
+  // The assertion is on the command underneath the wrapper, and HEADED=1 is
+  // what tells playwright.config.ts to open a real window. It is not expected
+  // to be sufficient — a later run added an attestation dialog in front of the
+  // same submit — which is why this job is soft-failed rather than required.
+  assert.match(hosted[1], /npm run test:e2e/);
+  assert.match(hosted[1], /xvfb-run/, "the hosted browser must run headed");
+  assert.match(hosted[1], /HEADED: "1"/, "HEADED=1 must reach the Playwright config");
 });
 
 test("the E2E job is pull_request-only, so a production merge does not re-run a browser", () => {
   const ci = workflows.find((w) => w.name === "ci.yml");
-  const job = ci.text.match(/^ {2}e2e-smoke:\n((?:(?: {4}|\t).*\n|\n)*)/m);
-  assert.ok(job);
-  // prod.yml gates deploy on the ci.yml caller job; without this guard every
-  // production merge pays for a Chromium download to re-test the same commit.
-  assert.match(
-    job[1],
-    /if:\s*github\.event_name\s*==\s*'pull_request'/,
-    "e2e-smoke must not run when ci.yml is called by prod.yml",
-  );
+  for (const id of ["e2e-smoke", "e2e-hosted-checkout"]) {
+    const job = ci.text.match(
+      new RegExp(`^ {2}${id}:\\n((?:(?: {4}|\\t).*\\n|\\n)*)`, "m"),
+    );
+    assert.ok(job, `ci.yml has no ${id} job`);
+    // prod.yml gates deploy on the ci.yml caller job; without this guard every
+    // production merge pays for a Chromium download to re-test the same commit.
+    assert.match(
+      job[1],
+      /if:\s*github\.event_name\s*==\s*'pull_request'/,
+      `${id} must not run when ci.yml is called by prod.yml`,
+    );
+  }
 });
 
 test("no workflow other than ci.yml runs Playwright", () => {
@@ -194,9 +218,9 @@ test("no workflow other than ci.yml runs Playwright", () => {
   }
 });
 
-test("the E2E job refuses to run without a Stripe TEST key", () => {
+test("the hosted E2E job refuses to run without a Stripe TEST key", () => {
   const ci = workflows.find((w) => w.name === "ci.yml");
-  const job = ci.text.match(/^ {2}e2e-smoke:\n((?:(?: {4}|\t).*\n|\n)*)/m);
+  const job = ci.text.match(/^ {2}e2e-hosted-checkout:\n((?:(?: {4}|\t).*\n|\n)*)/m);
   assert.ok(job);
   const body = job[1];
 
@@ -216,12 +240,12 @@ test("the E2E job refuses to run without a Stripe TEST key", () => {
   assert.match(body, /sk_test_\*/, "must reject a non-test key before paying");
 });
 
-test("the E2E job refuses to run without a Prodigi sandbox key", () => {
+test("the hosted E2E job refuses to run without a Prodigi sandbox key", () => {
   // The same partial-green trap as the Stripe guard, one spec down: the
   // physical-print spec test.skips() without this key, so a job missing the
   // secret would pass having never quoted Prodigi at all (#143 review).
   const ci = workflows.find((w) => w.name === "ci.yml");
-  const job = ci.text.match(/^ {2}e2e-smoke:\n((?:(?: {4}|\t).*\n|\n)*)/m);
+  const job = ci.text.match(/^ {2}e2e-hosted-checkout:\n((?:(?: {4}|\t).*\n|\n)*)/m);
   assert.ok(job);
   const body = job[1];
 
