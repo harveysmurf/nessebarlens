@@ -1078,6 +1078,87 @@ test("quote: a physical quote is priced from the Prodigi response", async () => 
   }
 });
 
+test("quote: a repeated identical quote is served from cache, and checkout still quotes live", async () => {
+  // #113: /api/quote is unauthenticated and shares Prodigi's rate limit with
+  // checkout, so the second identical request must not reach Prodigi. Checkout
+  // must, because price integrity at the point of payment is worth the call.
+  const saved = { ...process.env };
+  const originalFetch = globalThis.fetch;
+  const originalCaches = (globalThis as { caches?: unknown }).caches;
+  process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
+  process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
+
+  const entries = new Map<string, string>();
+  (globalThis as { caches?: unknown }).caches = {
+    default: {
+      async match(request: Request) {
+        const stored = entries.get(request.url);
+        return stored === undefined
+          ? undefined
+          : new Response(stored, {
+              headers: { "content-type": "application/json" },
+            });
+      },
+      async put(request: Request, response: Response) {
+        entries.set(request.url, await response.text());
+      },
+    },
+  };
+
+  let prodigiCalls = 0;
+  globalThis.fetch = (async () => {
+    prodigiCalls += 1;
+    return new Response(
+      JSON.stringify({
+        quotes: [
+          {
+            items: [{ unitCost: { amount: "9.5" } }],
+            costSummary: { shipping: { amount: "4.99" } },
+          },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  const request = () =>
+    jsonRequest(`${SITE}/api/quote`, {
+      format: "giclee",
+      size: "30x40",
+      frame: null,
+      destinationCountryCode: "BG",
+    });
+
+  try {
+    const first = await quote.POST(request());
+    const second = await quote.POST(request());
+    assert.equal(first.status, 200);
+    assert.equal(second.status, 200);
+    assert.deepEqual(await body(second), await body(first));
+    assert.equal(prodigiCalls, 1, "the repeat must not call Prodigi again");
+
+    // A different destination is a different quote, not the cached one.
+    const other = await quote.POST(
+      jsonRequest(`${SITE}/api/quote`, {
+        format: "giclee",
+        size: "30x40",
+        frame: null,
+        destinationCountryCode: "US",
+      }),
+    );
+    assert.equal(other.status, 200);
+    assert.equal(prodigiCalls, 2, "a new country must still be quoted live");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) {
+      delete (globalThis as { caches?: unknown }).caches;
+    } else {
+      (globalThis as { caches?: unknown }).caches = originalCaches;
+    }
+    restoreEnv(saved);
+  }
+});
+
 test("checkout: a physical order with no signing secret is refused before payment", async () => {
   // The primary fail-closed guard. Without a usable secret we cannot sign the
   // master URL, and the fulfillment path used to fall back to the ~41KB public

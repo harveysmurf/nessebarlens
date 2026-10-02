@@ -322,6 +322,25 @@ script.
   the base is configured in every environment while both buckets are still
   empty. Turn the flag on only after the upload is verified, and expect
   `tests/placeholder-photo.test.mts` to need updating at that moment.
+- **Quotes are cached; checkout is not.** `/api/quote` is unauthenticated and
+  shares Prodigi's rate limit with `/api/checkout`, so a cached-miss loop could
+  otherwise 429 Prodigi and break checkout for real customers. `src/lib/quote-cache.ts`
+  caches the two public numbers (`merchandiseEur`, `shippingEur`) per
+  `(SKU, attributes, destinationCountry)` for 30 minutes in `caches.default`.
+  Three invariants: (1) `sku` and `unitCostEur` never enter the cache — the
+  wholesale cost and the margin stay server-side; (2) `/api/checkout` keeps
+  quoting live, so the price charged is the price Prodigi just returned; (3) any
+  cache error degrades to a live quote, never to a 5xx. Covered by
+  `tests/quote-cache.test.mts` and `tests/routes.test.mts`.
+- **Rate limit on `/api/quote`.** The application-level cache above is the
+  defence that needs no dashboard access; the Cloudflare WAF rule is the second
+  layer and is **configured in the dashboard, not in this repo** (Wrangler does
+  not manage rate-limit rules). Zone `nessebar-lens.com`: Rate Limiting Rules →
+  expression `http.request.uri.path eq "/api/quote"`, characteristic `ip.src`,
+  30 requests / 1 minute, mitigation `block`, period 60s. If the zone has no
+  rate-limit plan, the equivalent is a WAF custom rule with
+  `cf.ratelimit.counting_period eq 60`. Nothing in CI verifies this — if you
+  change the threshold, update it here too.
 - **Stripe Checkout only.** `/api/checkout` creates a Checkout Session
   (`success_url` / `cancel_url`); no code path confirms a PaymentIntent. Stripe
   sandbox emails about a missing `return_url` are expected after manual
