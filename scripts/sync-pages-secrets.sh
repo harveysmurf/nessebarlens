@@ -66,13 +66,21 @@ export TARGET
 export PROJECT=nessebar-lens
 export PRODIGI_API_BASE="$BASE"
 
-# Print-asset HMAC (the Worker streams masters to Prodigi). Synced only when the
-# value is present and >=32 chars; the same rule print-asset.ts applies, so a
-# short or blank value is dropped here and reads as unset at runtime — which now
-# means /api/checkout answers 503 for physical formats rather than falling back to
-# /placeholders/*.jpg. See #114 for the drop being silent.
+# Print-asset HMAC (the Worker streams masters to Prodigi). Same >=32-char rule
+# print-asset.ts applies. Unset there means /api/checkout answers 503 for
+# physical formats rather than taking money for a print it cannot fulfil, so in
+# production this is a hard error rather than a silently dropped secret that
+# leaves the deploy green and the site 503ing. Preview only warns: a preview
+# build legitimately runs without physical checkout.
 PRINT_SECRET="${PRINT_ASSET_HMAC_SECRET:-}"
-if [[ -n "$PRINT_SECRET" && ${#PRINT_SECRET} -ge 32 ]]; then
+if [[ ${#PRINT_SECRET} -lt 32 ]]; then
+  if [[ "$TARGET" == "production" ]]; then
+    echo "production requires PRINT_ASSET_HMAC_SECRET with at least 32 characters (got ${#PRINT_SECRET})" >&2
+    echo "without it /api/checkout answers 503 for physical formats" >&2
+    exit 1
+  fi
+  echo "warning: PRINT_ASSET_HMAC_SECRET unset or under 32 chars — physical checkout will 503 on this preview" >&2
+else
   export PRINT_ASSET_HMAC_SECRET="$PRINT_SECRET"
 fi
 
