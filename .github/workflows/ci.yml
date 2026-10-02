@@ -58,6 +58,12 @@ jobs:
   e2e-smoke:
     name: E2E smoke flow
     if: github.event_name == 'pull_request'
+    # The sandbox Stripe and Prodigi keys are staging Environment secrets, not
+    # repository ones. Without this line `secrets.*` resolves to the repository
+    # scope, both guard steps fail on every pull request, and the flow never
+    # runs. Same environment preview.yml deploys from, so the flow quotes and
+    # checks out against the same sandbox the preview is built with.
+    environment: staging
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
@@ -76,15 +82,15 @@ jobs:
       - name: Require a Stripe test key
         run: |
           if [ -z "$STRIPE_SECRET_KEY" ]; then
-            echo "::error::STRIPE_TEST_SECRET_KEY is not set. The checkout flow skips itself without a key, so the job would pass having tested nothing." >&2
+            echo "::error::staging.STRIPE_SECRET_KEY is not set. The checkout flow skips itself without a key, so the job would pass having tested nothing." >&2
             exit 1
           fi
           case "$STRIPE_SECRET_KEY" in
             sk_test_*) ;;
-            *) echo "::error::STRIPE_TEST_SECRET_KEY is not an sk_test_ key. This job must never drive a live card path." >&2; exit 1 ;;
+            *) echo "::error::staging.STRIPE_SECRET_KEY is not an sk_test_ key. This job must never drive a live card path." >&2; exit 1 ;;
           esac
         env:
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
 
       # The same partial-green trap the Stripe guard blocks one step earlier:
       # the physical-print spec test.skips() without this key, so a missing
@@ -98,8 +104,15 @@ jobs:
         env:
           PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
 
+      # A physical order cannot be charged without this one: /api/checkout fails
+      # closed with 503 when it cannot sign a master asset URL, so the
+      # physical-print spec would wait on a Checkout button that can never
+      # enable. No guard step for the same reason as the two above — the spec
+      # itself asserts the failure, so a missing secret is a red test, not a
+      # silent skip.
       - name: E2E smoke flow
         run: npm run test:e2e
         env:
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
+          PRINT_ASSET_HMAC_SECRET: ${{ secrets.PRINT_ASSET_HMAC_SECRET }}

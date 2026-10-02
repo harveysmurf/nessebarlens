@@ -50,6 +50,24 @@ export default defineConfig({
       // Stripe's sandbox, where 4242… cannot move money. support/stripe.ts
       // asserts that as a test rather than trusting this comment.
       STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY ?? "sk_test_e2e_placeholder",
+      // Prodigi is explicit-host by design: prodigiApiBase() throws unless
+      // PRODIGI_API_BASE is set to an allowlisted host, so the server needs the
+      // sandbox base and its paired key or /api/quote answers 503 and the
+      // physical-print spec waits on a Checkout button that can never enable.
+      // The key only reaches the server when it is present, so a bare dev run
+      // without one still leaves that spec skipped rather than misconfigured.
+      PRODIGI_API_BASE: "https://api.sandbox.prodigi.com",
+      ...(process.env.PRODIGI_SANDBOX_API_KEY
+        ? { PRODIGI_SANDBOX_API_KEY: process.env.PRODIGI_SANDBOX_API_KEY }
+        : {}),
+      // A physical order cannot be charged without this one: /api/checkout
+      // fails closed (503 "Print fulfillment is not configured") when it cannot
+      // sign a master asset URL, so without it the physical-print spec waits on
+      // a Checkout button that can never enable. The value only has to sign —
+      // the flow asserts the redirect to Stripe, not a download.
+      ...(process.env.PRINT_ASSET_HMAC_SECRET
+        ? { PRINT_ASSET_HMAC_SECRET: process.env.PRINT_ASSET_HMAC_SECRET }
+        : {}),
       // The three success-page states. Without this the page can only ever
       // render "processing" on a dev server, because ORDERS is a Worker
       // binding with no env fallback.

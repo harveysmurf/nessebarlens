@@ -170,12 +170,25 @@ deployment, and a smoke flow coupled to one has two possible causes for every
 red run. `preview.yml` stays browser-free; the flow lives in its own
 pull-request-only `e2e-smoke` job in `ci.yml`.
 
-Needs `npx playwright install chromium` once, and a **sandbox** Stripe key:
+Needs `npx playwright install chromium` once, and three values: a **sandbox**
+Stripe key, the **Prodigi sandbox** key, and any `PRINT_ASSET_HMAC_SECRET` (it
+only has to sign — the flow asserts the redirect, not a download):
 
 ```bash
 npx playwright install chromium
-STRIPE_SECRET_KEY=sk_test_… npm run test:e2e
+STRIPE_SECRET_KEY=sk_test_… \
+PRODIGI_SANDBOX_API_KEY=test_… \
+PRINT_ASSET_HMAC_SECRET=$(openssl rand -hex 32) \
+npm run test:e2e
 ```
+
+The dev server Playwright starts gets all three, plus a **pinned**
+`PRODIGI_API_BASE=https://api.sandbox.prodigi.com`. Prodigi is explicit-host by
+design, so without that host `/api/quote` answers 503; without the HMAC secret
+`/api/checkout` fails closed with 503 "Print fulfillment is not configured". Both
+make the physical-print spec wait on a Checkout button that can never enable,
+which reads as a Prodigi outage rather than a missing variable.
+`tests/e2e-harness-env.test.mts` pins all of it.
 
 Without a key the Stripe specs **skip themselves** and only the success-page
 states run — a partial pass that looks green. CI fails the job outright instead
@@ -253,7 +266,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a pull-request-only `e2e-smoke` job (`npm ci` → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **E2E smoke flow**: `npm run test:e2e`) |
+| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a pull-request-only `e2e-smoke` job (staging Environment → `npm ci` → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **E2E smoke flow** (with the print-asset signing secret): `npm run test:e2e`) |
 | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → Pages preview → **smoke test** (`scripts/smoke.sh`) → PR comment; cleanup on close |
 | `.github/workflows/prod.yml` | push to `main` + `workflow_dispatch` | production Environment → build → Pages `main` → `sync-pages-secrets.sh production` |
 
@@ -279,7 +292,12 @@ re-dispatching.
 GitHub Environments:
 
 - **`staging`** — sandbox Stripe + `PRODIGI_API_BASE=https://api.sandbox.prodigi.com` +
-  `PRODIGI_SANDBOX_API_KEY` + `SITE_URL=https://dev.nessebar-lens.pages.dev`
+  `PRODIGI_SANDBOX_API_KEY` + `SITE_URL=https://dev.nessebar-lens.pages.dev`.
+  The `e2e-smoke` job also reads its keys from here, so it needs
+  `environment: staging` — the repository has only `PRINT_ASSET_HMAC_SECRET`, and
+  without the environment line every guard would resolve to nothing. Its one
+  Stripe key is the `sk_test_` sandbox one, which the job's `sk_test_*` guard
+  enforces before anything is spent.
 - **`production`** — required reviewer `harveysmurf`. Live Stripe
   (`sk_live_*` + live webhook secret) + `PRODIGI_API_BASE=https://api.prodigi.com` +
   `PRODIGI_API_KEY` (live org key). Host is never inferred from which key is set.

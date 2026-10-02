@@ -44,9 +44,15 @@ test.describe("checkout smoke flow", () => {
 
     await expect(page).toHaveURL(/\/prints\/[a-z0-9-]+$/);
 
-    // Digital licence: the configurator prices this one itself, so the price is
-    // visible with no network call and no quote to wait for. That is also why
-    // this flow is the one that can run without Prodigi.
+    // Digital licence, chosen explicitly: the configurator opens on the
+    // default format, which is physical, so without this the price label holds
+    // a Prodigi quote (or "—") and there is nothing to assert. Once digital is
+    // selected the configurator prices it itself, so the price is visible with
+    // no network call and no quote to wait for — which is also why this flow is
+    // the one that can run without Prodigi.
+    // The label, not the input: the radio is sr-only behind its label, so
+    // check() on the input is a click the label's own div intercepts forever.
+    await page.getByText(/digital copy/i).click();
     const price = page.getByText(`€${DIGITAL_PRICE_EUR.toFixed(2)}`).first();
     await expect(price).toBeVisible();
 
