@@ -49,10 +49,10 @@ test("the dev server gets PRINT_ASSET_HMAC_SECRET, or a physical order cannot be
   );
 });
 
-test("the CI job passes the same three values to the harness", () => {
+test("the hosted checkout job passes the same three values to the harness", () => {
   const ci = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
-  const job = ci.match(/^ {2}e2e-smoke:\n((?:(?: {4}|\t).*\n|\n)*)/m);
-  assert.ok(job);
+  const job = ci.match(/^ {2}e2e-hosted-checkout:\n((?:(?: {4}|\t).*\n|\n)*)/m);
+  assert.ok(job, "the hosted specs must run in their own job");
   for (const name of [
     "STRIPE_SECRET_KEY",
     "PRODIGI_SANDBOX_API_KEY",
@@ -60,6 +60,66 @@ test("the CI job passes the same three values to the harness", () => {
   ]) {
     assert.match(job[1], new RegExp(`${name}: \\$\\{\\{ secrets\\.\\w+ \\}\\}`), `the job must pass ${name}`);
   }
+});
+
+/**
+ * The suite is split in two, and the split is a promise about what a green
+ * check means. It is held together by a string in a describe title and two grep
+ * flags, which is exactly the kind of arrangement that rots silently: retag a
+ * spec, or a new spec lands in the wrong describe, and the required job keeps
+ * reporting green while covering less than it claims. These assert the
+ * arrangement rather than the outcome.
+ */
+test("the hosted specs are tagged @hosted, and only they", () => {
+  const specs = ["smoke.spec.ts", "success-states.spec.ts"]
+    .map((f) => fs.readFileSync(path.join(root, "e2e", f), "utf8"))
+    .join("\n");
+  const tagged = specs.match(/test\.describe\("@hosted[^\n]*/g) ?? [];
+  assert.equal(
+    tagged.length,
+    1,
+    "@hosted must live on exactly one describe: the two specs that leave for checkout.stripe.com",
+  );
+  assert.match(tagged[0], /checkout smoke flow/);
+});
+
+test("the live-key guard is not tagged @hosted, so it stays in the required job", () => {
+  const spec = fs.readFileSync(path.join(root, "e2e", "smoke.spec.ts"), "utf8");
+  const guardAt = spec.indexOf('test("the live-key guard refuses a non-test Stripe key"');
+  assert.ok(guardAt !== -1, "the live-key guard must exist");
+  const taggedAt = spec.indexOf('test.describe("@hosted');
+  assert.ok(
+    taggedAt !== -1 && guardAt > taggedAt,
+    "the guard must be declared outside the @hosted describe",
+  );
+});
+
+test("the required job runs everything except the hosted specs", () => {
+  const ci = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
+  const job = ci.match(/^ {2}e2e-smoke:\n((?:(?: {4}|\t).*\n|\n)*)/m);
+  assert.ok(job);
+  assert.match(job[1], /--grep-invert @hosted/, "the gate must exclude the hosted specs");
+  // A required job that also ran the hosted specs would go red on a Stripe
+  // gate, which is the whole thing this split exists to prevent.
+  assert.doesNotMatch(job[1], /--grep @hosted\b(?!\w)/);
+});
+
+test("the hosted specs run soft-failed and still attempt, rather than skipping", () => {
+  const ci = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
+  const job = ci.match(/^ {2}e2e-hosted-checkout:\n((?:(?: {4}|\t).*\n|\n)*)/m);
+  assert.ok(job);
+  assert.match(job[1], /continue-on-error: true/, "the hosted job must be soft-failed, not required");
+  assert.match(job[1], /--grep @hosted/, "the hosted job must run the hosted specs");
+  // A skip reads green having tested nothing, which is the trap: nobody could
+  // then tell a moved Stripe gate from a broken redirect.
+  assert.doesNotMatch(job[1], /--grep-invert @hosted/);
+  // The run step must have no `if:` of its own. `if: always()` on the run step
+  // is how a suite gets turned into a green skip while still looking like it
+  // ran; `if: always()` on the *upload* step is the opposite and required.
+  const runStep = job[1].match(/\n {6}- name: E2E hosted checkout\n((?: {8}.*\n|\n)*)/);
+  assert.ok(runStep, "the hosted specs need a run step");
+  assert.doesNotMatch(runStep[1], /\n {8}if:/, "the run step must be unconditional");
+  assert.match(job[1], /if: always\(\)[\s\S]*upload-artifact/, "the trace must upload on every run of this job");
 });
 
 test("the digital-licence spec selects digital before asserting the digital price", () => {

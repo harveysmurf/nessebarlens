@@ -22,13 +22,27 @@ import {
  *     sandbox and is skipped rather than failed when no sandbox key is set.
  *     Never a live account: quotePhysical goes through prodigi-config's
  *     allowlist, and a sandbox key is what the preview environment carries.
+ *
+ * Both are tagged `@hosted` and that tag is load-bearing, not decoration: the
+ * describe title is what `--grep` matches, and ci.yml splits the suite on it
+ * into a required job and a soft-failed one. These are the only specs that
+ * leave our pages for checkout.stripe.com, and Stripe now gates that page
+ * behind a bot check (hCaptcha) and an explicit "I am an AI agent" attestation
+ * we will not click. So they run as signal, never as a gate — see the
+ * `e2e-hosted-checkout` job. The live-key guard below is deliberately untagged
+ * and stays in the required job: it drives no browser and fails closed on a
+ * real-money mistake.
+ *
+ * Anything added to this describe inherits `@hosted`. A new spec that does not
+ * touch Stripe's hosted page belongs outside it, or the required job silently
+ * stops covering it.
  */
 
 const sandboxProdigiKey = process.env.PRODIGI_SANDBOX_API_KEY?.trim();
 const hasStripe = Boolean(stripeTestKey());
 
 // The guard throws on a live key at module load, before any browser starts.
-test.describe("checkout smoke flow", () => {
+test.describe("@hosted checkout smoke flow", () => {
   test.skip(!hasStripe, "no sk_test_ STRIPE_SECRET_KEY configured");
 
   test("home → photo → configurator → price → Stripe → success page", async ({
