@@ -113,3 +113,15 @@ test("the gate pins zizmor's regular persona", () => {
   assert.match(source, /"--persona",\s*\n?\s*"regular"/);
   assert.doesNotMatch(source, /"(auditor|pedantic)"/);
 });
+
+test("the gate collects .yaml workflows as well as .yml", () => {
+  // GitHub accepts both extensions, so a gate that only globs .yml would
+  // silently skip a future .yaml workflow -- the failure mode is invisible,
+  // because a skipped file reads the same as a clean file.
+  const source = fs.readFileSync(
+    path.join(import.meta.dirname, "..", "scripts", "zizmor-gate.mjs"),
+    "utf8",
+  );
+  assert.match(source, /WORKFLOW_EXTENSIONS = \[[^\]]*"\.yml",\s*"\.yaml"\]/);
+  assert.doesNotMatch(source, /endsWith\("\.yml"\)/);
+});
