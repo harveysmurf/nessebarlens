@@ -144,8 +144,18 @@ test("the token record is validated, including the session id it names", async (
 
   for (const bad of [
     "not json",
+    // Non-objects, and each half of that check: JSON `null` is falsy, while a
+    // number or string parses fine and is merely not a record.
+    "null",
+    "7",
+    '"a string"',
     JSON.stringify({ ...JSON.parse(good), v: 2 }),
+    // A session id of the wrong *type* is refused before the grammar sees it.
+    JSON.stringify({ ...JSON.parse(good), sessionId: 42 }),
     JSON.stringify({ ...JSON.parse(good), expiresAt: "soon" }),
+    // 1e999 is Infinity once parsed: a finite check that only handled strings
+    // would let an infinite lifetime through.
+    '{"v":1,"sessionId":"cs_test_abcdefgh","expiresAt":1e999,"remaining":1}',
     JSON.stringify({ ...JSON.parse(good), remaining: 1.5 }),
     JSON.stringify({ ...JSON.parse(good), remaining: "3" }),
   ]) {
