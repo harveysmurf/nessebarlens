@@ -555,6 +555,34 @@ test("download: a KV that throws is a 503, and a foreign record is corrupt", asy
   }
 });
 
+test("download: a KV that throws only on the order read is still a 503", async () => {
+  // The token read succeeds and the download is already spent by the time the
+  // order record is fetched, so this window is real: an outage between the two
+  // reads must read as unavailable, not as a paid customer who gets nothing.
+  const kv = memoryKv();
+  const token = await seedToken(kv, "cs_test_abcdefgh");
+  const flaky = {
+    async get(key: string) {
+      if (key.startsWith("dl")) return kv.get(key);
+      throw new Error("kv down");
+    },
+    async put(key: string, value: string, options?: { expirationTtl?: number }) {
+      return kv.put(key, value, options);
+    },
+  };
+  const restore = withBindings({ ORDERS: flaky, prodigiKeyConfigured: false });
+  try {
+    const down = await download.GET(
+      new Request(`${SITE}/api/download?token=${token}`),
+    );
+    assert.equal(down.status, 503);
+    assert.equal((await body(down)).error, "orders-kv-unavailable");
+    assert.equal(down.headers.get("Referrer-Policy"), "no-referrer");
+  } finally {
+    restore();
+  }
+});
+
 test("checkout: a bad body is a 400 and a missing slug never reaches Stripe", async () => {
   const saved = { ...process.env };
   const originalFetch = globalThis.fetch;

@@ -272,6 +272,48 @@ test("redeeming an unknown or malformed token never spends anything", async () =
   assert.equal(kv.writes, 0, "a rejected token must not write to the store");
 });
 
+test("a token record that is not the stored shape is refused, not served", async () => {
+  const kv = memoryKv();
+  const token = "c".repeat(32);
+  // Present under the right key, unreadable as a record. This is the shape a
+  // half-written or hand-edited KV value takes, and it must read as "no such
+  // token" rather than falling through to an order read with a null session.
+  for (const raw of ["not json", JSON.stringify({ v: 1, sessionId: 42 }), JSON.stringify([1, 2])]) {
+    await kv.put(downloadTokenKey(token), raw);
+    const result = await redeemDownloadToken({ kv, token, nowMs: NOW });
+    assert.equal(result.ok, false, raw);
+    assert.equal(result.ok === false && result.status, 404, raw);
+  }
+  assert.equal(kv.writes, 0);
+});
+
+test("a store that fails while spending answers 503, not a served file", async () => {
+  // The read succeeded, so the failure is on the write that records the spend.
+  // Answering "served" here would hand out a file with no decrement recorded.
+  const kv = memoryKv({
+    [downloadTokenKey("d".repeat(32))]: JSON.stringify({
+      v: 1,
+      sessionId: "cs_test_abcdefgh",
+      expiresAt: 1_800_000_000,
+      remaining: 2,
+    }),
+  });
+  const failing = {
+    async get(key: string) {
+      return kv.get(key);
+    },
+    async put() {
+      throw new Error("kv write down");
+    },
+  };
+  const result = await redeemDownloadToken({ kv: failing, token: "d".repeat(32), nowMs: NOW });
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.status, 503);
+  // The stored count is untouched: a failed spend must not consume a download.
+  const stored = JSON.parse((await kv.get(downloadTokenKey("d".repeat(32))))!);
+  assert.equal(stored.remaining, 2);
+});
+
 test("the limits are configurable, and a bad value falls back to the default", () => {
   // Policy, not credentials: unset means the documented defaults rather than
   // "unlimited" or "already expired".

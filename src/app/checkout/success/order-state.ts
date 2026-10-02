@@ -87,6 +87,13 @@ export async function resolveCheckoutPageState(
  * doing so, and the token is never part of a state name. Returning a link
  * rather than a raw token means the page cannot assemble the URL itself and
  * drift from the one shape the route accepts.
+ *
+ * Known, and deliberately not restructured: the page reads the index twice
+ * (once in `resolveCheckoutPageState`, once here), so a token expiring between
+ * the two reads renders the `processing` branch, whose poller answers state
+ * only and cannot recover a link. Reaching it needs a TTL configured to lapse
+ * mid-render. Threading the record through instead would mean widening the
+ * resolver's return type for a case that is a bad config, not a live path.
  */
 export async function resolveCheckoutDownloadLink(
   sessionId: string | undefined,

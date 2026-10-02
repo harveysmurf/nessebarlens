@@ -93,6 +93,16 @@ export function parseDownloadTokenRecord(raw: string): DownloadTokenRecord | nul
   } catch {
     return null;
   }
+  return parseDownloadTokenRecordValue(value);
+}
+
+/**
+ * The shape check, on an already-parsed value.
+ *
+ * Split from `parseDownloadTokenRecord` so the index parser can validate the
+ * same fields without a second `JSON.parse` it would only ever succeed at.
+ */
+function parseDownloadTokenRecordValue(value: unknown): DownloadTokenRecord | null {
   if (!value || typeof value !== "object") return null;
   const row = value as Record<string, unknown>;
   if (row.v !== 1) return null;
@@ -125,15 +135,23 @@ export function parseDownloadTokenRecord(raw: string): DownloadTokenRecord | nul
  */
 export type DownloadTokenIndex = DownloadTokenRecord & { token: string };
 
+/**
+ * Parse the index value: the record plus the token, in one pass.
+ *
+ * Deliberately not "parse the record, then parse again for `token`": the second
+ * `JSON.parse` would need its own catch for a failure that cannot happen, which
+ * is dead code the coverage floors rightly flag — and which invites a future
+ * edit to handle two parses as if they could disagree.
+ */
 function parseDownloadTokenIndex(raw: string): DownloadTokenIndex | null {
-  const record = parseDownloadTokenRecord(raw);
-  if (!record) return null;
   let value: unknown;
   try {
     value = JSON.parse(raw);
   } catch {
     return null;
   }
+  const record = parseDownloadTokenRecordValue(value);
+  if (!record) return null;
   const token = (value as { token?: unknown }).token;
   if (typeof token !== "string" || !isDownloadToken(token)) return null;
   return { ...record, token };
@@ -235,10 +253,14 @@ export type TokenRedeem =
  * lifetime is refused even if it still has downloads left, because "expired"
  * is the answer the customer can act on and a spent count is not.
  *
- * `remaining` is decremented *before* the caller streams bytes, so a request
- * that fails mid-stream still cost a download. That is the safe direction for
- * the same reason the race above is acceptable: over-counting serves a customer
- * who is owed the file, under-counting locks one out.
+ * `remaining` is decremented *before* the caller reads the order record at all,
+ * so the spend is not conditional on the request succeeding: an order that then
+ * answers 202/403/409/500, or a stream that dies mid-flight, still cost a
+ * download. That is an artefact of the only ordering available — a streamed
+ * response cannot be un-sent — and not a feature. It is safe here for the same
+ * reason the race above is: it errs toward serving a customer who is owed the
+ * file, and the cases that reach it (revoked order, order not yet stored) are
+ * ones where the counter is not what is protecting anything.
  *
  * Note what this does NOT check: whether the order is still paid. The route runs
  * `resolveDownload` afterwards, and that is the single place a refunded or
