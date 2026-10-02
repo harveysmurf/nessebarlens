@@ -159,8 +159,39 @@ const memoryKv = (initial: Record<string, string> = {}) => {
     async put(key: string, value: string) {
       store.set(key, value);
     },
+    /** Test-only: what the KV put, so a test can assert on a written token. */
+    store,
   };
 };
+
+/**
+ * A download token written straight into a fake KV (#111).
+ *
+ * The download route no longer accepts a session id, so every test that drives
+ * it needs a real `dl:<token>` / `dls:<sessionId>` pair. Minting through
+ * `ensureDownloadToken` rather than hand-writing JSON means the fixture cannot
+ * drift from the shape the fulfillment path writes.
+ */
+async function seedToken(
+  kv: ReturnType<typeof memoryKv>,
+  sessionId: string,
+  overrides: Record<string, unknown> = {},
+) {
+  const { ensureDownloadToken } = await import("../src/lib/download-token.ts");
+  const record = await ensureDownloadToken({
+    kv,
+    sessionId,
+    limits: { ttlSeconds: 30 * 86_400, maxDownloads: 5 },
+  });
+  assert.ok(record, "the fake KV should be able to mint a token");
+  for (const [key, value] of Object.entries(overrides)) {
+    const index = await kv.get(`dls:${sessionId}`);
+    const next = { ...JSON.parse(index!), [key]: value };
+    await kv.put(`dls:${sessionId}`, JSON.stringify(next));
+    await kv.put(`dl:${record.token}`, JSON.stringify(next));
+  }
+  return record.token;
+}
 
 test("quote: unparseable body, then a body the parser rejects", async () => {
   const broken = await quote.POST(
@@ -357,7 +388,64 @@ test("print-asset: a verified slug with no bucket is a 404, never a redirect", a
   }
 });
 
-test("download: the session id is checked before the KV is read at all", async () => {
+test("download: a session id on its own no longer grants a download (#111)", async () => {
+  const { masterKeyForSlug } = await import("../src/lib/master-key.ts");
+  // A fully paid, fully valid digital order — the credential is the only thing
+  // missing. If the route ever accepted the session id again, this would serve
+  // the file.
+  const record = JSON.stringify({
+    v: 1,
+    sessionId: "cs_test_abcdefgh",
+    merchantReference: "cs_test_abcdefgh",
+    terminal: true,
+    status: "paid",
+    photoSlug: "dawn",
+    format: "digital",
+    size: "",
+    frame: "",
+    quoteEur: 15,
+    amountTotal: 1500,
+    currency: "eur",
+    reason: null,
+    masterKey: masterKeyForSlug("dawn"),
+    recipient: null,
+    prodigiOrderId: null,
+    prodigiStage: null,
+    assetUrl: null,
+    updatedAt: "2026-09-27T12:00:00.000Z",
+  });
+  const kv = memoryKv({ cs_test_abcdefgh: record });
+  const restore = withBindings({
+    ORDERS: kv,
+    MASTERS: bucket(),
+    prodigiKeyConfigured: false,
+  });
+  try {
+    const bySession = await download.GET(
+      new Request(`${SITE}/api/download?session_id=cs_test_abcdefgh`),
+    );
+    assert.equal(bySession.status, 400);
+    assert.equal((await body(bySession)).error, "invalid-token");
+
+    const byStolen = await download.GET(
+      new Request(`${SITE}/api/download?token=${"0".repeat(32)}`),
+    );
+    assert.equal(byStolen.status, 404);
+    assert.equal((await body(byStolen)).error, "invalid-token");
+
+    // The same order, with its token, still downloads.
+    const token = await seedToken(kv, "cs_test_abcdefgh");
+    const ok = await download.GET(
+      new Request(`${SITE}/api/download?token=${token}`),
+    );
+    assert.equal(ok.status, 200);
+    assert.equal(ok.headers.get("Referrer-Policy"), "no-referrer");
+  } finally {
+    restore();
+  }
+});
+
+test("download: a malformed token is refused before the KV is read at all", async () => {
   let touched = 0;
   const kv = {
     async get() {
@@ -369,14 +457,25 @@ test("download: the session id is checked before the KV is read at all", async (
   const restore = withBindings({ ORDERS: kv, prodigiKeyConfigured: false });
   try {
     const bad = await download.GET(
-      new Request(`${SITE}/api/download?session_id=not-a-session`),
+      new Request(`${SITE}/api/download?token=not-a-token`),
     );
     assert.equal(bad.status, 400);
-    assert.equal((await body(bad)).error, "invalid-session-id");
-    assert.equal(touched, 0, "an unvalidated id must not reach the store");
+    assert.equal((await body(bad)).error, "invalid-token");
+    assert.equal(touched, 0, "an unvalidated token must not reach the store");
+    assert.equal(bad.headers.get("Cache-Control"), "private, no-store");
+    assert.equal(bad.headers.get("Referrer-Policy"), "no-referrer");
+  } finally {
+    restore();
+  }
+});
 
+test("download: a token for an order the webhook has not stored yet is 202", async () => {
+  const kv = memoryKv();
+  const token = await seedToken(kv, "cs_test_abcdefgh");
+  const restore = withBindings({ ORDERS: kv, prodigiKeyConfigured: false });
+  try {
     const notYet = await download.GET(
-      new Request(`${SITE}/api/download?session_id=cs_test_abcdefgh`),
+      new Request(`${SITE}/api/download?token=${token}`),
     );
     assert.equal(notYet.status, 202, "paid but not yet stored as fulfilled");
     assert.equal((await body(notYet)).status, "processing");
@@ -390,7 +489,7 @@ test("download: no ORDERS binding is a 503 before the store is read", async () =
   const restore = withBindings({ prodigiKeyConfigured: false });
   try {
     const response = await download.GET(
-      new Request(`${SITE}/api/download?session_id=cs_test_abcdefgh`),
+      new Request(`${SITE}/api/download?token=${"a".repeat(32)}`),
     );
     assert.equal(response.status, 503);
     assert.equal((await body(response)).error, "orders-kv-unavailable");
@@ -409,7 +508,7 @@ test("download: a KV that throws is a 503, and a foreign record is corrupt", asy
   const restore = withBindings({ ORDERS: throwing, prodigiKeyConfigured: false });
   try {
     const down = await download.GET(
-      new Request(`${SITE}/api/download?session_id=cs_test_abcdefgh`),
+      new Request(`${SITE}/api/download?token=${"b".repeat(32)}`),
     );
     assert.equal(down.status, 503);
     assert.equal((await body(down)).error, "orders-kv-unavailable");
@@ -443,10 +542,11 @@ test("download: a KV that throws is a 503, and a foreign record is corrupt", asy
       updatedAt: "2026-09-27T12:00:00.000Z",
     }),
   });
+  const token = await seedToken(other, "cs_test_abcdefgh");
   const restore2 = withBindings({ ORDERS: other, prodigiKeyConfigured: false });
   try {
     const corrupt = await download.GET(
-      new Request(`${SITE}/api/download?session_id=cs_test_abcdefgh`),
+      new Request(`${SITE}/api/download?token=${token}`),
     );
     assert.equal(corrupt.status, 500);
     assert.equal((await body(corrupt)).error, "corrupt-order");
@@ -915,14 +1015,16 @@ test("download: a paid digital order streams the master as an attachment", async
     assetUrl: null,
     updatedAt: "2026-09-27T12:00:00.000Z",
   });
+  const orders = memoryKv({ cs_test_abcdefgh: record });
+  const token = await seedToken(orders, "cs_test_abcdefgh");
   const restore = withBindings({
-    ORDERS: memoryKv({ cs_test_abcdefgh: record }),
+    ORDERS: orders,
     MASTERS: bucket(),
     prodigiKeyConfigured: false,
   });
   try {
     const response = await download.GET(
-      new Request(`${SITE}/api/download?session_id=cs_test_abcdefgh`),
+      new Request(`${SITE}/api/download?token=${token}`),
     );
     assert.equal(response.status, 200);
     assert.equal(
@@ -968,8 +1070,10 @@ test("download: a master that is not a JPEG is served with its own content type"
     assetUrl: null,
     updatedAt: "2026-09-27T12:00:00.000Z",
   });
+  const orders = memoryKv({ cs_test_pngmaster: record });
+  const token = await seedToken(orders, "cs_test_pngmaster");
   const restore = withBindings({
-    ORDERS: memoryKv({ cs_test_pngmaster: record }),
+    ORDERS: orders,
     MASTERS: {
       async get() {
         return {
@@ -983,7 +1087,7 @@ test("download: a master that is not a JPEG is served with its own content type"
   });
   try {
     const response = await download.GET(
-      new Request(`${SITE}/api/download?session_id=cs_test_pngmaster`),
+      new Request(`${SITE}/api/download?token=${token}`),
     );
     assert.equal(response.status, 200);
     assert.equal(response.headers.get("Content-Type"), "image/png");
@@ -992,14 +1096,173 @@ test("download: a master that is not a JPEG is served with its own content type"
   }
 });
 
-test("download: an invalid session id is 400 and still uncacheable", async () => {
-  const restore = withBindings({ prodigiKeyConfigured: false });
+test("download: a token-shaped string that is not stored is 404 and uncacheable", async () => {
+  const restore = withBindings({
+    ORDERS: memoryKv(),
+    prodigiKeyConfigured: false,
+  });
   try {
     const response = await download.GET(
-      new Request(`${SITE}/api/download?session_id=not-a-session`),
+      new Request(`${SITE}/api/download?token=${"c".repeat(32)}`),
     );
-    assert.equal(response.status, 400);
+    assert.equal(response.status, 404);
     assert.equal(response.headers.get("Cache-Control"), "private, no-store");
+    assert.equal(response.headers.get("Referrer-Policy"), "no-referrer");
+  } finally {
+    restore();
+  }
+});
+
+test("download: a revoked order cannot download, even with a live token (#111)", async () => {
+  // The token check runs first by design, so the refusal has to come from
+  // resolveDownload — the one place that knows about refunds and disputes. If a
+  // token were ever treated as sufficient on its own, this would serve a
+  // refunded buyer's file.
+  const { masterKeyForSlug } = await import("../src/lib/master-key.ts");
+  assert.ok(masterKeyForSlug("dawn"));
+  const paid = JSON.stringify({
+    v: 1,
+    sessionId: "cs_test_abcdefgh",
+    merchantReference: "cs_test_abcdefgh",
+    terminal: true,
+    status: "paid",
+    photoSlug: "dawn",
+    format: "digital",
+    size: "",
+    frame: "",
+    quoteEur: 15,
+    amountTotal: 1500,
+    currency: "eur",
+    reason: null,
+    masterKey: masterKeyForSlug("dawn"),
+    recipient: null,
+    prodigiOrderId: null,
+    prodigiStage: null,
+    assetUrl: null,
+    updatedAt: "2026-09-27T12:00:00.000Z",
+  });
+  const orders = memoryKv({ cs_test_abcdefgh: paid });
+  const token = await seedToken(orders, "cs_test_abcdefgh");
+  const restore = withBindings({
+    ORDERS: orders,
+    MASTERS: bucket(),
+    prodigiKeyConfigured: false,
+  });
+  try {
+    assert.equal(
+      (
+        await download.GET(
+          new Request(`${SITE}/api/download?token=${token}`),
+        )
+      ).status,
+      200,
+      "the token works while the order is paid",
+    );
+    await orders.put(
+      "cs_test_abcdefgh",
+      JSON.stringify({
+        ...JSON.parse(paid),
+        status: "refunded",
+        masterKey: null,
+      }),
+    );
+    const revoked = await download.GET(
+      new Request(`${SITE}/api/download?token=${token}`),
+    );
+    assert.equal(revoked.status, 409);
+    assert.equal((await body(revoked)).error, "download-unavailable");
+  } finally {
+    restore();
+  }
+});
+
+test("download: a token is spent by the downloads it grants (#111)", async () => {
+  const { masterKeyForSlug } = await import("../src/lib/master-key.ts");
+  const orders = memoryKv({
+    cs_test_abcdefgh: JSON.stringify({
+      v: 1,
+      sessionId: "cs_test_abcdefgh",
+      merchantReference: "cs_test_abcdefgh",
+      terminal: true,
+      status: "paid",
+      photoSlug: "dawn",
+      format: "digital",
+      size: "",
+      frame: "",
+      quoteEur: 15,
+      amountTotal: 1500,
+      currency: "eur",
+      reason: null,
+      masterKey: masterKeyForSlug("dawn"),
+      recipient: null,
+      prodigiOrderId: null,
+      prodigiStage: null,
+      assetUrl: null,
+      updatedAt: "2026-09-27T12:00:00.000Z",
+    }),
+  });
+  const token = await seedToken(orders, "cs_test_abcdefgh", { remaining: 2 });
+  const restore = withBindings({
+    ORDERS: orders,
+    MASTERS: bucket(),
+    prodigiKeyConfigured: false,
+  });
+  const fetchIt = () =>
+    download.GET(new Request(`${SITE}/api/download?token=${token}`));
+  try {
+    assert.equal((await fetchIt()).status, 200);
+    assert.equal((await fetchIt()).status, 200);
+    const spent = await fetchIt();
+    assert.equal(spent.status, 410);
+    assert.equal((await body(spent)).error, "download-limit-reached");
+    // The index is rewritten with the new count, so the success page cannot
+    // offer a token whose balance is already gone.
+    const index = JSON.parse((await orders.get(`dls:cs_test_abcdefgh`))!);
+    assert.equal(index.remaining, 0);
+    assert.equal(index.token, token, "the index keeps naming the token");
+  } finally {
+    restore();
+  }
+});
+
+test("download: an expired token is 410 even with downloads left (#111)", async () => {
+  const orders = memoryKv({
+    cs_test_abcdefgh: JSON.stringify({
+      v: 1,
+      sessionId: "cs_test_abcdefgh",
+      merchantReference: "cs_test_abcdefgh",
+      terminal: true,
+      status: "paid",
+      photoSlug: "dawn",
+      format: "digital",
+      size: "",
+      frame: "",
+      quoteEur: 15,
+      amountTotal: 1500,
+      currency: "eur",
+      reason: null,
+      masterKey: "prints/dawn.jpg",
+      recipient: null,
+      prodigiOrderId: null,
+      prodigiStage: null,
+      assetUrl: null,
+      updatedAt: "2026-09-27T12:00:00.000Z",
+    }),
+  });
+  const token = await seedToken(orders, "cs_test_abcdefgh", {
+    expiresAt: Math.floor(Date.now() / 1000) - 1,
+  });
+  const restore = withBindings({
+    ORDERS: orders,
+    MASTERS: bucket(),
+    prodigiKeyConfigured: false,
+  });
+  try {
+    const response = await download.GET(
+      new Request(`${SITE}/api/download?token=${token}`),
+    );
+    assert.equal(response.status, 410);
+    assert.equal((await body(response)).error, "download-expired");
   } finally {
     restore();
   }
@@ -1039,14 +1302,18 @@ test("download: a physical order is 403 and a missing master is a 404", async ()
   };
   const record = (over: Record<string, unknown> = {}) =>
     JSON.stringify({ ...physical, ...over });
+  // A token is minted for the print too, deliberately: the refusal must come
+  // from the format check, not from the customer simply not having a token.
+  const printOrders = memoryKv({ cs_test_abcdefgh: record() });
+  const printToken = await seedToken(printOrders, "cs_test_abcdefgh");
   const restore = withBindings({
-    ORDERS: memoryKv({ cs_test_abcdefgh: record() }),
+    ORDERS: printOrders,
     MASTERS: bucket(),
     prodigiKeyConfigured: false,
   });
   try {
     const refused = await download.GET(
-      new Request(`${SITE}/api/download?session_id=cs_test_abcdefgh`),
+      new Request(`${SITE}/api/download?token=${printToken}`),
     );
     assert.equal(refused.status, 403, "a print is not a download");
     assert.equal((await body(refused)).error, "not-a-digital-download");
@@ -1076,14 +1343,16 @@ test("download: a physical order is 403 and a missing master is a 404", async ()
     assetUrl: null,
     updatedAt: "2026-09-27T12:00:00.000Z",
   });
+  const digitalOrders = memoryKv({ cs_test_abcdefgh: digital });
+  const digitalToken = await seedToken(digitalOrders, "cs_test_abcdefgh");
   const restore2 = withBindings({
-    ORDERS: memoryKv({ cs_test_abcdefgh: digital }),
+    ORDERS: digitalOrders,
     MASTERS: { async get() { return null; } },
     prodigiKeyConfigured: false,
   });
   try {
     const missing = await download.GET(
-      new Request(`${SITE}/api/download?session_id=cs_test_abcdefgh`),
+      new Request(`${SITE}/api/download?token=${digitalToken}`),
     );
     assert.equal(missing.status, 404);
   } finally {
@@ -1488,9 +1757,11 @@ test("print-asset and download: a request with no query string is a 400", async 
     const asset = await printAsset.GET(new Request(`${SITE}/api/print-asset`));
     assert.equal(asset.status, 400);
     assert.equal((await body(asset)).error, "invalid-slug");
+    // The download route's credential is a token (#111), so a bare request is
+    // a missing token — not a missing session id.
     const file = await download.GET(new Request(`${SITE}/api/download`));
     assert.equal(file.status, 400);
-    assert.equal((await body(file)).error, "invalid-session-id");
+    assert.equal((await body(file)).error, "invalid-token");
   } finally {
     restore();
   }

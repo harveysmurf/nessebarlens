@@ -14,6 +14,8 @@ import { expect, test } from "@playwright/test";
  */
 
 const DIGITAL_PAID = "cs_test_e2edigitalpaid00000001";
+/** The token seeded for DIGITAL_PAID in e2e/fixtures/orders-seed.json (#111). */
+const DIGITAL_PAID_TOKEN = "e2ef17e0000000000000000000000aa0";
 const DIGITAL_PENDING = "cs_test_e2edigitalpending000002";
 const PHYSICAL = "cs_test_e2ephysicalawaitingprodigi03";
 
@@ -32,12 +34,19 @@ test.describe("success page states", () => {
     // navigation — see the page's comment on #103. Asserting the href rather
     // than clicking it keeps the spec from streaming a master it has no business
     // downloading, while still proving the credential is carried.
+    //
+    // The credential is a token, not the session id (#111): the session id alone
+    // no longer grants the file, and this href is what replaced it.
     const download = page.getByRole("link", { name: /download your file/i });
     await expect(download).toHaveAttribute(
       "href",
-      `/api/download?session_id=${DIGITAL_PAID}`,
+      `/api/download?token=${DIGITAL_PAID_TOKEN}`,
     );
     await expect(download).toHaveAttribute("download", "");
+
+    // The limits the token was issued under are stated, and the page renders no
+    // session id anywhere (checkout-success.test.mts pins that).
+    await expect(page.getByText(/works 5 times and expires 30 days/i)).toBeVisible();
 
     // Ready orders carry no poller: there is nothing left to wait for, so a
     // /api/order-status call here would be a reload loop waiting to happen.

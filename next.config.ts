@@ -21,6 +21,22 @@ const nextConfig: NextConfig = {
   images: {
     remotePatterns: [],
   },
+  // The success page URL carries a Stripe session id and, for a digital order,
+  // is the only place the download token is rendered (#111). `no-referrer` stops
+  // this response from naming either one to anything the page loads or links to;
+  // `private, no-store` keeps a paid order's page out of shared caches, matching
+  // what /api/download already sends on every response.
+  async headers() {
+    return [
+      {
+        source: "/checkout/success",
+        headers: [
+          { key: "Cache-Control", value: "private, no-store" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+        ],
+      },
+    ];
+  },
 };
 
 export default nextConfig;

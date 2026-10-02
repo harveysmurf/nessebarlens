@@ -111,6 +111,10 @@ test("a fully configured deployment reports nothing missing", () => withCleanEnv
     stripe: { secretKey: "sk_test_x" },
     prodigi: { apiBase: SANDBOX, keyConfigured: true },
     printAsset: { secret: SECRET },
+    // Download-token policy has defaults rather than being required (#111): a
+    // deployment with none of these set still gets the documented 30 days / 5
+    // downloads, so an unset var can never mean "unlimited".
+    download: { tokenTtlSeconds: 30 * 86_400, maxDownloads: 5 },
     flags: { webDerivativesEnabled: false },
   });
 }));

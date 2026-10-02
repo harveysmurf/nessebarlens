@@ -133,8 +133,19 @@ test("every seeded record parses and yields the state its fixture claims", async
   const raw = JSON.parse(readFileSync(SEED_PATH, "utf8")) as Record<string, string>;
   assert.ok(Object.keys(raw).length >= 3, "expected at least three seeded states");
 
+  // Token keys live in the same namespace (#111) and are not order records, so
+  // they are checked below rather than fed to the order parser.
+  const tokenKeys = Object.keys(raw).filter((key) => key.startsWith("d"));
+  const orderKeys = Object.keys(raw).filter((key) => !key.startsWith("d"));
+  assert.deepEqual(
+    [...tokenKeys].sort((a, b) => a.localeCompare(b)),
+    ["dl:e2ef17e0000000000000000000000aa0", "dls:cs_test_e2edigitalpaid00000001"],
+    "the seeded download tokens changed; update this and the e2e spec's href",
+  );
+
   const states = new Map<string, string>();
-  for (const [sessionId, value] of Object.entries(raw)) {
+  for (const sessionId of orderKeys) {
+    const value = raw[sessionId]!;
     // isCheckoutSessionId is checked first by the page itself: a malformed id
     // would render invalid-session and never reach ORDERS, so the fixture would
     // pass a browser test while proving nothing about order states.
@@ -161,6 +172,7 @@ test("the paid digital fixture carries a master key the catalog actually has", a
   const raw = JSON.parse(readFileSync(SEED_PATH, "utf8")) as Record<string, string>;
   const { masterKeyForSlug } = await import("../src/lib/master-key.ts");
   for (const [sessionId, value] of Object.entries(raw)) {
+    if (sessionId.startsWith("d")) continue;
     const order = parseOrderRecord(value);
     assert.ok(order, sessionId);
     if (order.format === "digital" && order.status === "paid") {
@@ -168,4 +180,24 @@ test("the paid digital fixture carries a master key the catalog actually has", a
       assert.notEqual(order.masterKey, null, `${order.photoSlug} is not in the catalog`);
     }
   }
+});
+test("the seeded token is the one the paid digital order resolves to (#111)", async () => {
+  // The success page now renders `digital-no-token` when no token exists, so a
+  // seed without one would make the browser spec pass on the wrong branch. This
+  // runs the page's own resolver against the real seed file.
+  const raw = JSON.parse(readFileSync(SEED_PATH, "utf8")) as Record<string, string>;
+  const { downloadLinkForSession } = await import("../src/lib/download-token.ts");
+  const { parseDownloadTokenRecord } = await import("../src/lib/download-token.ts");
+  const kv = seededOrdersKv(SEED_PATH);
+  const paid = "cs_test_e2edigitalpaid00000001";
+
+  assert.equal(await kv.get(paid), raw[paid], "the seed is read as-is");
+  assert.equal(await downloadLinkForSession(kv, "cs_test_e2ephysicalawaitingprodigi03"), null);
+  assert.equal(await downloadLinkForSession(kv, "cs_test_e2edigitalpending000002"), null);
+
+  const link = await downloadLinkForSession(kv, paid);
+  assert.equal(link, "/api/download?token=e2ef17e0000000000000000000000aa0");
+
+  // And the `dl:<token>` side parses as a token record, not an order record.
+  assert.ok(parseDownloadTokenRecord((await kv.get("dl:e2ef17e0000000000000000000000aa0"))!));
 });

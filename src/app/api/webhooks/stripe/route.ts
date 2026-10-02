@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { fulfillCheckoutSession } from "@/lib/fulfillment";
+import { getConfig } from "@/lib/config";
 import {
   defaultStripeLookup,
   paymentIntentForDispute,
@@ -63,6 +64,7 @@ export async function POST(request: Request) {
   }
 
   const bindings = await readWorkerBindings();
+  const config = getConfig();
   // 503, not 500, and never a generic 502: "we are not configured" is a
   // deploy-time fact a human has to fix, and it must be distinguishable in the
   // logs from "Stripe is momentarily unhappy". 5xx either way, so Stripe keeps
@@ -137,6 +139,12 @@ export async function POST(request: Request) {
       customerPhone: session.customer_details?.phone ?? null,
       prodigiKeyConfigured: bindings.prodigiKeyConfigured,
       now: new Date().toISOString(),
+      // Read here rather than inside fulfillment, which takes its
+      // configuration as an argument (config.ts is the only env reader).
+      downloadLimits: {
+        ttlSeconds: config.download.tokenTtlSeconds,
+        maxDownloads: config.download.maxDownloads,
+      },
     });
     return NextResponse.json(result.body, { status: result.httpStatus });
   } catch (e) {

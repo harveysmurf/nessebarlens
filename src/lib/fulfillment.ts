@@ -24,12 +24,29 @@ import {
   type OrderRecord,
 } from "./order-decision";
 import { readOrderRecord } from "./order-corrupt";
+import {
+  DOWNLOAD_TOKEN_MAX_DOWNLOADS,
+  DOWNLOAD_TOKEN_TTL_SECONDS,
+  ensureDownloadToken,
+  type DownloadTokenLimits,
+} from "./download-token";
 import type { FrameFinish, PrintSize } from "./pricing";
 import type { PhysicalFormat } from "./sku-map";
 
+/**
+ * The ORDERS binding, as much of it as this code uses.
+ *
+ * `put`'s options argument is `KVNamespacePutOptions` narrowed to the one field
+ * download tokens use (`expirationTtl`, #111). It is optional and ignored by the
+ * two-argument implementations (the dev seed, and any fake in a test), which is
+ * why every call site must tolerate its absence: a token whose KV TTL did not
+ * apply is still bounded by `expiresAt` on the read path.
+ */
+export type OrdersKvPutOptions = { expirationTtl?: number };
+
 export type OrdersKv = {
   get(key: string): Promise<string | null>;
-  put(key: string, value: string): Promise<void>;
+  put(key: string, value: string, options?: OrdersKvPutOptions): Promise<void>;
 };
 
 function reportUnfulfilled(record: OrderRecord, detail?: string): void {
@@ -54,10 +71,53 @@ async function storeOrder(
   if (isUnfulfilledOutcome(record)) reportUnfulfilled(record, detail);
 }
 
+/**
+ * Mint a download token for a paid digital order, and only then (#111).
+ *
+ * Two conditions, both required. `format === "digital"` because a print has no
+ * file to hand over — a token for one would be a link that 403s
+ * `not-a-digital-download`. `status === "paid"` because the token is what
+ * grants the master, and a paid-but-unfulfilled digital order has none: issuing
+ * it early would hand out a link whose only outcome is a 409, and would look
+ * like a working download on the success page.
+ *
+ * Failures are swallowed on purpose. The order is already stored and paid, and
+ * a KV error while writing a convenience record must not turn a fulfilled
+ * order into a 5xx that makes Stripe redeliver it.
+ */
+async function issueTokenIfDigital(
+  record: OrderRecord,
+  kv: OrdersKv,
+  limits?: DownloadTokenLimits,
+): Promise<void> {
+  if (record.format !== "digital" || record.status !== "paid") return;
+  const minted = await ensureDownloadToken({
+    kv,
+    sessionId: record.sessionId,
+    limits: limits ?? {
+      ttlSeconds: DOWNLOAD_TOKEN_TTL_SECONDS,
+      maxDownloads: DOWNLOAD_TOKEN_MAX_DOWNLOADS,
+    },
+  });
+  if (minted) return;
+  console.error(
+    JSON.stringify({
+      event: "order.download-token-failed",
+      sessionId: record.sessionId,
+    }),
+  );
+}
+
 export async function fulfillCheckoutSession(
   input: FulfillmentInput & {
     kv: OrdersKv;
     createOrder?: CreateProdigiOrder;
+    /**
+     * Download-token policy (#111), passed in rather than read from the env:
+     * this module is otherwise pure of configuration, and config.ts is the only
+     * place that reads it. Defaults keep every existing caller and test working.
+     */
+    downloadLimits?: DownloadTokenLimits;
   },
 ): Promise<{ httpStatus: 200 | 500; body: Record<string, unknown> }> {
   const decision = decideFulfillment(input);
@@ -89,6 +149,11 @@ export async function fulfillCheckoutSession(
     isRetryableProdigiReason(retryRecord.reason);
 
   if (existingRaw !== null && !isRetry) {
+    // Mint here too, not only on the write path: a redelivery after a partial
+    // failure is the only moment that can repair a paid digital order that has
+    // a record but no token. `ensureDownloadToken` is idempotent, so this is a
+    // read in the ordinary case.
+    if (retryRecord) await issueTokenIfDigital(retryRecord, input.kv, input.downloadLimits);
     return { httpStatus: 200, body: { received: true, duplicate: true } };
   }
 
@@ -175,6 +240,7 @@ export async function fulfillCheckoutSession(
   }
 
   await storeOrder(input.kv, record);
+  await issueTokenIfDigital(record, input.kv, input.downloadLimits);
   return {
     httpStatus: 200,
     body: {
