@@ -38,9 +38,16 @@ jobs:
       - name: Test
         run: npm test
 
+      # `github.head_ref` is attacker-controlled text: it comes from the PR
+      # author's branch name, so interpolating it into `run:` hands the shell
+      # the branch name as source. Pass it through `env:` and let bash quote
+      # it — the sanitizer then narrows it to [a-z0-9-], which is what makes
+      # the step output safe to interpolate in the steps below.
       - name: Sanitize branch name
         id: branch
-        run: echo "name=$(bash scripts/sanitize-branch-name.sh "${{ github.head_ref }}")" >> "$GITHUB_OUTPUT"
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: echo "name=$(bash scripts/sanitize-branch-name.sh "$HEAD_REF")" >> "$GITHUB_OUTPUT"
 
       - name: Build (OpenNext)
         run: npx opennextjs-cloudflare build
@@ -160,9 +167,16 @@ jobs:
         with:
           install-args: --ignore-scripts
 
+      # `github.head_ref` is attacker-controlled text: it comes from the PR
+      # author's branch name, so interpolating it into `run:` hands the shell
+      # the branch name as source. Pass it through `env:` and let bash quote
+      # it — the sanitizer then narrows it to [a-z0-9-], which is what makes
+      # the step output safe to interpolate in the steps below.
       - name: Sanitize branch name
         id: branch
-        run: echo "name=$(bash scripts/sanitize-branch-name.sh "${{ github.head_ref }}")" >> "$GITHUB_OUTPUT"
+        env:
+          HEAD_REF: ${{ github.head_ref }}
+        run: echo "name=$(bash scripts/sanitize-branch-name.sh "$HEAD_REF")" >> "$GITHUB_OUTPUT"
 
       - name: Delete branch deployments
         run: |
