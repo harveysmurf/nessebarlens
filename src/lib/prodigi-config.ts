@@ -260,21 +260,62 @@ export function prodigiErrorStatus(message: string): 502 | 503 {
  */
 const QUOTE_FAILED_MESSAGE = "Quote failed";
 
+/**
+ * The machine-readable half of a failed Prodigi call.
+ *
+ * `prodigi-unconfigured` is this deployment missing something (503) and
+ * `prodigi-unavailable` is Prodigi itself failing (502) — the same split
+ * prodigiErrorStatus already draws, in a form a client can branch on without
+ * parsing prose.
+ */
+export type ProdigiFailureCode = "prodigi-unconfigured" | "prodigi-unavailable";
+
+/**
+ * What the customer reads, per code. Deliberately one sentence that says
+ * nothing about our configuration or Prodigi's: both routes are unauthenticated
+ * endpoints, so "PRODIGI_API_KEY is not set" or "Prodigi quote HTTP 429" told
+ * an unauthenticated caller our deploy state and our upstream's behaviour for
+ * free (#107).
+ */
+const CUSTOMER_MESSAGE = "Pricing is temporarily unavailable, please try again.";
+
 /** What a caller has to put in a failed Prodigi response, minus next/server. */
-export type ProdigiFailure = { error: string; status: 502 | 503 };
+export type ProdigiFailure = {
+  /** The stable code to put in the response body. */
+  code: ProdigiFailureCode;
+  /** The customer-safe message to put in the response body. */
+  error: string;
+  status: 502 | 503;
+  /**
+   * The full internal message — env var names, upstream status text — for the
+   * server log only. Never serialized: a route that spreads the whole failure
+   * into its JSON body leaks the detail back, so the two halves are separate
+   * fields and a route has to name `detail` to log it.
+   */
+  detail: string;
+};
 
 /**
  * The envelope both Prodigi routes hand back from their catch block: unwrap the
- * message, classify it with prodigiErrorStatus, and pair the two. One module
- * owns all three lines, so a reworded fallback ("Could not reach Prodigi") or a
- * changed classification rule cannot land in one route only.
+ * message, classify it with prodigiErrorStatus, and pair that with the
+ * customer-safe code and copy. One module owns all of it, so a reworded
+ * fallback ("Could not reach Prodigi"), a changed classification rule or a new
+ * code cannot land in one route only.
  *
  * Stays free of `next/server` for the same reason json-body.ts does: the caller
  * owns the NextResponse, so this is unit testable as a plain function.
  */
 export function prodigiFailure(e: unknown): ProdigiFailure {
-  const error = e instanceof Error ? e.message : QUOTE_FAILED_MESSAGE;
-  return { error, status: prodigiErrorStatus(error) };
+  const detail = e instanceof Error ? e.message : QUOTE_FAILED_MESSAGE;
+  const code: ProdigiFailureCode = isProdigiUnconfigured(detail)
+    ? "prodigi-unconfigured"
+    : "prodigi-unavailable";
+  return {
+    code,
+    error: CUSTOMER_MESSAGE,
+    status: prodigiErrorStatus(detail),
+    detail,
+  };
 }
 
 export function prodigiQuotesUrl(

@@ -63,9 +63,12 @@ export async function POST(request: Request) {
       shippingEur = quote.shippingEur;
       sku = quote.sku;
     } catch (e) {
+      // Same shape as the quote route's catch: full detail to the log, code
+      // and safe copy to the caller (#107).
       const failure = prodigiFailure(e);
+      console.error("prodigi.checkout", failure.code, failure.detail, e);
       return NextResponse.json(
-        { error: failure.error },
+        { error: failure.error, code: failure.code },
         { status: failure.status },
       );
     }
@@ -183,18 +186,18 @@ export async function POST(request: Request) {
   try {
     session = await stripe.checkout.sessions.create(sessionParams);
   } catch (e) {
-    // Surface Stripe's own error code in the response body. Without it a
-    // 502 is indistinguishable between a key missing Checkout Sessions
-    // write, an account not yet live, and a bad request — every one of which
-    // was a guess we had to make from outside. The message stays generic;
-    // the code is what identifies the cause, and it is not sensitive.
+    // Stripe's own code (`api_key_invalid`, `account_inactive`, ...) stays in
+    // the log, where it still tells the three possible causes apart — the
+    // diagnosis this was originally for — but is not put in the body, which an
+    // unauthenticated caller reads. It names our account state upstream, and
+    // `stripeCode` was a field on a public API for exactly that (#107).
     const code =
       typeof e === "object" && e !== null && "code" in e
         ? String((e as { code: unknown }).code)
         : "unknown";
     console.error("stripe.checkout.sessions.create", code, e);
     return NextResponse.json(
-      { error: "Could not create Checkout Session", stripeCode: code },
+      { error: "Could not create Checkout Session", code: "checkout-unavailable" },
       { status: 502 },
     );
   }

@@ -53,10 +53,13 @@ export async function POST(request: Request) {
     });
   } catch (e) {
     // An unset key is a deployment problem, not a bad gateway: prodigiFailure
-    // makes that 503-vs-502 call once, for both Prodigi routes.
+    // makes that 503-vs-502 call once, for both Prodigi routes. The internal
+    // message goes to the log and only the code and the safe copy go over the
+    // wire — this route is unauthenticated (#107).
     const failure = prodigiFailure(e);
+    console.error("prodigi.quote", failure.code, failure.detail, e);
     return NextResponse.json(
-      { error: failure.error },
+      { error: failure.error, code: failure.code },
       { status: failure.status },
     );
   }
