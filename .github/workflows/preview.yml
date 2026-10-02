@@ -65,7 +65,6 @@ jobs:
         env:
           BRANCH: ${{ steps.branch.outputs.name }}
           HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-          SUBDOMAIN: ${{ vars.WORKERS_SUBDOMAIN }}
           PR_NUMBER: ${{ github.event.pull_request.number }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
@@ -104,39 +103,38 @@ jobs:
           # commit-dirty, commit-hash"). --tag and --message are the version
           # identity on Workers, and the head sha is recorded in the message so
           # a version can still be traced to its commit.
+          # Output is teed so the version id and preview URL can be read back
+          # below; the upload still streams to the log either way.
           npx opennextjs-cloudflare upload \
             --secrets-file=preview-secrets.json \
             --tag="pr-$PR_NUMBER-$BRANCH" \
-            --message="preview-PR-$PR_NUMBER-$HEAD_SHA"
+            --message="preview-PR-$PR_NUMBER-$HEAD_SHA" 2>&1 | tee upload.log
 
-          # A version has no stable hostname, so the smoke test and the PR
-          # comment both address it by id. The id is resolved from the tag we
-          # just set rather than scraped from upload output, which is not a
-          # contract and has changed shape across wrangler releases.
-          npx wrangler versions list --json > versions.json
-          vid="$(python3 -c '
-          import json,sys
-          tag = sys.argv[1]
-          vs = json.load(open("versions.json"))
-          if isinstance(vs, dict):
-              vs = vs.get("versions") or vs.get("result") or []
-          for v in vs:
-              tags = v.get("tags") or []
-              names = [t.get("name") if isinstance(t, dict) else t for t in tags]
-              if tag in names:
-                  print(v["id"]); break
-          else:
-              sys.exit("no version tagged " + tag)
-          ' "pr-$PR_NUMBER-$BRANCH")"
-          echo "version_id=$vid" >> "$GITHUB_OUTPUT"
-          # A missing WORKERS_SUBDOMAIN would silently produce
-          # https://<id>..workers.dev and the smoke test would fail with a DNS
-          # error that reads like a bad deploy, so name it here.
-          if [[ -z "$SUBDOMAIN" ]]; then
-            echo "::error::Repository variable WORKERS_SUBDOMAIN is not set; cannot build a version URL"
+          # A version has no branch alias, so the smoke test and the PR comment
+          # address it by id. The id is read from wrangler's own output line
+          # rather than from `versions list`, for two measured reasons:
+          #
+          #  * the tag is stored in `annotations["workers/tag"]`, not a `tags`
+          #    array, so a reader looking for `tags` finds nothing and the step
+          #    fails with "no version tagged" after a perfectly good upload --
+          #    which is what CI did; and
+          #  * the subdomain is already known to wrangler, which prints the
+          #    preview URL itself. Rebuilding that URL by hand from a repo
+          #    variable duplicates a format wrangler owns -- it uses the FIRST 8
+          #    characters of the version id, not the whole one.
+          #
+          # So take both from the upload output, and fail loudly if either is
+          # absent rather than smoke-testing an empty URL.
+          upload_out="$(cat upload.log)"
+          echo "$upload_out"
+          vid="$(printf '%s' "$upload_out" | sed -n 's/^Worker Version ID: //p' | head -n 1)"
+          url="$(printf '%s' "$upload_out" | sed -n 's/^Version Preview URL: //p' | head -n 1)"
+          if [[ -z "$vid" || -z "$url" ]]; then
+            echo "::error::upload did not report a version id / preview URL; cannot smoke this build"
             exit 1
           fi
-          echo "url=https://$vid.$SUBDOMAIN.workers.dev" >> "$GITHUB_OUTPUT"
+          echo "version_id=$vid" >> "$GITHUB_OUTPUT"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
           rm -f preview-secrets.json
 
       - name: Smoke test the deployed preview
@@ -239,26 +237,43 @@ jobs:
           echo "Cleaning versions tagged for branch=$BRANCH"
           npx wrangler versions list --json > versions.json
           python3 - <<'PYEOF'
-          import json, subprocess, sys
-          branch = __import__("os").environ["BRANCH"]
+          import json, os, subprocess, sys
+
+          branch = os.environ["BRANCH"]
           try:
               vs = json.load(open("versions.json"))
           except Exception as e:
-              print("no versions list:", e)
+              # Cleanup is best-effort by nature: a PR that closed while the
+              # account was unreachable should close, not wedge on a leftover
+              # version. Versions are also inert once undeployed, so a stale one
+              # costs quota, not correctness.
+              print("could not list versions:", e)
               sys.exit(0)
           if isinstance(vs, dict):
               vs = vs.get("versions") or vs.get("result") or []
+
           deleted = 0
           for v in vs:
-              tags = v.get("tags") or []
-              names = [t.get("name") if isinstance(t, dict) else t for t in tags]
-              if not any(n and n.endswith("-" + branch) for n in names):
-                  continue
+              # The tag --tag set at upload lives in annotations["workers/tag"],
+              # NOT in a `tags` array. The deploy step was reading `tags` and
+              # therefore matched nothing; this reads where wrangler actually
+              # puts it, and falls back to `tags` so a future wrangler that
+              # populates it is not silently ignored.
+              ann = v.get("annotations") or {}
+              tag = ann.get("workers/tag")
+              names = []
+              if tag:
+                  names.append(tag)
+              for t in v.get("tags") or []:
+                  names.append(t.get("name") if isinstance(t, dict) else t)
               vid = v.get("id")
-              if not vid:
+              if not vid or not any(n and n.endswith("-" + branch) for n in names):
                   continue
               print("delete", vid, names)
-              subprocess.run(["npx", "wrangler", "versions", "delete", vid, "--force"], check=False)
+              subprocess.run(
+                  ["npx", "wrangler", "versions", "delete", vid, "--force"],
+                  check=False,
+              )
               deleted += 1
           print(f"deleted={deleted}")
           PYEOF
