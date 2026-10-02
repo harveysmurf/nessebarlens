@@ -121,7 +121,9 @@ export async function fulfillCheckoutSession(
       // key or the HMAC secret and still land the order.
       record = {
         ...record,
-        terminal: false,
+        // Same derivation as the client branch below, so the two can never
+        // disagree about what a stored reason means.
+        terminal: !isRetryableProdigiReason(result.reason),
         reason: result.reason,
         prodigiOrderId: null,
         prodigiStage: null,
@@ -141,6 +143,16 @@ export async function fulfillCheckoutSession(
         // failure, a rate limit and a malformed body makes the stored record
         // useless for telling "rotate the key" from "back off" from "we sent
         // something Prodigi does not accept".
+        //
+        // And derive `terminal` from that reason rather than inheriting it: on
+        // a first attempt the shell happens to say terminal:true, but a
+        // redelivery of a retryable failure spreads a record that says false,
+        // so inheriting left a non-retryable validation error stored as
+        // "still retryable" — the invariant "terminal ⇔ no further automatic
+        // action" broken, and a reconciler or operator view (#116) that trusts
+        // `terminal` would misreport the order. One function, so a reason
+        // added to the retryable set cannot be stored with the wrong flag.
+        terminal: !isRetryableProdigiReason(result.reason),
         reason: result.reason,
         prodigiOrderId: null,
         prodigiStage: null,

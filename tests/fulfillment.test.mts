@@ -413,6 +413,90 @@ test("a terminal Prodigi 400 is not retried on redelivery", async () => {
   assert.equal(calls, 1);
 });
 
+test("a retry that ends in a validation error stores terminal:true (#106)", async () => {
+  // The regression: a redelivery spreads the stored retryable record, which
+  // carries terminal:false, and overwrote only the reason — so a permanently
+  // failed order was stored as "still retryable". The flag has to be derived
+  // from the reason, or a reconciler/operator view that trusts `terminal`
+  // (#116) misreports it.
+  const kv = memoryKv();
+  let fail = true;
+  let calls = 0;
+  const createOrder: CreateProdigiOrder = async () => {
+    calls += 1;
+    return fail
+      ? {
+          ok: false,
+          kind: "server",
+          reason: "prodigi-unavailable",
+          message: "transient",
+          status: null,
+        }
+      : {
+          ok: false,
+          kind: "client",
+          reason: "prodigi-validation-error",
+          message: "Prodigi order HTTP 400",
+          status: 400,
+        };
+  };
+  const first = await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      metadata: physicalMeta(),
+    }),
+    kv,
+    createOrder,
+  });
+  assert.equal(first.httpStatus, 500);
+  assert.equal(
+    parseOrderRecord((await kv.get(SESSION))!)?.terminal,
+    false,
+    "the retryable failure is not terminal",
+  );
+
+  // Stripe redelivers, and this time Prodigi rejects the order outright.
+  fail = false;
+  const retry = await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      metadata: physicalMeta(),
+    }),
+    kv,
+    createOrder,
+  });
+  assert.equal(retry.httpStatus, 200);
+  assert.equal(calls, 2, "the retry really did call Prodigi");
+  const stored = parseOrderRecord((await kv.get(SESSION))!);
+  assert.equal(stored?.reason, "prodigi-validation-error");
+  assert.equal(
+    stored?.terminal,
+    true,
+    "a non-retryable reason must not be stored as retryable",
+  );
+
+  // And the flag and the reason now agree: a further redelivery is a plain
+  // duplicate, not another Prodigi call: a reason that is not retryable ends
+  // the session's automatic life, so a later redelivery cannot place the
+  // order behind the customer's back.
+  const again = await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      metadata: physicalMeta(),
+    }),
+    kv,
+    createOrder,
+  });
+  assert.equal(again.body.duplicate, true);
+  assert.equal(calls, 2, "no third Prodigi call");
+});
+
 test("Prodigi server error returns 500 and records the paid order for a human", async () => {
   const kv = memoryKv();
   const result = await fulfillCheckoutSession({
