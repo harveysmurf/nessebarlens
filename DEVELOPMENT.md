@@ -266,7 +266,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a pull-request-only `e2e-smoke` job (staging Environment → `npm ci` → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **E2E smoke flow** (with the print-asset signing secret): `npm run test:e2e`) |
+| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a pull-request-only `e2e-smoke` job (staging Environment → `npm ci` → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **E2E smoke flow** (with the print-asset signing secret): `npm run test:e2e` → **upload the failure trace** on failure) |
 | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → Pages preview → **smoke test** (`scripts/smoke.sh`) → PR comment; cleanup on close |
 | `.github/workflows/prod.yml` | push to `main` + `workflow_dispatch` | production Environment → build → Pages `main` → `sync-pages-secrets.sh production` |
 
