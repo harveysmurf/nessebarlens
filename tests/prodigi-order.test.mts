@@ -84,6 +84,38 @@ test("Prodigi order body uses SKU + placeholder and never leaks masters", () => 
   }
 });
 
+test("a generated asset URL is on the site origin; the read path no longer checks it (#110)", () => {
+  process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
+  const body = buildProdigiOrderBody({
+    sessionId: "cs_test_abcdefgh",
+    photoSlug: "dawn",
+    format: "giclee",
+    size: "50x70",
+    frame: null,
+    recipient: RECIPIENT,
+  });
+  // The read path validates shape only so a record survives a domain move, which
+  // makes generation the only place same-origin is knowable. Pinned here so
+  // relaxing the read check cannot quietly relax this one too.
+  assert.equal(
+    new URL(body.items[0].assets[0].url).origin,
+    "https://nessebarlens.com",
+  );
+  assert.throws(
+    () =>
+      buildProdigiOrderBody({
+        sessionId: "cs_test_abcdefgh",
+        photoSlug: "dawn",
+        format: "giclee",
+        size: "50x70",
+        frame: null,
+        recipient: RECIPIENT,
+        assetUrl: "https://old-domain.example/api/print-asset?slug=dawn",
+      }),
+    /site origin/,
+  );
+});
+
 test("framed order includes color attribute", () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   const body = buildProdigiOrderBody({

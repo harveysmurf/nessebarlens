@@ -50,9 +50,9 @@ type OrderRecord = import("../src/lib/order-decision.ts").OrderRecord;
 const orderStatus = await import("../src/app/api/order-status/route.ts");
 
 const SESSION = "cs_test_abcdefgh";
-// Must match the configured site origin: isSafeAssetUrl rejects an assetUrl
-// from any other host, so a record built against a different origin parses as
-// corrupt and every test below would pass for the wrong reason.
+// Must match the configured site origin because that is how records are
+// generated — the read path no longer compares origins (#110), so a fixture on
+// another host would stop proving anything about the real write path.
 const SITE = "https://nessebarlens.com";
 process.env.NEXT_PUBLIC_SITE_URL = SITE;
 /** The real master key for the "dawn" photo; a paid digital record must match it exactly. */

@@ -27,7 +27,6 @@ import { HTTPS_URL_PATTERN } from "./url-patterns";
 import type { OrderRecipient } from "./prodigi-order";
 import { eurToCents, parseEurAmount, type PrintFormat } from "./pricing";
 import { isFrameFinishValue, isPrintSize, isSellableFormat } from "./sku-map";
-import { siteUrl } from "./config";
 
 export type OrderFormat = PrintFormat | "unknown";
 export type OrderStatus =
@@ -632,15 +631,32 @@ function isOrderFormat(value: unknown): value is OrderFormat {
   return value === "unknown" || isSellableFormat(value);
 }
 
+/**
+ * Read-time shape check, deliberately not an origin check (#110).
+ *
+ * Comparing the origin to siteUrl() made every stored record unreadable the
+ * moment NEXT_PUBLIC_SITE_URL moved — a domain move, or a preview reading a
+ * production record — and an order that will not parse reads as corrupt, which
+ * is the worst possible failure for a paid order. The signing payload is
+ * `v1.{slug}.{exp}` (print-asset.ts), so a re-hosted URL still verifies; there
+ * is nothing to re-sign.
+ *
+ * Same-origin is still enforced where it is knowable — at generation, where
+ * the URL is built from siteUrl() — and pinned there by a test, because
+ * buildProdigiOrderBody itself only checks the scheme.
+ *
+ * The residual exposure is that a tampered record can name any https origin.
+ * assetUrl is never rendered: its only consumers are Prodigi (as the print
+ * source) and the stored record, and tampering with it already requires KV
+ * write access. Approved by @Architect in #110.
+ */
 function isSafeAssetUrl(url: string): boolean {
   if (!HTTPS_URL_PATTERN.test(url)) return false;
   if (referencesMasters(url)) return false;
-  // Allow same-origin placeholders and HMAC print-asset Worker URLs only.
-  // Path-only checks would let https://evil.example/placeholders/… through.
   try {
     const parsed = new URL(url);
-    const site = new URL(siteUrl());
-    if (parsed.origin !== site.origin) return false;
+    // Only the two shapes this site serves. Path-only without this would let
+    // https://evil.example/admin through.
     if (parsed.pathname.startsWith("/placeholders/")) return true;
     if (parsed.pathname === "/api/print-asset") return true;
     return false;
