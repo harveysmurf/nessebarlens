@@ -16,7 +16,7 @@ is driven by the Stripe webhook, which records the order in KV.
 Stack:
 
 - **Next.js 15** App Router (React 19), built with `@opennextjs/cloudflare` and
-  deployed to **Cloudflare Pages** (see §5 — not Workers).
+  deployed to **Cloudflare Workers** (see §5).
 - **Tailwind CSS 4** for styling. **Inter** (sans) + **Cormorant Garamond**
   (serif) are vendored locally in `src/fonts/` — builds are offline.
 - **TypeScript 5**, **ESLint 9** (next/core-web-vitals), **node:test** for tests.
@@ -146,7 +146,7 @@ imports.
 ### Preview smoke test
 
 `scripts/smoke.sh <base-url>` is the only test that runs against a **deployed**
-build. `preview.yml` runs it after the Pages deploy and secret sync, and a
+build. `preview.yml` runs it against the uploaded Worker Version, and a
 failure fails the PR check. It asserts the pages render, the print route 404s an
 unknown slug, request bodies are validated, and the HMAC/KV guards are live in
 the preview env (a 503 from `/api/download` means ORDERS is not bound).
@@ -154,7 +154,7 @@ the preview env (a 503 from `/api/download` means ORDERS is not bound).
 Run it locally against a build:
 
 ```bash
-npx opennextjs-cloudflare build && bash scripts/assemble-pages-out.sh
+npx opennextjs-cloudflare build && npx opennextjs-cloudflare preview
 bash scripts/smoke.sh http://127.0.0.1:8788
 ```
 
@@ -251,25 +251,87 @@ Canonical path is **GitHub Actions** (§6). Manual deploys are for break-glass o
 
 ```bash
 SITE_URL=https://dev.nessebar-lens.pages.dev npx opennextjs-cloudflare build
-bash scripts/assemble-pages-out.sh
-npx wrangler pages deploy .pages-out --project-name=nessebar-lens --branch=<branch>
+SYNC_SCOPE=version-only SECRETS_OUT=preview-secrets.json \
+  bash scripts/sync-worker-secrets.sh preview
+npx opennextjs-cloudflare upload \
+  --secrets-file=preview-secrets.json \
+  --tag="pr-<number>-<branch>" --message="preview PR #<number>"
+rm -f preview-secrets.json
 ```
 
-Preview URL: `https://<branch>.nessebar-lens.pages.dev`.
+A preview is a **Worker Version**, addressed by id: `preview.yml` resolves the id
+from the tag it just set (`wrangler versions list --json`) and both the smoke test
+and the PR comment use `https://<version-id>.<subdomain>.workers.dev`. There is no
+branch alias — a version URL stops resolving when the version is deleted, which
+`preview.yml` does on PR close.
+
+The version id is read from `versions list` rather than scraped from upload
+output because that output is not a contract and has changed shape across
+wrangler releases.
+
+`--secrets-file` is not optional. A Worker keeps one secret store per version, so
+a preview that synced secrets separately would write the sandbox Stripe key over
+the live one and take production down until the next deploy. Attaching the
+secrets to the version being uploaded is what keeps a preview isolated from the
+deployed site.
 
 ### Production (main only)
 
 ```bash
 SITE_URL=https://nessebarlens.com npx opennextjs-cloudflare build
-bash scripts/assemble-pages-out.sh
-npx wrangler pages deploy .pages-out --project-name=nessebar-lens --branch=main
-bash scripts/sync-pages-secrets.sh production
+SYNC_SCOPE=version-only SECRETS_OUT=prod-secrets.json \
+  bash scripts/sync-worker-secrets.sh production
+npx opennextjs-cloudflare deploy --secrets-file=prod-secrets.json
+rm -f prod-secrets.json
 ```
 
-Production and preview both deploy to the **Cloudflare Pages** project
-`nessebar-lens`. Apex `nessebarlens.com` / `www` CNAME to
-`nessebar-lens.pages.dev`. The idle Worker script is out of the deploy path —
-do not use `opennextjs-cloudflare deploy` for deploys.
+Secrets go on the version being deployed, in the same step. Do **not** "deploy
+then sync" — that reads naturally and is wrong. `wrangler versions secret bulk`
+PATCHes `versions/latest`, which mints a *new* version rather than editing the
+deployed one, so a post-deploy sync leaves a rotated key on a version that never
+serves: green run, production still on the old key. Syncing first is wrong the
+other way, describing a version the deploy then replaces.
+
+`--secrets-file` has no window at all, and it is the same mechanism previews use,
+so there is one thing to reason about rather than two.
+
+Production and preview both target the **same Worker**, `nessebar-lens`, and are
+separated by version rather than by project. Apex `nessebarlens.com` / `www`
+CNAME to the Worker (see the cutover checklist below).
+
+### Rotating a secret (no rebuild)
+
+```bash
+npx wrangler secret put STRIPE_SECRET_KEY
+```
+
+This updates the deployed Worker directly. It is the one capability Pages did not
+have and the reason #115's "secrets without a rebuild" acceptance criterion is
+met: on Pages a rotated key needed a full build and redeploy to take effect.
+
+### Cutover checklist: Pages → Workers
+
+Only the account owner can do these. They are ordered so that a rollback never
+strands a paid order — **DNS is flipped last**, and the webhook is flipped only
+after the new Worker is verified serving.
+
+1. **Verify the Worker serves before anything customer-visible moves.**
+   `npx wrangler deploy`, then confirm `https://<subdomain>.workers.dev` answers
+   and `/api/download` is not 503 (that 503 means ORDERS KV is not bound).
+2. **Attach the bindings.** `wrangler.toml` declares ORDERS KV and WEB/MASTERS R2;
+   confirm all three are bound on the deployed Worker, not only in config.
+3. **Flip the Stripe webhook endpoint** to the Worker URL, in the Stripe Dashboard.
+   Do this *before* DNS: it is the step that can take money, and doing it while
+   the old Pages host still answers means no order is lost during the swap.
+4. **Flip DNS** — apex `nessebarlens.com` and `www` CNAME to
+   `<subdomain>.workers.dev`. Lower the TTL at least one full TTL *before* this
+   step, not after, or the rollback below waits out the old record.
+
+**Rollback, in reverse: restore the Stripe webhook URL first, then the DNS
+records, then redeploy the previous Worker version** (`wrangler versions deploy
+<previous-version-id> --percentage 100`). A code revert alone is not a rollback —
+DNS and the webhook endpoint live outside the repo, and a paid order that lands on
+a host serving a reverted build is a support incident, not a deploy.
 
 ### Wrangler config invariants (`wrangler.toml`)
 
@@ -277,12 +339,16 @@ do not use `opennextjs-cloudflare deploy` for deploys.
 - `[assets]` `binding = "ASSETS"`, `run_worker_first = true`.
 - Do **not** set `pages_build_output_dir` — that makes Wrangler treat the config as
   a Pages config where `ASSETS` is reserved.
-- R2 S3 access keys are unused; Workers/Pages use bucket bindings only (`WEB`,
-  `MASTERS`). ORDERS KV + WEB/MASTERS R2 are attached on the Pages project
-  (preview + production configs).
-- Runtime secrets (Stripe/Prodigi) live as **Pages project secrets** (preview +
-  production). Sync with `scripts/sync-pages-secrets.sh`. `NEXT_PUBLIC_*` bake at
-  build from GitHub Environment secrets.
+- R2 S3 access keys are unused; Workers use bucket bindings only (`WEB`,
+  `MASTERS`). ORDERS KV + WEB/MASTERS R2 are attached on the Worker.
+- The `preview_id` on the ORDERS KV binding is a **KV namespace** preview id
+  (`wrangler dev`), not a Pages preview-deployment concept. It stays: `wrangler
+  dev` uses it to avoid writing to the live namespace.
+- Runtime secrets (Stripe/Prodigi) live as **Worker secrets**, scoped per version.
+  Sync with `scripts/sync-worker-secrets.sh`; rotate with `wrangler secret put`.
+  `NEXT_PUBLIC_*` bake at build from GitHub Environment secrets and are
+  deliberately not in the secret map — a `NEXT_PUBLIC_*` entry there would be a
+  value that looks live and never changes.
 
 ---
 
@@ -293,8 +359,8 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
 | `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a `workflow-audit` job (**install zizmor** → **gate on workflow script injection**, scoped to `template-injection` at Medium confidence and up — the other 40 findings are reported, not gated); plus two pull-request-only browser jobs — **required** `e2e-smoke` (no secrets: `npm ci` → **install chromium** → **e2e smoke flow (seeded)**: `npm run test:e2e -- --grep-invert @hosted` → **upload the failure trace** on failure) and **best-effort** `e2e-hosted-checkout` (`continue-on-error`; staging Environment → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **e2e hosted checkout** (`npm run test:e2e -- --grep @hosted`, headed under Xvfb) → **upload the trace** every run) |
-| `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → Pages preview → **smoke test** (`scripts/smoke.sh`) → PR comment; cleanup on close |
-| `.github/workflows/prod.yml` | push to `main` + `workflow_dispatch` | production Environment → build → Pages `main` → `sync-pages-secrets.sh production` |
+| `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → **Worker Version upload** (secrets attached via `--secrets-file`) → **smoke test** the version URL (`scripts/smoke.sh`) → PR comment; `versions delete` on close |
+| `.github/workflows/prod.yml` | push to `main` + `workflow_dispatch` | production Environment → checks (`ci.yml`) → build → `opennextjs-cloudflare deploy --secrets-file` (guards run first in `version-only` mode) |
 
 ### The workflow audit job
 
@@ -341,18 +407,31 @@ npm run lint && node scripts/zizmor-gate.mjs
 
 ### Rotating a credential
 
-Update the GitHub Environment secret, then **Run workflow** on `prod.yml`
-(`workflow_dispatch`). That one build is what applies it — no code commit, no
-Cloudflare dashboard, no PR.
+Two paths, and the difference matters during an incident.
 
-A deploy is unavoidable and this is not a design gap: Pages `env_vars` are
-frozen into a deployment when it is created, so a synced value does not reach
-traffic until the next deploy. `wrangler pages secret put` does not help — it
-PATCHes the same `deployment_configs[env].env_vars` map with
-`type: secret_text` (it does support `--env production|preview`). There is no
-deploy-free rotation path on Pages. A standalone sync-without-deploy workflow
-existed briefly and was deleted: it changed config that nothing served, which
-is a silent-failure trap.
+**No rebuild (preferred).** `wrangler secret put <NAME>` PATCHes the deployed
+Worker in place, so the new value is live as soon as the command returns:
+
+```bash
+npx wrangler secret put STRIPE_SECRET_KEY
+```
+
+This is a capability Pages did not have — Pages `env_vars` are frozen into a
+deployment, so a rotated key there needed a full build and redeploy to take
+effect. That constraint is what the deleted sync-without-deploy workflow existed
+to work around, and why it was a silent-failure trap.
+
+**Through CI.** Update the GitHub Environment secret, then **Run workflow** on
+`prod.yml` (`workflow_dispatch`). This rebuilds and redeploys, carrying the
+secrets on the deploying version via `--secrets-file`.
+
+Prefer the first unless the rotation is bundled with a code change — a deploy
+also picks up whatever else is on `main`, which is not something you want
+happening while you are rotating a key under pressure.
+
+Do **not** reach for `bash scripts/sync-worker-secrets.sh production` expecting
+the deployed version to change: its default scope mints a new version rather than
+editing the one serving traffic.
 
 Expect a few minutes between merge and the deploy starting — that is GitHub
 Actions queue latency, not a dropped run. Check the Actions tab before
@@ -562,7 +641,7 @@ the guard to keep the honest copy honest.
    *tracked* files, so a brand-new module can pass locally and fail CI on a
    missing import. This repo has shipped one red build that way.
 4. Push the branch and open a **GitHub** PR into `main`.
-5. Wait for CI + staging preview (PR comment with `*.nessebar-lens.pages.dev`).
+5. Wait for CI + staging preview (PR comment with a `*.workers.dev` version URL).
 6. Announce the PR + preview URL in `nessebar-lens-website`; get approval.
 7. Merge to `main` → production workflow runs (GitHub Environment approval by
    `harveysmurf`) → https://nessebarlens.com.

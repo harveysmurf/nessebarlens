@@ -9,7 +9,7 @@ Checkout flow, and fulfillment through Prodigi for physical orders.
 - **Next.js 15** App Router (React 19), built with `@opennextjs/cloudflare`
 - **Tailwind CSS 4**; Inter + Cormorant Garamond vendored in `src/fonts/` (offline builds)
 - **TypeScript 5**, **ESLint 9**, **node:test** — no test runner framework
-- Cloudflare Pages, with KV (`ORDERS`) and R2 (`WEB` derivatives, `MASTERS` masters)
+- Cloudflare Workers (OpenNext), with KV (`ORDERS`) and R2 (`WEB` derivatives, `MASTERS` masters)
 - Stripe for payments, Prodigi for print fulfillment
 
 ## Run it locally
@@ -33,10 +33,13 @@ npm run coverage   # enforced floors: lines 99.95%, branches 99.9%, functions 10
 
 ## Deploy model
 
-Canonical path is GitHub Actions. A PR gets a Cloudflare Pages preview and a
-smoke test against it; a merge to `main` deploys production. Stripe and Prodigi
+Canonical path is GitHub Actions. A PR gets a Cloudflare Workers version preview
+(addressed by version id, not a branch alias) and a smoke test against it; a merge
+to `main` deploys production. Stripe and Prodigi
 credentials live in the GitHub `staging` and `production` Environments and are
-synced to Pages by `scripts/sync-pages-secrets.sh`. Preview/staging is always
+attached to the deploying Worker Version by `scripts/sync-worker-secrets.sh`
+(guards run first; `--secrets-file` carries them on the version that serves).
+Preview/staging is always
 Stripe sandbox + Prodigi sandbox; the host is selected by an explicit
 `PRODIGI_API_BASE`, never inferred from which key is present.
 

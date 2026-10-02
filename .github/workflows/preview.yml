@@ -52,14 +52,20 @@ jobs:
       - name: Build (OpenNext)
         run: npx opennextjs-cloudflare build
 
-      - name: Assemble Pages bundle
-        run: bash scripts/assemble-pages-out.sh
-
-      # Sync must come BEFORE the deploy. Pages env_vars are frozen into a
-      # deployment when it is created, so syncing after the deploy leaves this
-      # preview running on the previous build's secrets until the next push.
-      - name: Sync Pages preview runtime secrets
+      # Secrets ride along on the version upload itself (--secrets-file), which
+      # is what makes a preview safe on a worker that also serves production.
+      # The previous shape -- sync secrets, then deploy -- only worked on Pages
+      # because Pages had separate preview and production env maps. A Worker has
+      # one secret store per deployed version, so a separate `secret bulk` here
+      # would write the sandbox Stripe key over the live one and take the
+      # production site down until the next deploy. Attaching the secrets to the
+      # version being uploaded never touches what is serving.
+      - name: Upload preview version
+        id: deploy
         env:
+          BRANCH: ${{ steps.branch.outputs.name }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           PRINT_ASSET_HMAC_SECRET: ${{ secrets.PRINT_ASSET_HMAC_SECRET }}
@@ -69,30 +75,72 @@ jobs:
           PRODIGI_API_KEY: ${{ secrets.PRODIGI_API_KEY }}
           NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
           NEXT_PUBLIC_WEB_IMAGES_BASE: ${{ secrets.NEXT_PUBLIC_WEB_IMAGES_BASE }}
-          CF_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
-          CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
-        run: bash scripts/sync-pages-secrets.sh preview
-      - name: Deploy Pages preview
-        id: deploy
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
         run: |
           set -euo pipefail
-          OUT=$(npx wrangler pages deploy .pages-out \
-            --project-name=nessebar-lens \
-            --branch="${{ steps.branch.outputs.name }}" \
-            --commit-dirty=true \
-            --commit-hash="${{ github.event.pull_request.head.sha }}" \
-            --commit-message="preview PR #${{ github.event.pull_request.number }}")
-          echo "$OUT"
-          url="$(echo "$OUT" | grep -Eo 'https://[a-z0-9.-]+\.nessebar-lens\.pages\.dev' | tail -1)"
-          alias="https://${{ steps.branch.outputs.name }}.nessebar-lens.pages.dev"
-          echo "url=$url" >> "$GITHUB_OUTPUT"
-          echo "alias=$alias" >> "$GITHUB_OUTPUT"
 
+          # The script is invoked in file-only mode: it runs every #114 guard and
+          # writes the JSON, but does not call wrangler itself. The upload below
+          # is what applies it. Running it in apply mode first would write to the
+          # deployed worker's secrets, which is the thing to avoid here.
+          SYNC_SCOPE=version-only SECRETS_OUT=preview-secrets.json \
+            bash scripts/sync-worker-secrets.sh preview
+
+          # No `#` anywhere in these arguments, and that is deliberate.
+          # opennextjs-cloudflare re-spawns wrangler with `shell: true`
+          # (run-wrangler.js) and applies its quoteShellMeta() helper only to the
+          # deployment-mapping var, never to passthrough args. So the string is
+          # re-parsed by a shell that never sees our quoting, and a `#` starts a
+          # comment there: `--message="preview PR #172"` reached wrangler as
+          # `--message=preview` plus a bare `PR`, which it took as the
+          # entry-point path -- `The entry-point file at "PR" was not found`.
+          # Quoting harder in this step cannot fix it; the character is the
+          # problem. Keep both values free of shell metacharacters.
+          #
+          # No --commit-hash/--commit-dirty here: those are Pages deploy flags and
+          # `versions upload` rejects them outright ("Unknown arguments:
+          # commit-dirty, commit-hash"). --tag and --message are the version
+          # identity on Workers, and the head sha is recorded in the message so
+          # a version can still be traced to its commit.
+          # Output is teed so the version id and preview URL can be read back
+          # below; the upload still streams to the log either way.
+          npx opennextjs-cloudflare upload \
+            --secrets-file=preview-secrets.json \
+            --tag="pr-$PR_NUMBER-$BRANCH" \
+            --message="preview-PR-$PR_NUMBER-$HEAD_SHA" 2>&1 | tee upload.log
+
+          # A version has no branch alias, so the smoke test and the PR comment
+          # address it by id. The id is read from wrangler's own output line
+          # rather than from `versions list`, for two measured reasons:
+          #
+          #  * the tag is stored in `annotations["workers/tag"]`, not a `tags`
+          #    array, so a reader looking for `tags` finds nothing and the step
+          #    fails with "no version tagged" after a perfectly good upload --
+          #    which is what CI did; and
+          #  * the subdomain is already known to wrangler, which prints the
+          #    preview URL itself. Rebuilding that URL by hand from a repo
+          #    variable duplicates a format wrangler owns -- it uses the FIRST 8
+          #    characters of the version id, not the whole one.
+          #
+          # So take both from the upload output, and fail loudly if either is
+          # absent rather than smoke-testing an empty URL.
+          upload_out="$(cat upload.log)"
+          echo "$upload_out"
+          vid="$(printf '%s' "$upload_out" | sed -n 's/^Worker Version ID: //p' | head -n 1)"
+          url="$(printf '%s' "$upload_out" | sed -n 's/^Version Preview URL: //p' | head -n 1)"
+          if [[ -z "$vid" || -z "$url" ]]; then
+            echo "::error::upload did not report a version id / preview URL; cannot smoke this build"
+            exit 1
+          fi
+          echo "version_id=$vid" >> "$GITHUB_OUTPUT"
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          rm -f preview-secrets.json
 
       - name: Smoke test the deployed preview
         id: smoke
         env:
-          SMOKE_URL: ${{ steps.deploy.outputs.alias }}
+          SMOKE_URL: ${{ steps.deploy.outputs.url }}
         run: |
           set -uo pipefail
           # tee is last in the pipe, so capture the status explicitly rather
@@ -112,19 +160,22 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const alias = '${{ steps.deploy.outputs.alias }}';
             const url = '${{ steps.deploy.outputs.url }}';
+            const version = '${{ steps.deploy.outputs.version_id }}';
             const smoke = '${{ steps.smoke.outputs.result }}' || 'skipped';
             const badge = smoke === 'pass'
-              ? '✅ smoke passed'
-              : smoke === 'fail' ? '❌ smoke failed' : '⏭️ smoke not run';
+              ? '\u2705 smoke passed'
+              : smoke === 'fail' ? '\u274c smoke failed' : '\u23ed\ufe0f smoke not run';
             const body = [
               '### Staging preview',
               '',
-              `- Alias: ${alias}`,
-              `- Deployment: ${url}`,
+              `- Version: \`${version}\``,
+              `- URL: ${url}`,
               `- Built with staging secrets (sandbox Stripe/Prodigi).`,
               `- Smoke: ${badge}`,
+              '',
+              'A Workers version has no branch alias, so this URL is per-version',
+              'and stops resolving once the version is deleted on PR close.',
             ].join('\n');
             const { data: comments } = await github.rest.issues.listComments({
               owner: context.repo.owner,
@@ -178,33 +229,51 @@ jobs:
           HEAD_REF: ${{ github.head_ref }}
         run: echo "name=$(bash scripts/sanitize-branch-name.sh "$HEAD_REF")" >> "$GITHUB_OUTPUT"
 
-      - name: Delete branch deployments
+      - name: Delete preview versions
+        env:
+          BRANCH: ${{ steps.branch.outputs.name }}
         run: |
           set -euo pipefail
-          safe="${{ steps.branch.outputs.name }}"
-          echo "Cleaning deployments for branch=$safe"
-          export SAFE_BRANCH="$safe"
-          npx wrangler pages deployment list --project-name=nessebar-lens --json > /tmp/deps.json || true
-          python3 - <<'PY'
+          echo "Cleaning versions tagged for branch=$BRANCH"
+          npx wrangler versions list --json > versions.json
+          python3 - <<'PYEOF'
           import json, os, subprocess, sys
-          branch = os.environ.get("SAFE_BRANCH") or ""
+
+          branch = os.environ["BRANCH"]
           try:
-              deps = json.load(open("/tmp/deps.json"))
+              vs = json.load(open("versions.json"))
           except Exception as e:
-              print("no deployments list:", e)
+              # Cleanup is best-effort by nature: a PR that closed while the
+              # account was unreachable should close, not wedge on a leftover
+              # version. Versions are also inert once undeployed, so a stale one
+              # costs quota, not correctness.
+              print("could not list versions:", e)
               sys.exit(0)
-          if isinstance(deps, dict):
-              deps = deps.get("result") or deps.get("deployments") or []
+          if isinstance(vs, dict):
+              vs = vs.get("versions") or vs.get("result") or []
+
           deleted = 0
-          for d in deps:
-              b = (d.get("deployment_trigger") or {}).get("metadata", {}).get("branch") or d.get("branch") or ""
-              did = d.get("id")
-              if did and b == branch:
-                  print("delete", did, b)
-                  subprocess.run(
-                      ["npx", "wrangler", "pages", "deployment", "delete", did, "--project-name=nessebar-lens", "--force"],
-                      check=False,
-                  )
-                  deleted += 1
+          for v in vs:
+              # The tag --tag set at upload lives in annotations["workers/tag"],
+              # NOT in a `tags` array. The deploy step was reading `tags` and
+              # therefore matched nothing; this reads where wrangler actually
+              # puts it, and falls back to `tags` so a future wrangler that
+              # populates it is not silently ignored.
+              ann = v.get("annotations") or {}
+              tag = ann.get("workers/tag")
+              names = []
+              if tag:
+                  names.append(tag)
+              for t in v.get("tags") or []:
+                  names.append(t.get("name") if isinstance(t, dict) else t)
+              vid = v.get("id")
+              if not vid or not any(n and n.endswith("-" + branch) for n in names):
+                  continue
+              print("delete", vid, names)
+              subprocess.run(
+                  ["npx", "wrangler", "versions", "delete", vid, "--force"],
+                  check=False,
+              )
+              deleted += 1
           print(f"deleted={deleted}")
-          PY
+          PYEOF
