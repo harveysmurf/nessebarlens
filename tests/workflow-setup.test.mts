@@ -204,3 +204,15 @@ test("the E2E job refuses to run without a Stripe TEST key", () => {
   );
   assert.match(body, /sk_test_\*/, "must reject a non-test key before paying");
 });
+
+test("the E2E job refuses to run without a Prodigi sandbox key", () => {
+  // The same partial-green trap as the Stripe guard, one spec down: the
+  // physical-print spec test.skips() without this key, so a job missing the
+  // secret would pass having never quoted Prodigi at all (#143 review).
+  const ci = workflows.find((w) => w.name === "ci.yml");
+  const job = ci.text.match(/^ {2}e2e-smoke:\n((?:(?: {4}|\t).*\n|\n)*)/m);
+  assert.ok(job);
+  const body = job[1];
+
+  assert.match(body, /secrets\.PRODIGI_SANDBOX_API_KEY/, "must read the sandbox key");
+});

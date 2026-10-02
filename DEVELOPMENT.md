@@ -179,7 +179,9 @@ STRIPE_SECRET_KEY=sk_test_… npm run test:e2e
 
 Without a key the Stripe specs **skip themselves** and only the success-page
 states run — a partial pass that looks green. CI fails the job outright instead
-of skipping, and asserts the key is `sk_test_` before spending anything.
+of skipping, and asserts the key is `sk_test_` before spending anything. The
+Prodigi sandbox key is guarded the same way, because the physical-print spec
+skips itself without it and would leave the Prodigi-quoting path untested.
 `e2e/support/stripe.ts` throws on a non-test key before a browser starts, so a
 live key is refused rather than warned about.
 
@@ -251,7 +253,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a pull-request-only `e2e-smoke` job (`npm ci` → **install chromium** → **require a stripe test key** → **E2E smoke flow**: `npm run test:e2e`) |
+| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a pull-request-only `e2e-smoke` job (`npm ci` → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **E2E smoke flow**: `npm run test:e2e`) |
 | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → Pages preview → **smoke test** (`scripts/smoke.sh`) → PR comment; cleanup on close |
 | `.github/workflows/prod.yml` | push to `main` + `workflow_dispatch` | production Environment → build → Pages `main` → `sync-pages-secrets.sh production` |
 
