@@ -284,7 +284,14 @@ test("a token record that is not the stored shape is refused, not served", async
     assert.equal(result.ok, false, raw);
     assert.equal(result.ok === false && result.status, 404, raw);
   }
-  assert.equal(kv.writes, 0);
+  for (const raw of ["not json", JSON.stringify({ v: 1, sessionId: 42 }), JSON.stringify([1, 2])]) {
+    await kv.put(downloadTokenKey(token), raw);
+    const before = kv.writes;
+    const result = await redeemDownloadToken({ kv, token, nowMs: NOW });
+    assert.equal(result.ok, false, raw);
+    assert.equal(result.ok === false && result.status, 404, raw);
+    assert.equal(kv.writes, before, "an unparseable record must not be rewritten");
+  }
 });
 
 test("a store that fails while spending answers 503, not a served file", async () => {
