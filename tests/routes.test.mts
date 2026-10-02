@@ -940,6 +940,58 @@ test("download: a paid digital order streams the master as an attachment", async
   }
 });
 
+test("download: a master that is not a JPEG is served with its own content type", async () => {
+  // #109. The route read `object.contentType`, which is not a field R2 has —
+  // the real one is `httpMetadata.contentType` — so the read was always
+  // undefined and every master was announced as image/jpeg. A PNG master is
+  // the case that shows it, and it is asserted here at the HTTP boundary
+  // because that is where the wrong header reaches the customer.
+  const { masterKeyForSlug } = await import("../src/lib/master-key.ts");
+  const record = JSON.stringify({
+    v: 1,
+    sessionId: "cs_test_pngmaster",
+    merchantReference: "cs_test_pngmaster",
+    terminal: true,
+    status: "paid",
+    photoSlug: "dawn",
+    format: "digital",
+    size: "",
+    frame: "",
+    quoteEur: 15,
+    amountTotal: 1500,
+    currency: "eur",
+    reason: null,
+    masterKey: masterKeyForSlug("dawn"),
+    recipient: null,
+    prodigiOrderId: null,
+    prodigiStage: null,
+    assetUrl: null,
+    updatedAt: "2026-09-27T12:00:00.000Z",
+  });
+  const restore = withBindings({
+    ORDERS: memoryKv({ cs_test_pngmaster: record }),
+    MASTERS: {
+      async get() {
+        return {
+          body: new Blob([JPEG]).stream(),
+          size: JPEG.length,
+          httpMetadata: { contentType: "image/png" },
+        };
+      },
+    },
+    prodigiKeyConfigured: false,
+  });
+  try {
+    const response = await download.GET(
+      new Request(`${SITE}/api/download?session_id=cs_test_pngmaster`),
+    );
+    assert.equal(response.status, 200);
+    assert.equal(response.headers.get("Content-Type"), "image/png");
+  } finally {
+    restore();
+  }
+});
+
 test("download: an invalid session id is 400 and still uncacheable", async () => {
   const restore = withBindings({ prodigiKeyConfigured: false });
   try {

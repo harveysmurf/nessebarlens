@@ -1009,9 +1009,16 @@ test("resolveDownload is a gate, and every rejection path is distinguishable", a
     assert.equal(base.format, "digital");
     return { ...base, ...patch };
   };
+  // httpMetadata is where R2 puts the content type (#109): a hand-written
+  // `contentType` on the object is not a field R2 has, and reading one is a
+  // silent `undefined` that falls back to image/jpeg for every master.
   const bytes = (contentType?: string): MastersBucket => ({
     async get() {
-      return { body: new ReadableStream(), size: 7, contentType };
+      return {
+        body: new ReadableStream(),
+        size: 7,
+        httpMetadata: contentType ? { contentType } : undefined,
+      };
     },
   });
 

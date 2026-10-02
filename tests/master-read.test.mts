@@ -1,10 +1,14 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
 import {
   readMasterObject,
   type MasterObject,
   type MastersBucket,
 } from "../src/lib/master-key.ts";
+
+const root = path.join(import.meta.dirname, "..");
 
 function bucket(
   behaviour: (key: string) => Promise<MasterObject | null>,
@@ -57,5 +61,43 @@ test("a hit returns the object untouched, so callers keep their own envelope", a
   );
   assert.equal(read.ok, true);
   assert.equal(read.ok && read.object.size, 11);
-  assert.equal(read.ok && read.object.contentType, undefined);
+  assert.equal(read.ok && read.object.httpMetadata, undefined);
+});
+
+test("MasterObject is derived from R2ObjectBody, not re-spelled by hand", () => {
+  // #109 was a type that lied: `contentType` is not a field R2ObjectBody has,
+  // so `object.contentType` compiled, was always undefined, and every master
+  // was served as image/jpeg. A behavioural test cannot catch that class of
+  // bug — the fake and the code can agree on a field the platform does not
+  // have. This source check is what catches it: the shape is required to name
+  // its fields off R2ObjectBody, and no reader is allowed to ask an R2 object
+  // for a top-level `contentType` again. (tsconfig excludes tests/, so a
+  // @ts-expect-error here would never be checked — the source is the guard.)
+  const masterKey = fs.readFileSync(
+    path.join(root, "src/lib/master-key.ts"),
+    "utf8",
+  );
+  assert.match(
+    masterKey,
+    /import type \{[^}]*R2ObjectBody[^}]*\} from "@cloudflare\/workers-types"/,
+    "MasterObject must be derived from the platform's R2ObjectBody",
+  );
+  assert.match(masterKey, /size: R2ObjectBody\["size"\]/);
+  assert.match(masterKey, /httpMetadata: R2ObjectBody\["httpMetadata"\]/);
+  assert.doesNotMatch(
+    masterKey,
+    /contentType\??:/,
+    "a hand-declared contentType field is the #109 bug in waiting",
+  );
+
+  // And the one place that used it now reads the real path.
+  const download = fs.readFileSync(
+    path.join(root, "src/lib/order-decision.ts"),
+    "utf8",
+  );
+  assert.match(
+    download,
+    /contentType: object\.httpMetadata\?\.contentType \|\| "image\/jpeg"/,
+  );
+  assert.doesNotMatch(download, /object\.contentType\b/);
 });
