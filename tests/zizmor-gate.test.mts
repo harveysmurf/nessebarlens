@@ -14,6 +14,8 @@
  */
 
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
 
 const { classify } = await import("../scripts/zizmor-gate.mjs");
@@ -96,4 +98,18 @@ test("a finding with no determinations does not slip through as safe", () => {
   // turn the gate into a no-op; the safe failure is red, not green.
   const { gating } = classify([{ ident: "template-injection", locations: [] }]);
   assert.equal(gating.length, 1);
+});
+
+test("the gate pins zizmor's regular persona", () => {
+  // The fragility Architect flagged: `auditor` and `pedantic` promote the
+  // sanitized step-output findings to High confidence, which puts them back in
+  // the gate and turns it permanently red on safe code. A comment is not
+  // enough against an "improve the gate" PR, so the persona is pinned in the
+  // source and pinned here.
+  const source = fs.readFileSync(
+    path.join(import.meta.dirname, "..", "scripts", "zizmor-gate.mjs"),
+    "utf8",
+  );
+  assert.match(source, /"--persona",\s*\n?\s*"regular"/);
+  assert.doesNotMatch(source, /"(auditor|pedantic)"/);
 });

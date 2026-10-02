@@ -57,8 +57,8 @@ jobs:
   # Scoped to `template-injection` at Medium confidence and up, which is the
   # narrowest honest gate. A plain `zizmor` run is not green on this repo and no
   # --min-severity / --min-confidence / --persona combination makes it green:
-  # there are 36 other findings (11 unpinned-uses, 10 excessive-permissions,
-  # 8 self-repository, 7 artipacked) that are real work and out of scope here.
+  # there are 40 other findings (12 unpinned-uses, 11 excessive-permissions,
+  # 9 self-repository, 8 artipacked) that are real work and out of scope here.
   # They are printed by the script, not gated on, and are tracked in the
   # sibling issue. A gate nobody can satisfy is a gate everyone learns to skip.
   #

@@ -6,9 +6,8 @@
  * The other rules are real work that has nothing to do with #112 and must not
  * be bundled into it — measured on the tree as of 9641a8b:
  *
- *   excessive-permissions 11   unpinned-uses 10
- *   artipacked 7               self-repository 8
- *   undocumented-permissions 1
+ *   unpinned-uses 12            excessive-permissions 11
+ *   self-repository 9           artipacked 8
  *
  * They are reported here and do not gate. A gate nobody can satisfy is a gate
  * everyone learns to skip, which is strictly worse than a narrow one.
@@ -115,6 +114,14 @@ function main() {
   const args = [
     "--format",
     "json",
+    // Pinned explicitly rather than left to zizmor's default. `auditor` and
+    // `pedantic` promote the sanitized `steps.branch.outputs.name` findings to
+    // High confidence, which puts them back in the gate and makes it red on
+    // code that is already safe. Spelling the persona out means the next
+    // person to change it has to delete this line, which is a reviewable act,
+    // rather than flipping a default nobody sees.
+    "--persona",
+    "regular",
     ...(passthrough.length ? passthrough : workflowFiles().map(relative.bind(null, root))),
   ];
   const run = spawnSync("zizmor", args, {
