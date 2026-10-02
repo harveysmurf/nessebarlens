@@ -4,18 +4,11 @@ on:
   push:
     branches: [main]
   # A secret-only change (rotated Stripe key, new Prodigi credential) has no
-  # commit to trigger a deploy, and the sync step at the bottom of this
-  # workflow is what actually applies it. Without a manual trigger, rotating
-  # a credential means committing an empty change to production.
-  #
-  # Rotating a key is therefore: update the GitHub secret, click Run workflow.
-  # One build, ~3 minutes, no commit. Cloudflare Pages env_vars are
-  # deployment-bound (verified: a synced env var did not reach the serving
-  # deployment until the next deploy), and `wrangler pages secret put` writes
-  # the same deployment_configs.env_vars map, so there is no deploy-free
-  # rotation path on Pages. The standalone sync workflow that pretended
-  # otherwise was removed for that reason — a sync with no deploy silently
-  # changes nothing that serves traffic.
+  # commit to trigger a deploy. On Workers a rotation does not need a rebuild at
+  # all — `wrangler secret bulk` updates the deployed Worker in place — so the
+  # manual trigger is a convenience that re-runs build+deploy, not a workaround
+  # for a deployment-bound secret store. The standalone sync workflow the
+  # Pages model required was removed for that reason and stays removed.
   workflow_dispatch:
 
 concurrency:
@@ -49,20 +42,34 @@ jobs:
       - name: Build (OpenNext)
         run: npx opennextjs-cloudflare build
 
-      - name: Assemble Pages bundle
-        run: bash scripts/assemble-pages-out.sh
 
-      # Sync must come BEFORE the deploy. Pages env_vars are frozen into a
-      # deployment when it is created, so a sync placed after the deploy only
-      # reaches the *next* build — which would make a rotation need two runs to
-      # take effect. Syncing first means the deploy in this same run carries the
-      # new key. If a later step fails, the synced values sit unused: nothing
-      # serves them until a deployment exists, which is exactly the
-      # deployment-bound behaviour we verified.
+
+      # The sha and message arrive via env, never interpolated straight into the
+      # script. A commit message
+      # is free-form text: backticks in it became command substitution inside
+      # the double quotes and wrangler died on the shell's output. This failed
+      # the deploy of a merge whose message quoted a file path.
+      - name: Deploy production (OpenNext)
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+        run: |
+          npx opennextjs-cloudflare deploy \
+            --commit-dirty=true \
+            --commit-hash="$COMMIT_SHA" \
+            --commit-message="$COMMIT_MESSAGE"
+
+      # Deploy BEFORE the sync, which is the reverse of the Pages order and the
+      # reason the comment used to say the opposite. Worker secrets are not
+      # frozen into a deployment: `versions secret bulk` attaches secrets to the
+      # Worker Version and `secret bulk` updates the deployed Worker in place,
+      # so a sync placed *before* the deploy would be describing a version the
+      # deploy then replaced. Deploying first and syncing second means the
+      # secrets land on what is actually serving.
       #
-      # NEXT_PUBLIC_* are not affected either way: those bake at build from the
-      # GitHub Environment secrets, not from the synced map.
-      - name: Sync Pages production runtime secrets
+      # NEXT_PUBLIC_* are unaffected either way: those bake at build from the
+      # GitHub Environment secrets, not from this script.
+      - name: Sync production runtime secrets
         env:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
@@ -75,21 +82,4 @@ jobs:
           CF_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
           NEXT_PUBLIC_WEB_IMAGES_BASE: ${{ secrets.NEXT_PUBLIC_WEB_IMAGES_BASE }}
-        run: bash scripts/sync-pages-secrets.sh production
-
-      # The sha and message arrive via env, never interpolated straight into the
-      # script. A commit message
-      # is free-form text: backticks in it became command substitution inside
-      # the double quotes and wrangler died on the shell's output. This failed
-      # the deploy of a merge whose message quoted a file path.
-      - name: Deploy Pages production
-        env:
-          COMMIT_SHA: ${{ github.sha }}
-          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
-        run: |
-          npx wrangler pages deploy .pages-out \
-            --project-name=nessebar-lens \
-            --branch=main \
-            --commit-dirty=true \
-            --commit-hash="$COMMIT_SHA" \
-            --commit-message="$COMMIT_MESSAGE"
+        run: bash scripts/sync-worker-secrets.sh production

@@ -44,7 +44,6 @@ yarn-error.log*
 
 # Cloudflare / OpenNext
 .open-next/
-.pages-out/
 .wrangler/
 
 # typescript

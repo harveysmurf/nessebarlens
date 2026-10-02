@@ -1,13 +1,15 @@
 /**
- * sync-pages-secrets.sh used to drop a short or missing PRINT_ASSET_HMAC_SECRET
+ * sync-worker-secrets.sh used to drop a short or missing PRINT_ASSET_HMAC_SECRET
  * without a word, so production deployed green and then answered 503 for every
  * physical checkout (#114). The secret is required in production and optional in
  * preview, and the boundary is worth a behavioural test: nothing in the TypeScript
  * sees this script, and a source grep cannot tell "errors on a short secret" from
  * "errors on anything".
  *
- * The Cloudflare call is stubbed with a python3 shim on PATH so the assertions are
- * about the guard, not about the network.
+ * The Cloudflare call is stubbed with an npx shim on PATH so the assertions are
+ * about the guard, not about the network. These tests run the script in
+ * version-only mode, so the stub is not even reached -- the point is that the
+ * guard fires before anything is prepared or sent.
  */
 
 import assert from "node:assert/strict";
@@ -18,14 +20,14 @@ import { spawnSync } from "node:child_process";
 import test from "node:test";
 
 const root = path.join(import.meta.dirname, "..");
-const script = path.join(root, "scripts", "sync-pages-secrets.sh");
+const script = path.join(root, "scripts", "sync-worker-secrets.sh");
 
 const MIN_LENGTH = 32;
 
 function shimDir(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "sync-secrets-"));
-  const shim = path.join(dir, "python3");
-  fs.writeFileSync(shim, "#!/usr/bin/env bash\nexit 0\n", { mode: 0o755 });
+  const shim = path.join(dir, "npx");
+  fs.writeFileSync(shim, "#!/usr/bin/env bash\necho 'npx shim called' \nexit 0\n", { mode: 0o755 });
   return dir;
 }
 
@@ -39,13 +41,18 @@ function run(
     env: {
       ...process.env,
       PATH: `${dir}:${process.env.PATH}`,
-      CF_API_TOKEN: "test-token",
-      CF_ACCOUNT_ID: "test-account",
+      CLOUDFLARE_API_TOKEN: "test-token",
+      CLOUDFLARE_ACCOUNT_ID: "test-account",
       STRIPE_SECRET_KEY:
         target === "production" ? "sk_live_test" : "sk_test_test",
       STRIPE_WEBHOOK_SECRET: "whsec_test",
       PRODIGI_API_BASE: "https://api.sandbox.prodigi.com",
       PRODIGI_SANDBOX_API_KEY: "sandbox-key",
+      // version-only: run the guards, write the JSON, apply nothing. The
+      // version-scoped wrangler call is the one thing these must never depend
+      // on to prove a guard works.
+      SYNC_SCOPE: "version-only",
+      SECRETS_OUT: path.join(dir, "secrets.json"),
       ...(secret === undefined
         ? {}
         : { PRINT_ASSET_HMAC_SECRET: secret }),
