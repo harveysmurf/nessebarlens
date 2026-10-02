@@ -232,6 +232,13 @@ export function buildProdigiOrderBody(input: {
   if (referencesMasters(assetUrl)) {
     throw new Error("asset url must not point at masters");
   }
+  // Same-origin at generation, which is where it is knowable: the read path
+  // (parseOrderRecord) checks shape only, so a record written before a domain
+  // move still parses. Here the URL comes from our own generators, so a foreign
+  // origin can only be a caller bug — and it would otherwise be printed from.
+  if (new URL(assetUrl).origin !== new URL(siteUrl()).origin) {
+    throw new Error("asset url must be on the site origin");
+  }
 
   const recipient: ProdigiOrderRequest["recipient"] = {
     name: input.recipient.name,

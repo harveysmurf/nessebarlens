@@ -100,7 +100,7 @@ const okCreate: CreateProdigiOrder = async () => ({
   assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
 });
 
-test("parseOrderRecord rejects off-origin asset URLs even with safe paths", () => {
+test("parseOrderRecord accepts the two safe asset shapes at any origin (#110)", () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   const base = {
     v: 1,
@@ -133,20 +133,59 @@ test("parseOrderRecord rejects off-origin asset URLs even with safe paths", () =
     updatedAt: NOW,
   };
 
+  // #110: the read path checks shape, not origin, so a record written before a
+  // domain move still parses instead of reading as a corrupt paid order. The
+  // signing payload is origin-independent, so a re-hosted URL still verifies.
+  // Same-origin is enforced at generation instead — see the generation test in
+  // prodigi-order.test.mts.
+  const movedPlaceholder = parseOrderRecord(
+    JSON.stringify({
+      ...base,
+      assetUrl: "https://old-domain.example/placeholders/dawn.jpg",
+    }),
+  );
+  assert.ok(movedPlaceholder, "a record from the previous origin must parse");
+  assert.equal(
+    movedPlaceholder.assetUrl,
+    "https://old-domain.example/placeholders/dawn.jpg",
+  );
+
+  const movedSigned = parseOrderRecord(
+    JSON.stringify({
+      ...base,
+      assetUrl:
+        "https://old-domain.example/api/print-asset?slug=dawn&exp=1&sig=" +
+        "a".repeat(64),
+    }),
+  );
+  assert.ok(movedSigned, "a signed URL from the previous origin must parse");
+
+  // Still rejected: a path the site does not serve, at any origin.
   assert.equal(
     parseOrderRecord(
       JSON.stringify({
         ...base,
-        assetUrl: "https://evil.example/placeholders/dawn.jpg",
+        assetUrl: "https://old-domain.example/account",
       }),
     ),
     null,
   );
+  // Still rejected: not https.
   assert.equal(
     parseOrderRecord(
       JSON.stringify({
         ...base,
-        assetUrl: "https://evil.example/api/print-asset?slug=dawn&exp=1&sig=ab",
+        assetUrl: "http://old-domain.example/placeholders/dawn.jpg",
+      }),
+    ),
+    null,
+  );
+  // Still rejected: a master reference.
+  assert.equal(
+    parseOrderRecord(
+      JSON.stringify({
+        ...base,
+        assetUrl: "https://old-domain.example/masters/prints/dawn.jpg",
       }),
     ),
     null,

@@ -14,8 +14,9 @@ import {
 const SESSION = "cs_test_abcdefgh";
 const NOW = "2026-09-27T12:00:00.000Z";
 
-// isSafeAssetUrl compares against the site origin, so the asset-URL cases below
-// are only meaningful if the site is the origin they use.
+// Kept set because the *generation* path still requires the site origin
+// (prodigi-order.ts), so these fixtures stay realistic even though the read
+// path no longer compares origins (#110).
 process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
 
 const SHIPPING: StripeShippingDetails = {
@@ -178,10 +179,11 @@ test("an unusable print size, or framed with no frame finish, is bad-metadata", 
   }
 });
 
-test("an asset URL on the site origin that is not a print route is rejected", () => {
-  // isSafeAssetUrl allows two paths on the site origin: /placeholders/… and
-  // /api/print-asset. Any other page on that origin is not what this order
-  // paid for, and would otherwise be served in place of the asset.
+test("an asset URL on a path the site does not serve is rejected", () => {
+  // isSafeAssetUrl allows two paths at any origin (#110 dropped the origin
+  // comparison so records survive a domain move): /placeholders/… and
+  // /api/print-asset. Any other path is not what this order paid for, and
+  // would otherwise be printed in place of the asset.
   for (const assetUrl of [
     "https://nessebarlens.com/archive/dawn.jpg",
     "https://nessebarlens.com/",

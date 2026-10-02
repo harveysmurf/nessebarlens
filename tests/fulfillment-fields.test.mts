@@ -15,8 +15,9 @@ import {
 const SESSION = "cs_test_abcdefgh";
 const NOW = "2026-09-27T12:00:00.000Z";
 
-// isSafeAssetUrl compares against the site origin, so the assetUrl cases below
-// are only meaningful if the site is the origin they use.
+// Kept set because the *generation* path still requires the site origin
+// (prodigi-order.ts), so these fixtures stay realistic even though the read
+// path no longer compares origins (#110).
 process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
 
 const RECIPIENT = {
