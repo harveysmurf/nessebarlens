@@ -22,4 +22,19 @@ runs:
 
     - name: Install
       shell: bash
-      run: npm ci ${{ inputs.install-args }}
+      # Through env, never interpolated into the script: an input is caller
+      # supplied, and `${{ }}` is expanded at the workflow level, so a caller
+      # that ever passed untrusted text here would hand it to bash as source.
+      # The only caller passes the literal `--ignore-scripts`, so this is a
+      # hardening of the mechanism rather than a live hole — but it is the same
+      # class the zizmor gate refuses, and the gate would otherwise be red on
+      # day one, which is how gates get skipped.
+      env:
+        INSTALL_ARGS: ${{ inputs.install-args }}
+      # Unquoted on purpose, with the array form doing the splitting instead:
+      # INSTALL_ARGS is a list of flags, and quoting it would pass
+      # "--ignore-scripts" to npm as one argument. An empty input must also
+      # expand to zero arguments, which is what `run:` on its own would not do.
+      run: |
+        read -r -a args <<< "$INSTALL_ARGS"
+        npm ci "${args[@]}"

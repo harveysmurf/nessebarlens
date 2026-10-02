@@ -47,6 +47,48 @@ jobs:
       - name: Coverage floors
         run: npm run coverage
 
+  # #112: a workflow linter in CI, scoped to the class of bug the issue is
+  # about. `preview.yml` used to interpolate `github.head_ref` — the PR
+  # author's branch name — straight into a `run:` block on a job holding
+  # Cloudflare deploy credentials, so a branch named `a"; curl …; #` was shell
+  # source in a job that can deploy. The `env:` fix closed that hole; this job
+  # is what stops it reopening.
+  #
+  # Scoped to `template-injection` at Medium confidence and up, which is the
+  # narrowest honest gate. A plain `zizmor` run is not green on this repo and no
+  # --min-severity / --min-confidence / --persona combination makes it green:
+  # there are 36 other findings (11 unpinned-uses, 10 excessive-permissions,
+  # 8 self-repository, 7 artipacked) that are real work and out of scope here.
+  # They are printed by the script, not gated on, and are tracked in the
+  # sibling issue. A gate nobody can satisfy is a gate everyone learns to skip.
+  #
+  # The confidence floor is what keeps this from being permanently red on
+  # already-hardened code. The remaining `template-injection` findings are the
+  # sanitized `steps.branch.outputs.name` interpolations, which zizmor rates
+  # Low/Informational because it cannot trace the value back through
+  # scripts/sanitize-branch-name.sh. Measured on this repo: 2 findings at
+  # High/High before the `env:` fix, 0 at Medium or above after it. Do not
+  # switch to `--persona auditor`/`pedantic` — they promote those sanitized
+  # findings to High confidence and reopen the false red.
+  workflow-audit:
+    name: Workflow audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+
+      # zizmor ships on PyPI, which sidesteps the whole class of "how do we
+      # install a binary in CI" (per-OS assets, checksums, arch detection) and
+      # pins cleanly. The exact version matters: the gate parses zizmor's JSON
+      # output, so an unpinned upgrade could change the shape it reads.
+      - name: Install zizmor
+        run: pip install --disable-pip-version-check zizmor==1.30.1
+
+      - name: Gate on workflow script injection
+        run: node scripts/zizmor-gate.mjs
+
   # #143: the browser smoke flow, split by what it can actually promise.
   #
   # Everything that stays on our own pages — the five seeded success-page states
