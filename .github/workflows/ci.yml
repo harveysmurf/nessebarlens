@@ -60,6 +60,12 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    # The staging environment, not repo secrets: preview.yml and
+    # verify-stripe.yml already source the Stripe and Prodigi keys from here, so
+    # this job reads the same values from the same place rather than a second
+    # copy that can drift out of step with the deploy. Its sk_test_ guard below
+    # is what keeps that shared secret from becoming a live card path.
+    environment: staging
     steps:
       - uses: actions/checkout@v4
 
@@ -76,15 +82,15 @@ jobs:
       - name: Require a Stripe test key
         run: |
           if [ -z "$STRIPE_SECRET_KEY" ]; then
-            echo "::error::STRIPE_TEST_SECRET_KEY is not set. The checkout flow skips itself without a key, so the job would pass having tested nothing." >&2
+            echo "::error::staging STRIPE_SECRET_KEY is not set. The checkout flow skips itself without a key, so the job would pass having tested nothing." >&2
             exit 1
           fi
           case "$STRIPE_SECRET_KEY" in
             sk_test_*) ;;
-            *) echo "::error::STRIPE_TEST_SECRET_KEY is not an sk_test_ key. This job must never drive a live card path." >&2; exit 1 ;;
+            *) echo "::error::staging STRIPE_SECRET_KEY is not an sk_test_ key. This job must never drive a live card path." >&2; exit 1 ;;
           esac
         env:
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
 
       # The same partial-green trap the Stripe guard blocks one step earlier:
       # the physical-print spec test.skips() without this key, so a missing
@@ -101,5 +107,5 @@ jobs:
       - name: E2E smoke flow
         run: npm run test:e2e
         env:
-          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}

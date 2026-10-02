@@ -196,13 +196,75 @@ test("the E2E job refuses to run without a Stripe TEST key", () => {
 
   // The specs skip themselves with no key, so without this the job would go
   // green having tested only the seeded success-page states.
-  assert.match(body, /STRIPE_TEST_SECRET_KEY/, "must read the test-only key");
-  assert.doesNotMatch(
-    body,
-    /secrets\.STRIPE_SECRET_KEY/,
-    "the E2E job must use the test key, never the live one",
-  );
+  // The key comes from the staging environment, the same place preview.yml and
+  // verify-stripe.yml read it from — not a second repo-level copy that could
+  // drift from the deploy's.
+  assert.match(body, /environment: staging/, "must read the key from the staging environment");
+  assert.match(body, /secrets\.STRIPE_SECRET_KEY/, "must read the staging Stripe secret");
   assert.match(body, /sk_test_\*/, "must reject a non-test key before paying");
+});
+
+/**
+ * Every secret name that exists, as of 2026-10-02, from
+ * `gh secret list` and `gh secret list --env staging|production`.
+ *
+ * Hand-maintained on purpose: a test cannot ask GitHub for this, and the
+ * failure it prevents is exactly the one a test cannot see. The E2E job read
+ * `secrets.STRIPE_TEST_SECRET_KEY` for a whole PR while staging already held a
+ * working `sk_test_` key, so the job failed on its own guard at 47s. An unset
+ * secret resolves to an empty string, not an error, so nothing upstream of the
+ * run could have caught it.
+ *
+ * Update this when a secret is added or removed, in the same commit.
+ */
+const KNOWN_SECRETS = new Set([
+  // repo-level
+  "PRINT_ASSET_HMAC_SECRET",
+  // staging environment
+  "CF_ACCOUNT_ID",
+  "CF_API_TOKEN",
+  "CLOUDFLARE_ACCOUNT_ID",
+  "CLOUDFLARE_API_TOKEN",
+  "EU_SHIPPING_EUR",
+  "NEXT_PUBLIC_SITE_URL",
+  "NEXT_PUBLIC_WEB_IMAGES_BASE",
+  "PRODIGI_API_BASE",
+  "PRODIGI_API_KEY",
+  "PRODIGI_SANDBOX_API_KEY",
+  "R2_ACCESS_KEY_ID",
+  "R2_ACCOUNT_ID",
+  "R2_ENDPOINT",
+  "R2_S3_ENDPOINT",
+  "R2_SECRET_ACCESS_KEY",
+  "SITE_URL",
+  "STRIPE_SECRET_KEY",
+  "STRIPE_WEBHOOK_SECRET",
+]);
+
+test("no workflow reads a secret that exists in neither the repo nor staging", () => {
+  // An unset secret is an empty string, not a failure, so a typo or a name that
+  // was never set looks like any other missing configuration right up until a
+  // run fails — as the E2E job did (#143).
+  const read = new Map<string, Set<string>>();
+  for (const workflow of workflows) {
+    for (const match of workflow.text.matchAll(/secrets\.([A-Z0-9_]+)/g)) {
+      if (!read.has(workflow.name)) read.set(workflow.name, new Set());
+      read.get(workflow.name)!.add(match[1]);
+    }
+  }
+
+  // Non-vacuous: the E2E job really does read the Stripe key, so removing it
+  // from ci.yml cannot make this pass by reading nothing.
+  assert.ok(read.get("ci.yml")?.has("STRIPE_SECRET_KEY"), "expected ci.yml to read the Stripe key");
+
+  for (const [name, secrets] of read) {
+    for (const secret of secrets) {
+      assert.ok(
+        KNOWN_SECRETS.has(secret),
+        `${name} reads secrets.${secret}, which exists in no repo or environment`,
+      );
+    }
+  }
 });
 
 test("the E2E job refuses to run without a Prodigi sandbox key", () => {

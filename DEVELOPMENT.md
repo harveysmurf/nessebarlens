@@ -182,6 +182,13 @@ states run — a partial pass that looks green. CI fails the job outright instea
 of skipping, and asserts the key is `sk_test_` before spending anything. The
 Prodigi sandbox key is guarded the same way, because the physical-print spec
 skips itself without it and would leave the Prodigi-quoting path untested.
+
+Both keys come from the **staging environment**, the same place `preview.yml`
+and `verify-stripe.yml` read them from, so there is no second copy to drift.
+The `sk_test_` assertion is what makes sharing that secret safe. Because an
+unset secret resolves to an empty string rather than an error, a test asserts
+every `secrets.*` name a workflow reads actually exists — the E2E job spent a
+whole PR reading a name that had never been set.
 `e2e/support/stripe.ts` throws on a non-test key before a browser starts, so a
 live key is refused rather than warned about.
 
