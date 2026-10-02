@@ -4,6 +4,7 @@ import {
   type OrderViewState,
 } from "@/lib/order-decision";
 import { readOrderRecord } from "@/lib/order-corrupt";
+import { downloadLinkForSession } from "@/lib/download-token";
 import { readWorkerBindings } from "@/lib/worker-bindings";
 
 /**
@@ -22,7 +23,15 @@ export type CheckoutPageState =
   | "invalid-session"
   | "unavailable"
   | "processing"
-  | OrderViewState;
+  | OrderViewState
+  /**
+   * The order is paid and ready, but there is no download token for it — the
+   * page cannot hand over a link, because the only credential that grants the
+   * file is the token (#111). Reachable for records stored before tokens
+   * existed; never minted lazily here, because the session id in this URL must
+   * not be able to mint itself a download.
+   */
+  | "digital-no-token";
 
 /**
  * Read the order behind a Checkout Session for the success page.
@@ -63,5 +72,35 @@ export async function resolveCheckoutPageState(
   const order = readOrderRecord(raw, sessionId, "page");
   if (!order) return "unavailable";
 
-  return orderViewState(order);
+  const state = orderViewState(order);
+  if (state !== "digital-ready") return state;
+
+  const link = await downloadLinkForSession(bindings.ORDERS, sessionId);
+  return link ? state : "digital-no-token";
 }
+
+/**
+ * The download link for the page, or null when there is no usable token.
+ *
+ * A separate read from the state resolver rather than widening its return
+ * type: the poller endpoint answers with `OrderViewState` alone and must keep
+ * doing so, and the token is never part of a state name. Returning a link
+ * rather than a raw token means the page cannot assemble the URL itself and
+ * drift from the one shape the route accepts.
+ *
+ * Known, and deliberately not restructured: the page reads the index twice
+ * (once in `resolveCheckoutPageState`, once here), so a token expiring between
+ * the two reads renders the `processing` branch, whose poller answers state
+ * only and cannot recover a link. Reaching it needs a TTL configured to lapse
+ * mid-render. Threading the record through instead would mean widening the
+ * resolver's return type for a case that is a bad config, not a live path.
+ */
+export async function resolveCheckoutDownloadLink(
+  sessionId: string | undefined,
+): Promise<string | null> {
+  if (!sessionId || !isCheckoutSessionId(sessionId)) return null;
+  const bindings = await readWorkerBindings();
+  if (!bindings.ORDERS) return null;
+  return downloadLinkForSession(bindings.ORDERS, sessionId);
+}
+

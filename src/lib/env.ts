@@ -39,6 +39,27 @@ export function envFlag(
 }
 
 /**
+ * An integer env var with a default, clamped to `min` and above.
+ *
+ * For policy knobs rather than credentials: unset, non-numeric, zero and
+ * negative all fall back to the default instead of throwing, because these
+ * configure limits (download count, token lifetime) and a malformed value must
+ * degrade to the documented behaviour rather than break a paid path.
+ */
+export function envIntInRange(
+  name: string,
+  env: Record<string, unknown> = process.env,
+  fallback: number,
+  min: number,
+): number {
+  const value = envString(name, env);
+  if (value === undefined) return fallback;
+  if (!/^-?\d+$/.test(value)) return fallback;
+  const parsed = Number(value);
+  return Number.isSafeInteger(parsed) && parsed >= min ? parsed : fallback;
+}
+
+/**
  * Strips every trailing slash so callers can concatenate "/path" safely.
  * Every slash, not just one: the single-slash version silently left a
  * doubled slash in a caller-supplied base and produced "//api/…" URLs.

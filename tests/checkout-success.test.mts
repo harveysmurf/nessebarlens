@@ -42,9 +42,10 @@ registerHooks({
   },
 });
 
-const { resolveCheckoutPageState } = await import(
+const { resolveCheckoutPageState, resolveCheckoutDownloadLink } = await import(
   "../src/app/checkout/success/order-state.ts"
 );
+const { ensureDownloadToken } = await import("../src/lib/download-token.ts");
 const { orderViewState } = await import("../src/lib/order-decision.ts");
 type OrderRecord = import("../src/lib/order-decision.ts").OrderRecord;
 const orderStatus = await import("../src/app/api/order-status/route.ts");
@@ -130,6 +131,23 @@ function record(over: Record<string, unknown> = {}) {
     prodigiStage: over.prodigiStage ?? (physical ? "awaiting_payment" : null),
     assetUrl: over.assetUrl ?? (physical ? ASSET_URL : null),
   });
+}
+
+/**
+ * A KV holding a paid digital order *and* its download token (#111).
+ *
+ * Both halves are required for the page to render a link: the order record says
+ * the file is ready, and the token is the only thing that now grants it. A KV
+ * with just the record resolves to "digital-no-token", which is its own branch.
+ */
+async function downloadableKv(over: Record<string, unknown> = {}) {
+  const kv = memoryKv({ [SESSION]: record(over) });
+  await ensureDownloadToken({
+    kv,
+    sessionId: SESSION,
+    limits: { ttlSeconds: 30 * 86_400, maxDownloads: 5 },
+  });
+  return kv;
 }
 
 async function withBindings<T>(next: Fake, run: () => Promise<T>): Promise<T> {
@@ -220,9 +238,31 @@ test("a missing or malformed session_id never reaches the store", async () => {
   });
 });
 
-test("a digital order with a stored record is ready", async () => {
-  await withBindings({ ORDERS: memoryKv({ [SESSION]: record() }) }, async () => {
+test("a digital order with a stored record and a token is ready", async () => {
+  await withBindings({ ORDERS: await downloadableKv() }, async () => {
     assert.equal(await resolveCheckoutPageState(SESSION), "digital-ready");
+  });
+});
+
+test("a paid order with no token is digital-no-token, and mints nothing (#111)", async () => {
+  // The page holds the session id in its URL, so minting a token on demand here
+  // would hand back exactly the bearer credential tokens replaced.
+  const kv = memoryKv({ [SESSION]: record() });
+  await withBindings({ ORDERS: kv }, async () => {
+    assert.equal(await resolveCheckoutPageState(SESSION), "digital-no-token");
+    assert.equal(await kv.get(`dls:${SESSION}`), null, "no token was written");
+    assert.equal(await resolveCheckoutDownloadLink(SESSION), null);
+  });
+});
+
+test("the download link carries the stored token, not the session id", async () => {
+  const kv = await downloadableKv();
+  await withBindings({ ORDERS: kv }, async () => {
+    const link = await resolveCheckoutDownloadLink(SESSION);
+    assert.match(link!, /^\/api\/download\?token=[0-9a-f]{32}$/);
+    assert.doesNotMatch(link!, /session_id/);
+    assert.equal(await resolveCheckoutDownloadLink(undefined), null);
+    assert.equal(await resolveCheckoutDownloadLink("not-a-session"), null);
   });
 });
 
@@ -410,16 +450,22 @@ test("the download link is a plain <a>, never a <Link>", () => {
     /<Link[^>]*\/api\/download/,
     "a <Link> to /api/download would prefetch the master file again",
   );
-  assert.match(PAGE, /<a\s+[\s\S]*?\/api\/download/);
-  // `download` is what tells the browser to save rather than navigate.
-  assert.match(PAGE, /href=\{`\/api\/download[^`]*`\}\s*\n?\s*download/);
+  assert.match(PAGE, /<a\s+[\s\S]*?href=\{downloadHref\}/);
+  // `download` is what tells the browser to save rather than navigate. It is
+  // load-bearing twice over now: the link carries a token, so a stray prefetch
+  // would spend one of the customer's downloads (#111).
+  assert.match(PAGE, /href=\{downloadHref\}\s*\n\s*download\b/);
 });
 
 test("the download href exists in exactly one place on the page", () => {
   // One link, in the digital-ready branch. A second would mean a physical order
   // could be offered a download again.
-  const occurrences = PAGE.split("/api/download?session_id=").length - 1;
-  assert.equal(occurrences, 1, `/api/download appears ${occurrences} times`);
+  // The page never spells the download URL itself any more — it renders
+  // `downloadHref`, which only download-token.ts builds — so the single
+  // spelling of the route lives in one module, not in markup.
+  const occurrences = PAGE.split("href={downloadHref}").length - 1;
+  assert.equal(occurrences, 1, `the download link appears ${occurrences} times`);
+  assert.doesNotMatch(PAGE, /\/api\/download\?/);
 });
 
 test("every page state has a branch, so none falls through to a bare thank-you", () => {
@@ -428,6 +474,7 @@ test("every page state has a branch, so none falls through to a bare thank-you",
     "invalid-session",
     "physical",
     "digital-ready",
+    "digital-no-token",
     "revoked",
     "digital-unavailable",
     "unavailable",
@@ -463,11 +510,14 @@ test("the unavailable branch tells the truth and does not poll", () => {
 });
 
 test("the page prints a short reference, never the raw session id", () => {
-  // The full id is a bearer credential for the download route (#111). It belongs
-  // in the href and nowhere else, so the page must never render it as text.
+  // The full id identifies the order and was, until #111, also the bearer
+  // credential for the download route. It reaches no markup at all now.
   assert.match(PAGE, /sessionId\.slice\(-8\)\.toUpperCase\(\)/);
-  // The only place the whole id reaches markup is the download href.
-  assert.match(PAGE, /href=\{`\/api\/download\?session_id=\$\{\s*encodeURIComponent\(sessionId\)\s*\}[\s\S]*?download\b/);
+  assert.doesNotMatch(
+    PAGE,
+    /encodeURIComponent\(sessionId\)/,
+    "the session id must not reach the download href or any attribute",
+  );
   // Visible copy takes the truncated reference, never the id itself.
   assert.match(PAGE, /Order reference <span className="font-medium">\{props\.reference\}<\/span>/);
   // And no <code> block renders the id, which is how the page used to leak it.

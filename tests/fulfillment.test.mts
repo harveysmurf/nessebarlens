@@ -22,6 +22,10 @@ import { FRAME_FINISHES, PHYSICAL_FORMATS, PRINT_SIZES } from "../src/lib/sku-ma
 import { readStripeEvent } from "../src/lib/stripe-event.ts";
 import { eurToCents } from "../src/lib/pricing.ts";
 import type { CreateProdigiOrder } from "../src/lib/prodigi-order.ts";
+import {
+  downloadLinkForSession,
+  readDownloadToken,
+} from "../src/lib/download-token.ts";
 
 const NOW = "2026-09-27T12:00:00.000Z";
 const SESSION = "cs_test_abcdefgh";
@@ -1364,4 +1368,99 @@ test("parseRecipient truncates each field at its own cap", () => {
   assert.equal(recipient.phone, at(32));
   // Email is 254.
   assert.equal(recipient.email!.length, 254);
+});
+
+// ---- download tokens (#111) ----
+
+test("a paid digital order is issued exactly one download token", async () => {
+  const kv = memoryKv();
+  await fulfillCheckoutSession({ ...paidInput(), kv, createOrder: okCreate });
+  const link = await downloadLinkForSession(kv, SESSION);
+  assert.match(link!, /^\/api\/download\?token=[0-9a-f]{32}$/);
+  const record = await readDownloadToken(kv, SESSION);
+  assert.equal(record?.remaining, 5);
+  assert.equal(record?.sessionId, SESSION);
+});
+
+test("the configured limits are the ones the token is issued under", async () => {
+  const kv = memoryKv();
+  await fulfillCheckoutSession({
+    ...paidInput(),
+    kv,
+    createOrder: okCreate,
+    downloadLimits: { ttlSeconds: 3600, maxDownloads: 1 },
+  });
+  const record = await readDownloadToken(kv, SESSION);
+  assert.equal(record?.remaining, 1);
+});
+
+test("a print is issued no token, and neither is an unfulfilled digital order", async () => {
+  // A token for a print is a link that 403s; a token for a paid-but-unfulfilled
+  // digital order is a link whose only outcome is a 409. Neither is a download.
+  const printed = memoryKv();
+  await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 15 * 100 + 499,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      customerEmail: "buyer@example.com",
+      metadata: physicalMeta(),
+    }),
+    kv: printed,
+    createOrder: okCreate,
+  });
+  assert.equal(await readDownloadToken(printed, SESSION), null);
+
+  const badMetadata = memoryKv();
+  await fulfillCheckoutSession({
+    ...paidInput({ metadata: { ...paidInput().metadata, photoSlug: "" } }),
+    kv: badMetadata,
+    createOrder: okCreate,
+  });
+  assert.equal(await readDownloadToken(badMetadata, SESSION), null);
+});
+
+test("a redelivery repairs a paid digital order that has a record but no token", async () => {
+  // The failure this covers: the order was stored, the token write failed, and
+  // Stripe redelivers. Answering "duplicate, already handled" without minting
+  // would leave a paid customer with no way to their file, permanently.
+  const kv = memoryKv();
+  await fulfillCheckoutSession({ ...paidInput(), kv, createOrder: okCreate });
+  await kv.put("dls:" + SESSION, "corrupt");
+  assert.equal(await readDownloadToken(kv, SESSION), null);
+
+  const again = await fulfillCheckoutSession({ ...paidInput(), kv, createOrder: okCreate });
+  assert.equal(again.body.duplicate, true);
+  assert.ok(await readDownloadToken(kv, SESSION), "the redelivery minted a token");
+});
+
+test("a token write failure does not fail an already-paid order", async () => {
+  // The money is taken and the order is stored; losing a convenience record
+  // must not answer 5xx, or Stripe redelivers a fulfilled order forever.
+  const store = new Map<string, string>();
+  const kv: OrdersKv = {
+    async get(key) {
+      return store.get(key) ?? null;
+    },
+    async put(key, value) {
+      if (key.startsWith("dl")) throw new Error("kv write failed");
+      store.set(key, value);
+    },
+  };
+  const errors: unknown[] = [];
+  const realError = console.error;
+  console.error = (...args: unknown[]) => void errors.push(args[0]);
+  try {
+    const result = await fulfillCheckoutSession({ ...paidInput(), kv, createOrder: okCreate });
+    assert.equal(result.httpStatus, 200);
+    assert.equal(result.body.status, "paid");
+    assert.ok(parseOrderRecord((await kv.get(SESSION))!));
+    assert.match(
+      JSON.stringify(errors),
+      /order\.download-token-failed/,
+      "the failure is logged, not swallowed",
+    );
+  } finally {
+    console.error = realError;
+  }
 });

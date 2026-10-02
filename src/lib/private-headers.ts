@@ -14,3 +14,15 @@
  */
 
 export const NO_STORE_HEADERS = { "Cache-Control": "private, no-store" } as const;
+
+/**
+ * The download-token credential must not travel with a request (#111).
+ *
+ * The download route answers with this alongside the shared no-store, and the
+ * checkout success page sets the same policy through next.config.ts, because a
+ * credential in a URL is only safe while no `Referer` can name it. Kept as its
+ * own constant rather than folded into NO_STORE_HEADERS: no-store is about
+ * caching and applies to the print-asset stream too, which has no referrer to
+ * leak, whereas this is specifically about not propagating a query string.
+ */
+export const NO_REFERRER_HEADERS = { "Referrer-Policy": "no-referrer" } as const;

@@ -24,7 +24,17 @@
  * site, inside the try.
  */
 
-import { envFlag, envString, envStringStrippedSlash, stripTrailingSlashes } from "./env";
+import {
+  envFlag,
+  envIntInRange,
+  envString,
+  envStringStrippedSlash,
+  stripTrailingSlashes,
+} from "./env";
+import {
+  DOWNLOAD_TOKEN_MAX_DOWNLOADS,
+  DOWNLOAD_TOKEN_TTL_SECONDS,
+} from "./download-token";
 import {
   prodigiApiBaseIfAllowed,
   prodigiApiKey as prodigiApiKeyOf,
@@ -68,6 +78,18 @@ export type Config = {
   printAsset: {
     /** null when unset or shorter than the HMAC minimum — never a default. */
     secret: string | null;
+  };
+  /**
+   * Download-token limits (#111). Unlike every other field here these *do* have
+   * defaults: they are policy, not credentials, and an unset value must not
+   * mean "unlimited" or "already expired". A bad value falls back to the default
+   * rather than throwing, for the same reason nothing else on a paid path is
+   * made to throw by getConfig — a typo in an optional var must not take a
+   * download endpoint offline.
+   */
+  download: {
+    tokenTtlSeconds: number;
+    maxDownloads: number;
   };
   flags: {
     webDerivativesEnabled: boolean;
@@ -240,6 +262,20 @@ export function getConfig(env: ConfigEnv = process.env): Config {
     // signer and the verifier must agree on what "usable" means, and a second
     // copy of that rule here would be a second answer.
     printAsset: { secret: printAssetSecret(env) },
+    download: {
+      tokenTtlSeconds: envIntInRange(
+        "DOWNLOAD_TOKEN_TTL_SECONDS",
+        env,
+        DOWNLOAD_TOKEN_TTL_SECONDS,
+        60,
+      ),
+      maxDownloads: envIntInRange(
+        "DOWNLOAD_TOKEN_MAX_DOWNLOADS",
+        env,
+        DOWNLOAD_TOKEN_MAX_DOWNLOADS,
+        1,
+      ),
+    },
     flags: {
       webDerivativesEnabled: envFlag("NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED", env),
     },

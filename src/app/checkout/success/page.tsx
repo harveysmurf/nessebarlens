@@ -1,12 +1,17 @@
 import Link from "next/link";
 import OrderStatusPoller from "./OrderStatusPoller";
-import { resolveCheckoutPageState } from "./order-state";
+import {
+  resolveCheckoutDownloadLink,
+  resolveCheckoutPageState,
+} from "./order-state";
+import { getConfig } from "@/lib/config";
 
 /**
  * A short reference the customer can quote in support, derived from the session
- * id already in their URL. The full id is printed nowhere: it is a bearer
- * credential for the download route (#111), and a customer with nothing to
- * quote in an email is worse than one with a short handle.
+ * id already in their URL. The full id is printed nowhere: it identified the
+ * order and, until #111, doubled as the bearer credential for the download
+ * route. It no longer grants a download, but a URL that looks like a secret is
+ * one a customer pastes into a public thread.
  */
 function orderReference(sessionId: string): string {
   return sessionId.slice(-8).toUpperCase();
@@ -19,7 +24,17 @@ export default async function CheckoutSuccessPage({
 }) {
   const { session_id: sessionId } = await searchParams;
   const state = await resolveCheckoutPageState(sessionId);
+  // Only read for the one state that renders a link. A token fetched on every
+  // state would be a credential read for pages that cannot use it.
+  const downloadHref =
+    state === "digital-ready"
+      ? await resolveCheckoutDownloadLink(sessionId)
+      : null;
   const reference = sessionId ? orderReference(sessionId) : "";
+  // Stated from the config the token was actually issued under, so the copy
+  // cannot claim 5 downloads on a deployment configured for 3.
+  const { maxDownloads, tokenTtlSeconds } = getConfig().download;
+  const ttlCopy = ttlCopyOf(tokenTtlSeconds);
 
   return (
     <section className="fade-in max-w-lg mx-auto px-6 py-20 text-center space-y-6">
@@ -47,10 +62,11 @@ export default async function CheckoutSuccessPage({
             You do not need to do anything else.
           </p>
         </OrderCard>
-      ) : state === "digital-ready" && sessionId ? (
+      ) : state === "digital-ready" && downloadHref ? (
         <OrderCard reference={reference}>
           <p className="text-xs text-stone-600 leading-relaxed font-light">
-            Your download is ready.
+            Your download is ready. This link works {maxDownloads} times and
+            expires {ttlCopy}.
           </p>
           {/*
             A plain <a>, deliberately not <Link>.
@@ -62,14 +78,35 @@ export default async function CheckoutSuccessPage({
             client navigation to preserve, and the route's response is not RSC,
             so Next fell back to a hard navigation regardless. `download` tells
             the browser to save rather than navigate, which is what this is.
+
+            Which now also costs a download if it ever were prefetched: the link
+            carries a token, and each redemption spends one (#111). A stray
+            prefetch would burn the customer's count on a render they never
+            asked for, so the plain <a> is load-bearing rather than stylistic.
           */}
           <a
-            href={`/api/download?session_id=${encodeURIComponent(sessionId)}`}
+            href={downloadHref}
             download
             className="inline-block w-full text-center bg-stone-900 hover:bg-stone-800 text-white font-medium py-3 rounded text-xs uppercase tracking-widest transition-all"
           >
             Download your file
           </a>
+        </OrderCard>
+      ) : state === "digital-no-token" ? (
+        /*
+          Paid, and the order record says the file is ready — but there is no
+          download token for it, which is the only thing that now grants the
+          file (#111). Reachable for orders stored before tokens existed; the
+          token is deliberately not minted here, because this URL carries the
+          session id and minting on demand would restore exactly the bearer
+          credential tokens replaced. Ask for the link by email instead, which is
+          what #117 is for.
+        */
+        <OrderCard reference={reference}>
+          <p className="text-xs text-stone-600 leading-relaxed font-light">
+            Your payment went through, but we cannot show a download link here.
+            Please contact us and quote the reference below and we will send it.
+          </p>
         </OrderCard>
       ) : state === "revoked" ? (
         <OrderCard reference={reference}>
@@ -130,6 +167,16 @@ export default async function CheckoutSuccessPage({
       </Link>
     </section>
   );
+}
+
+/** "30 days", "12 hours" — never a raw seconds count at the customer. */
+function ttlCopyOf(seconds: number): string {
+  if (seconds % 86_400 === 0) {
+    const days = seconds / 86_400;
+    return days === 1 ? "1 day" : `${days} days`;
+  }
+  if (seconds % 3_600 === 0) return `${seconds / 3_600} hours`;
+  return `${Math.round(seconds / 60)} minutes`;
 }
 
 function OrderCard(props: {

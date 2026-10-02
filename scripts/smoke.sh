@@ -126,14 +126,15 @@ check_body "POST /api/quote invalid body" 400 "format must be" \
   -X POST -H 'Content-Type: application/json' -d '{"format":"poster","size":"30x40"}' \
   "$BASE/api/quote"
 
-# Malformed session ids are rejected before KV is touched.
-check_body "GET /api/download malformed session" 400 "invalid-session-id" \
-  "$BASE/api/download?session_id=not-a-session"
+# A malformed token is rejected on shape, before KV is touched. Since #111 the
+# session id is not a credential, so there is no session-id branch to probe.
+check_body "GET /api/download malformed token" 400 "invalid-token" \
+  "$BASE/api/download?token=not-a-token"
 
-# ORDERS bound: an unknown-but-valid session is still "processing" (202). A
-# 503 means the KV binding is missing from the preview env, so it fails here.
-check_any "GET /api/download unknown session" "202 503" \
-  "$BASE/api/download?session_id=cs_test_smoke0001"
+# ORDERS bound: a well-formed but unknown token is a 404, so a 503 here means
+# the KV binding is missing from the preview env.
+check_any "GET /api/download unknown token" "404 503" \
+  "$BASE/api/download?token=$(printf 'a%.0s' {1..32})"
 
 # HMAC guard: a 400 (not 503) means PRINT_ASSET_HMAC_SECRET is present in the
 # preview env. Malformed exp fails the shape check before the expiry check.
