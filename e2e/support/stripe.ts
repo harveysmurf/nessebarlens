@@ -68,4 +68,38 @@ export async function fillCard(page: import("@playwright/test").Page) {
   await page.locator('input[autocomplete="cc-exp"]').fill(TEST_CARD.exp);
   await page.locator('input[autocomplete="cc-csc"]').fill(TEST_CARD.csc);
   await page.locator('input[autocomplete="cc-name"]').fill(TEST_CARD.name);
+  await fillBillingAddress(page);
+}
+
+/**
+ * Fill whatever the billing block requires beyond the card.
+ *
+ * The trace is what found this: on a GitHub runner Stripe renders a billing
+ * address ZIP and a phone number inside the Link block, both empty and both
+ * marked `[invalid]`, and clicking Pay then does nothing at all — the page
+ * just sits there until the spec's own timeout, which reads as "Stripe never
+ * redirected" rather than as a form this suite forgot to fill. The same flow
+ * passed locally, so a hardcoded field list would have kept the divergence
+ * hidden.
+ *
+ * So each field is filled only if it is present, and only if it is still
+ * empty: Stripe decides which fields a session needs from the account's
+ * settings, so the set differs between a local sandbox session and a CI one,
+ * and a country preset by the browser (the runner defaults to US) may already
+ * have supplied one. Nothing here is required to exist, so a session with no
+ * billing block at all is still a valid pass.
+ */
+export async function fillBillingAddress(page: import("@playwright/test").Page) {
+  // The tokens are the ones Stripe actually shipped on the failing CI run
+  // (`autocomplete="billing postal-code"` and `autocomplete="tel"`, read out of
+  // the uploaded trace), not the ones a US form is usually expected to use.
+  for (const [name, value] of [
+    ["postal-code", "10001"],
+    ["tel", "2015550123"],
+  ] as const) {
+    const field = page.locator(`input[autocomplete*="${name}"]`).first();
+    if ((await field.count()) === 0) continue;
+    if (((await field.inputValue().catch(() => "")) || "").trim() !== "") continue;
+    await field.fill(value);
+  }
 }

@@ -161,7 +161,13 @@ test("the E2E flow is its own job in ci.yml, not a step in lint-and-test", () =>
     "the lint-and-test job must stay free of Playwright",
   );
   assert.match(body, /playwright install/, "e2e-smoke must install its browser");
-  assert.match(body, /run:\s*npm run test:e2e/);
+  // The xvfb-run wrapper is not incidental: Stripe gates the hosted-checkout
+  // submit on an hCaptcha token that headless Chromium on a runner never
+  // receives. The assertion is on the command underneath the wrapper, and
+  // HEADED=1 is what tells playwright.config.ts to open a real window.
+  assert.match(body, /npm run test:e2e/);
+  assert.match(body, /xvfb-run/, "the browser must run headed; hCaptcha refuses headless");
+  assert.match(body, /HEADED: "1"/, "HEADED=1 must reach the Playwright config");
 });
 
 test("the E2E job is pull_request-only, so a production merge does not re-run a browser", () => {
@@ -196,12 +202,17 @@ test("the E2E job refuses to run without a Stripe TEST key", () => {
 
   // The specs skip themselves with no key, so without this the job would go
   // green having tested only the seeded success-page states.
-  assert.match(body, /STRIPE_TEST_SECRET_KEY/, "must read the test-only key");
-  assert.doesNotMatch(
-    body,
-    /secrets\.STRIPE_SECRET_KEY/,
-    "the E2E job must use the test key, never the live one",
-  );
+  assert.match(body, /STRIPE_SECRET_KEY/, "must read a Stripe key");
+  // The key comes from the staging Environment, whose single STRIPE_SECRET_KEY
+  // is the sandbox one. Two things have to hold together here, and the second
+  // is what makes the first safe:
+  //  - `environment: staging`, or `secrets.*` resolves against the repository
+  //    scope and resolves to nothing at all.
+  //  - the sk_test_ guard below, which is what actually stops a live key from
+  //    being spent. Dropping the environment line breaks the job; dropping the
+  //    guard would let a live key through, so the guard is asserted, not
+  //    trusted.
+  assert.match(body, /^ {4}environment: staging$/m, "the staging keys are Environment secrets");
   assert.match(body, /sk_test_\*/, "must reject a non-test key before paying");
 });
 
