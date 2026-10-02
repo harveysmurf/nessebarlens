@@ -193,13 +193,23 @@ test("a configured key is reported as configured on both hosts", () => withClean
 test("prodigiFailure unwraps the message and classifies it in one step", () => {
   assert.deepEqual(
     prodigiFailure(new Error("Prodigi is not set")),
-    { error: "Prodigi is not set", status: 502 },
+    {
+      code: "prodigi-unavailable",
+      error: "Pricing is temporarily unavailable, please try again.",
+      status: 502,
+      detail: "Prodigi is not set",
+    },
   );
   // A misconfigured deploy must keep reporting 503, not slip to 502 now that
   // the message is unwrapped in a different place.
   assert.deepEqual(
     prodigiFailure(new Error("PRODIGI_API_KEY is not set")),
-    { error: "PRODIGI_API_KEY is not set", status: 503 },
+    {
+      code: "prodigi-unconfigured",
+      error: "Pricing is temporarily unavailable, please try again.",
+      status: 503,
+      detail: "PRODIGI_API_KEY is not set",
+    },
   );
   assert.equal(
     prodigiFailure(new Error("PRODIGI_SANDBOX_API_KEY is not set")).status,
@@ -209,11 +219,56 @@ test("prodigiFailure unwraps the message and classifies it in one step", () => {
 
 test("prodigiFailure falls back to the one message for a non-Error throw", () => {
   assert.deepEqual(prodigiFailure("just a string"), {
-    error: "Quote failed",
+    code: "prodigi-unavailable",
+    error: "Pricing is temporarily unavailable, please try again.",
     status: 502,
+    detail: "Quote failed",
   });
   assert.deepEqual(prodigiFailure(undefined), {
-    error: "Quote failed",
+    code: "prodigi-unavailable",
+    error: "Pricing is temporarily unavailable, please try again.",
     status: 502,
+    detail: "Quote failed",
   });
+});
+
+test("prodigiFailure's customer-facing fields never carry the detail (#107)", () => {
+  // The property under test is that whatever goes into a response body, the
+  // internal message does not. Enumerated rather than sampled so a new throw
+  // site is covered by the same assertion, and asserted per-field because a
+  // route that spreads the whole failure would pass a single combined check.
+  for (const thrown of [
+    new Error("PRODIGI_API_KEY is not set"),
+    new Error("PRODIGI_API_BASE must be https://api.sandbox.prodigi.com"),
+    new Error("Prodigi quote HTTP 429"),
+    new Error("Prodigi quotes HTTP 500: {\"detail\":\"invalid key\"}"),
+    "just a string",
+    undefined,
+  ]) {
+    const failure = prodigiFailure(thrown);
+    const detail = failure.detail;
+    assert.equal(failure.error.includes(detail), false, failure.error);
+    assert.equal(failure.code.includes(detail), false, failure.code);
+    assert.match(failure.error, /^Pricing is temporarily unavailable/);
+  }
+});
+
+test("a Prodigi route cannot serialize the failure detail (#107)", () => {
+  // The type is not the guarantee: a route writing `{ ...failure }` compiles
+  // and ships the detail. The body is asserted field-by-field instead.
+  for (const route of ["quote", "checkout"]) {
+    const source = fs.readFileSync(
+      path.join(import.meta.dirname, "..", `src/app/api/${route}/route.ts`),
+      "utf8",
+    );
+    assert.equal(
+      /\.\.\.failure\b/.test(source),
+      false,
+      `${route} spreads the whole Prodigi failure into its body`,
+    );
+    assert.ok(
+      source.includes("failure.detail"),
+      `${route} must log the internal Prodigi detail`,
+    );
+  }
 });

@@ -256,10 +256,12 @@ test("quote: a digital quote is not a thing, and Prodigi decides the status", as
       }),
     );
     assert.equal(unconfigured.status, 503, "no key is 503, a Prodigi failure is 502");
-    assert.equal(
-      (await body(unconfigured)).error,
-      "PRODIGI_SANDBOX_API_KEY is not set",
-    );
+    // The env var name is what made this a leak: an unauthenticated caller
+    // could read our deployment state off the error string (#107).
+    assert.deepEqual(await body(unconfigured), {
+      error: "Pricing is temporarily unavailable, please try again.",
+      code: "prodigi-unconfigured",
+    });
 
     process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
     globalThis.fetch = (async () => new Response("nope", { status: 500 })) as typeof fetch;
@@ -791,10 +793,17 @@ test("checkout: a Stripe rejection is a 502 that names Stripe's own code", async
     );
     assert.equal(response.status, 502);
     const failed = await body(response);
-    // A bare 502 cannot tell a key missing Checkout Sessions write from an
-    // account that is not live; the code is the only thing that can.
-    assert.equal(failed.stripeCode, "api_key_invalid");
-    assert.equal(failed.error, "Could not create Checkout Session");
+    // Stripe's own code identifies the cause in the log, not in the body this
+    // unauthenticated caller reads (#107).
+    assert.deepEqual(failed, {
+      error: "Could not create Checkout Session",
+      code: "checkout-unavailable",
+    });
+    assert.equal(
+      JSON.stringify(failed).includes("api_key_invalid"),
+      false,
+      "Stripe's error code must not reach the response body",
+    );
   } finally {
     globalThis.fetch = originalFetch;
     restore();
@@ -1479,7 +1488,10 @@ test("quote: an omitted destination country defaults, and a non-Error throw is a
       jsonRequest(`${SITE}/api/quote`, { format: "giclee", size: "30x40" }),
     );
     assert.equal(broken.status, 502);
-    assert.equal((await body(broken)).error, "Quote failed");
+    assert.deepEqual(await body(broken), {
+      error: "Pricing is temporarily unavailable, please try again.",
+      code: "prodigi-unavailable",
+    });
   } finally {
     globalThis.fetch = originalFetch;
     for (const key of ["PRODIGI_API_BASE", "PRODIGI_SANDBOX_API_KEY"] as const) {
@@ -1508,7 +1520,10 @@ test("checkout: a non-Error throw from the quote layer is a 502", async () => {
       }),
     );
     assert.equal(response.status, 502);
-    assert.equal((await body(response)).error, "Quote failed");
+    assert.deepEqual(await body(response), {
+      error: "Pricing is temporarily unavailable, please try again.",
+      code: "prodigi-unavailable",
+    });
   } finally {
     globalThis.fetch = originalFetch;
     restore();

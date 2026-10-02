@@ -88,6 +88,31 @@ export function errorMessage(value: unknown): string | null {
 }
 
 /**
+ * The copy the configurator shows for a failure code, keyed by the code the
+ * routes now send instead of an internal message (#107).
+ *
+ * The routes' own `error` string is already customer-safe, so this map is not
+ * the only thing standing between the customer and a leak — it is the one that
+ * survives a route being changed, or an older/newer deploy being in front of
+ * this bundle, where the string in the body is not the string this map knows.
+ * An unknown code therefore falls through to the server's message rather than
+ * being swallowed: the routes are the authority on what is safe to say, and
+ * this map only overrides the codes it recognises.
+ */
+const CODE_COPY: Readonly<Record<string, string>> = {
+  "prodigi-unconfigured": "Pricing is temporarily unavailable, please try again.",
+  "prodigi-unavailable": "Pricing is temporarily unavailable, please try again.",
+  "checkout-unavailable": "Checkout is temporarily unavailable, please try again.",
+};
+
+/** The copy for a failure `code`, or null when the body carries none we know. */
+export function codeErrorMessage(value: unknown): string | null {
+  if (!isRecord(value)) return null;
+  const code = value.code;
+  return typeof code === "string" ? CODE_COPY[code] ?? null : null;
+}
+
+/**
  * A body that arrived and was not JSON. A distinct value rather than null,
  * because `null` is a legitimate JSON payload and "the server sent HTML" is a
  * different failure from "the server sent JSON null" — the caller reports them
@@ -149,5 +174,7 @@ export function requestErrorMessage(
   fallback: string,
 ): string {
   if (isNonJsonBody(value)) return `${fallback} (${status})`;
-  return errorMessage(value) ?? `${fallback} (${status})`;
+  return (
+    codeErrorMessage(value) ?? errorMessage(value) ?? `${fallback} (${status})`
+  );
 }

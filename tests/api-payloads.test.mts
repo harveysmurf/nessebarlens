@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   checkoutUrl,
+  codeErrorMessage,
   errorMessage,
   isLiveQuote,
   isNonJsonBody,
@@ -144,4 +145,31 @@ test("the error message names the status when the server sent no usable string",
     requestErrorMessage({ error: "Checkout is not configured" }, 503, "Checkout failed"),
     "Checkout is not configured",
   );
+});
+
+test("a known failure code wins over the string in the body (#107)", () => {
+  // The routes now send a code plus a safe message; the map is what the UI
+  // actually shows, so a body whose `error` is anything else cannot reach the
+  // customer through a code we recognise.
+  assert.equal(
+    requestErrorMessage(
+      { code: "prodigi-unavailable", error: "Prodigi quote HTTP 429" },
+      502,
+      "Quote failed",
+    ),
+    "Pricing is temporarily unavailable, please try again.",
+  );
+  assert.equal(
+    codeErrorMessage({ code: "checkout-unavailable" }),
+    "Checkout is temporarily unavailable, please try again.",
+  );
+  // An unknown code is not swallowed: the server owns what is safe to say, and
+  // a code from a newer deploy still shows its own message.
+  assert.equal(codeErrorMessage({ code: "something-new" }), null);
+  assert.equal(
+    requestErrorMessage({ code: "something-new", error: "Upstream said no" }, 502, "Quote failed"),
+    "Upstream said no",
+  );
+  assert.equal(codeErrorMessage("not-an-object"), null);
+  assert.equal(codeErrorMessage({ code: 7 }), null);
 });
