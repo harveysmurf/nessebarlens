@@ -385,6 +385,21 @@ npm run migrate:orders            # INSERT … ON CONFLICT DO NOTHING
 npm run migrate:orders -- --overwrite
 ```
 
+**Every read of a production KV namespace needs `--remote`, explicitly.**
+`wrangler kv key list/get` resolves a binding against *local* storage unless
+`--remote` is passed, so an omitted flag returns `[]` / `""` on any machine that
+has not run `wrangler dev` — no error, exit 0. The failure mode is silent: a
+migration then reports a zero tally and looks like it worked. Compare:
+
+```bash
+wrangler kv key list --binding ORDERS --prefix ""            # -> []        (local)
+wrangler kv key list --binding ORDERS --prefix "" --remote   # -> cs_test_… (real)
+```
+
+Treat a missing `--remote` on any `wrangler kv …` read as a bug, not a
+style nit. This bit `scripts/migrate-orders-kv-to-d1.mjs` and the fix is
+`fix/175-migrate-reads-remote` (#176).
+
 Operator view (CLI, not an admin route — this Worker serves customers):
 
 ```bash

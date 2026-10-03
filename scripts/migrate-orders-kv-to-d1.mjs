@@ -278,6 +278,21 @@ export function runMigrate(argv, options = {}) {
   }
 
   const keys = listKv(spawn);
+  // An empty source is refused, not reported as a successful zero. Every way
+  // this can happen is a wrong-configuration signal rather than an empty
+  // namespace: a binding that resolves to local storage, a namespace id that
+  // was recreated, or a typo in the binding name. Migrating nothing and
+  // exiting 0 would leave the operator believing the data had moved, and the
+  // KV binding is then deleted on that belief.
+  if (keys.length === 0) {
+    return {
+      exitCode: 1,
+      stdout: "",
+      stderr:
+        `no keys found in KV binding ${KV_BINDING}: refusing to report a successful zero-row migration. ` +
+        "Confirm the binding exists in wrangler.toml and that the namespace still holds orders.",
+    };
+  }
   const kv = {};
   for (const key of keys) {
     kv[key] = getKv(spawn, key);
@@ -334,6 +349,12 @@ function defaultListKv(spawn) {
       KV_BINDING,
       "--prefix",
       "",
+      // --remote is load-bearing, not hygiene. Without it wrangler resolves the
+      // binding against local storage, which is empty on any machine that has
+      // not run `wrangler dev`: the run reports tally zero, exits 0, and moves
+      // nothing, while KV still holds every order. Verified against this
+      // account -- the same command with --remote lists the namespace.
+      "--remote",
     ];
     if (cursor) {
       args.push("--cursor", cursor);
@@ -356,7 +377,10 @@ function defaultListKv(spawn) {
 function defaultGetKv(spawn, key) {
   const result = spawn(
     "npx",
-    ["wrangler", "kv", "key", "get", key, "--binding", KV_BINDING],
+    // --remote for the same reason as the list above; a local get returns an
+    // empty string, which looksLikeOrderRecord then reports as a corrupt
+    // record, so the missing flag would also fill stderr with every order.
+    ["wrangler", "kv", "key", "get", key, "--binding", KV_BINDING, "--remote"],
     { encoding: "utf8" },
   );
   if ((result.status ?? 1) !== 0) {
