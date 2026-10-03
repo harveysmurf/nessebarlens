@@ -1,0 +1,114 @@
+diff --git a/.github/workflows/ci.yml b/.github/workflows/ci.yml
+index 2398d1e..2f84692 100644
+--- a/.github/workflows/ci.yml
++++ b/.github/workflows/ci.yml
+@@ -98,8 +98,15 @@ jobs:
+         env:
+           PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
+ 
++      # A physical order cannot be charged without this one: /api/checkout fails
++      # closed with 503 when it cannot sign a master asset URL, so the
++      # physical-print spec would wait on a Checkout button that can never
++      # enable. No guard step for the same reason as the two above — the spec
++      # itself asserts the failure, so a missing secret is a red test, not a
++      # silent skip.
+       - name: E2E smoke flow
+         run: npm run test:e2e
+         env:
+           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_TEST_SECRET_KEY }}
+           PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
++          PRINT_ASSET_HMAC_SECRET: ${{ secrets.PRINT_ASSET_HMAC_SECRET }}
+diff --git a/DEVELOPMENT.md b/DEVELOPMENT.md
+index 5d80bab..4b3234a 100644
+--- a/DEVELOPMENT.md
++++ b/DEVELOPMENT.md
+@@ -170,13 +170,26 @@ deployment, and a smoke flow coupled to one has two possible causes for every
+ red run. `preview.yml` stays browser-free; the flow lives in its own
+ pull-request-only `e2e-smoke` job in `ci.yml`.
+ 
+-Needs `npx playwright install chromium` once, and a **sandbox** Stripe key:
++Needs `npx playwright install chromium` once, and three values: a **sandbox**
++Stripe key, the **Prodigi sandbox** key, and any `PRINT_ASSET_HMAC_SECRET` (it
++only has to sign — the flow asserts the redirect, not a download):
+ 
+ ```bash
+ npx playwright install chromium
+-STRIPE_SECRET_KEY=sk_test_… npm run test:e2e
++STRIPE_SECRET_KEY=sk_test_… \
++PRODIGI_SANDBOX_API_KEY=test_… \
++PRINT_ASSET_HMAC_SECRET=$(openssl rand -hex 32) \
++npm run test:e2e
+ ```
+ 
++The dev server Playwright starts gets all three, plus a **pinned**
++`PRODIGI_API_BASE=https://api.sandbox.prodigi.com`. Prodigi is explicit-host by
++design, so without that host `/api/quote` answers 503; without the HMAC secret
++`/api/checkout` fails closed with 503 "Print fulfillment is not configured". Both
++make the physical-print spec wait on a Checkout button that can never enable,
++which reads as a Prodigi outage rather than a missing variable.
++`tests/e2e-harness-env.test.mts` pins all of it.
++
+ Without a key the Stripe specs **skip themselves** and only the success-page
+ states run — a partial pass that looks green. CI fails the job outright instead
+ of skipping, and asserts the key is `sk_test_` before spending anything. The
+@@ -253,7 +266,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
+ 
+ | Workflow | Trigger | What it does |
+ |----------|---------|--------------|
+-| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a pull-request-only `e2e-smoke` job (`npm ci` → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **E2E smoke flow**: `npm run test:e2e`) |
++| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a pull-request-only `e2e-smoke` job (`npm ci` → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **E2E smoke flow** (with the print-asset signing secret): `npm run test:e2e`) |
+ | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → Pages preview → **smoke test** (`scripts/smoke.sh`) → PR comment; cleanup on close |
+ | `.github/workflows/prod.yml` | push to `main` + `workflow_dispatch` | production Environment → build → Pages `main` → `sync-pages-secrets.sh production` |
+ 
+diff --git a/e2e/smoke.spec.ts b/e2e/smoke.spec.ts
+index de26f07..9d5c836 100644
+--- a/e2e/smoke.spec.ts
++++ b/e2e/smoke.spec.ts
+@@ -44,9 +44,15 @@ test.describe("checkout smoke flow", () => {
+ 
+     await expect(page).toHaveURL(/\/prints\/[a-z0-9-]+$/);
+ 
+-    // Digital licence: the configurator prices this one itself, so the price is
+-    // visible with no network call and no quote to wait for. That is also why
+-    // this flow is the one that can run without Prodigi.
++    // Digital licence, chosen explicitly: the configurator opens on the
++    // default format, which is physical, so without this the price label holds
++    // a Prodigi quote (or "—") and there is nothing to assert. Once digital is
++    // selected the configurator prices it itself, so the price is visible with
++    // no network call and no quote to wait for — which is also why this flow is
++    // the one that can run without Prodigi.
++    // The label, not the input: the radio is sr-only behind its label, so
++    // check() on the input is a click the label's own div intercepts forever.
++    await page.getByText(/digital copy/i).click();
+     const price = page.getByText(`€${DIGITAL_PRICE_EUR.toFixed(2)}`).first();
+     await expect(price).toBeVisible();
+ 
+diff --git a/playwright.config.ts b/playwright.config.ts
+index 180f26e..7007078 100644
+--- a/playwright.config.ts
++++ b/playwright.config.ts
+@@ -50,6 +50,24 @@ export default defineConfig({
+       // Stripe's sandbox, where 4242… cannot move money. support/stripe.ts
+       // asserts that as a test rather than trusting this comment.
+       STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY ?? "sk_test_e2e_placeholder",
++      // Prodigi is explicit-host by design: prodigiApiBase() throws unless
++      // PRODIGI_API_BASE is set to an allowlisted host, so the server needs the
++      // sandbox base and its paired key or /api/quote answers 503 and the
++      // physical-print spec waits on a Checkout button that can never enable.
++      // The key only reaches the server when it is present, so a bare dev run
++      // without one still leaves that spec skipped rather than misconfigured.
++      PRODIGI_API_BASE: "https://api.sandbox.prodigi.com",
++      ...(process.env.PRODIGI_SANDBOX_API_KEY
++        ? { PRODIGI_SANDBOX_API_KEY: process.env.PRODIGI_SANDBOX_API_KEY }
++        : {}),
++      // A physical order cannot be charged without this one: /api/checkout
++      // fails closed (503 "Print fulfillment is not configured") when it cannot
++      // sign a master asset URL, so without it the physical-print spec waits on
++      // a Checkout button that can never enable. The value only has to sign —
++      // the flow asserts the redirect to Stripe, not a download.
++      ...(process.env.PRINT_ASSET_HMAC_SECRET
++        ? { PRINT_ASSET_HMAC_SECRET: process.env.PRINT_ASSET_HMAC_SECRET }
++        : {}),
+       // The three success-page states. Without this the page can only ever
+       // render "processing" on a dev server, because ORDERS is a Worker
+       // binding with no env fallback.
