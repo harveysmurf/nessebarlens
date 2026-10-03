@@ -4,9 +4,10 @@
  * matter what the secrets were — and neither failure looked like a config
  * problem.
  *
- *   - Prodigi is explicit-host: prodigiApiBase() throws unless PRODIGI_API_BASE
- *     is an allowlisted host, so /api/quote answered 503 and the physical-print
- *     spec waited on a Checkout button that could never enable.
+ *   - Prodigi is explicit-host: readProdigiConfig reports unconfigured unless
+ *     PRODIGI_API_BASE is an allowlisted host, so /api/quote answered 503 and
+ *     the physical-print spec waited on a Checkout button that could never
+ *     enable.
  *   - A physical order fails closed without PRINT_ASSET_HMAC_SECRET (503 "Print
  *     fulfillment is not configured"), so the same spec could not reach Stripe
  *     even once the quote worked.

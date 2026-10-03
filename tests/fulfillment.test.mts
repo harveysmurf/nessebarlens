@@ -88,9 +88,11 @@ function physicalMeta(
 
 const okCreate: CreateProdigiOrder = async () => ({
   ok: true,
-  orderId: "ord_sandbox_1",
-  stage: "InProgress",
-  assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+  value: {
+    orderId: "ord_sandbox_1",
+    stage: "InProgress",
+    assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+  },
 });
 
 test("parseOrderRecord accepts the two safe asset shapes at any origin (#110)", () => {
@@ -225,7 +227,7 @@ test("digital payment with a matching total is paid and does not call Prodigi", 
   let called = 0;
   const create: CreateProdigiOrder = async () => {
     called += 1;
-    return { ok: true, orderId: "x", stage: null, assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" };
+      return { ok: true, value: { orderId: "x", stage: null, assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" } };
   };
   const store = memoryOrdersStore();
   const result = await fulfillCheckoutSession({
@@ -290,7 +292,7 @@ test("missing shipping is a permanent stop without calling Prodigi", async () =>
     store,
     createOrder: async () => {
       called += 1;
-      return { ok: true, orderId: "x", stage: null, assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" };
+    return { ok: true, value: { orderId: "x", stage: null, assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" } };
     },
   });
   assert.equal(result.body.status, "paid-unfulfilled");
@@ -352,7 +354,7 @@ test("a retryable Prodigi failure writes the paid order, answers 500, and retrie
             message: "transient",
             status: null,
           }
-        : { ok: true, orderId: "ord_fixed", stage: "InProgress", assetUrl: "https://nessebarlens.com/api/print-asset?x=1" };
+        : { ok: true, value: { orderId: "ord_fixed", stage: "InProgress", assetUrl: "https://nessebarlens.com/api/print-asset?x=1" } };
 
     const first = await fulfillCheckoutSession({
       ...paidInput({
@@ -405,6 +407,63 @@ test("a retryable Prodigi failure writes the paid order, answers 500, and retrie
     });
     assert.equal(again.body.duplicate, true, reason);
   }
+});
+
+test("a retryable record that is not a complete physical order is parked as bad-metadata", async () => {
+  // buildRecord only writes awaiting-prodigi and the retryable reasons after
+  // the size/frame/recipient checks pass, so a record in the retryable state is
+  // normally a complete physical order. A tampered or legacy record can name a
+  // retryable reason without that shape; the Prodigi trigger must park it
+  // terminally instead of sending it to the client.
+  const store = memoryOrdersStore({
+    orders: {
+      [SESSION]: JSON.stringify({
+        v: 1,
+        sessionId: SESSION,
+        merchantReference: SESSION,
+        terminal: false,
+        status: "paid-unfulfilled",
+        photoSlug: "dawn",
+        kind: "physical",
+        format: "giclee",
+        size: "30x40",
+        frame: "",
+        quoteEur: 15,
+        amountTotal: 1999,
+        currency: "eur",
+        reason: "prodigi-unavailable",
+        masterKey: null,
+        recipient: null,
+        prodigiOrderId: null,
+        prodigiStage: null,
+        assetUrl: null,
+        updatedAt: NOW,
+      }),
+    },
+  });
+  let called = 0;
+  const result = await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      metadata: physicalMeta(),
+    }),
+    store,
+    createOrder: async () => {
+      called += 1;
+      return {
+        ok: true,
+        value: { orderId: "x", stage: null, assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" },
+      };
+    },
+  });
+  assert.equal(called, 0, "a record without a recipient must not reach Prodigi");
+  assert.equal(result.httpStatus, 200);
+  assert.equal(result.body.reason, "bad-metadata");
+  const stored = parseOrderRecord((await store.getOrder(SESSION))!);
+  assert.equal(stored?.reason, "bad-metadata");
+  assert.equal(stored?.terminal, true);
 });
 
 test("a terminal Prodigi 400 is not retried on redelivery", async () => {
@@ -629,12 +688,48 @@ test("bad metadata, unknown photo, and unpaid sessions do not become downloads",
   assert.deepEqual(unpaid, { action: "ignore", reason: "unpaid" });
 });
 
+test("a physical order stops the same way for missing quote or unknown photo", () => {
+  // The two early stops are per-kind now: a physical order with no quote or an
+  // unknown slug writes a physical bad-metadata / unknown-photo record, not a
+  // digital or unknown one.
+  const noQuote = decideFulfillment(
+    paidInput({
+      metadata: { photoSlug: "dawn", format: "giclee", size: "30x40" },
+    }),
+  );
+  assert.equal(noQuote.action, "write");
+  if (noQuote.action === "write") {
+    assert.equal(noQuote.record.reason, "bad-metadata");
+    assert.equal(noQuote.record.kind, "physical");
+    assert.equal(noQuote.record.format, "giclee");
+  }
+
+  const unknownPhoto = decideFulfillment(
+    paidInput({
+      metadata: {
+        photoSlug: "not-a-photo",
+        format: "giclee",
+        size: "30x40",
+        frame: "",
+        quoteEur: "15",
+        merchandiseEur: "15",
+        shippingEur: "4.99",
+      },
+    }),
+  );
+  assert.equal(unknownPhoto.action, "write");
+  if (unknownPhoto.action === "write") {
+    assert.equal(unknownPhoto.record.reason, "unknown-photo");
+    assert.equal(unknownPhoto.record.kind, "physical");
+  }
+});
+
 test("a second delivery does not overwrite the first ORDERS record or call Prodigi again", async () => {
   const store = memoryOrdersStore();
   let calls = 0;
   const create: CreateProdigiOrder = async () => {
     calls += 1;
-    return { ok: true, orderId: "ord_1", stage: "InProgress", assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" };
+    return { ok: true, value: { orderId: "ord_1", stage: "InProgress", assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" } };
   };
   await fulfillCheckoutSession({
     ...paidInput({
@@ -835,8 +930,8 @@ test("webhook + download routes still do not call Prodigi; order module is the o
     assert.equal(src.includes("api.prodigi.com"), false, rel);
   }
   const order = fs.readFileSync(path.join(root, "src/lib/prodigi-order.ts"), "utf8");
-  assert.equal(order.includes("prodigiOrdersUrl"), true);
-  assert.equal(order.includes("prodigiApiKey"), true);
+  assert.equal(order.includes("prodigiUrl"), true);
+  assert.equal(order.includes("prodigiConfig"), true);
   assert.equal(order.includes("assertNoMasterLeak"), true);
   assert.equal(order.includes("signPrintAssetUrl"), true);
   const config = fs.readFileSync(
@@ -940,16 +1035,17 @@ test("the fulfillment pair reuses the pricing/sku-map types instead of redeclari
   const effects = fs.readFileSync(path.join(root, "fulfillment.ts"), "utf8");
   const both = decision + effects;
 
-  // The unions must be imported from pricing.ts, not restated: a private copy
+  // The unions must be imported from their owners, not restated: a private copy
   // would leave the order validator behind when a format is added. The two
-  // halves own different ones — order-decision narrows PrintFormat,
-  // fulfillment casts the physical fields back on the way to Prodigi — so each
-  // name has to arrive from ./pricing somewhere in the pair.
+  // halves narrow differently — order-decision builds the discriminated union,
+  // fulfillment narrows it back down on the way to Prodigi — so the names have
+  // to arrive from ./pricing (the label/format unions) or sku-map's predicates
+  // (the allow-lists).
   const pricingImports = [...both.matchAll(/import (type )?\{([^}]*)\} from "\.\/pricing"/g)]
     .map((m) => m[2]!)
     .join(",");
   assert.ok(pricingImports.length > 0, "the pair must import from ./pricing");
-  for (const name of ["FrameFinish", "PrintFormat", "PrintSize"]) {
+  for (const name of ["FrameFinish", "PrintFormat"]) {
     assert.ok(
       pricingImports.includes(name),
       `${name} must be imported from pricing.ts`,
@@ -962,7 +1058,7 @@ test("the fulfillment pair reuses the pricing/sku-map types instead of redeclari
   // No alias arrays re-wrapping the sku-map lists.
   assert.equal(/const SIZES\s*:/.test(both), false);
   assert.equal(/const FRAMES\s*:/.test(both), false);
-  // The allow-list is read through sku-map's predicate, not through a local
+  // The allow-list is read through sku-map's predicates, not through a local
   // alias array. The alias was not itself the bug -- it pointed at the shared
   // list -- but the two format guards each cast their way through it, so the
   // cast rather than the check decided what a stored format could be. Reading
@@ -970,6 +1066,18 @@ test("the fulfillment pair reuses the pricing/sku-map types instead of redeclari
   assert.ok(
     decision.includes("isSellableFormat"),
     "order-decision must validate formats with sku-map's isSellableFormat",
+  );
+  assert.ok(
+    decision.includes("isPhysicalFormat"),
+    "order-decision must split physical from digital with sku-map's predicate",
+  );
+  assert.ok(
+    effects.includes("isPrintSize"),
+    "fulfillment must narrow the size with sku-map's isPrintSize, not a cast",
+  );
+  assert.ok(
+    effects.includes("isFrameFinishValue"),
+    "fulfillment must narrow the frame with sku-map's isFrameFinishValue, not a cast",
   );
   assert.equal(
     /const FORMATS\s*:/.test(both),
@@ -981,6 +1089,17 @@ test("the fulfillment pair reuses the pricing/sku-map types instead of redeclari
     false,
     "no cast-through-string[] membership test in the pair",
   );
+  // The four parsed domain fields fulfillment used to cast must not be cast
+  // back now that the record is a discriminated union: `kind` does the
+  // narrowing, and the size/frame/recipient checks are guards.
+  for (const cast of [
+    "as PhysicalFormat",
+    "as PrintSize",
+    "as FrameFinish",
+    "recipient!",
+  ]) {
+    assert.equal(effects.includes(cast), false, `fulfillment still casts ${cast}`);
+  }
   // SELLABLE_FORMATS is the one place "digital" joins the physical formats.
   assert.equal(
     /\[\.\.\.PHYSICAL_FORMATS, "digital"\]/.test(both),
@@ -1056,7 +1175,7 @@ test("resolveDownload is a gate, and every rejection path is distinguishable", a
 
   // 1. A physical order is not a download at all, and the bucket is untouched.
   let touched = false;
-  const physical = digitalPaid({ format: "giclee" });
+  const physical = digitalPaid({ kind: "physical", format: "giclee", size: "30x40" });
   const refused = await resolveDownload(physical, {
     async get() {
       touched = true;

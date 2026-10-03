@@ -8,13 +8,18 @@ import { MASTERS_BUCKET, referencesMasters } from "./master-guard";
 import { PHOTOS } from "./photos";
 import type { FrameFinish, PrintSize } from "./pricing";
 import {
+  classifyProdigiStatus,
   detailSuffix,
   isProdigiTimeout,
   PRODIGI_ORDER_TIMEOUT_MS,
   PRODIGI_SHIPPING_METHOD,
   prodigiTimeoutSignal,
+  prodigiUrl,
+  type ProdigiFailureKind,
+  type ProdigiFailureReason,
+  type ProdigiResult,
 } from "./prodigi-config";
-import { prodigiApiKey, prodigiOrdersUrl } from "./config";
+import { prodigiConfig } from "./config";
 import { PLACEHOLDER_VERSION } from "./placeholder-photo";
 import { signPrintAssetUrl } from "./print-asset";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
@@ -59,119 +64,15 @@ export type ProdigiOrderRequest = {
   }>;
 };
 
-export type ProdigiOrderSuccess = {
-  ok: true;
+/** The success payload of a Prodigi order, carried under `value` on the result. */
+export type ProdigiOrderOk = {
   orderId: string;
   stage: string | null;
   /** URL handed to Prodigi (HMAC print-asset or placeholder). */
   assetUrl: string;
 };
 
-/**
- * Why an order could not be created.
- *
- * The retry decision (`kind`) and the diagnosis (`reason`) are deliberately
- * separate axes. Auth and rate-limit failures share the same *retry* behaviour
- * but are different operational problems, so they get different reasons — the
- * stored record has to say which one it was, or "prodigi-error" tells nobody
- * whether to rotate a key or back off.
- */
-export type ProdigiFailureReason =
-  /** 401/403 — our key is wrong, revoked, or pointed at the wrong host. */
-  | "prodigi-auth-error"
-  /** 429 — we are being throttled; retrying later is correct. */
-  | "prodigi-rate-limit"
-  /** 5xx — Prodigi is down or erroring. */
-  | "prodigi-unavailable"
-  /**
-   * Prodigi accepted the connection and then went quiet past our deadline
-   * (#104). Distinct from prodigi-unavailable because the answer differs: an
-   * unreachable Prodigi is worth retrying later, whereas a timeout may mean the
-   * order was created and the response lost — which is exactly what the
-   * idempotency key on sessionId is for, so a redelivery is safe and is the
-   * only way the customer gets their print.
-   */
-  | "prodigi-timeout"
-  /** 4xx that is our fault and will never succeed on retry (bad request body). */
-  | "prodigi-validation-error"
-  /** 2xx with no order id in the body — a contract change, not a status code. */
-  | "prodigi-error"
-  /**
-   * We hold paid money but cannot sign the master URL, so there is no asset to
-   * send. Distinct from prodigi-unavailable: Prodigi was never contacted.
-   */
-  | "prodigi-asset-unconfigured"
-  /**
-   * This deployment has no usable Prodigi API key, or PRODIGI_API_BASE is not
-   * an allowed host. Prodigi was never contacted. Retryable: the key is
-   * deployment config, and a redeploy inside Stripe's redelivery window
-   * (~3 days) is enough to place the order.
-   */
-  | "prodigi-unconfigured";
-
-export type ProdigiOrderFailure = {
-  ok: false;
-  /**
-   * "server" means retryable: the webhook answers 5xx so Stripe redelivers.
-   *
-   * 401/403/429 are "server", not "client": a "client" auth failure makes a
-   * wrong sandbox key unrecoverable. The customer has paid, the record is
-   * written, the webhook answers 200, and every later delivery hits the
-   * duplicate branch — also 200. Stripe retries for ~3 days, so retrying a
-   * genuinely permanent auth failure only buys the window to fix the key.
-   */
-  kind: "client" | "server";
-  reason: ProdigiFailureReason;
-  message: string;
-  status: number | null;
-};
-
-/**
- * Map a Prodigi HTTP status to retry behaviour plus a diagnosable reason.
- *
- * Exported for the tests that pin the mapping; it is the whole policy in one
- * place, so "which statuses are terminal" has exactly one answer.
- */
-export function classifyProdigiStatus(status: number): {
-  kind: "client" | "server";
-  reason: ProdigiFailureReason;
-} {
-  if (status === 401 || status === 403) {
-    return { kind: "server", reason: "prodigi-auth-error" };
-  }
-  if (status === 429) {
-    return { kind: "server", reason: "prodigi-rate-limit" };
-  }
-  if (status >= 500) {
-    return { kind: "server", reason: "prodigi-unavailable" };
-  }
-  return { kind: "client", reason: "prodigi-validation-error" };
-}
-
-/**
- * Failures we still intend to retry, so the stored order stays eligible for a
- * redelivery instead of being short-circuited as a duplicate.
- */
-const RETRYABLE_PRODIGI_REASONS: ReadonlySet<ProdigiFailureReason> =
-  new Set<ProdigiFailureReason>([
-    "prodigi-auth-error",
-    "prodigi-rate-limit",
-    "prodigi-unavailable",
-    "prodigi-timeout",
-    "prodigi-asset-unconfigured",
-    "prodigi-unconfigured",
-  ]);
-
-export function isRetryableProdigiReason(
-  reason: string | null,
-): reason is ProdigiFailureReason {
-  return (
-    reason !== null &&
-    RETRYABLE_PRODIGI_REASONS.has(reason as ProdigiFailureReason)
-  );
-}
-
-export type ProdigiOrderResult = ProdigiOrderSuccess | ProdigiOrderFailure;
+export type ProdigiOrderResult = ProdigiResult<ProdigiOrderOk>;
 
 export type CreateProdigiOrder = (input: {
   sessionId: string;
@@ -275,6 +176,15 @@ export function buildProdigiOrderBody(input: {
   return body;
 }
 
+function failure(
+  kind: ProdigiFailureKind,
+  reason: ProdigiFailureReason,
+  message: string,
+  status: number | null,
+): ProdigiOrderResult {
+  return { ok: false, kind, reason, message, status };
+}
+
 export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   // The signed master URL for a paid physical order — or null if we cannot
   // sign, and there is no public-placeholder fallback. /api/checkout refuses to
@@ -290,47 +200,38 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   // Fail closed before we talk to Prodigi. Retryable, so the webhook answers
   // 5xx and Stripe redelivers once the secret is fixed.
   if (!assetUrl) {
-    return {
-      ok: false,
-      kind: "server",
-      reason: "prodigi-asset-unconfigured",
-      message: "print-asset signing is not configured",
-      status: null,
-    };
+    return failure(
+      "server",
+      "prodigi-asset-unconfigured",
+      "print-asset signing is not configured",
+      null,
+    );
   }
 
-  // Same fail-closed idea for the credential, and it has to be a *return*:
-  // prodigiApiKey/prodigiOrdersUrl throw when PRODIGI_API_BASE is unset or is
-  // not an allowed host, and a throw here escapes fulfillCheckoutSession to
-  // the route's catch-all — which answers 500 "orders-store-unavailable", a
-  // diagnosis that points at the KV binding instead of the missing key, and
-  // writes no record at all, so the paid order is invisible.
-  let ordersUrl: string;
-  let apiKey: string;
-  try {
-    ordersUrl = prodigiOrdersUrl();
-    apiKey = prodigiApiKey();
-  } catch (e) {
-    return {
-      ok: false,
-      kind: "server",
-      reason: "prodigi-unconfigured",
-      message: e instanceof Error ? e.message : "prodigi-unconfigured",
-      status: null,
-    };
+  // Same fail-closed idea for the credential, and it has to be a *return*: a
+  // throw here would escape fulfillCheckoutSession to the route's catch-all,
+  // which answers 500 "orders-store-unavailable" — a diagnosis pointing at the
+  // store binding instead of the missing key, with no record written at all.
+  const config = prodigiConfig();
+  if (!config.ok) {
+    return failure(
+      "unconfigured",
+      "prodigi-unconfigured",
+      config.message,
+      null,
+    );
   }
 
   let body: ProdigiOrderRequest;
   try {
     body = buildProdigiOrderBody({ ...input, assetUrl });
   } catch (e) {
-    return {
-      ok: false,
-      kind: "client",
-      reason: "prodigi-validation-error",
-      message: e instanceof Error ? e.message : "invalid-order-body",
-      status: null,
-    };
+    return failure(
+      "client",
+      "prodigi-validation-error",
+      e instanceof Error ? e.message : "invalid-order-body",
+      null,
+    );
   }
 
   // Bounded, so a hung Prodigi cannot outrun Stripe's response window (#104).
@@ -339,11 +240,11 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   const signal = prodigiTimeoutSignal(PRODIGI_ORDER_TIMEOUT_MS);
   let res: Response;
   try {
-    res = await fetch(ordersUrl, {
+    res = await fetch(prodigiUrl(config.base, "v4.0/orders"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-API-Key": apiKey,
+        "X-API-Key": config.key,
       },
       body: JSON.stringify(body),
       signal,
@@ -354,21 +255,19 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
     // answers 5xx. Redelivery re-sends the same idempotency key, which is what
     // makes retrying safe here rather than a way to place two prints.
     if (isProdigiTimeout(e, signal)) {
-      return {
-        ok: false,
-        kind: "server",
-        reason: "prodigi-timeout",
-        message: `Prodigi order timed out after ${PRODIGI_ORDER_TIMEOUT_MS}ms`,
-        status: null,
-      };
+      return failure(
+        "timeout",
+        "prodigi-timeout",
+        `Prodigi order timed out after ${PRODIGI_ORDER_TIMEOUT_MS}ms`,
+        null,
+      );
     }
-    return {
-      ok: false,
-      kind: "server",
-      reason: "prodigi-unavailable",
-      message: e instanceof Error ? e.message : "network-error",
-      status: null,
-    };
+    return failure(
+      "server",
+      "prodigi-unavailable",
+      e instanceof Error ? e.message : "network-error",
+      null,
+    );
   }
 
   // The body is read once, as text, before the status is judged, for the same
@@ -407,24 +306,22 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   // than whatever status arrived with it. An aborted body with a non-2xx status
   // is still prodigi-timeout: the status is the truncated remnant, not an answer.
   if (isProdigiTimeout(readFailure, signal)) {
-    return {
-      ok: false,
-      kind: "server",
-      reason: "prodigi-timeout",
-      message: `Prodigi order timed out after ${PRODIGI_ORDER_TIMEOUT_MS}ms`,
-      status: res.status,
-    };
+    return failure(
+      "timeout",
+      "prodigi-timeout",
+      `Prodigi order timed out after ${PRODIGI_ORDER_TIMEOUT_MS}ms`,
+      res.status,
+    );
   }
 
   if (!res.ok) {
     const { kind, reason } = classifyProdigiStatus(res.status);
-    return {
-      ok: false,
+    return failure(
       kind,
       reason,
-      message: `Prodigi order HTTP ${res.status}${detailSuffix(raw)}`,
-      status: res.status,
-    };
+      `Prodigi order HTTP ${res.status}${detailSuffix(raw)}`,
+      res.status,
+    );
   }
 
   let data: {
@@ -439,22 +336,23 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
 
   const orderId = data.order?.id;
   if (typeof orderId !== "string" || !orderId) {
-    return {
-      ok: false,
-      kind: "client",
-      reason: "prodigi-error",
-      message: "Prodigi order missing id",
-      status: res.status,
-    };
+    return failure(
+      "client",
+      "prodigi-error",
+      "Prodigi order missing id",
+      res.status,
+    );
   }
 
   return {
     ok: true,
-    orderId,
-    stage:
-      typeof data.order?.status?.stage === "string"
-        ? data.order.status.stage
-        : null,
-    assetUrl,
+    value: {
+      orderId,
+      stage:
+        typeof data.order?.status?.stage === "string"
+          ? data.order.status.stage
+          : null,
+      assetUrl,
+    },
   };
 };

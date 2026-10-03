@@ -247,9 +247,7 @@ export async function revokeOrderByPaymentIntent(
   }
 
   const cancellation =
-    order.format !== "digital" &&
-    order.format !== "unknown" &&
-    order.prodigiOrderId
+    order.kind === "physical" && order.prodigiOrderId
       ? await (input.cancel ?? cancelProdigiOrder)({
           prodigiOrderId: order.prodigiOrderId,
           sessionId,

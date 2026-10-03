@@ -9,25 +9,6 @@ const ALLOWED_BASES = new Set([
 ]);
 
 /**
- * The unconfigured-message grammar, written once.
- *
- * The throw sites and the predicate must build both halves from these
- * functions. If a throw site were reworded to "PRODIGI_API_KEY is missing"
- * the classification would not follow it, turning a 503 into a 502 -- a
- * deployment problem reported as Prodigi being unhealthy, which is the exact
- * misdiagnosis the predicate exists to prevent, and the copies could drift.
- * tests/prodigi-config.test.mts checks that everything this module can
- * throw is still classified, which is what catches a *new* throw site.
- *
- * Indexed rather than a name-to-slot map: the first name is the sandbox key
- * for the sandbox host, the second the live key for the live host.
- */
-const UNCONFIGURED_KEY_NAMES = [
-  "PRODIGI_SANDBOX_API_KEY",
-  "PRODIGI_API_KEY",
-] as const;
-
-/**
  * The one string in a Prodigi error body worth showing a human.
  *
  * Prodigi reports errors in one of `detail`, `message` or `error` depending on
@@ -150,37 +131,165 @@ function badBaseMessage(): string {
 }
 
 /**
- * Explicit Prodigi API host. Must be set per environment — never inferred
- * from which API key is present.
+ * The two key names, indexed by host: the first is the sandbox key for the
+ * sandbox host, the second the live key for the live host. Indexed rather than
+ * a name-to-slot map so the key never gets sniffed from what happens to be set.
+ */
+const UNCONFIGURED_KEY_NAMES = [
+  "PRODIGI_SANDBOX_API_KEY",
+  "PRODIGI_API_KEY",
+] as const;
+
+/**
+ * Why a Prodigi call could not be made or completed.
+ *
+ * The retry decision (`kind`) and the diagnosis (`reason`) are deliberately
+ * separate axes. Auth and rate-limit failures share the same *retry* behaviour
+ * but are different operational problems, so they get different reasons — the
+ * stored record has to say which one it was, or "prodigi-error" tells nobody
+ * whether to rotate a key or back off.
+ */
+export type ProdigiFailureReason =
+  /** 401/403 — our key is wrong, revoked, or pointed at the wrong host. */
+  | "prodigi-auth-error"
+  /** 429 — we are being throttled; retrying later is correct. */
+  | "prodigi-rate-limit"
+  /** 5xx — Prodigi is down or erroring. */
+  | "prodigi-unavailable"
+  /**
+   * Prodigi accepted the connection and then went quiet past our deadline
+   * (#104). Distinct from prodigi-unavailable because the answer differs: an
+   * unreachable Prodigi is worth retrying later, whereas a timeout may mean the
+   * order was created and the response lost — which is exactly what the
+   * idempotency key on sessionId is for, so a redelivery is safe and is the
+   * only way the customer gets their print.
+   */
+  | "prodigi-timeout"
+  /** 4xx that is our fault and will never succeed on retry (bad request body). */
+  | "prodigi-validation-error"
+  /** 2xx with no order id in the body — a contract change, not a status code. */
+  | "prodigi-error"
+  /**
+   * We hold paid money but cannot sign the master URL, so there is no asset to
+   * send. Distinct from prodigi-unavailable: Prodigi was never contacted.
+   */
+  | "prodigi-asset-unconfigured"
+  /**
+   * This deployment has no usable Prodigi API key, or PRODIGI_API_BASE is not
+   * an allowed host. Prodigi was never contacted. Retryable: the key is
+   * deployment config, and a redeploy inside Stripe's redelivery window
+   * (~3 days) is enough to place the order.
+   */
+  | "prodigi-unconfigured";
+
+/**
+ * How a failed Prodigi call is retried. The value is the failure's own shape,
+ * not a name the caller matches against a message string.
+ *
+ * "server", "timeout" and "unconfigured" are all retryable and are answered 5xx
+ * by the webhook; "client" is a permanent failure answered 200. "unconfigured"
+ * and "timeout" are separated from "server" so a config problem and a deadline
+ * are diagnosable at a glance instead of all collapsing into "Prodigi is down".
+ */
+export type ProdigiFailureKind =
+  | "unconfigured"
+  | "timeout"
+  | "client"
+  | "server";
+
+/**
+ * One result type for every Prodigi caller.
+ *
+ * Both the quote path and the order path return this, so a failure from either
+ * carries the same `kind`/`reason`/`message`/`status` shape and a route can
+ * answer one way without reading a thrown message back out of an Error.
+ */
+export type ProdigiResult<T> =
+  | { ok: true; value: T }
+  | {
+      ok: false;
+      kind: ProdigiFailureKind;
+      reason: ProdigiFailureReason;
+      message: string;
+      status: number | null;
+    };
+
+/** The failed arm of `ProdigiResult`, the input a route hands to prodigiFailureFrom. */
+export type ProdigiFailureBranch = Extract<ProdigiResult<never>, { ok: false }>;
+
+/**
+ * A Prodigi configuration read that found the deployment unconfigured.
+ *
+ * `reason` is the stable "prodigi-unconfigured" code the retry decision and the
+ * stored record understand; `message` is the same internal wording the throwing
+ * readers produced ("<NAME>_API_KEY is not set", "PRODIGI_API_BASE must be …"),
+ * kept as a log detail and never a classification key (#118).
+ */
+export type ProdigiUnconfiguredFailure = {
+  ok: false;
+  kind: "unconfigured";
+  reason: "prodigi-unconfigured";
+  message: string;
+  status: null;
+};
+
+export type ProdigiConfigResult =
+  | { ok: true; base: string; key: string }
+  | ProdigiUnconfiguredFailure;
+
+/**
+ * Read the Prodigi host and its paired key as one tagged result.
+ *
+ * The host and the key are read together because they are a matched pair: the
+ * sandbox key serves the sandbox host and the live key the live host, and the
+ * key name is chosen from the base rather than sniffed. A deployment is
+ * unconfigured in exactly three ways — `PRODIGI_API_BASE` unset or not one of
+ * the two allowlisted hosts, or the key for the chosen host unset — and all
+ * three come back as the same `unconfigured` failure with a message that names
+ * the missing variable, for the log.
  *
  * Every reader here takes its env as a required argument and never falls back
  * to process.env, so this module is a pure function of what it is handed and
- * the only place a Prodigi value reaches process.env is config.ts. A default
- * parameter would be a back door around exactly the invariant the AST guard
- * checks (#119): a call with no argument would read an env var from a module
- * the AC says must not read env, and a test passing `{}` would silently read
- * the real process environment instead.
+ * the only place a Prodigi value reaches process.env is config.ts (#119).
  */
-export function prodigiApiBase(
+export function readProdigiConfig(
   env: Record<string, unknown>,
-): string {
+): ProdigiConfigResult {
   const base = envStringStrippedSlash("PRODIGI_API_BASE", env);
   if (!base || !ALLOWED_BASES.has(base)) {
-    throw new Error(badBaseMessage());
+    return {
+      ok: false,
+      kind: "unconfigured",
+      reason: "prodigi-unconfigured",
+      message: badBaseMessage(),
+      status: null,
+    };
   }
-  return base;
+  const name = isProdigiSandboxBase(base)
+    ? UNCONFIGURED_KEY_NAMES[0]
+    : UNCONFIGURED_KEY_NAMES[1];
+  const key = envString(name, env);
+  if (!key) {
+    return {
+      ok: false,
+      kind: "unconfigured",
+      reason: "prodigi-unconfigured",
+      message: missingKeyMessage(name),
+      status: null,
+    };
+  }
+  return { ok: true, base, key };
+}
+
+function isProdigiSandboxBase(base: string): boolean {
+  return base === PRODIGI_SANDBOX_API_BASE;
 }
 
 /**
  * The allowlisted base, or undefined when unset or not an allowed host. Never
  * throws, so config.ts can report it without risking an error above a route's
- * try.
- *
- * The non-throwing twin of prodigiApiBase, sharing its ALLOWED_BASES, so the
- * two cannot disagree about what "configured" means. Without it the config
- * summary would have to re-implement the allowlist, and a deployment pointing
- * at the wrong host would read as fully configured until the first request,
- * which is the opposite of the one-clear-error the summary exists to produce.
+ * try. Shares readProdigiConfig's allowlist, so the two cannot disagree about
+ * what "configured" means.
  */
 export function prodigiApiBaseIfAllowed(
   env: Record<string, unknown>,
@@ -189,84 +298,77 @@ export function prodigiApiBaseIfAllowed(
   return base && ALLOWED_BASES.has(base) ? base : undefined;
 }
 
-function isProdigiSandboxBase(base: string): boolean {
-  return base === PRODIGI_SANDBOX_API_BASE;
-}
-
-/** API key paired to the explicit base — sandbox key for sandbox host, live for live. */
-export function prodigiApiKey(
-  env: Record<string, unknown>,
-): string {
-  const base = prodigiApiBase(env);
-  const name = isProdigiSandboxBase(base)
-    ? UNCONFIGURED_KEY_NAMES[0]
-    : UNCONFIGURED_KEY_NAMES[1];
-  const key = envString(name, env);
-  if (!key) {
-    throw new Error(missingKeyMessage(name));
-  }
-  return key;
+/**
+ * True when this deployment has a usable Prodigi host/key pair. Reimplemented
+ * on readProdigiConfig so "configured" has one definition; it never throws.
+ */
+export function prodigiKeyConfigured(env: Record<string, unknown>): boolean {
+  return readProdigiConfig(env).ok;
 }
 
 /**
- * True when a message from the Prodigi layer means "this deployment is not
- * configured", as opposed to Prodigi itself failing. The route handlers turn
- * one into 503 and the other into 502.
+ * Build a Prodigi URL from an already-validated base.
  *
- * Three ways to be unconfigured, and the predicate has to cover all of them:
- *   - PRODIGI_SANDBOX_API_KEY / PRODIGI_API_KEY missing → "<NAME>_API_KEY is not set"
- *   - PRODIGI_API_BASE unset or not an allowlisted host → "PRODIGI_API_BASE must be ..."
- *
- * An unconfigured deployment must never fall through to 502, which is the one
- * status that means "something upstream is unhealthy": a human reading the logs
- * would go look at Prodigi's status page for a misconfigured deploy of ours.
- * Same failure shape as the webhook's catch-all, one layer over.
- *
- * Matching on the message rather than an error subclass is deliberate. The
- * value crosses a bundler, and a module duplicated across two chunks yields
- * two copies of a class that fail an instanceof check -- which would turn a
- * 503 back into the 502 this predicate exists to prevent. Exact equality also
- * means a Prodigi error that merely contains these words cannot be mistaken
- * for ours; a substring regex would match inside one.
+ * The base is the value readProdigiConfig returned (trailing slash already
+ * stripped), so this never needs to re-validate or throw: the caller has
+ * already failed closed on an unconfigured read before it can reach here.
  */
-export function isProdigiUnconfigured(message: string): boolean {
+export function prodigiUrl(base: string, path: string): string {
+  return `${base}/${path}`;
+}
+
+/**
+ * Map a Prodigi HTTP status to retry behaviour plus a diagnosable reason.
+ *
+ * Exported for the tests that pin the mapping; it is the whole policy in one
+ * place, so "which statuses are terminal" has exactly one answer.
+ */
+export function classifyProdigiStatus(status: number): {
+  kind: "client" | "server";
+  reason: ProdigiFailureReason;
+} {
+  if (status === 401 || status === 403) {
+    return { kind: "server", reason: "prodigi-auth-error" };
+  }
+  if (status === 429) {
+    return { kind: "server", reason: "prodigi-rate-limit" };
+  }
+  if (status >= 500) {
+    return { kind: "server", reason: "prodigi-unavailable" };
+  }
+  return { kind: "client", reason: "prodigi-validation-error" };
+}
+
+/**
+ * Failures we still intend to retry, so the stored order stays eligible for a
+ * redelivery instead of being short-circuited as a duplicate.
+ */
+const RETRYABLE_PRODIGI_REASONS: ReadonlySet<ProdigiFailureReason> =
+  new Set<ProdigiFailureReason>([
+    "prodigi-auth-error",
+    "prodigi-rate-limit",
+    "prodigi-unavailable",
+    "prodigi-timeout",
+    "prodigi-asset-unconfigured",
+    "prodigi-unconfigured",
+  ]);
+
+export function isRetryableProdigiReason(
+  reason: string | null,
+): reason is ProdigiFailureReason {
   return (
-    UNCONFIGURED_KEY_NAMES.some(
-      (name) => message === missingKeyMessage(name),
-    ) || message === badBaseMessage()
+    reason !== null &&
+    RETRYABLE_PRODIGI_REASONS.has(reason as ProdigiFailureReason)
   );
 }
-
-/**
- * The status a failed Prodigi call reports: 503 for a misconfigured deploy of
- * ours, 502 for Prodigi being unhealthy.
- *
- * Both API routes decided this with the same one-liner over the same
- * predicate. The *predicate* was already single-sourced, so this is a
- * judgement worth making once rather than a bug fix -- but the value it
- * returns is the difference between "check the deploy" and "check Prodigi's
- * status page", and it was the operator who had to know which one a given
- * 502 was.
- */
-export function prodigiErrorStatus(message: string): 502 | 503 {
-  return isProdigiUnconfigured(message) ? 503 : 502;
-}
-
-/**
- * What a failed Prodigi call reports when the throw was not an Error. Both
- * routes quote Prodigi, so one wording is right for both callers today; a third
- * caller with a different failure to describe gets its own response, not a
- * parameter here.
- */
-const QUOTE_FAILED_MESSAGE = "Quote failed";
 
 /**
  * The machine-readable half of a failed Prodigi call.
  *
  * `prodigi-unconfigured` is this deployment missing something (503) and
- * `prodigi-unavailable` is Prodigi itself failing (502) — the same split
- * prodigiErrorStatus already draws, in a form a client can branch on without
- * parsing prose.
+ * `prodigi-unavailable` is Prodigi itself failing (502) — the same split the
+ * kind→status mapping draws, in a form a client can branch on without parsing
+ * prose.
  */
 export type ProdigiFailureCode = "prodigi-unconfigured" | "prodigi-unavailable";
 
@@ -296,47 +398,30 @@ export type ProdigiFailure = {
 };
 
 /**
- * The envelope both Prodigi routes hand back from their catch block: unwrap the
- * message, classify it with prodigiErrorStatus, and pair that with the
- * customer-safe code and copy. One module owns all of it, so a reworded
- * fallback ("Could not reach Prodigi"), a changed classification rule or a new
- * code cannot land in one route only.
+ * The envelope both Prodigi routes hand back from a failed result. The kind is
+ * the one signal that decides the code and status: an unconfigured deployment
+ * is our fault (503), and a timeout, a client error or a server error are all
+ * Prodigi being unreachable (502) — with the same customer-safe copy either
+ * way, so nothing observable changes for the caller.
  *
  * Stays free of `next/server` for the same reason json-body.ts does: the caller
  * owns the NextResponse, so this is unit testable as a plain function.
  */
-export function prodigiFailure(e: unknown): ProdigiFailure {
-  const detail = e instanceof Error ? e.message : QUOTE_FAILED_MESSAGE;
-  const code: ProdigiFailureCode = isProdigiUnconfigured(detail)
-    ? "prodigi-unconfigured"
-    : "prodigi-unavailable";
-  return {
-    code,
-    error: CUSTOMER_MESSAGE,
-    status: prodigiErrorStatus(detail),
-    detail,
-  };
-}
-
-export function prodigiQuotesUrl(
-  env: Record<string, unknown>,
-): string {
-  return `${prodigiApiBase(env)}/v4.0/quotes`;
-}
-
-export function prodigiOrdersUrl(
-  env: Record<string, unknown>,
-): string {
-  return `${prodigiApiBase(env)}/v4.0/orders`;
-}
-
-export function prodigiKeyConfigured(
-  env: Record<string, unknown>,
-): boolean {
-  try {
-    prodigiApiKey(env);
-    return true;
-  } catch {
-    return false;
+export function prodigiFailureFrom(
+  result: ProdigiFailureBranch,
+): ProdigiFailure {
+  if (result.kind === "unconfigured") {
+    return {
+      code: "prodigi-unconfigured",
+      error: CUSTOMER_MESSAGE,
+      status: 503,
+      detail: result.message,
+    };
   }
+  return {
+    code: "prodigi-unavailable",
+    error: CUSTOMER_MESSAGE,
+    status: 502,
+    detail: result.message,
+  };
 }

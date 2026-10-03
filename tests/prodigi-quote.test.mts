@@ -8,13 +8,9 @@ import {
 import {
   PRODIGI_LIVE_API_BASE,
   PRODIGI_SANDBOX_API_BASE,
-  isProdigiUnconfigured,
-  prodigiApiBase,
-  prodigiApiKey,
-  prodigiOrdersUrl,
-  prodigiQuotesUrl,
+  readProdigiConfig,
 } from "../src/lib/prodigi-config.ts";
-import { quotePhysical } from "../src/lib/prodigi-quote.ts";
+import { quotePhysical, type PhysicalQuote } from "../src/lib/prodigi-quote.ts";
 
 test("merchandiseFromUnitCost applies PRODIGI_MARGIN and rounds to cents", () => {
   assert.equal(PRODIGI_MARGIN, 1.2);
@@ -23,22 +19,18 @@ test("merchandiseFromUnitCost applies PRODIGI_MARGIN and rounds to cents", () =>
   assert.equal(merchandiseFromUnitCost(11.23), 13.48);
 });
 
-test("prodigiApiBase requires an explicit allowed host", () => {
+test("readProdigiConfig requires an explicit allowed host", () => {
   const prev = process.env.PRODIGI_API_BASE;
   try {
     delete process.env.PRODIGI_API_BASE;
-    assert.throws(() => prodigiApiBase({}), /PRODIGI_API_BASE must be/);
+    assert.equal(readProdigiConfig({}).ok, false);
+    assert.match(readProdigiConfig({}).message, /PRODIGI_API_BASE must be/);
     process.env.PRODIGI_API_BASE = "https://evil.example";
-    assert.throws(() => prodigiApiBase({}), /PRODIGI_API_BASE must be/);
+    assert.equal(readProdigiConfig({}).ok, false);
     process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
-    assert.equal(prodigiApiBase({}), PRODIGI_SANDBOX_API_BASE);
-    assert.equal(
-      prodigiQuotesUrl({}),
-      `${PRODIGI_SANDBOX_API_BASE}/v4.0/quotes`,
-    );
-    assert.equal(
-      prodigiOrdersUrl({ PRODIGI_API_BASE: PRODIGI_LIVE_API_BASE }),
-      `${PRODIGI_LIVE_API_BASE}/v4.0/orders`,
+    assert.deepEqual(
+      readProdigiConfig({ PRODIGI_SANDBOX_API_KEY: "k" }),
+      { ok: true, base: PRODIGI_SANDBOX_API_BASE, key: "k" },
     );
   } finally {
     if (prev === undefined) delete process.env.PRODIGI_API_BASE;
@@ -46,7 +38,7 @@ test("prodigiApiBase requires an explicit allowed host", () => {
   }
 });
 
-test("prodigiApiKey pairs to the explicit base (no key sniffing for host)", () => {
+test("readProdigiConfig pairs to the explicit base (no key sniffing for host)", () => {
   const prevBase = process.env.PRODIGI_API_BASE;
   const prevSandbox = process.env.PRODIGI_SANDBOX_API_KEY;
   const prevLive = process.env.PRODIGI_API_KEY;
@@ -54,13 +46,14 @@ test("prodigiApiKey pairs to the explicit base (no key sniffing for host)", () =
     process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
     process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
     process.env.PRODIGI_API_KEY = "live-key";
-    assert.equal(prodigiApiKey({}), "sandbox-key");
+    assert.equal(readProdigiConfig({}).key, "sandbox-key");
 
     process.env.PRODIGI_API_BASE = PRODIGI_LIVE_API_BASE;
-    assert.equal(prodigiApiKey({}), "live-key");
+    assert.equal(readProdigiConfig({}).key, "live-key");
 
     delete process.env.PRODIGI_API_KEY;
-    assert.throws(() => prodigiApiKey({}), /PRODIGI_API_KEY is not set/);
+    assert.equal(readProdigiConfig({}).ok, false);
+    assert.match(readProdigiConfig({}).message, /PRODIGI_API_KEY is not set/);
   } finally {
     if (prevBase === undefined) delete process.env.PRODIGI_API_BASE;
     else process.env.PRODIGI_API_BASE = prevBase;
@@ -103,10 +96,13 @@ test("quotePhysical margins unitCost and passes shipping through", async () => {
   delete process.env.PRODIGI_API_KEY;
 
   try {
-    const quote = await quotePhysical({
+    const result = await quotePhysical({
       format: "giclee",
       size: "30x40",
     });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
+    const quote: PhysicalQuote = result.value;
     assert.equal(seenUrl, "https://api.sandbox.prodigi.com/v4.0/quotes");
     assert.deepEqual(seenBody, {
       shippingMethod: PRODIGI_SHIPPING_METHOD,
@@ -154,12 +150,14 @@ test("quotePhysical framed includes color attribute and destination override", a
   process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
   process.env.PRODIGI_SANDBOX_API_KEY = "sandbox";
   try {
-    const quote = await quotePhysical({
+    const result = await quotePhysical({
       format: "framed",
       size: "50x70",
       frame: "brown",
       destinationCountryCode: "BG",
     });
+    assert.equal(result.ok, true);
+    if (!result.ok) return;
     assert.equal(seenBody.destinationCountryCode, "BG");
     assert.deepEqual(seenBody.items?.[0], {
       sku: "GLOBAL-CFPM-20X28",
@@ -167,8 +165,8 @@ test("quotePhysical framed includes color attribute and destination override", a
       attributes: { color: "brown" },
       assets: [{ printArea: "default" }],
     });
-    assert.equal(quote.merchandiseEur, 24);
-    assert.equal(quote.shippingEur, 6);
+    assert.equal(result.value.merchandiseEur, 24);
+    assert.equal(result.value.shippingEur, 6);
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.PRODIGI_SANDBOX_API_KEY;
@@ -200,7 +198,8 @@ test("quotePhysical uses live host when PRODIGI_API_BASE is live", async () => {
   delete process.env.PRODIGI_SANDBOX_API_KEY;
 
   try {
-    await quotePhysical({ format: "canvas", size: "30x40" });
+    const result = await quotePhysical({ format: "canvas", size: "30x40" });
+    assert.equal(result.ok, true);
     assert.equal(seenUrl, "https://api.prodigi.com/v4.0/quotes");
   } finally {
     globalThis.fetch = originalFetch;
@@ -209,7 +208,7 @@ test("quotePhysical uses live host when PRODIGI_API_BASE is live", async () => {
   }
 });
 
-test("quotePhysical throws on non-OK HTTP and missing quote fields", async () => {
+test("quotePhysical returns a failure on non-OK HTTP and missing quote fields", async () => {
   const originalFetch = globalThis.fetch;
   process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
   process.env.PRODIGI_SANDBOX_API_KEY = "sandbox";
@@ -217,10 +216,11 @@ test("quotePhysical throws on non-OK HTTP and missing quote fields", async () =>
   try {
     globalThis.fetch = (async () =>
       new Response("nope", { status: 500 })) as typeof fetch;
-    await assert.rejects(
-      () => quotePhysical({ format: "canvas", size: "70x100" }),
-      /Prodigi quote HTTP 500/,
-    );
+    let result = await quotePhysical({ format: "canvas", size: "70x100" });
+    assert.equal(result.ok, false);
+    assert.equal(result.ok || result.message, "Prodigi quote HTTP 500");
+    assert.equal(result.ok || result.kind, "server");
+    assert.equal(result.ok || result.reason, "prodigi-unavailable");
 
     // A 200 that is not JSON is a distinct failure, not a parse crash and not
     // a silent "no quote": a proxy error page lands here in practice.
@@ -229,19 +229,17 @@ test("quotePhysical throws on non-OK HTTP and missing quote fields", async () =>
         status: 200,
         headers: { "content-type": "text/html" },
       })) as typeof fetch;
-    await assert.rejects(
-      () => quotePhysical({ format: "canvas", size: "70x100" }),
-      /invalid JSON/,
-    );
+    result = await quotePhysical({ format: "canvas", size: "70x100" });
+    assert.equal(result.ok, false);
+    assert.equal(result.ok || result.message, "Prodigi quote returned invalid JSON");
 
     globalThis.fetch = (async () =>
       new Response(JSON.stringify({ quotes: [] }), {
         status: 200,
       })) as typeof fetch;
-    await assert.rejects(
-      () => quotePhysical({ format: "canvas", size: "70x100" }),
-      /missing quotes\[0\]/,
-    );
+    result = await quotePhysical({ format: "canvas", size: "70x100" });
+    assert.equal(result.ok, false);
+    assert.equal(result.ok || result.message, "Prodigi quote missing quotes[0]");
 
     globalThis.fetch = (async () =>
       new Response(
@@ -250,10 +248,21 @@ test("quotePhysical throws on non-OK HTTP and missing quote fields", async () =>
         }),
         { status: 200 },
       )) as typeof fetch;
-    await assert.rejects(
-      () => quotePhysical({ format: "canvas", size: "70x100" }),
-      /missing unitCost/,
-    );
+    result = await quotePhysical({ format: "canvas", size: "70x100" });
+    assert.equal(result.ok, false);
+    assert.equal(result.ok || result.message, "Prodigi quote missing unitCost");
+
+    // A unitCost with no shipping amount is the other missing half.
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({
+          quotes: [{ items: [{ unitCost: { amount: "10.00" } }], costSummary: {} }],
+        }),
+        { status: 200 },
+      )) as typeof fetch;
+    result = await quotePhysical({ format: "canvas", size: "70x100" });
+    assert.equal(result.ok, false);
+    assert.equal(result.ok || result.message, "Prodigi quote missing shipping");
 
     // An amount with more than six integer digits is rejected, the same answer
     // the stored-record path gives. This copy of the grammar used to accept it.
@@ -269,10 +278,9 @@ test("quotePhysical throws on non-OK HTTP and missing quote fields", async () =>
         }),
         { status: 200 },
       )) as typeof fetch;
-    await assert.rejects(
-      () => quotePhysical({ format: "canvas", size: "70x100" }),
-      /missing unitCost/,
-    );
+    result = await quotePhysical({ format: "canvas", size: "70x100" });
+    assert.equal(result.ok, false);
+    assert.equal(result.ok || result.message, "Prodigi quote missing unitCost");
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.PRODIGI_SANDBOX_API_KEY;
@@ -281,32 +289,9 @@ test("quotePhysical throws on non-OK HTTP and missing quote fields", async () =>
 });
 
 test("a bad Prodigi host reads as unconfigured, not as a bad gateway", async () => {
-  // isProdigiUnconfigured only matched "<NAME>_API_KEY is not set", so a
-  // misconfigured PRODIGI_API_BASE fell through to 502 — the one status that
-  // means "something upstream is unhealthy". A human would go check Prodigi's
-  // status page for a deploy problem of ours. Both quote and checkout use this
-  // predicate, so it has to cover every way to be unconfigured.
-  assert.equal(
-    isProdigiUnconfigured("PRODIGI_API_KEY is not set"),
-    true,
-  );
-  assert.equal(
-    isProdigiUnconfigured(
-      "PRODIGI_API_BASE must be https://api.sandbox.prodigi.com or https://api.prodigi.com",
-    ),
-    true,
-  );
-  // A genuine upstream failure must NOT be reported as our misconfiguration.
-  for (const message of [
-    "Prodigi quote HTTP 502",
-    "Prodigi quote returned invalid JSON",
-    "Prodigi quote missing quotes[0]",
-  ]) {
-    assert.equal(isProdigiUnconfigured(message), false, message);
-  }
-});
-
-test("quotePhysical surfaces a misconfigured host before any network call", async () => {
+  // A misconfigured PRODIGI_API_BASE is our fault, not Prodigi's: the quote
+  // result carries kind "unconfigured" and reason "prodigi-unconfigured", so the
+  // route answers 503. A genuine upstream failure keeps kind "server"/"client".
   const originalFetch = globalThis.fetch;
   let called = 0;
   globalThis.fetch = (async () => {
@@ -316,11 +301,10 @@ test("quotePhysical surfaces a misconfigured host before any network call", asyn
   try {
     process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
     process.env.PRODIGI_API_BASE = "https://evil.example";
-    await assert.rejects(
-      () => quotePhysical({ format: "canvas", size: "70x100" }),
-      // The route turns this into 503 via isProdigiUnconfigured.
-      (e: Error) => isProdigiUnconfigured(e.message),
-    );
+    const result = await quotePhysical({ format: "canvas", size: "70x100" });
+    assert.equal(result.ok, false);
+    assert.equal(result.ok === false && result.kind, "unconfigured");
+    assert.equal(result.ok === false && result.reason, "prodigi-unconfigured");
     assert.equal(called, 0, "an unknown host is never contacted");
   } finally {
     globalThis.fetch = originalFetch;
@@ -329,13 +313,7 @@ test("quotePhysical surfaces a misconfigured host before any network call", asyn
   }
 });
 
-test("every config-failure message is recognised as ours, not as a 502", async () => {
-  // The standing rule (DEVELOPMENT.md §7): a misconfiguration of our deploy
-  // must never surface as an upstream 502/500. This walks every message the
-  // Prodigi config layer can throw through the real getters and asserts the
-  // predicate claims each one, so a newly added config error cannot silently
-  // fall back to "bad gateway" and point an operator at Prodigi's status page
-  // for a problem of ours.
+test("every config-failure way is read as unconfigured, and upstream is not", () => {
   const cases: Array<{ env: Record<string, unknown>; what: string }> = [
     { env: {}, what: "PRODIGI_API_BASE unset" },
     { env: { PRODIGI_API_BASE: "" }, what: "PRODIGI_API_BASE empty" },
@@ -382,48 +360,13 @@ test("every config-failure message is recognised as ours, not as a 502", async (
 
   const messages: string[] = [];
   for (const { env, what } of cases) {
-    // Which getter *should* throw depends on the case: with an allowlisted
-    // base but no key, prodigiApiBase legitimately succeeds and only the key
-    // reader fails. Asserting every getter throws would be asserting the code
-    // is broken.
-    // The URL builders depend only on the base; only prodigiApiKey depends on
-    // the credential. Asking a URL builder to fail on a missing key would be
-    // asserting a bug that does not exist.
-    const baseOk = env.PRODIGI_API_BASE === PRODIGI_SANDBOX_API_BASE ||
-      env.PRODIGI_API_BASE === PRODIGI_LIVE_API_BASE;
-    const getters = baseOk
-      ? [prodigiApiKey]
-      : [prodigiApiBase, prodigiQuotesUrl, prodigiOrdersUrl];
-    for (const getter of getters) {
-      try {
-        getter(env);
-        assert.fail(`${what}: ${getter.name} unexpectedly succeeded`);
-      } catch (e) {
-        const message = e instanceof Error ? e.message : String(e);
-        messages.push(message);
-        assert.equal(
-          isProdigiUnconfigured(message),
-          true,
-          `${what} via ${getter.name} reported as an upstream failure: ${message}`,
-        );
-      }
-    }
+    const result = readProdigiConfig(env);
+    assert.equal(result.ok, false, what);
+    assert.equal(result.kind, "unconfigured", what);
+    assert.equal(result.reason, "prodigi-unconfigured", what);
+    messages.push(result.message);
   }
   assert.ok(messages.length >= cases.length);
-
-  // And the converse: a real upstream failure must NOT be claimed as ours, or
-  // we would hide a Prodigi outage behind "unconfigured, just redeploy".
-  for (const message of [
-    "Prodigi quote HTTP 500",
-    "Prodigi quote HTTP 429",
-    "Prodigi order HTTP 401",
-    "Prodigi quote returned invalid JSON",
-    "Prodigi quote missing quotes[0]",
-    "Prodigi quote missing unitCost",
-    "fetch failed",
-  ]) {
-    assert.equal(isProdigiUnconfigured(message), false, message);
-  }
 });
 
 /**
@@ -433,17 +376,16 @@ test("every config-failure message is recognised as ours, not as a 502", async (
  * accept — which is the difference between checking Prodigi's status page and
  * checking our own SKU map.
  */
-async function quoteErrorMessageFrom(status: number, raw: string) {
+async function quoteFailureFrom(status: number, raw: string) {
   const originalFetch = globalThis.fetch;
   globalThis.fetch = (async () =>
     new Response(raw, { status })) as typeof fetch;
   process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
   process.env.PRODIGI_SANDBOX_API_KEY = "sandbox";
   try {
-    await quotePhysical({ format: "canvas", size: "30x40" });
-    assert.fail(`expected a throw for HTTP ${status}`);
-  } catch (e) {
-    return e instanceof Error ? e.message : String(e);
+    const result = await quotePhysical({ format: "canvas", size: "30x40" });
+    assert.equal(result.ok, false, `expected a failure for HTTP ${status}`);
+    return result.ok ? "" : result.message;
   } finally {
     globalThis.fetch = originalFetch;
     delete process.env.PRODIGI_SANDBOX_API_KEY;
@@ -452,7 +394,7 @@ async function quoteErrorMessageFrom(status: number, raw: string) {
 }
 
 test("a failed quote carries Prodigi's own detail, not just our status", async () => {
-  const detail = await quoteErrorMessageFrom(
+  const detail = await quoteFailureFrom(
     400,
     JSON.stringify({ detail: "SKU GLOBAL-CAN-12X16 is not available" }),
   );
@@ -461,15 +403,15 @@ test("a failed quote carries Prodigi's own detail, not just our status", async (
 
 test("Prodigi's detail is read from message and error too", async () => {
   assert.equal(
-    await quoteErrorMessageFrom(400, JSON.stringify({ message: "bad request" })),
+    await quoteFailureFrom(400, JSON.stringify({ message: "bad request" })),
     "Prodigi quote HTTP 400: bad request",
   );
   assert.equal(
-    await quoteErrorMessageFrom(401, JSON.stringify({ error: "invalid api key" })),
+    await quoteFailureFrom(401, JSON.stringify({ error: "invalid api key" })),
     "Prodigi quote HTTP 401: invalid api key",
   );
   assert.equal(
-    await quoteErrorMessageFrom(400, JSON.stringify("plain string body")),
+    await quoteFailureFrom(400, JSON.stringify("plain string body")),
     "Prodigi quote HTTP 400: plain string body",
   );
 });
@@ -489,26 +431,11 @@ test("an unreadable error body leaves the message exactly as it was", async () =
     "42",
   ]) {
     assert.equal(
-      await quoteErrorMessageFrom(500, raw),
+      await quoteFailureFrom(500, raw),
       "Prodigi quote HTTP 500",
       JSON.stringify(raw),
     );
   }
-});
-
-test("an upstream detail never makes a Prodigi failure look like our config", async () => {
-  // The detail is appended to our message, and isProdigiUnconfigured is exact
-  // equality against our own config messages — so an upstream body that quotes
-  // one of our config strings must still be classified as Prodigi's problem.
-  const message = await quoteErrorMessageFrom(
-    400,
-    JSON.stringify({ detail: "PRODIGI_SANDBOX_API_KEY is not set" }),
-  );
-  assert.equal(
-    isProdigiUnconfigured(message),
-    false,
-    "an upstream detail that echoes a config message must not be read as ours",
-  );
 });
 
 test("an upstream detail is whitespace-collapsed before it is shown", async () => {
@@ -516,16 +443,42 @@ test("an upstream detail is whitespace-collapsed before it is shown", async () =
   // appended to, and a log that needs reformatting to read is a log nobody
   // reads.
   assert.equal(
-    await quoteErrorMessageFrom(400, JSON.stringify({ detail: "  SKU\n  not\n found  " })),
+    await quoteFailureFrom(400, JSON.stringify({ detail: "  SKU\n  not\n found  " })),
     "Prodigi quote HTTP 400: SKU not found",
   );
 });
 
 test("an unbounded upstream detail is truncated", async () => {
-  const message = await quoteErrorMessageFrom(
+  const message = await quoteFailureFrom(
     400,
     JSON.stringify({ detail: "x".repeat(5000) }),
   );
   assert.ok(message.length < 260, `message was ${message.length} chars`);
   assert.ok(message.endsWith("…"));
+});
+
+test("an upstream detail echoing a config message is classified by status, not text", async () => {
+  // #118: the failure kind comes from the HTTP status, never from matching the
+  // message. A 400 whose detail happens to quote a config string is a
+  // validation error, not an unconfigured deployment.
+  const result = await (async () => {
+    const originalFetch = globalThis.fetch;
+    globalThis.fetch = (async () =>
+      new Response(
+        JSON.stringify({ detail: "PRODIGI_SANDBOX_API_KEY is not set" }),
+        { status: 400 },
+      )) as typeof fetch;
+    process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
+    process.env.PRODIGI_SANDBOX_API_KEY = "sandbox";
+    try {
+      return await quotePhysical({ format: "canvas", size: "30x40" });
+    } finally {
+      globalThis.fetch = originalFetch;
+      delete process.env.PRODIGI_SANDBOX_API_KEY;
+      delete process.env.PRODIGI_API_BASE;
+    }
+  })();
+  assert.equal(result.ok, false);
+  assert.equal(result.ok === false && result.kind, "client");
+  assert.equal(result.ok === false && result.reason, "prodigi-validation-error");
 });

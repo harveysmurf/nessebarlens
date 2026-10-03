@@ -92,9 +92,11 @@ test("a framed physical order keeps the frame finish all the way to Prodigi", as
       seen = input as unknown as Record<string, unknown>;
       return {
         ok: true,
-        orderId: "ord_framed_1",
-        stage: null,
-        assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+        value: {
+          orderId: "ord_framed_1",
+          stage: null,
+          assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+        },
       };
     },
   });

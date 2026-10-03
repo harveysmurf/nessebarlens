@@ -5,23 +5,23 @@
  * "which env var backs this?" has exactly one answer and the answer lives in
  * one file. Two things stay deliberately outside:
  *
- *   - prodigi-config.ts, which owns the throw grammar and the 503/502
- *     classification. config.ts *delegates* to its validated readers rather
- *     than absorbing them: the classification is built from the same strings
- *     the throw sites build, and moving the readers away from the predicate
- *     would split those halves. See #119.
+ *   - prodigi-config.ts, which owns the Prodigi configuration read and the
+ *     kind→status mapping. config.ts *delegates* to its validated readers
+ *     rather than absorbing them: `readProdigiConfig` is a pure function of
+ *     the env it is handed, and config.ts is the only module that reaches
+ *     process.env for Prodigi. See #119.
  *   - worker-bindings.ts, which can only read the Worker env asynchronously
  *     (getCloudflareContext), so it is a separate async surface owned by the
  *     same concern.
  *
  * Nothing here throws on a missing Prodigi value, and that is load-bearing
  * rather than cautious. getConfig is called at the top of route handlers,
- * above the `try` that classifies a Prodigi failure with prodigiFailure(): an
- * eager throw there would short-circuit the classification and report a
- * misconfigured deployment as a 502 — sending the operator to Prodigi's
- * status page for a bug that is ours. So the summary here is the
- * non-throwing prodigiKeyConfigured; the throwing readers stay at the call
- * site, inside the try.
+ * above where a failed Prodigi result is classified into a 503/502 by
+ * prodigiFailureFrom(): an eager throw there would short-circuit the
+ * classification and report a misconfigured deployment as a 502 — sending the
+ * operator to Prodigi's status page for a bug that is ours. So the summary
+ * here is the non-throwing prodigiKeyConfigured, and the clients read the
+ * configuration through the non-throwing `prodigiConfig` wrapper below.
  */
 
 import {
@@ -37,10 +37,9 @@ import {
 } from "./download-token";
 import {
   prodigiApiBaseIfAllowed,
-  prodigiApiKey as prodigiApiKeyOf,
   prodigiKeyConfigured,
-  prodigiOrdersUrl as prodigiOrdersUrlOf,
-  prodigiQuotesUrl as prodigiQuotesUrlOf,
+  readProdigiConfig,
+  type ProdigiConfigResult,
 } from "./prodigi-config";
 
 export type ConfigEnv = Record<string, unknown>;
@@ -66,11 +65,10 @@ export type Config = {
     /**
      * The API base, or undefined when unset or not an allowlisted host — the
      * two ways a deployment is misconfigured. Like keyConfigured this never
-     * throws: prodigiApiBase() is the throwing reader and stays at the call
-     * site, so its message and the allowlist stay in one file, and it delegates
-     * to prodigiApiBaseIfAllowed here rather than re-reading the variable, so
-     * "configured" has one answer. A wrong host therefore reads as missing
-     * here, which is what makes missingProductionConfig able to name it.
+     * throws: it delegates to prodigiApiBaseIfAllowed rather than re-reading
+     * the variable, so "configured" has one answer. A wrong host therefore
+     * reads as missing here, which is what makes missingProductionConfig able
+     * to name it.
      */
     apiBase: string | undefined;
     keyConfigured: boolean;
@@ -219,27 +217,19 @@ export function printAssetSecret(
 }
 
 /**
- * The deployment's own environment, for callers that must reach an env read
- * they are not allowed to make themselves.
+ * The deployment's own Prodigi configuration, for callers that must reach an
+ * env read they are not allowed to make themselves.
  *
  * prodigi-config.ts is a pure function of the env it is handed (#119), so the
  * three Prodigi clients — quote, order, cancel — cannot call it directly any
- * more without re-introducing `env = process.env` in a fourth module. These
- * wrappers are that read, stated once, and they delegate: the throw grammar and
- * the allowlist still live in prodigi-config.ts, so nothing about the 503/502
- * classification moved. They throw, and callers must still call them inside
- * their try — see the module docblock.
+ * more without re-introducing `env = process.env` in a fourth module. This
+ * wrapper is that read, stated once, and it delegates to readProdigiConfig so
+ * the host/key pairing and the allowlist stay in one file. It returns a tagged
+ * result rather than throwing: the caller branches on `ok` and maps a failure
+ * to a 503 through prodigiFailureFrom, never by matching the message text.
  */
-export function prodigiQuotesUrl(env: ConfigEnv = process.env): string {
-  return prodigiQuotesUrlOf(env);
-}
-
-export function prodigiOrdersUrl(env: ConfigEnv = process.env): string {
-  return prodigiOrdersUrlOf(env);
-}
-
-export function prodigiApiKey(env: ConfigEnv = process.env): string {
-  return prodigiApiKeyOf(env);
+export function prodigiConfig(env: ConfigEnv = process.env): ProdigiConfigResult {
+  return readProdigiConfig(env);
 }
 
 /** The Stripe secret, or undefined. The Stripe client still throws; see getStripe. */

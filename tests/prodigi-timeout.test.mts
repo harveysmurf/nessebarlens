@@ -6,14 +6,12 @@ import { memoryOrdersStore } from "./fake-orders-store.mts";
 
 import {
   isProdigiTimeout,
+  isRetryableProdigiReason,
   PRODIGI_ORDER_TIMEOUT_MS,
   PRODIGI_QUOTE_TIMEOUT_MS,
   prodigiTimeoutSignal,
 } from "../src/lib/prodigi-config.ts";
-import {
-  isRetryableProdigiReason,
-  type OrderRecipient,
-} from "../src/lib/prodigi-order.ts";
+import { type OrderRecipient } from "../src/lib/prodigi-order.ts";
 import { quotePhysical } from "../src/lib/prodigi-quote.ts";
 import { createProdigiOrder } from "../src/lib/prodigi-order.ts";
 import { fulfillCheckoutSession } from "../src/lib/fulfillment.ts";
@@ -76,15 +74,15 @@ test("a hung quote fails with a timeout rather than hanging", async () => {
     // A short budget so the test proves the bound is real rather than waiting
     // out the production one: the production value is asserted above.
     const started = Date.now();
-    await assert.rejects(
-      quotePhysical({
-        format: "giclee",
-        size: "50x70",
-        frame: null,
-        destinationCountryCode: "BG",
-      }),
-      /timed out/,
-    );
+    const result = await quotePhysical({
+      format: "giclee",
+      size: "50x70",
+      frame: null,
+      destinationCountryCode: "BG",
+    });
+    assert.equal(result.ok, false);
+    assert.equal(result.ok === false && result.kind, "timeout");
+    assert.match(result.ok === false ? result.message : "", /timed out/);
     assert.ok(
       Date.now() - started < PRODIGI_QUOTE_TIMEOUT_MS + 2_000,
       "the quote gave up on its own deadline rather than hanging",
@@ -117,10 +115,10 @@ test("a hung order is a retryable timeout, not a dead end", async () => {
     });
     assert.equal(result.ok, false);
     if (result.ok) return;
-    // server + retryable is the pair that matters: the webhook answers 5xx and
+    // timeout + retryable is the pair that matters: the webhook answers 5xx and
     // the record stays eligible for a redelivery, which is the only way a paid
     // print still gets placed.
-    assert.equal(result.kind, "server");
+    assert.equal(result.kind, "timeout");
     assert.equal(result.reason, "prodigi-timeout");
     assert.equal(result.status, null, "no HTTP status was ever received");
     assert.match(result.message, /timed out/);
@@ -171,7 +169,7 @@ test("a body read that dies mid-stream is a retryable timeout, not a lost order"
     // The regression this guards: an empty body reads as "success with no order
     // id", which is terminal. A paid order would never be placed, and the
     // webhook would answer 200 so Stripe would never redeliver it.
-    assert.equal(result.kind, "server");
+    assert.equal(result.kind, "timeout");
     assert.equal(result.reason, "prodigi-timeout");
     assert.match(result.message, /timed out/);
   } finally {

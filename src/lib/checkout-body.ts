@@ -1,8 +1,9 @@
 import {
   ISO_ALPHA2_PATTERN,
   isShipToCountryCode,
+  type ShipToCountryCode,
 } from "./ship-to-countries";
-import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";
+import type { FrameFinish, PrintSize } from "./pricing";
 import {
   type PhysicalFormat,
   FRAME_FINISHES,
@@ -16,13 +17,27 @@ import {
   isSellableFormat,
 } from "./sku-map";
 
-type CheckoutBody = {
+/**
+ * A checkout body is one of two shapes, told apart by `format`. A digital order
+ * has no size or frame; a physical one always does. The union is the type that
+ * lets the route branch on `format` and have `size`/`frame`/`destinationCountryCode`
+ * narrow without a cast.
+ */
+export type DigitalCheckout = {
   photoSlug: string;
-  format: PrintFormat;
-  size: PrintSize | null;
-  frame: FrameFinish | null;
-  destinationCountryCode: string | null;
+  format: "digital";
+  destinationCountryCode: ShipToCountryCode | null;
 };
+
+export type PhysicalCheckout = {
+  photoSlug: string;
+  format: PhysicalFormat;
+  size: PrintSize;
+  frame: FrameFinish | null;
+  destinationCountryCode: ShipToCountryCode | null;
+};
+
+export type CheckoutBody = DigitalCheckout | PhysicalCheckout;
 
 // Allow-lists and their error labels are owned by sku-map, so SKU coverage
 // and the message we show on rejection cannot drift from each other.
@@ -65,7 +80,7 @@ function parseFrame(
  * `"error" in x` test plus a cast back to `string | null` — a cast the
  * compiler could not check, and one more place for a rejection to slip past.
  */
-function parseDestinationCountry(raw: unknown): Parsed<string | null> {
+function parseDestinationCountry(raw: unknown): Parsed<ShipToCountryCode | null> {
   if (raw === undefined || raw === null || raw === "") {
     return { ok: true, value: null };
   }
@@ -102,7 +117,9 @@ function asBody(raw: unknown): Parsed<Record<string, unknown>> {
   return { ok: true, value: raw as Record<string, unknown> };
 }
 
-export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string } {
+export function parseCheckoutBody(
+  raw: unknown,
+): CheckoutBody | { error: string } {
   const opened = asBody(raw);
   if (!opened.ok) return { error: opened.error };
   const body = opened.value;
@@ -131,9 +148,7 @@ export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string 
     }
     return {
       photoSlug,
-      format: fmt,
-      size: null,
-      frame: null,
+      format: "digital",
       destinationCountryCode,
     };
   }
@@ -154,11 +169,16 @@ export function parseCheckoutBody(raw: unknown): CheckoutBody | { error: string 
   };
 }
 
-type QuoteBody = {
-  format: Exclude<PrintFormat, "digital">;
+/**
+ * A quote body is the physical checkout shape without the photo slug. Defined
+ * from the same parser pieces rather than as a union: a quote is never digital,
+ * so there is no second arm to discriminate on.
+ */
+export type QuoteBody = {
+  format: PhysicalFormat;
   size: PrintSize;
   frame: FrameFinish | null;
-  destinationCountryCode: string | null;
+  destinationCountryCode: ShipToCountryCode | null;
 };
 
 export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {

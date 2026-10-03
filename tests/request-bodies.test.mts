@@ -6,7 +6,6 @@ import {
   FRAME_FINISHES,
   PHYSICAL_FORMATS,
   PRINT_SIZES,
-  SELLABLE_FORMATS,
 } from "../src/lib/sku-map.ts";
 import { SHIP_TO_COUNTRIES } from "../src/lib/ship-to-countries.ts";
 
@@ -49,16 +48,24 @@ test("quoteRequest has no digital case: the parser rejects it", () => {
 });
 
 test("checkoutRequest round-trips through parseCheckoutBody for every sellable format", () => {
-  for (const format of SELLABLE_FORMATS) {
+  for (const format of PHYSICAL_FORMATS) {
     const body = checkoutRequest(SLUG, format, SIZE, FRAME, COUNTRY);
     assert.deepEqual(parseCheckoutBody(body), {
       photoSlug: SLUG,
       format,
-      size: format === "digital" ? null : SIZE,
+      size: SIZE,
       frame: format === "framed" ? FRAME : null,
-      destinationCountryCode: format === "digital" ? null : COUNTRY,
+      destinationCountryCode: COUNTRY,
     });
   }
+  // Digital has no size or frame, so the parser drops both — the parsed shape
+  // is the narrower DigitalCheckout, not the physical shape with nulls.
+  const digital = parseCheckoutBody(checkoutRequest(SLUG, "digital", SIZE, FRAME, COUNTRY));
+  assert.deepEqual(digital, {
+    photoSlug: SLUG,
+    format: "digital",
+    destinationCountryCode: null,
+  });
 });
 
 test("checkoutRequest nulls size, frame and country for digital", () => {

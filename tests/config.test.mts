@@ -10,8 +10,8 @@
  * The two things worth stating rather than merely executing:
  *
  *   - getConfig never throws, including when Prodigi is entirely absent. That is
- *     the 503-vs-502 invariant: an eager prodigiApiKey() read above a route's
- *     try would turn "this deploy is misconfigured" into "Prodigi is
+ *     the 503-vs-502 invariant: an eager config read above a route's failure
+ *     mapping would turn "this deploy is misconfigured" into "Prodigi is
  *     unhealthy" and send an operator to the wrong status page.
  *   - the report is a list and the message is a string, so a route can answer
  *     503 with a body and a deploy check can print one line.
@@ -28,9 +28,7 @@ import {
   printAssetSecret,
   PRINT_ASSET_SECRET_MIN_LENGTH,
   productionConfigError,
-  prodigiApiKey,
-  prodigiOrdersUrl,
-  prodigiQuotesUrl,
+  prodigiConfig,
   siteUrl,
   stripeSecretKey,
   usablePrintAssetSecret,
@@ -148,8 +146,8 @@ test("a half-configured deployment names only what is actually absent", () => wi
 
 test("getConfig does not throw when Prodigi is unconfigured", () => {
   // The whole reason the summary carries keyConfigured rather than a key: this
-  // runs above a route's try, so a throw here would pre-empt prodigiFailure()
-  // and report our misconfiguration as a Prodigi outage.
+  // runs above a route's failure mapping, so a throw here would pre-empt
+  // prodigiFailureFrom() and report our misconfiguration as a Prodigi outage.
   withCleanEnv(() => {
     const config = getConfig({});
     assert.deepEqual(config.prodigi, { apiBase: undefined, keyConfigured: false });
@@ -189,11 +187,11 @@ test("a base that is not allowlisted is absent from the summary", () => {
       ],
     ),
   );
-  // Still reported before any money moves, and by the throwing reader that owns
-  // the message: the summary delegates to the same allowlist.
-  assert.throws(
-    () => prodigiQuotesUrl({ PRODIGI_API_BASE: "https://evil.example" }),
-    /PRODIGI_API_BASE must be/,
+  // Still reported before any money moves, and by the reader that owns the
+  // message: the summary delegates to the same allowlist.
+  assert.equal(
+    prodigiConfig({ PRODIGI_API_BASE: "https://evil.example" }).ok,
+    false,
   );
   assert.equal(
     getConfig({ PRODIGI_API_BASE: SANDBOX }).prodigi.apiBase,
@@ -201,22 +199,27 @@ test("a base that is not allowlisted is absent from the summary", () => {
   );
 });
 
-test("the throwing Prodigi readers read through config, message and all", () => {
-  // These are the wrappers prodigi-quote/order/cancel call, so the 503/502
-  // grammar has to arrive here byte-identical to what prodigi-config throws.
+test("the Prodigi config read reads through config, message and all", () => {
+  // prodigiConfig is the wrapper prodigi-quote/order/cancel call, so the host/
+  // key pair and the unconfigured message have to arrive here byte-identical
+  // to what prodigi-config produces.
   withEnv({ PRODIGI_API_BASE: SANDBOX, PRODIGI_SANDBOX_API_KEY: "sandbox-key" }, () => {
-    assert.equal(prodigiQuotesUrl(), `${SANDBOX}/v4.0/quotes`);
-    assert.equal(prodigiOrdersUrl(), `${SANDBOX}/v4.0/orders`);
-    assert.equal(prodigiApiKey(), "sandbox-key");
+    assert.deepEqual(prodigiConfig(), {
+      ok: true,
+      base: SANDBOX,
+      key: "sandbox-key",
+    });
     // …and they honour an explicit env, so the Worker env still wins.
-    assert.equal(
-      prodigiApiKey({ PRODIGI_API_BASE: LIVE, PRODIGI_API_KEY: "live" }),
-      "live",
+    assert.deepEqual(
+      prodigiConfig({ PRODIGI_API_BASE: LIVE, PRODIGI_API_KEY: "live" }),
+      { ok: true, base: LIVE, key: "live" },
     );
   });
   withEnv({ PRODIGI_API_BASE: undefined, PRODIGI_API_KEY: undefined }, () => {
-    assert.throws(() => prodigiQuotesUrl(), /PRODIGI_API_BASE must be/);
-    assert.throws(() => prodigiApiKey(), /PRODIGI_API_BASE must be/);
+    const unconfigured = prodigiConfig();
+    assert.equal(unconfigured.ok, false);
+    assert.equal(unconfigured.kind, "unconfigured");
+    assert.match(unconfigured.message, /PRODIGI_API_BASE must be/);
   });
 });
 

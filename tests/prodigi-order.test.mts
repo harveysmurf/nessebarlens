@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PRODIGI_SHIPPING_METHOD } from "../src/lib/prodigi-config.ts";
+import { PRODIGI_SHIPPING_METHOD, classifyProdigiStatus } from "../src/lib/prodigi-config.ts";
 import {
   PLACEHOLDER_VERSION,
   placeholderPhotoSrc,
@@ -11,7 +11,6 @@ import { siteUrl } from "../src/lib/config.ts";
 import {
   assertNoMasterLeak,
   buildProdigiOrderBody,
-  classifyProdigiStatus,
   createProdigiOrder,
   placeholderAssetUrl,
   type OrderRecipient,
@@ -218,8 +217,8 @@ test("createProdigiOrder posts the signed asset URL to the sandbox orders URL", 
     try {
       const result = await createProdigiOrder(ORDER_INPUT);
       assert.equal(result.ok, true);
-      assert.equal(result.ok && result.orderId, "ord_123");
-      assert.equal(result.ok && result.stage, "awaiting_payment");
+      assert.equal(result.ok && result.value.orderId, "ord_123");
+      assert.equal(result.ok && result.value.stage, "awaiting_payment");
       assert.equal(stub.calls.length, 1);
       const call = stub.calls[0]!;
       assert.equal(call.url, `${SANDBOX}/v4.0/orders`);
@@ -231,7 +230,7 @@ test("createProdigiOrder posts the signed asset URL to the sandbox orders URL", 
       assert.equal(sent.merchantReference, "cs_test_abcdefgh");
       // A paid physical order never gets the public placeholder.
       assert.match(sent.items[0].assets[0].url, /\/api\/print-asset\?/);
-      assert.equal(result.ok && result.assetUrl, sent.items[0].assets[0].url);
+      assert.equal(result.ok && result.value.assetUrl, sent.items[0].assets[0].url);
     } finally {
       stub.restore();
     }
@@ -267,8 +266,8 @@ test("createProdigiOrder signs the asset URL when the HMAC secret is set", async
     const stub = stubFetch(() => json({ order: { id: "ord_124" } }));
     try {
       const result = await createProdigiOrder(ORDER_INPUT);
-      assert.equal(result.ok && result.assetUrl.includes("/api/print-asset?"), true);
-      assert.equal(result.ok && result.stage, null, "missing stage becomes null");
+      assert.equal(result.ok && result.value.assetUrl.includes("/api/print-asset?"), true);
+      assert.equal(result.ok && result.value.stage, null, "missing stage becomes null");
     } finally {
       stub.restore();
     }
@@ -516,7 +515,7 @@ test("a repeated idempotency key returns the original order, never a second one"
     try {
       const result = await createProdigiOrder(ORDER_INPUT);
       assert.equal(result.ok, true, "a duplicate is a success, not an error");
-      assert.equal(result.ok && result.orderId, "ord_first");
+      assert.equal(result.ok && result.value.orderId, "ord_first");
       // The key sent is the session id, which is what makes the two attempts
       // the same order to Prodigi.
       const sent = JSON.parse(stub.calls[0]!.init.body as string);
@@ -545,7 +544,7 @@ test("an unconfigured Prodigi key is a retryable failure, not a crash", async ()
     try {
       const result = await createProdigiOrder(ORDER_INPUT);
       assert.equal(result.ok, false);
-      assert.equal(result.ok === false && result.kind, "server");
+      assert.equal(result.ok === false && result.kind, "unconfigured");
       assert.equal(result.ok === false && result.reason, "prodigi-unconfigured");
       assert.match(result.ok === false ? result.message : "", /API_KEY is not set/);
       assert.equal(stub.calls.length, 0, "Prodigi must never be contacted");
@@ -557,9 +556,9 @@ test("an unconfigured Prodigi key is a retryable failure, not a crash", async ()
 });
 
 test("an unrecognised Prodigi host is the same retryable unconfigured failure", async () => {
-  // prodigiApiBase throws for anything that is not the sandbox or live host.
-  // That is a misconfigured deploy, not a Prodigi outage, so it must carry the
-  // same reason: retryable, and the record says "fix the config".
+  // readProdigiConfig reports unconfigured for anything that is not the sandbox
+  // or live host. That is a misconfigured deploy, not a Prodigi outage, so it
+  // must carry the same reason: retryable, and the record says "fix the config".
   await withProdigiEnv(async () => {
     process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
     process.env.PRODIGI_API_BASE = "https://api.attacker.example";
@@ -568,7 +567,7 @@ test("an unrecognised Prodigi host is the same retryable unconfigured failure", 
       const result = await createProdigiOrder(ORDER_INPUT);
       assert.equal(result.ok, false);
       assert.equal(result.ok === false && result.reason, "prodigi-unconfigured");
-      assert.equal(result.ok === false && result.kind, "server");
+      assert.equal(result.ok === false && result.kind, "unconfigured");
       assert.equal(stub.calls.length, 0, "an unknown host is never contacted");
     } finally {
       stub.restore();

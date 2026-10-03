@@ -9,7 +9,7 @@ import { getPhoto } from "@/lib/photos";
 import { DIGITAL_PRICE_EUR, eurToCents, formatLabel } from "@/lib/pricing";
 import { placeholderAssetUrl } from "@/lib/prodigi-order";
 import { quotePhysical } from "@/lib/prodigi-quote";
-import { prodigiFailure } from "@/lib/prodigi-config";
+import { prodigiFailureFrom } from "@/lib/prodigi-config";
 import { canSignMasterAsset } from "@/lib/print-asset";
 import { getStripe } from "@/lib/stripe";
 import { isConfiguredSiteUrl, siteUrl } from "@/lib/config";
@@ -46,32 +46,40 @@ export async function POST(request: Request) {
   let quoteEur: number;
   let shippingEur = 0;
   let sku = "";
+  // The metadata strings for a physical order, "" for a digital one. A digital
+  // body has no size/frame fields, so the strings are defaulted here rather
+  // than read off the union (where they would not exist).
+  let size = "";
+  let frame = "";
   let destinationCountryCode: ShipToCountryCode | null = null;
 
-  if (isPhysical) {
+  if (parsed.format !== "digital") {
+    // `parsed` is now the physical arm: size/frame/destinationCountryCode are
+    // narrowed without a cast, and destinationCountryCode is already
+    // ShipToCountryCode | null.
     destinationCountryCode =
-      (parsed.destinationCountryCode as ShipToCountryCode | null) ??
-      DEFAULT_SHIPPING_COUNTRY;
-    try {
-      const quote = await quotePhysical({
-        format: parsed.format as Exclude<typeof parsed.format, "digital">,
-        size: parsed.size!,
-        frame: parsed.frame,
-        destinationCountryCode,
-      });
-      quoteEur = quote.merchandiseEur;
-      shippingEur = quote.shippingEur;
-      sku = quote.sku;
-    } catch (e) {
-      // Same shape as the quote route's catch: full detail to the log, code
+      parsed.destinationCountryCode ?? DEFAULT_SHIPPING_COUNTRY;
+    const result = await quotePhysical({
+      format: parsed.format,
+      size: parsed.size,
+      frame: parsed.frame,
+      destinationCountryCode,
+    });
+    if (!result.ok) {
+      // Same shape as the quote route's failure: full detail to the log, code
       // and safe copy to the caller (#107).
-      const failure = prodigiFailure(e);
-      console.error("prodigi.checkout", failure.code, failure.detail, e);
+      const failure = prodigiFailureFrom(result);
+      console.error("prodigi.checkout", failure.code, failure.detail);
       return NextResponse.json(
         { error: failure.error, code: failure.code },
         { status: failure.status },
       );
     }
+    quoteEur = result.value.merchandiseEur;
+    shippingEur = result.value.shippingEur;
+    sku = result.value.sku;
+    size = parsed.size;
+    frame = parsed.frame ?? "";
 
     // Fail closed before taking the money. A physical order is fulfilled from
     // an HMAC-signed /api/print-asset URL; without a usable
@@ -108,8 +116,8 @@ export async function POST(request: Request) {
   const metadata: Record<string, string> = {
     photoSlug: photo.slug,
     format: parsed.format,
-    size: parsed.size ?? "",
-    frame: parsed.frame ?? "",
+    size,
+    frame,
     quoteEur: String(quoteEur),
   };
   // No merchandiseEur here. quoteEur is written unconditionally above and
@@ -152,7 +160,7 @@ export async function POST(request: Request) {
           product_data: {
             name: `${photo.title} — ${formatLabel(parsed.format)}`,
             description: isPhysical
-              ? `${parsed.size}${parsed.frame ? ` · ${parsed.frame} frame` : ""}`
+              ? `${size}${frame ? ` · ${frame} frame` : ""}`
               : "Digital high-resolution license",
             images: [placeholderImage],
           },

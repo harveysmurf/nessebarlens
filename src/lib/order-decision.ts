@@ -26,9 +26,14 @@ import { ISO_ALPHA2_PATTERN } from "./ship-to-countries";
 import { HTTPS_URL_PATTERN } from "./url-patterns";
 import type { OrderRecipient } from "./prodigi-order";
 import { eurToCents, parseEurAmount, type PrintFormat } from "./pricing";
-import { isFrameFinishValue, isPrintSize, isSellableFormat } from "./sku-map";
+import {
+  isFrameFinishValue,
+  isPhysicalFormat,
+  isPrintSize,
+  isSellableFormat,
+  type PhysicalFormat,
+} from "./sku-map";
 
-export type OrderFormat = PrintFormat | "unknown";
 export type OrderStatus =
   | "paid"
   | "paid-unfulfilled"
@@ -104,7 +109,13 @@ const EMAIL_MAX = 254;
  */
 const STORED_ENUM_FIELD_MAX = 64;
 
-export type OrderRecord = {
+/**
+ * The fields every stored order carries, whatever its format. The format is
+ * carried by the `kind` discriminant plus the format-specific fields, so a
+ * reader that needs a physical size or a digital master key has to narrow on
+ * `kind` first — no cast.
+ */
+export type OrderRecordCommon = {
   v: 1;
   sessionId: string;
   merchantReference: string;
@@ -118,15 +129,11 @@ export type OrderRecord = {
   terminal: boolean;
   status: OrderStatus;
   photoSlug: string;
-  format: OrderFormat;
-  size: string;
-  frame: string;
   quoteEur: number;
   amountTotal: number;
   currency: "eur";
   reason: string | null;
   masterKey: string | null;
-  recipient: OrderRecipient | null;
   prodigiOrderId: string | null;
   prodigiStage: string | null;
   /** HMAC /api/print-asset or public placeholder — never a MASTERS key/URL. */
@@ -146,6 +153,45 @@ export type OrderRecord = {
    */
   attempts: number;
 };
+
+/** A paid or revocable digital order: no size, frame or shipping recipient. */
+export type DigitalOrder = OrderRecordCommon & {
+  kind: "digital";
+  format: "digital";
+  size: "";
+  frame: "";
+  recipient: null;
+};
+
+/**
+ * A physical order. `size` and `frame` stay strings because a physical order
+ * can be written paid-unfulfilled before the metadata is proven valid, and a
+ * recipient is only present once the address passed `parseRecipient` — the
+ * Prodigi trigger re-checks both before it calls the client.
+ */
+export type PhysicalOrder = OrderRecordCommon & {
+  kind: "physical";
+  format: PhysicalFormat;
+  size: string;
+  frame: string;
+  recipient: OrderRecipient | null;
+};
+
+/**
+ * A stored record whose `format` string is one we do not recognise. It keeps
+ * the raw string so a future version can reclassify it without a migration:
+ * collapsing it to "unknown" would throw away the one fact a reclassification
+ * has to work from.
+ */
+export type UnknownOrder = OrderRecordCommon & {
+  kind: "unknown";
+  format: string;
+  size: string;
+  frame: string;
+  recipient: OrderRecipient | null;
+};
+
+export type OrderRecord = DigitalOrder | PhysicalOrder | UnknownOrder;
 
 export type StripeShippingDetails = {
   name?: string | null;
@@ -279,7 +325,10 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
   if (typeof row.status !== "string" || !isOrderStatus(row.status)) {
     return null;
   }
-  if (!isOrderFormat(row.format)) return null;
+  // The format must be a string; a string we do not recognise is not a
+  // rejection — it is an UnknownOrder, so a future release can reclassify it
+  // without a migration. A stored order becoming unreadable is data loss.
+  if (typeof row.format !== "string") return null;
   if (typeof row.photoSlug !== "string") return null;
   if (typeof row.size !== "string" || typeof row.frame !== "string")
     return null;
@@ -312,36 +361,42 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
   const recipient = parseStoredRecipient(row.recipient);
   if (recipient === undefined) return null;
 
+  const kind: OrderRecord["kind"] =
+    row.format === "digital"
+      ? "digital"
+      : isPhysicalFormat(row.format)
+        ? "physical"
+        : "unknown";
+
   if (row.status === "paid" || isRevoked(row.status)) {
     // A revoked order is validated exactly like a paid one, with one
     // difference: masterKey must be null. That is the point of revoking —
     // the record keeps enough to identify and audit the order (and, for a
     // print, the Prodigi id needed to cancel it) but no longer names the file.
-    if (row.format === "digital") {
+    if (kind === "digital") {
       const expectedKey = masterKeyForSlug(row.photoSlug);
       if (
         !expectedKey ||
         (row.status === "paid" && row.masterKey !== expectedKey) ||
         (isRevoked(row.status) && row.masterKey !== null) ||
         row.prodigiOrderId !== null ||
-        row.assetUrl !== null ||
-        recipient !== null
+        row.assetUrl !== null
       ) {
         return null;
       }
-    } else if (isRevoked(row.status)) {
-      // A revoked print is not held to the paid shape. A print revoked before
-      // Prodigi ever accepted it (paid-unfulfilled, no order id, no asset url)
-      // cannot satisfy those checks, and requiring them would make revocation
-      // of such an order write a record this parser throws away — the order
-      // would read as absent rather than revoked. What is present is already
-      // type-checked above, so anything present is kept for the audit trail
-      // and the Prodigi cancel; nothing is required.
-      if (row.masterKey !== null) {
-        return null;
-      }
-    } else {
-      if (
+    } else if (kind === "physical") {
+      if (isRevoked(row.status)) {
+        // A revoked print is not held to the paid shape. A print revoked before
+        // Prodigi ever accepted it (paid-unfulfilled, no order id, no asset url)
+        // cannot satisfy those checks, and requiring them would make revocation
+        // of such an order write a record this parser throws away — the order
+        // would read as absent rather than revoked. What is present is already
+        // type-checked above, so anything present is kept for the audit trail
+        // and the Prodigi cancel; nothing is required.
+        if (row.masterKey !== null) {
+          return null;
+        }
+      } else if (
         row.masterKey !== null ||
         typeof row.prodigiOrderId !== "string" ||
         !row.prodigiOrderId ||
@@ -351,33 +406,64 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
       ) {
         return null;
       }
+    } else if (row.masterKey !== null) {
+      // An unknown-format order is never downloadable, so it must not name a
+      // file. Otherwise it is kept, untouched, for a human or a later version.
+      return null;
     }
   } else if (row.masterKey !== null) {
     return null;
   }
 
-  return {
+  const common: OrderRecordCommon = {
     v: 1,
     sessionId: row.sessionId,
     merchantReference: row.sessionId,
     terminal: row.terminal,
     status: row.status,
     photoSlug: row.photoSlug,
-    format: row.format,
-    size: row.size,
-    frame: row.frame,
     quoteEur: row.quoteEur,
     amountTotal: row.amountTotal,
     currency: "eur",
     reason: row.reason,
     masterKey: row.masterKey,
-    recipient,
     prodigiOrderId: row.prodigiOrderId,
     prodigiStage: row.prodigiStage,
     assetUrl: row.assetUrl,
     updatedAt: row.updatedAt,
     createdAt,
     attempts,
+  };
+
+  if (row.format === "digital") {
+    // A legacy digital record may still carry a size, a frame or a recipient;
+    // those are dropped rather than stored, so the record stays readable.
+    return {
+      ...common,
+      kind: "digital",
+      format: "digital",
+      size: "",
+      frame: "",
+      recipient: null,
+    };
+  }
+  if (isPhysicalFormat(row.format)) {
+    return {
+      ...common,
+      kind: "physical",
+      format: row.format,
+      size: row.size,
+      frame: row.frame,
+      recipient,
+    };
+  }
+  return {
+    ...common,
+    kind: "unknown",
+    format: row.format,
+    size: row.size,
+    frame: row.frame,
+    recipient,
   };
 }
 
@@ -409,7 +495,7 @@ export type OrderViewState =
   | "revoked";
 
 export function orderViewState(order: OrderRecord): OrderViewState {
-  if (order.format !== "digital") return "physical";
+  if (order.kind !== "digital") return "physical";
   if (isRevoked(order.status)) return "revoked";
   if (order.status === "paid" && order.masterKey) return "digital-ready";
   if (!order.terminal) return "digital-pending";
@@ -435,7 +521,7 @@ export async function resolveDownload(
   order: OrderRecord,
   masters: MastersBucket | undefined,
 ): Promise<DownloadResolution> {
-  if (order.format !== "digital") {
+  if (order.kind !== "digital") {
     return {
       kind: "json",
       status: 403,
@@ -487,74 +573,154 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     input.customerPhone,
   );
 
-  const shell: Omit<OrderRecord, "format" | "status" | "reason"> = {
+  // Every field the three variants share. Status and reason are filled per
+  // branch below; the format-specific fields (kind, format, size, frame,
+  // recipient) come from the branch that knows the kind.
+  const common: Omit<OrderRecordCommon, "status" | "reason"> = {
     v: 1,
     sessionId: input.sessionId,
     merchantReference: input.sessionId,
     terminal: true,
     photoSlug,
-    size,
-    frame,
     quoteEur: quoteEur ?? 0,
     amountTotal: isInt(input.amountTotal) ? input.amountTotal : 0,
     currency: "eur",
-    updatedAt: input.now,
-    createdAt: input.now,
-    attempts: 1,
     masterKey: null,
-    recipient: null,
     prodigiOrderId: null,
     prodigiStage: null,
     assetUrl: null,
+    updatedAt: input.now,
+    createdAt: input.now,
+    attempts: 1,
   };
 
-  if (!format || quoteEur === null || !photoSlug) {
+  // An absent or unrecognised format is an UnknownOrder with the "unknown"
+  // sentinel — the only spelling of that sentinel, so a later version can
+  // reclassify other strings without a migration.
+  if (format === null) {
     return {
-      ...shell,
-      format: format ?? "unknown",
+      ...common,
+      kind: "unknown",
+      format: "unknown",
+      size,
+      frame,
+      recipient: null,
+      status: "paid-unfulfilled",
+      reason: "bad-metadata",
+    };
+  }
+
+  if (format === "digital") {
+    // A digital order never stores a size, frame or recipient — they are
+    // dropped, so a digital record is byte-identical whether or not the
+    // metadata carried the fields.
+    if (quoteEur === null || !photoSlug) {
+      return {
+        ...common,
+        kind: "digital",
+        format: "digital",
+        size: "",
+        frame: "",
+        recipient: null,
+        status: "paid-unfulfilled",
+        reason: "bad-metadata",
+      };
+    }
+    if (!masterKey) {
+      return {
+        ...common,
+        kind: "digital",
+        format: "digital",
+        size: "",
+        frame: "",
+        recipient: null,
+        status: "paid-unfulfilled",
+        reason: "unknown-photo",
+      };
+    }
+    if (
+      input.currency !== "eur" ||
+      input.amountTotal !== expectedAmountCents("digital", quoteEur, 0)
+    ) {
+      return {
+        ...common,
+        kind: "digital",
+        format: "digital",
+        size: "",
+        frame: "",
+        recipient: null,
+        status: "paid-unfulfilled",
+        reason: "amount-mismatch",
+      };
+    }
+    return {
+      ...common,
+      kind: "digital",
+      format: "digital",
+      size: "",
+      frame: "",
+      recipient: null,
+      status: "paid",
+      reason: null,
+      masterKey,
+    };
+  }
+
+  // `format` is a physical format from here down.
+  if (quoteEur === null || !photoSlug) {
+    return {
+      ...common,
+      kind: "physical",
+      format,
+      size,
+      frame,
+      recipient: null,
       status: "paid-unfulfilled",
       reason: "bad-metadata",
     };
   }
   if (!masterKey) {
     return {
-      ...shell,
+      ...common,
+      kind: "physical",
       format,
+      size,
+      frame,
+      recipient: null,
       status: "paid-unfulfilled",
       reason: "unknown-photo",
     };
   }
 
-  const shippingEur =
-    format === "digital" ? 0 : parseEurAmount(meta.shippingEur);
-  // A digital order is always 0 above, so "no shipping quote" means one thing
-  // only: a physical order whose metadata is incomplete.
+  const shippingEur = parseEurAmount(meta.shippingEur);
+  // "no shipping quote" means one thing only: a physical order whose metadata
+  // is incomplete.
   if (shippingEur === null) {
     return {
-      ...shell,
+      ...common,
+      kind: "physical",
       format,
+      size,
+      frame,
+      recipient: null,
       status: "paid-unfulfilled",
       reason: "bad-metadata",
     };
   }
 
-  const expected = expectedAmountCents(format, quoteEur, shippingEur);
-  if (input.currency !== "eur" || input.amountTotal !== expected) {
+  if (
+    input.currency !== "eur" ||
+    input.amountTotal !== expectedAmountCents(format, quoteEur, shippingEur)
+  ) {
     return {
-      ...shell,
+      ...common,
+      kind: "physical",
       format,
+      size,
+      frame,
+      recipient: null,
       status: "paid-unfulfilled",
       reason: "amount-mismatch",
-    };
-  }
-
-  if (format === "digital") {
-    return {
-      ...shell,
-      format,
-      status: "paid",
-      reason: null,
-      masterKey,
     };
   }
 
@@ -563,16 +729,24 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     (format === "framed" && !isFrameFinishValue(frame))
   ) {
     return {
-      ...shell,
+      ...common,
+      kind: "physical",
       format,
+      size,
+      frame,
+      recipient: null,
       status: "paid-unfulfilled",
       reason: "bad-metadata",
     };
   }
   if (format !== "framed" && frame !== "") {
     return {
-      ...shell,
+      ...common,
+      kind: "physical",
       format,
+      size,
+      frame,
+      recipient: null,
       status: "paid-unfulfilled",
       reason: "bad-metadata",
     };
@@ -580,8 +754,12 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
 
   if (!recipient) {
     return {
-      ...shell,
+      ...common,
+      kind: "physical",
       format,
+      size,
+      frame,
+      recipient: null,
       status: "paid-unfulfilled",
       reason: "missing-shipping",
     };
@@ -596,29 +774,35 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     // Stripe's ~3-day redelivery window, and the address is already valid — so
     // keep it and let a redelivery place the order.
     return {
-      ...shell,
+      ...common,
+      kind: "physical",
       format,
+      size,
+      frame,
+      recipient,
       status: "paid-unfulfilled",
       terminal: false,
       reason: "prodigi-unconfigured",
-      recipient,
     };
   }
 
   // Internal marker: fulfillCheckoutSession will call Prodigi then rewrite.
   return {
-    ...shell,
+    ...common,
+    kind: "physical",
     format,
+    size,
+    frame,
+    recipient,
     status: "paid-unfulfilled",
     reason: AWAITING_PRODIGI_REASON,
-    recipient,
   };
 }
 
 // The sku-map predicate, not this module's own copy of the list: parseFormat
-// and isOrderFormat are the two guards that decide whether a stored order is
-// fulfillable, so they have to read the same allow-list the order path writes
-// from. `(FORMATS as string[]).includes(raw)` followed by a second
+// and the physical/digital split both read the same allow-list the order path
+// writes from, so a format the catalog can order is accepted and nothing else.
+// `(FORMATS as string[]).includes(raw)` followed by a second
 // `raw as PrintFormat` was the cast making the value valid rather than the
 // check — the pattern sku-map already documents removing.
 function parseFormat(raw: string | undefined): PrintFormat | null {
@@ -655,10 +839,6 @@ function isEurAmount(value: unknown): value is number {
     return false;
   }
   return Number(value.toFixed(2)) === value;
-}
-
-function isOrderFormat(value: unknown): value is OrderFormat {
-  return value === "unknown" || isSellableFormat(value);
 }
 
 /**

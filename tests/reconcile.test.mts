@@ -41,6 +41,7 @@ function retryable(sessionId: string, createdAt: string): OrderRecord {
     terminal: false,
     status: "paid-unfulfilled",
     photoSlug: "dawn",
+    kind: "physical",
     format: "giclee",
     size: "30x40",
     frame: "",
@@ -109,9 +110,11 @@ test("reconcile retries a retryable order and skips terminal ones", async () => 
     creates += 1;
     return {
       ok: true,
-      orderId: "ord_1",
-      stage: "InProgress",
-      assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+      value: {
+        orderId: "ord_1",
+        stage: "InProgress",
+        assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+      },
     };
   };
 
@@ -179,9 +182,11 @@ test("reconcile recovers a paid Stripe session with no stored order", async () =
     prodigiKeyConfigured: true,
     createOrder: async () => ({
       ok: true,
-      orderId: "ord_collected",
-      stage: "InProgress",
-      assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+      value: {
+        orderId: "ord_collected",
+        stage: "InProgress",
+        assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+      },
     }),
     nowMs: NOW,
   });
@@ -209,7 +214,7 @@ test("a retry whose claim is lost is counted as claimedByOther, not as a retry",
     prodigiKeyConfigured: true,
     createOrder: async () => {
       creates += 1;
-      return { ok: true, orderId: "ord_x", stage: null, assetUrl: null };
+      return { ok: true, value: { orderId: "ord_x", stage: null, assetUrl: null } };
     },
     nowMs: NOW,
   });
@@ -342,9 +347,11 @@ test("the reconciler prefers Stripe's collected shipping over the legacy field",
     prodigiKeyConfigured: true,
     createOrder: async () => ({
       ok: true,
-      orderId: "ord_collected",
-      stage: "InProgress",
-      assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+      value: {
+        orderId: "ord_collected",
+        stage: "InProgress",
+        assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+      },
     }),
     nowMs: NOW,
   });

@@ -32,7 +32,7 @@ test("checkout accepts every format×size the SKU table can build", () => {
 
 test("checkout accepts digital and rejects size/frame for it", () => {
   const ok = parseCheckoutBody({ ...SLUG, format: "digital" });
-  assert.deepEqual(ok, { ...SLUG, format: "digital", size: null, frame: null, destinationCountryCode: null });
+  assert.deepEqual(ok, { ...SLUG, format: "digital", destinationCountryCode: null });
   assert.match(
     JSON.stringify(parseCheckoutBody({ ...SLUG, format: "digital", size: "30x40" })),
     /digital rejects size/,
