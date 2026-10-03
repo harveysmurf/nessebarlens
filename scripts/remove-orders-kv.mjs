@@ -6,14 +6,21 @@
  * migration (`npm run migrate:orders`) moved the data once; between then and
  * here the namespace may have received new orders, and a delete that trusts a
  * comment saying "parity verified" is a delete someone runs against a stale
- * claim. So parity is measured live in this process, immediately before
- * anything is touched, and a mismatch refuses:
+ * claim. So coverage is measured live in this process, immediately before
+ * anything is touched, and an unmigrated order refuses:
  *
- *   d1 count(*) from orders  ==  wrangler kv key list --binding ORDERS --remote
+ *   every KV key that holds a completed order  ==  a row in D1
  *
- * Both sides are counts of the same logical set — one row per checkout-session
- * key — so equality is the right test. Nothing is deleted and wrangler.toml is
- * not rewritten unless the counts match AND the operator passed `--yes`, so a
+ * The invariant is "no unmigrated completed order remains in KV", and the
+ * discriminator is the key/value grammar the migrator already owns
+ * (classifyKvKey + looksLikeOrderRecord), not a key count. A KV key only
+ * matters if its value is an OrderRecord; `cs_test_` placeholders are
+ * pre-payment session state, `dl:`/`dls:` keys are download tokens, and neither
+ * is an order D1 still needs. Counting keys instead would compare two sets that
+ * differ by construction and never match.
+ *
+ * Nothing is deleted and wrangler.toml is not rewritten unless every
+ * completed-order key is already in D1 AND the operator passed `--yes`, so a
  * bare invocation is a no-op rather than an accident.
  *
  * The run is also restartable. Deleting the namespaces and rewriting
@@ -28,7 +35,7 @@
  * half-covered check.
  *
  * Usage:
- *   npm run orders:kv:remove              # measures parity, refuses unless --yes
+ *   npm run orders:kv:remove              # checks KV order coverage, refuses unless --yes
  *   npm run orders:kv:remove -- --yes     # removes after the gate passes
  */
 
@@ -36,6 +43,12 @@ import { spawnSync } from "node:child_process";
 import { readFileSync, writeFileSync } from "node:fs";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
+// The key and value grammar is owned by the migrator and the modules the live
+// worker reads it from. This gate must ask the same question the migration
+// asked, so it asks it with the same predicates: a gate that recognises a
+// different set of keys than the migrator would either refuse forever or, worse,
+// wave through an order the migrator would have carried over.
+import { classifyKvKey, looksLikeOrderRecord } from "./migrate-orders-kv-to-d1.mjs";
 
 export const DATABASE_NAME = "nessebar-lens-orders";
 export const KV_BINDING = "ORDERS";
@@ -135,12 +148,64 @@ export function parseCount(stdout) {
   return null;
 }
 
+/**
+ * KV keys whose value is a completed order record that D1 has no row for.
+ *
+ * Keys are classified with the migrator's grammar: `dl:`/`dls:` download state
+ * and anything that is not a checkout-session key are not orders, and their
+ * values are never fetched. A key whose value fails looksLikeOrderRecord is a
+ * pre-payment placeholder or a corrupt blob, not an unmigrated order — that is
+ * the same judgement the migrator makes, so the two agree by construction.
+ */
+export function findUnmigratedOrderKeys({ keys, readValue, d1Sessions }) {
+  const migrated = new Set(d1Sessions);
+  const unmigrated = [];
+  for (const key of keys) {
+    const kind = classifyKvKey(key);
+    if (kind.kind !== "order") continue;
+    if (migrated.has(kind.sessionId)) continue;
+    if (looksLikeOrderRecord(readValue(key), kind.sessionId)) {
+      unmigrated.push(kind.sessionId);
+    }
+  }
+  return unmigrated;
+}
+
+/**
+ * Session ids currently in D1. An unreadable result returns null, never []:
+ * an empty D1 side would make every KV order record look unmigrated (safe) but
+ * an absent check would be a check that was never run (not safe), so the caller
+ * treats null as a failed gate.
+ */
+export function parseD1Sessions(stdout) {
+  let parsed;
+  try {
+    parsed = JSON.parse(stdout || "null");
+  } catch {
+    return null;
+  }
+  const entries = Array.isArray(parsed) ? parsed : null;
+  if (!entries) return null;
+  const sessions = [];
+  for (const entry of entries) {
+    const rows = Array.isArray(entry?.results) ? entry.results : null;
+    if (!rows) return null;
+    for (const row of rows) {
+      const id = row?.session_id ?? row?.sessionId;
+      if (typeof id !== "string" || !id) return null;
+      sessions.push(id);
+    }
+  }
+  return sessions;
+}
+
 export function runRemove(argv, options = {}) {
   const spawn = options.spawnSync ?? spawnSync;
   const readFile = options.readFileSync ?? ((p) => readFileSync(p, "utf8"));
   const writeFile = options.writeFileSync ?? ((p, data) => writeFileSync(p, data));
   const listKvKeys = options.listKvKeys ?? defaultListKvKeys;
-  const countD1Orders = options.countD1Orders ?? defaultCountD1Orders;
+  const getKvValue = options.getKvValue ?? defaultGetKvValue;
+  const listD1Sessions = options.listD1Sessions ?? defaultListD1Sessions;
   const deleteNamespace = options.deleteNamespace ?? defaultDeleteNamespace;
   const listNamespaceIds = options.listNamespaceIds ?? defaultListNamespaceIds;
   const tomlPath = options.tomlPath ?? WRANGLER_TOML;
@@ -157,7 +222,7 @@ export function runRemove(argv, options = {}) {
       stdout:
         "Usage: node scripts/remove-orders-kv.mjs [--yes]\n" +
         "\n" +
-        "Measures d1 orders vs remote KV keys and refuses to delete unless they match.\n",
+        "Checks that every completed order in KV ORDERS exists in D1, and refuses to delete unless it does.\n",
       stderr: "",
     };
   }
@@ -198,9 +263,9 @@ export function runRemove(argv, options = {}) {
   const alreadyDeleted = remaining.length === 0;
 
   // Half-deleted is its own state and must not fall through to the gate: the
-  // parity check reads the surviving namespace's keys, and the missing one is
+  // check reads the surviving namespace's keys, and the missing one is
   // exactly what the operator needs told plainly. Deleting the survivor on a
-  // gate that no longer covers the missing one is the one shape where we would
+  // check that no longer covers the missing one is the one shape where we would
   // lose data silently, so this refuses and names the state instead.
   const gone = ids.filter((id) => !present.has(id));
   if (gone.length > 0 && remaining.length > 0) {
@@ -209,7 +274,7 @@ export function runRemove(argv, options = {}) {
       stdout: "",
       stderr:
         `${KV_BINDING} is half-removed: ${gone.join(", ")} no longer exist while ${remaining.join(", ")} ` +
-        `still ${remaining.length === 1 ? "does" : "do"}. A parity check can no longer cover both sides. ` +
+        `still ${remaining.length === 1 ? "does" : "do"}. A key-level check can no longer cover both namespaces. ` +
         "Confirm the surviving namespace against D1, then delete it and the binding by hand. Nothing was deleted.",
     };
   }
@@ -226,30 +291,48 @@ export function runRemove(argv, options = {}) {
     });
   }
 
-  let kvKeys;
-  let d1Orders;
-  try {
-    kvKeys = listKvKeys(spawn);
-    d1Orders = countD1Orders(spawn);
-  } catch (e) {
-    return { exitCode: 1, stdout: "", stderr: e instanceof Error ? e.message : String(e) };
-  }
-  if (d1Orders === null) {
+  // Both namespaces are checked: the preview namespace is written by the same
+  // worker path and a gate that only reads prod is a gate with a hole in it.
+  const d1Sessions = listD1Sessions(spawn);
+  if (d1Sessions === null) {
     return {
       exitCode: 1,
       stdout: "",
-      stderr: "could not read the D1 order count: refusing to delete on an unknown count",
+      stderr:
+        "could not read the migrated orders from D1: refusing to delete on an unknown set of sessions",
     };
   }
 
-  const summary = `orders:kv:remove gate ${JSON.stringify({ d1Orders, kvKeys: kvKeys.length })}\n`;
-  if (kvKeys.length !== d1Orders) {
+  const unmigrated = [];
+  let checked = 0;
+  try {
+    for (const id of remaining) {
+      const kvKeys = listKvKeys(spawn, id);
+      checked += kvKeys.length;
+      unmigrated.push(
+        ...findUnmigratedOrderKeys({
+          keys: kvKeys,
+          readValue: (key) => getKvValue(spawn, id, key),
+          d1Sessions,
+        }),
+      );
+    }
+  } catch (e) {
+    return { exitCode: 1, stdout: "", stderr: e instanceof Error ? e.message : String(e) };
+  }
+
+  const summary = `orders:kv:remove gate ${JSON.stringify({
+    d1Orders: d1Sessions.length,
+    kvKeys: checked,
+    unmigratedOrders: unmigrated.length,
+  })}\n`;
+  if (unmigrated.length > 0) {
     return {
       exitCode: 1,
       stdout: summary,
       stderr:
-        `parity check failed: D1 has ${d1Orders} orders but KV ${KV_BINDING} holds ${kvKeys.length} keys. ` +
-        "Run npm run migrate:orders first, then re-check. Nothing was deleted.",
+        `gate failed: ${unmigrated.length} KV key(s) hold a completed order with no row in D1: ` +
+        `${unmigrated.join(", ")}. Run npm run migrate:orders first, then re-check. Nothing was deleted.`,
     };
   }
   if (!parsed.confirmed) {
@@ -257,7 +340,7 @@ export function runRemove(argv, options = {}) {
       exitCode: 1,
       stdout: summary,
       stderr:
-        "parity holds but --yes was not passed: re-run with --yes to remove the namespace. Nothing was deleted.",
+        "no unmigrated order remains, but --yes was not passed: re-run with --yes to remove the namespace. Nothing was deleted.",
     };
   }
 
@@ -335,43 +418,68 @@ export function defaultListNamespaceIds(spawn) {
   return ids;
 }
 
-function defaultListKvKeys(spawn) {
-  const keys = [];
-  let cursor;
-  do {
-    const args = [
+/**
+ * Key names in one namespace. Addressed by --namespace-id rather than --binding
+ * because the gate has to read the preview namespace as well, and a binding
+ * resolves to the production namespace only.
+ *
+ * `wrangler kv key list` has no pagination flag, so one call is the whole
+ * namespace; the cursor loop the migration script uses is not available here.
+ */
+function defaultListKvKeys(spawn, namespaceId) {
+  const result = spawn(
+    "npx",
+    [
       "wrangler",
       "kv",
       "key",
       "list",
-      "--binding",
-      KV_BINDING,
+      "--namespace-id",
+      namespaceId,
       "--prefix",
       "",
       // --remote is load-bearing for the same reason as in the migration
-      // script: without it wrangler resolves the binding against local
-      // storage, which is empty, and an empty KV side would make the parity
-      // check pass vacuously against a non-empty D1 side only if D1 were also
-      // empty — the mismatch we rely on would never be seen.
+      // script: without it wrangler reads local storage, which is empty, and
+      // an empty KV side would make the gate pass vacuously.
       "--remote",
-    ];
-    if (cursor) args.push("--cursor", cursor);
-    const result = spawn("npx", args, { encoding: "utf8" });
-    if ((result.status ?? 1) !== 0) {
-      throw new Error(result.stderr || "kv key list failed");
-    }
-    const parsed = JSON.parse(result.stdout || "[]");
-    const list = Array.isArray(parsed) ? parsed : parsed.keys ?? [];
-    for (const entry of list) {
-      const name = typeof entry === "string" ? entry : entry.name;
-      if (typeof name === "string") keys.push(name);
-    }
-    cursor = Array.isArray(parsed) ? undefined : parsed.cursor;
-  } while (cursor);
+    ],
+    { encoding: "utf8" },
+  );
+  if ((result.status ?? 1) !== 0) {
+    throw new Error(result.stderr || "kv key list failed");
+  }
+  const parsed = JSON.parse(result.stdout || "[]");
+  const list = Array.isArray(parsed) ? parsed : parsed.keys ?? [];
+  const keys = [];
+  for (const entry of list) {
+    const name = typeof entry === "string" ? entry : entry.name;
+    if (typeof name === "string") keys.push(name);
+  }
   return keys;
 }
 
-function defaultCountD1Orders(spawn) {
+/**
+ * One key's value. Only order-keyed keys are ever fetched, so this runs a
+ * handful of times, not once per key.
+ */
+function defaultGetKvValue(spawn, namespaceId, key) {
+  const result = spawn(
+    "npx",
+    ["wrangler", "kv", "key", "get", key, "--namespace-id", namespaceId, "--remote"],
+    { encoding: "utf8" },
+  );
+  if ((result.status ?? 1) !== 0) {
+    throw new Error(result.stderr || `kv get failed for ${key}`);
+  }
+  return result.stdout ?? "";
+}
+
+/**
+ * Every migrated order's session id. Reading the ids rather than a count is
+ * what makes the gate checkable per order: a count can only be compared for
+ * equality, and equality is not the invariant.
+ */
+function defaultListD1Sessions(spawn) {
   const result = spawn(
     "npx",
     [
@@ -382,14 +490,14 @@ function defaultCountD1Orders(spawn) {
       "--remote",
       "--json",
       "--command",
-      "select count(*) as n from orders",
+      "select session_id from orders",
     ],
     { encoding: "utf8" },
   );
   if ((result.status ?? 1) !== 0) {
-    throw new Error(result.stderr || "d1 count failed");
+    throw new Error(result.stderr || "d1 read failed");
   }
-  return parseCount(result.stdout);
+  return parseD1Sessions(result.stdout);
 }
 
 function defaultDeleteNamespace(spawn, id) {

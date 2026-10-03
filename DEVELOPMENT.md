@@ -23,7 +23,8 @@ Stack:
 - Bindings: D1 `ORDERS_DB` (orders + download tokens), R2 `WEB` (public
   derivatives), R2 `MASTERS` (private masters). Stripe for payments. The KV
   `ORDERS` binding is a one-shot migration leftover and is removed by
-  `npm run orders:kv:remove` behind a live D1-vs-KV parity gate.
+  `npm run orders:kv:remove` behind a live check that no completed order is
+  left unmigrated in KV.
 
 ---
 
@@ -354,8 +355,8 @@ a host serving a reverted build is a support incident, not a deploy.
   `MASTERS`). `ORDERS_DB` D1 + WEB/MASTERS R2 are attached on the Worker.
 - The KV `ORDERS` binding is a one-shot migration leftover: the application no
   longer reads it. `npm run migrate:orders` reads it through the wrangler CLI,
-  and `npm run orders:kv:remove` deletes it once a live parity check confirms
-  D1 holds every key. Deleting the namespace by hand before that check is how
+  and `npm run orders:kv:remove` deletes it once a live check confirms D1 holds
+  every completed order. Deleting the namespace by hand before that check is how
   the source data is lost.
 - `[[d1_databases]]` binding `ORDERS_DB`, database `nessebar-lens-orders`,
   `migrations_dir = "migrations"`. The `database_id` is committed; the database
@@ -401,8 +402,8 @@ authoritative order history and the reconciler has something to recover.**
 
 KV still holds the same 5 keys and the `ORDERS` binding is still in
 `wrangler.toml` — deliberately, as the rollback path until the removal lands.
-`npm run orders:kv:remove` takes it away, but only behind a parity gate it
-measures live (see below).
+`npm run orders:kv:remove` takes it away, but only behind a gate it measures
+live (see below).
 
 One-shot KV → D1 migration, idempotent, re-runnable (keep the KV binding until
 this has succeeded):
@@ -445,24 +446,29 @@ D1 is the authoritative order history, so the KV namespace is now removable.
 runs *in the same process, immediately before anything is touched*:
 
 ```bash
-npm run orders:kv:remove           # measures parity, refuses
+npm run orders:kv:remove           # checks coverage, refuses
 npm run orders:kv:remove -- --yes  # removes only if the gate passes
 ```
 
-The gate compares, live:
+The invariant is "no unmigrated completed order remains in KV". The gate
+measures, live:
 
 ```
-select count(*) as n from orders            (wrangler d1 execute --remote)
-wrangler kv key list --binding ORDERS --remote   -> key count
+select session_id from orders              (wrangler d1 execute --remote)
+wrangler kv key list --namespace-id <id> --remote   -> key names
+wrangler kv key get <cs_…> --namespace-id <id> --remote -> value
 ```
 
-Both sides count the same logical set (one per checkout-session key), so
-equality is the right test. On mismatch it exits 1 printing both numbers and
-**nothing is deleted**; a D1 count it cannot parse is a failed gate, not zero;
-and `--yes` is required even when parity holds, so a bare invocation is a no-op.
-A parity check written as a comment would be a check against a claim that may
-have gone stale — a namespace can receive new orders between the migration and
-the deletion.
+A KV key matters only if the migrator's own grammar says it is an order —
+`classifyKvKey` for the key, `looksLikeOrderRecord` for the value — so
+`cs_test_` pre-payment placeholders and `dl:`/`dls:` download-token keys are not
+orders and are not fetched. Every order-valued key must have a D1 row; the first
+that does not exits 1 naming the session ids and **nothing is deleted**. Both the
+production and preview namespaces are checked. A D1 result it cannot parse is a
+failed gate, not an empty set, and `--yes` is required even when the check is
+clean, so a bare invocation is a no-op. A check written as a comment would be a
+check against a claim that may have gone stale — a namespace can receive new
+orders between the migration and the deletion.
 
 On success it deletes the production and preview namespaces, then rewrites
 `wrangler.toml` to drop the `[[kv_namespaces]]` block. Order matters: the

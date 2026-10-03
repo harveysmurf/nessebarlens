@@ -3,8 +3,10 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   defaultListNamespaceIds,
+  findUnmigratedOrderKeys,
   KV_BINDING,
   parseCount,
+  parseD1Sessions,
   parseOrdersKvBinding,
   removeOrdersKvBinding,
   runRemove,
@@ -31,7 +33,35 @@ const TOML = [
   "",
 ].join("\n");
 
-const keys = (n) => Array.from({ length: n }, (_, i) => `cs_test_${i}`);
+const sessions = (n) => Array.from({ length: n }, (_, i) => `cs_test_${String(i).padStart(8, "0")}`);
+// A value the migrator accepts as a completed order.
+const orderValue = (sessionId) =>
+  JSON.stringify({
+    v: 1,
+    sessionId,
+    status: "paid",
+    terminal: true,
+    updatedAt: "2026-10-01T00:00:00.000Z",
+  });
+// Pre-payment placeholders: cs_ keys, because that is what checkout writes
+// before payment, but not order records. The gate must not treat these as
+// unmigrated orders, and must not need to fetch them to know that.
+const placeholders = [sessions(5)[0], sessions(5)[1]];
+const placeholderValue = (sessionId) => JSON.stringify({ sessionId, status: "open" });
+const TOKEN_KEY = `dl:${"a".repeat(32)}`;
+
+/**
+ * The steady state: `n` order records migrated into D1, plus state that is not
+ * an order at all (two placeholders in the preview namespace, a download token
+ * in production). The value a key returns is derived from the key, so a test
+ * only has to say which sessions D1 has.
+ */
+const gate = (n, { prod = sessions(n) } = {}) => ({
+  listKvKeys: (_spawn, id) => (id === PROD_ID ? [...prod, TOKEN_KEY] : [...placeholders]),
+  getKvValue: (_spawn, _id, key) =>
+    placeholders.includes(key) ? placeholderValue(key) : orderValue(key),
+  listD1Sessions: () => sessions(n),
+});
 const PROD_ID = "c6f34450a61c4c69b3f840e845a7b0d3";
 const PREVIEW_ID = "849af920ace64914904b2799bd0fc073";
 const ALL_IDS = [PROD_ID, PREVIEW_ID];
@@ -72,33 +102,76 @@ test("counts are read from wrangler's result shape and never guessed", () => {
   assert.equal(parseCount('[{"results":[{"n":"5"}]}]'), null);
 });
 
-test("a parity mismatch refuses and deletes nothing", () => {
+test("an order in KV with no D1 row refuses, names it, and deletes nothing", () => {
   const deletes = [];
   const writes = [];
   const result = runRemove([], {
     readFileSync: () => TOML,
     writeFileSync: (p, data) => writes.push([p, data]),
     listNamespaceIds: () => ALL_IDS,
-    listKvKeys: () => keys(5),
-    countD1Orders: () => 4,
+    ...gate(4, { prod: sessions(5) }),
     deleteNamespace: (_spawn, id) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
-  assert.match(result.stderr, /parity check failed: D1 has 4 orders but KV ORDERS holds 5 keys/);
-  assert.match(result.stdout, /"d1Orders":4,"kvKeys":5/);
+  assert.match(result.stderr, /gate failed: 1 KV key\(s\) hold a completed order with no row in D1/);
+  assert.match(result.stderr, new RegExp(sessions(5)[4]));
   assert.deepEqual(deletes, []);
   assert.deepEqual(writes, []);
 });
 
-test("parity without --yes refuses and deletes nothing", () => {
+test("pre-payment placeholders and download tokens are not unmigrated orders", () => {
+  // The bug that made the old count-parity gate unsatisfiable: cs_ keys exist
+  // for checkouts that never completed, so comparing key counts against D1 rows
+  // compared two sets that differ by construction.
+  const fetched = [];
+  const deletes = [];
+  const result = runRemove(["--yes"], {
+    readFileSync: () => TOML,
+    writeFileSync: () => {},
+    listNamespaceIds: () => ALL_IDS,
+    listKvKeys: (_spawn, id) => (id === PROD_ID ? [...placeholders, TOKEN_KEY] : [...placeholders]),
+    getKvValue: (_spawn, id, key) => {
+      fetched.push([id, key]);
+      return placeholderValue(key);
+    },
+    listD1Sessions: () => [],
+    deleteNamespace: (_spawn, id) => deletes.push(id),
+  });
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(deletes, ALL_IDS);
+  assert.ok(
+    !fetched.some(([, key]) => key === TOKEN_KEY),
+    "a download token is never an order, so its value is never fetched",
+  );
+  assert.match(result.stdout, /"d1Orders":0,"kvKeys":5,"unmigratedOrders":0/);
+});
+
+test("an order in the preview namespace alone still refuses", () => {
+  // A gate that only reads production is a gate with a hole: the preview
+  // namespace is written by the same worker path.
+  const deletes = [];
+  const result = runRemove(["--yes"], {
+    readFileSync: () => TOML,
+    writeFileSync: () => assert.fail("must not rewrite the config"),
+    listNamespaceIds: () => ALL_IDS,
+    listKvKeys: (_spawn, id) => (id === PROD_ID ? [] : ["cs_test_ghostsession"]),
+    getKvValue: () => orderValue("cs_test_ghostsession"),
+    listD1Sessions: () => [],
+    deleteNamespace: (_spawn, id) => deletes.push(id),
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /cs_test_ghostsession/);
+  assert.deepEqual(deletes, []);
+});
+
+test("a clean check without --yes refuses and deletes nothing", () => {
   const deletes = [];
   const writes = [];
   const result = runRemove([], {
     readFileSync: () => TOML,
     writeFileSync: (p, data) => writes.push([p, data]),
     listNamespaceIds: () => ALL_IDS,
-    listKvKeys: () => keys(5),
-    countD1Orders: () => 5,
+    ...gate(5),
     deleteNamespace: (_spawn, id) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
@@ -107,41 +180,65 @@ test("parity without --yes refuses and deletes nothing", () => {
   assert.deepEqual(writes, []);
 });
 
-test("parity with --yes deletes both namespaces then rewrites wrangler.toml", () => {
+test("a clean check with --yes deletes both namespaces then rewrites wrangler.toml", () => {
   const deletes = [];
   const writes = [];
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
     writeFileSync: (p, data) => writes.push([p, data]),
     listNamespaceIds: () => ALL_IDS,
-    listKvKeys: () => keys(5),
-    countD1Orders: () => 5,
+    ...gate(5),
     deleteNamespace: (_spawn, id) => deletes.push(id),
   });
   assert.equal(result.exitCode, 0);
-  assert.deepEqual(deletes, [
-    "c6f34450a61c4c69b3f840e845a7b0d3",
-    "849af920ace64914904b2799bd0fc073",
-  ]);
+  assert.deepEqual(deletes, [PROD_ID, PREVIEW_ID]);
   assert.equal(writes.length, 1);
   assert.equal(writes[0][0], "wrangler.toml");
   assert.equal(parseOrdersKvBinding(writes[0][1]), null);
   assert.equal(result.bindingRemoved, true);
 });
 
-test("an unknown D1 count is a failed gate, not parity", () => {
+test("an unreadable D1 result is a failed gate, not an empty set", () => {
   const deletes = [];
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
     writeFileSync: () => assert.fail("must not rewrite the config"),
     listNamespaceIds: () => ALL_IDS,
-    listKvKeys: () => keys(0),
-    countD1Orders: () => null,
+    listKvKeys: () => assert.fail("must not read KV once the D1 side is unknown"),
+    getKvValue: () => assert.fail("must not fetch values once the D1 side is unknown"),
+    listD1Sessions: () => null,
     deleteNamespace: (_spawn, id) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
-  assert.match(result.stderr, /refusing to delete on an unknown count/);
+  assert.match(result.stderr, /unknown set of sessions/);
   assert.deepEqual(deletes, []);
+});
+
+test("D1 sessions are read from wrangler's result shape and never guessed", () => {
+  assert.deepEqual(parseD1Sessions('[{"results":[{"session_id":"cs_test_abcdefgh"}],"success":true}]'), [
+    "cs_test_abcdefgh",
+  ]);
+  assert.deepEqual(parseD1Sessions("[]"), []);
+  // Anything we cannot read as a session id is unknown, not empty: an empty set
+  // would flag every KV order as unmigrated, which is safe, but a reshaped
+  // result read as empty hides that the check never ran.
+  for (const stdout of ['{"results":[]}', "[{}", '[{"results":[{"n":3}]}]', "not json"]) {
+    assert.equal(parseD1Sessions(stdout), null, stdout);
+  }
+});
+
+test("findUnmigratedOrderKeys reuses the migrator's own grammar", () => {
+  const fetched = [];
+  const unmigrated = findUnmigratedOrderKeys({
+    keys: [...sessions(2), "dl:token", "dls:index", "some-other-key", TOKEN_KEY],
+    readValue: (key) => {
+      fetched.push(key);
+      return orderValue(key);
+    },
+    d1Sessions: [sessions(0)],
+  });
+  assert.deepEqual(unmigrated, sessions(2));
+  assert.deepEqual(fetched, sessions(2), "non-order keys are never fetched");
 });
 
 test("a failed namespace delete leaves wrangler.toml alone", () => {
@@ -150,8 +247,7 @@ test("a failed namespace delete leaves wrangler.toml alone", () => {
     readFileSync: () => TOML,
     writeFileSync: (p, data) => writes.push([p, data]),
     listNamespaceIds: () => ALL_IDS,
-    listKvKeys: () => keys(5),
-    countD1Orders: () => 5,
+    ...gate(5),
     deleteNamespace: (_spawn, id) => {
       if (id.startsWith("849")) throw new Error("delete failed for " + id);
     },
@@ -164,7 +260,7 @@ test("a failed namespace delete leaves wrangler.toml alone", () => {
 test("delete succeeded but the rewrite died: a re-run finishes the rewrite", () => {
   // The inverse of the delete-fails case, and the one Architect gated on: the
   // namespaces are gone, so a re-run must reach the rewrite instead of dying on
-  // a parity gate it can never satisfy.
+  // a gate it can never satisfy.
   const writes = [];
   const deletes = [];
   // The rewrite failure surfaces as a throw; the CLI's entrypoint turns that
@@ -177,8 +273,7 @@ test("delete succeeded but the rewrite died: a re-run finishes the rewrite", () 
           throw new Error("disk full");
         },
         listNamespaceIds: () => ALL_IDS,
-        listKvKeys: () => keys(5),
-        countD1Orders: () => 5,
+        ...gate(5),
         deleteNamespace: (_spawn, id) => deletes.push(id),
       }),
     /disk full/,
@@ -191,8 +286,9 @@ test("delete succeeded but the rewrite died: a re-run finishes the rewrite", () 
     // Both namespaces are gone now, so a KV read would throw — exactly the
     // state that used to strand the operator.
     listNamespaceIds: () => [],
-    listKvKeys: () => assert.fail("must not measure parity against a deleted namespace"),
-    countD1Orders: () => assert.fail("must not measure parity on a restart"),
+    listKvKeys: () => assert.fail("must not read KV against a deleted namespace"),
+    getKvValue: () => assert.fail("must not fetch a value on a restart"),
+    listD1Sessions: () => assert.fail("must not read D1 on a restart"),
     deleteNamespace: (_spawn, id) => assert.fail("must not delete again: " + id),
   });
   assert.equal(result.exitCode, 0);
@@ -210,8 +306,7 @@ test("one namespace gone and one present is refused as half-removed", () => {
     readFileSync: () => TOML,
     writeFileSync: () => assert.fail("must not rewrite the config"),
     listNamespaceIds: () => [PROD_ID],
-    listKvKeys: () => keys(5),
-    countD1Orders: () => 5,
+    ...gate(5),
     deleteNamespace: (_spawn, id) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
@@ -226,8 +321,7 @@ test("an absent binding is refused instead of reported as already done", () => {
     readFileSync: () => TOML.replace('binding = "ORDERS"', 'binding = "OTHER"'),
     writeFileSync: () => assert.fail("must not rewrite the config"),
     listNamespaceIds: () => ALL_IDS,
-    listKvKeys: () => keys(5),
-    countD1Orders: () => 5,
+    ...gate(5),
     deleteNamespace: (_spawn, id) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
