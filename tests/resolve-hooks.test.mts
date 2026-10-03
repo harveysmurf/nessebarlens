@@ -17,7 +17,7 @@ async function sourceFiles(dir) {
 
 test("the resolve hook is the only thing in the loader chain", async () => {
   const hooks = await readFile(
-    path.join(import.meta.dirname, "resolve-hooks.mjs"),
+    path.join(import.meta.dirname, "..", "scripts", "resolve-hooks.mjs"),
     "utf8",
   );
   // Comment text is allowed to mention the old approach; code is not. A

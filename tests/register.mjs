@@ -1,4 +1,6 @@
-import { register } from "node:module";
-import { pathToFileURL } from "node:url";
-
-register(pathToFileURL(new URL("./resolve-hooks.mjs", import.meta.url).pathname).href);
+/**
+ * Test-runner entry point. The hook itself lives in scripts/ because it is a
+ * runtime concern, not a test concern: scripts/*.mjs that import src/lib (.ts,
+ * extensionless) need it too — see #177.
+ */
+import "../scripts/register.mjs";
