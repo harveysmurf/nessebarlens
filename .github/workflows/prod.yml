@@ -11,6 +11,14 @@ on:
   # Pages model required was removed for that reason and stays removed.
   workflow_dispatch:
 
+# Default to the least privilege every job here needs: read the
+# repository and nothing else. No job in this workflow calls the
+# GitHub API, writes a comment, or pushes anything, so the default
+# token (write-all inside a repo) was strictly more than the work
+# required. A job needing more declares it on the job.
+permissions:
+  contents: read
+
 concurrency:
   group: production
   cancel-in-progress: false
@@ -18,7 +26,7 @@ concurrency:
 jobs:
   checks:
     name: Checks
-    uses: ./.github/workflows/ci.yml
+    uses: $/.github/workflows/ci.yml
 
   deploy:
     name: Deploy production
@@ -33,11 +41,14 @@ jobs:
       NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
       NEXT_PUBLIC_WEB_IMAGES_BASE: ${{ secrets.NEXT_PUBLIC_WEB_IMAGES_BASE }}
     steps:
-      # A local action must exist on disk before it can run, so the checkout
-      # that loads it cannot itself live inside it.
-      - uses: actions/checkout@v4
+      # The checkout is for the repository, not for the local action: `$/`
+      # loads .github/actions/setup from the running commit, so it does not
+      # depend on the workspace being populated first.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
 
       - name: Build (OpenNext)
         run: npx opennextjs-cloudflare build

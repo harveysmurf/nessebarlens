@@ -1,16 +1,21 @@
 /**
  * Scoped zizmor gate: `template-injection` only, at Medium confidence and up.
  *
- * Why not a plain `zizmor` run: a default run on this repo is not green, and no
- * combination of --min-severity / --min-confidence / --persona makes it green.
- * The other rules are real work that has nothing to do with #112 and must not
+ * Why not a plain `zizmor` run: a default run on this repo was not green, and no
+ * combination of --min-severity / --min-confidence / --persona made it green.
+ * The other rules were real work that had nothing to do with #112 and must not
  * be bundled into it — measured on the tree as of 9641a8b:
  *
  *   unpinned-uses 12            excessive-permissions 11
  *   self-repository 9           artipacked 8
  *
- * They are reported here and do not gate. A gate nobody can satisfy is a gate
- * everyone learns to skip, which is strictly worse than a narrow one.
+ * They were reported here and did not gate. #165 has since cleared all four
+ * classes, so the advisory set is down to the 3 Low/Informational
+ * `template-injection` findings described below — but the gate deliberately
+ * stays scoped to that one rule rather than becoming "any finding fails". The
+ * confidence floor is the part that keeps it honest; without it the sanitized
+ * interpolations alone would make the job permanently red on safe code, and a
+ * red gate nobody can satisfy is a gate everyone learns to skip.
  *
  * Why the confidence filter and not the rule name alone: after the `env:` fix,
  * the only remaining `template-injection` findings are the sanitized
@@ -155,9 +160,12 @@ function main() {
       console.log(`  ${count}\t${key}`);
     }
     console.log(
-      "\nThese are tracked separately; they are out of scope for the injection\n" +
-        "gate and fixing them here would mix a large unrelated change into a\n" +
-        "security fix. See the sibling issue filed with this job.",
+      "\nThese are reported, not gated, and deliberately so. Fixing a rule\n" +
+        "here would mix an unrelated change into a security gate; a rule that\n" +
+        "is allowed to fail the build is not a rule, it is a suggestion. The\n" +
+        "advisory rules that were real work (#165) are fixed at the source and\n" +
+        "carry their own tests; what is left is confidence-floored code that is\n" +
+        "already hardened.",
     );
   }
 

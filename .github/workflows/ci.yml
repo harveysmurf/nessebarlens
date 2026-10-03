@@ -8,6 +8,14 @@ on:
   # through prod's `checks` job. Leaving `push` here ran it twice per merge.
   workflow_call:
 
+# Default to the least privilege every job here needs: read the
+# repository and nothing else. No job in this workflow calls the
+# GitHub API, writes a comment, or pushes anything, so the default
+# token (write-all inside a repo) was strictly more than the work
+# required. A job needing more declares it on the job.
+permissions:
+  contents: read
+
 concurrency:
   # Namespaced by ref, not by workflow name: `github.workflow` resolves to the
   # CALLER's name inside a reusable workflow, so a prod-called run and a
@@ -23,11 +31,14 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      # A local action must exist on disk before it can run, so the checkout
-      # that loads it cannot itself live inside it.
-      - uses: actions/checkout@v4
+      # The checkout is for the repository, not for the local action: `$/`
+      # loads .github/actions/setup from the running commit, so it does not
+      # depend on the workspace being populated first.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
 
       - name: Lint
         run: npm run lint
@@ -55,12 +66,20 @@ jobs:
   # is what stops it reopening.
   #
   # Scoped to `template-injection` at Medium confidence and up, which is the
-  # narrowest honest gate. A plain `zizmor` run is not green on this repo and no
-  # --min-severity / --min-confidence / --persona combination makes it green:
-  # there are 40 other findings (12 unpinned-uses, 11 excessive-permissions,
-  # 9 self-repository, 8 artipacked) that are real work and out of scope here.
-  # They are printed by the script, not gated on, and are tracked in the
-  # sibling issue. A gate nobody can satisfy is a gate everyone learns to skip.
+  # narrowest honest gate. The scope was set when a plain `zizmor` run was not
+  # green on this repo: 40 other findings (12 unpinned-uses, 11
+  # excessive-permissions, 9 self-repository, 8 artipacked) were real work and
+  # out of scope for #112. #165 fixed all four classes — every action is now
+  # SHA-pinned with a version comment, every workflow declares
+  # `permissions: contents: read`, every checkout sets
+  # `persist-credentials: false`, and same-repo references use `$/`. What is
+  # left is 3 Low/Informational `template-injection` findings and nothing else.
+  #
+  # The gate stays scoped to `template-injection` even now that the rest is
+  # clean, because the confidence floor is what keeps it honest: it is the axis
+  # that separates our hole from already-hardened code. Widening it to
+  # "everything zizmor reports" would re-open the false red the next sanitized
+  # step-output interpolation triggers.
   #
   # The confidence floor is what keeps this from being permanently red on
   # already-hardened code. The remaining `template-injection` findings are the
@@ -75,9 +94,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
 
       # zizmor ships on PyPI, which sidesteps the whole class of "how do we
       # install a binary in CI" (per-OS assets, checksums, arch detection) and
@@ -106,9 +127,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
 
       # The seeded states are read through a real page render, so this job still
       # needs a browser even though it never touches a third party.
@@ -126,7 +149,7 @@ jobs:
 
       - name: Upload the failure trace
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: e2e-trace
           path: test-results/
@@ -165,9 +188,11 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
 
       # The flow drives a real Stripe sandbox checkout page, so the browser is a
       # hard dependency rather than something to skip when it is slow.
@@ -244,7 +269,7 @@ jobs:
       # the page state that explains it lives only in the trace.
       - name: Upload the trace
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: e2e-hosted-trace
           path: test-results/

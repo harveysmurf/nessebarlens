@@ -519,13 +519,21 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 `template-injection` findings at Medium confidence or above. Everything else
 zizmor reports is printed and not gated, with the reason inline.
 
-That scoping is the whole design. A bare `zizmor` run is not green on this repo
-and no `--min-severity` / `--min-confidence` / `--persona` combination makes it
-green — 40 other findings, mostly `unpinned-uses` and `excessive-permissions`,
-are real work that has nothing to do with the injection class. Bundling them
-would make this a large unrelated change on workflows that deploy; gating on
-them would make the job permanently red, and a red gate nobody can satisfy is a
-gate everyone learns to skip.
+That scoping is the whole design. A bare `zizmor` run used to be far from green
+on this repo, and no `--min-severity` / `--min-confidence` / `--persona`
+combination made it green — 40 other findings, mostly `unpinned-uses` and
+`excessive-permissions`, were real work that had nothing to do with the
+injection class. Bundling them into a security fix on workflows that deploy
+would have made it a large unrelated change; gating on them would make the job
+permanently red, and a red gate nobody can satisfy is a gate everyone learns to
+skip.
+
+`#165` has since cleared all four of those classes: every action is SHA-pinned,
+every workflow declares `permissions: contents: read`, every checkout sets
+`persist-credentials: false`, and same-repo references use `$/`. What remains
+advisory today is 3 Low/Informational `template-injection` findings — the same
+sanitized interpolations the confidence floor exists to tolerate — so the gate's
+scope is still correct rather than merely historical.
 
 The confidence floor is not decoration. After the `env:` fix the only remaining
 `template-injection` findings are the sanitized `steps.branch.outputs.name`
