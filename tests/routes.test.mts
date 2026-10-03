@@ -20,6 +20,8 @@ type Fake = {
   webhookSecret?: string;
   printAssetSecret?: string;
   reconcileSecret?: string;
+  prodigiWebhookToken?: string;
+  resendApiKey?: string;
   prodigiKeyConfigured: boolean;
 };
 
@@ -72,6 +74,11 @@ process.env.NEXT_PUBLIC_SITE_URL = SITE;
 // refuses to take money for a physical order without it. The tests that prove
 // the fail-closed behaviour delete it explicitly.
 process.env.PRINT_ASSET_HMAC_SECRET = "route-test-print-asset-secret-32-chars";
+// Baseline, not a per-test mutation: the Prodigi callback route reads the host
+// and key to build its re-fetch, so tests that reach that fetch need a
+// configured pair present, and the leak guard must not flag them for it.
+process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
+process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key-for-the-route-test";
 
 let currentTest = "unknown";
 let snapshot: { bindings: unknown; fetch: typeof globalThis.fetch; env: NodeJS.ProcessEnv };
@@ -130,6 +137,7 @@ const printAsset = await import("../src/app/api/print-asset/route.ts");
 const download = await import("../src/app/api/download/route.ts");
 const checkout = await import("../src/app/api/checkout/route.ts");
 const stripe = await import("../src/app/api/webhooks/stripe/route.ts");
+const prodigiWebhook = await import("../src/app/api/webhooks/prodigi/route.ts");
 
 /** Sets the bindings for one test and returns a restore function. */
 function withBindings(next: Fake) {
@@ -642,6 +650,173 @@ test("checkout: an unset site url is a 503 before Stripe or Prodigi is called", 
     globalThis.fetch = savedFetch;
     if (savedSite === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
     else process.env.NEXT_PUBLIC_SITE_URL = savedSite;
+  }
+});
+
+test("prodigi webhook: authenticated but no ORDERS_DB is a 503, not a callback", async () => {
+  // Order matters and is the point of this test: auth is checked first, so a
+  // request that passes the bearer check reaches the binding check and is told
+  // the deployment is incomplete rather than that it was rejected.
+  const token = "prodigi-route-test-token-32chars!!";
+  const restore = withBindings({ prodigiWebhookToken: token, prodigiKeyConfigured: false });
+  try {
+    const response = await prodigiWebhook.POST(
+      new Request(`${SITE}/api/webhooks/prodigi`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          specversion: "1.0",
+          id: "evt_no_binding",
+          subject: "ord_abc",
+          data: {},
+        }),
+      }),
+    );
+    assert.equal(response.status, 503);
+    assert.equal((await body(response)).error, "orders-store-unavailable");
+  } finally {
+    restore();
+  }
+});
+
+test("prodigi webhook: an authenticated, well-formed callback reaches the handler", async () => {
+  const token = "prodigi-route-test-token-32chars!!";
+  const store = memoryKv();
+  const savedFetch = globalThis.fetch;
+  // Prodigi is unreachable here, which is the failure under test: a callback we
+  // cannot verify against the source of truth must be retried, not acted on.
+  globalThis.fetch = (async () => {
+    throw new Error("Prodigi is down");
+  }) as typeof fetch;
+  const restore = withBindings({
+    ORDERS_DB: store,
+    prodigiWebhookToken: token,
+    prodigiKeyConfigured: false,
+  });
+  try {
+    const response = await prodigiWebhook.POST(
+      new Request(`${SITE}/api/webhooks/prodigi`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          specversion: "1.0",
+          id: "evt_route_unknown",
+          subject: "ord_not_ours_zzz",
+          data: { order: { id: "ord_not_ours_zzz" } },
+        }),
+      }),
+    );
+    // A Prodigi GET we could not make is a 5xx so Prodigi retries, unlike a
+    // malformed envelope — that one is theirs to fix, this one is ours.
+    assert.equal(response.status, 500);
+    assert.equal((await body(response)).error, "prodigi-fetch-failed");
+    assert.equal(store.prodigiCallbacks.size, 0, "a failed fetch must claim nothing");
+  } finally {
+    restore();
+    globalThis.fetch = savedFetch;
+  }
+});
+
+test("prodigi webhook: a store that throws is a 500 Prodigi may retry", async () => {
+  const token = "prodigi-route-test-token-32chars!!";
+  const throwing = {
+    ...memoryKv(),
+    async getOrder() {
+      throw new Error("store down");
+    },
+  };
+  const savedFetch = globalThis.fetch;
+  // A real fetch-shaped answer, so the failure under test is the store and not
+  // the Prodigi GET.
+  globalThis.fetch = (async () =>
+    new Response(
+      JSON.stringify({
+        order: {
+          id: "ord_abc",
+          merchantReference: "cs_test_abcdefgh",
+          status: { stage: "Complete" },
+          shipments: [],
+        },
+      }),
+      { status: 200 },
+    )) as typeof fetch;
+  const restore = withBindings({
+    ORDERS_DB: throwing,
+    prodigiWebhookToken: token,
+    resendApiKey: "re_route_test_key",
+    prodigiKeyConfigured: true,
+  });
+  // Same reason as the test above: without a key the GET would fail before the
+  // store was ever reached, and this test would prove nothing.
+  try {
+    const response = await prodigiWebhook.POST(
+      new Request(`${SITE}/api/webhooks/prodigi`, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          specversion: "1.0",
+          id: "evt_store_down",
+          subject: "ord_abc",
+          data: {},
+        }),
+      }),
+    );
+    assert.equal(response.status, 500);
+    assert.equal((await body(response)).error, "prodigi-callback-failed");
+  } finally {
+    restore();
+    globalThis.fetch = savedFetch;
+  }
+});
+
+test("prodigi webhook: 503 unset token, 401 missing/wrong bearer (#117)", async () => {
+  const store = memoryKv();
+  const event = JSON.stringify({
+    specversion: "1.0",
+    id: "evt_route_auth",
+    subject: "ord_abc",
+    data: {},
+  });
+
+  const unset = withBindings({ ORDERS_DB: store, prodigiKeyConfigured: false });
+  try {
+    const response = await prodigiWebhook.POST(
+      new Request(`${SITE}/api/webhooks/prodigi`, {
+        method: "POST",
+        body: event,
+      }),
+    );
+    assert.equal(response.status, 503);
+    assert.equal((await body(response)).error, "prodigi-webhook-unconfigured");
+  } finally {
+    unset();
+  }
+
+  const token = "prodigi-route-test-token-32chars!!";
+  const withToken = withBindings({
+    ORDERS_DB: store,
+    prodigiWebhookToken: token,
+    prodigiKeyConfigured: false,
+  });
+  try {
+    const missing = await prodigiWebhook.POST(
+      new Request(`${SITE}/api/webhooks/prodigi`, {
+        method: "POST",
+        body: event,
+      }),
+    );
+    assert.equal(missing.status, 401);
+
+    const wrong = await prodigiWebhook.POST(
+      new Request(`${SITE}/api/webhooks/prodigi`, {
+        method: "POST",
+        headers: { Authorization: "Bearer wrong-token-not-matching-len!!" },
+        body: event,
+      }),
+    );
+    assert.equal(wrong.status, 401);
+  } finally {
+    withToken();
   }
 });
 

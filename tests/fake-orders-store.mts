@@ -33,6 +33,8 @@ export type MemoryOrdersStore = OrdersStore & {
   tokens: Map<string, string>;
   /** Index JSON by session id. */
   indexes: Map<string, string>;
+  /** Claimed Prodigi CloudEvent ids (#117). */
+  prodigiCallbacks: Set<string>;
 };
 
 /**
@@ -48,6 +50,7 @@ export function memoryOrdersStore(seed?: {
   const orders = new Map<string, string>();
   const tokens = new Map<string, string>();
   const indexes = new Map<string, string>();
+  const prodigiCallbacks = new Set<string>();
   const orderPuts: string[] = [];
 
   if (seed?.orders) {
@@ -76,6 +79,7 @@ export function memoryOrdersStore(seed?: {
     orders,
     tokens,
     indexes,
+    prodigiCallbacks,
 
     async getOrder(sessionId) {
       return orders.get(sessionId) ?? null;
@@ -149,6 +153,12 @@ export function memoryOrdersStore(seed?: {
       tokens.set(token, JSON.stringify(spent));
       indexes.set(spent.sessionId, JSON.stringify(index));
       return { kind: "spent", record: spent };
+    },
+
+    async claimProdigiCallback(eventId) {
+      if (prodigiCallbacks.has(eventId)) return false;
+      prodigiCallbacks.add(eventId);
+      return true;
     },
   };
 

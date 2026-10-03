@@ -41,9 +41,11 @@ export type FakeD1Database = {
 export function fakeD1(options: {
   orders?: Map<string, FakeD1Row>;
   tokens?: Map<string, FakeD1Row>;
+  callbacks?: Map<string, FakeD1Row>;
 } = {}): FakeD1Database {
   const orders = options.orders ?? new Map<string, FakeD1Row>();
   const tokens = options.tokens ?? new Map<string, FakeD1Row>();
+  const callbacks = options.callbacks ?? new Map<string, FakeD1Row>();
   const refusedSpends = new Set<string>();
   const rawSpendRecords = new Map<string, string>();
 
@@ -55,15 +57,37 @@ export function fakeD1(options: {
         return stmt;
       },
       async first<T>() {
-        const result = await runQuery(sql, binds, orders, tokens, refusedSpends, rawSpendRecords);
+        const result = await runQuery(
+          sql,
+          binds,
+          orders,
+          tokens,
+          callbacks,
+          refusedSpends,
+          rawSpendRecords,
+        );
         return (result.rows[0] as T) ?? null;
       },
       async run() {
-        const result = await runQuery(sql, binds, orders, tokens, refusedSpends);
+        const result = await runQuery(
+          sql,
+          binds,
+          orders,
+          tokens,
+          callbacks,
+          refusedSpends,
+        );
         return { meta: { changes: result.changes }, results: result.rows };
       },
       async all<T>() {
-        const result = await runQuery(sql, binds, orders, tokens, refusedSpends);
+        const result = await runQuery(
+          sql,
+          binds,
+          orders,
+          tokens,
+          callbacks,
+          refusedSpends,
+        );
         return { results: result.rows as T[], meta: { changes: result.changes } };
       },
     };
@@ -93,9 +117,21 @@ async function runQuery(
   binds: unknown[],
   orders: Map<string, FakeD1Row>,
   tokens: Map<string, FakeD1Row>,
+  callbacks: Map<string, FakeD1Row>,
   refusedSpends: Set<string>,
-  rawSpendRecords: Map<string, string>,
+  rawSpendRecords?: Map<string, string>,
 ): Promise<{ rows: FakeD1Row[]; changes: number }> {
+  if (sql.includes("INSERT INTO prodigi_callbacks")) {
+    const eventId = String(binds[0]);
+    if (callbacks.has(eventId)) {
+      return { rows: [], changes: 0 };
+    }
+    callbacks.set(eventId, {
+      event_id: eventId,
+      received_at: binds[1],
+    });
+    return { rows: [], changes: 1 };
+  }
   if (sql.includes("SELECT record FROM orders WHERE session_id")) {
     const row = orders.get(String(binds[0]));
     return { rows: row ? [row] : [], changes: 0 };
@@ -177,7 +213,7 @@ async function runQuery(
       expiresAt: row.expires_at,
       remaining: row.downloads,
     };
-    row.record = rawSpendRecords.get(token) ?? JSON.stringify(record);
+    row.record = rawSpendRecords?.get(token) ?? JSON.stringify(record);
     row.index_record = JSON.stringify({ ...record, token });
     return {
       rows: [

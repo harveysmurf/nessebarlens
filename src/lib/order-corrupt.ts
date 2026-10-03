@@ -24,7 +24,12 @@ import { parseOrderRecord, type OrderRecord } from "./order-decision";
 
 /** Which reader found it. Named so an alert says where to look. */
 export type CorruptOrderPath =
-  "download" | "order-status" | "page" | "revoke" | "webhook";
+  | "download"
+  | "order-status"
+  | "page"
+  | "revoke"
+  | "webhook"
+  | "prodigi-callback";
 
 /**
  * Facts about a rejected record that identify the failure without reproducing

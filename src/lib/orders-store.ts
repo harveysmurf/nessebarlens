@@ -136,6 +136,17 @@ export type OrdersStore = {
     | { kind: "spent"; record: DownloadTokenRecord }
     | { kind: "missing" | "expired" | "exhausted" }
   >;
+
+  /**
+   * Claim a Prodigi CloudEvent id for callback dedupe (#117).
+   *
+   * Returns true when this event id is new — a single
+   * `INSERT … ON CONFLICT DO NOTHING` whose `meta.changes > 0` is the boolean,
+   * bound parameters only. A false return means the id was already claimed, so
+   * the webhook answers 200 `{ duplicate: true }` without re-fetching state or
+   * re-sending mail. The claim is ours alone: Prodigi signs nothing.
+   */
+  claimProdigiCallback(eventId: string): Promise<boolean>;
 };
 
 /**

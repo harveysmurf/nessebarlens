@@ -77,6 +77,7 @@ test("each read path names itself, so the log says where to look", async () => {
     "page",
     "revoke",
     "webhook",
+    "prodigi-callback",
   ] as const) {
     const events = await captureErrors(() => {
       readOrderRecord("{}", SESSION, path);

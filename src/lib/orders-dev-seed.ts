@@ -128,6 +128,7 @@ function memoryStoreFromMaps(
   tokens: Map<string, string>,
   indexes: Map<string, string>,
 ): OrdersStore {
+  const prodigiCallbacks = new Set<string>();
   return {
     async getOrder(sessionId) {
       return orders.get(sessionId) ?? null;
@@ -190,6 +191,11 @@ function memoryStoreFromMaps(
       tokens.set(token, JSON.stringify(spent));
       indexes.set(spent.sessionId, JSON.stringify({ ...spent, token }));
       return { kind: "spent", record: spent };
+    },
+    async claimProdigiCallback(eventId) {
+      if (prodigiCallbacks.has(eventId)) return false;
+      prodigiCallbacks.add(eventId);
+      return true;
     },
   };
 }

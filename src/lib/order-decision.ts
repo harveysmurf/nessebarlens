@@ -33,6 +33,7 @@ import {
   isSellableFormat,
   type PhysicalFormat,
 } from "./sku-map";
+import { isEmailKind, type EmailKind } from "./email";
 
 export type OrderStatus =
   | "paid"
@@ -110,6 +111,36 @@ const EMAIL_MAX = 254;
 const STORED_ENUM_FIELD_MAX = 64;
 
 /**
+ * Truncation caps for shipment fields persisted from a Prodigi fetch (#117).
+ * Named separately so raising the carrier bound cannot silently raise the
+ * tracking URL bound (and vice versa). Empty string is the absent spelling —
+ * the parser never stores null inside a shipment entry.
+ *
+ * Exported because the callback builds the very entries this parser reads:
+ * the fetch side and the parse side must clip to the same numbers, or an
+ * upstream value longer than the parser's cap would be stored and then
+ * silently truncated back on read.
+ */
+export const SHIPMENT_STATUS_MAX = 64;
+export const SHIPMENT_CARRIER_MAX = 64;
+export const SHIPMENT_TRACKING_NUMBER_MAX = 128;
+export const SHIPMENT_TRACKING_URL_MAX = 512;
+/** Hard ceiling on how many shipment rows one order keeps. */
+export const SHIPMENTS_MAX = 16;
+
+/**
+ * One shipment mirrored from Prodigi's `order.shipments[]`. Strings only;
+ * absent upstream fields become `""` so the stored shape stays uniform and
+ * `parseOrderRecord` never has to distinguish null from missing.
+ */
+export type OrderShipment = {
+  status: string;
+  carrier: string;
+  trackingUrl: string;
+  trackingNumber: string;
+};
+
+/**
  * The fields every stored order carries, whatever its format. The format is
  * carried by the `kind` discriminant plus the format-specific fields, so a
  * reader that needs a physical size or a digital master key has to narrow on
@@ -152,6 +183,18 @@ export type OrderRecordCommon = {
    * one matching UPDATE and one zero-row loser.
    */
   attempts: number;
+  /**
+   * Shipments last fetched from Prodigi (#117). Empty when the order has none
+   * yet (or is digital). Never trusted from a callback body — only from our
+   * own GET of the Prodigi order.
+   */
+  shipments: OrderShipment[];
+  /**
+   * Email kinds already emitted for this order (#117). The claim that makes
+   * "emitted once" true: a kind is appended in the same store write that
+   * records the stage/shipments the mail is about, before `sendEmail` runs.
+   */
+  emailsSent: EmailKind[];
 };
 
 /** A paid or revocable digital order: no size, frame or shipping recipient. */
@@ -350,6 +393,13 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
     row.attempts >= 1
       ? row.attempts
       : 1;
+  // Same lenient default as createdAt/attempts (#117): shipments and
+  // emailsSent did not exist on older records. Rejecting a missing or
+  // malformed value would turn every live paid order into "corrupt" the
+  // moment this parser shipped — the worst possible failure for money we
+  // already took. Absent or junk ⇒ `[]`; a well-formed entry is kept.
+  const shipments = parseStoredShipments(row.shipments);
+  const emailsSent = parseStoredEmailsSent(row.emailsSent);
   if (!isNullableString(row.prodigiOrderId)) {
     return null;
   }
@@ -433,6 +483,8 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
     updatedAt: row.updatedAt,
     createdAt,
     attempts,
+    shipments,
+    emailsSent,
   };
 
   if (row.format === "digital") {
@@ -592,6 +644,10 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     updatedAt: input.now,
     createdAt: input.now,
     attempts: 1,
+    // Every new record carries empty arrays so a reader never has to
+    // special-case "field missing because this write predated #117".
+    shipments: [],
+    emailsSent: [],
   };
 
   // An absent or unrecognised format is an UnknownOrder with the "unknown"
@@ -901,6 +957,52 @@ const RECIPIENT_STRING_KEYS: Record<RecipientStringKey, true> = {
   postcode: true,
   countryCode: true,
 };
+
+/**
+ * Lenient shipment list: absent, non-array, or a hostile entry becomes `[]`
+ * (or that entry is dropped), never a rejected record. A paid order that
+ * cannot parse is worse than one that forgets a tracking number.
+ */
+function parseStoredShipments(raw: unknown): OrderShipment[] {
+  if (!Array.isArray(raw)) return [];
+  const out: OrderShipment[] = [];
+  for (const entry of raw) {
+    if (out.length >= SHIPMENTS_MAX) break;
+    if (!entry || typeof entry !== "object") continue;
+    const s = entry as Record<string, unknown>;
+    out.push({
+      status: clipShipmentField(s.status, SHIPMENT_STATUS_MAX),
+      carrier: clipShipmentField(s.carrier, SHIPMENT_CARRIER_MAX),
+      trackingUrl: clipShipmentField(s.trackingUrl, SHIPMENT_TRACKING_URL_MAX),
+      trackingNumber: clipShipmentField(
+        s.trackingNumber,
+        SHIPMENT_TRACKING_NUMBER_MAX,
+      ),
+    });
+  }
+  return out;
+}
+
+function clipShipmentField(value: unknown, max: number): string {
+  if (typeof value !== "string") return "";
+  return value.slice(0, max);
+}
+
+/**
+ * Lenient emailsSent list: absent or junk ⇒ `[]`; unknown kind strings are
+ * dropped so a future kind written by a newer deploy does not make an older
+ * parser reject the whole paid order.
+ */
+function parseStoredEmailsSent(raw: unknown): EmailKind[] {
+  if (!Array.isArray(raw)) return [];
+  const out: EmailKind[] = [];
+  for (const entry of raw) {
+    if (!isEmailKind(entry)) continue;
+    if (out.includes(entry)) continue;
+    out.push(entry);
+  }
+  return out;
+}
 
 /** undefined = malformed; null = explicitly null */
 function parseStoredRecipient(raw: unknown): OrderRecipient | null | undefined {

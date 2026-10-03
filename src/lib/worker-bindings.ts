@@ -12,6 +12,17 @@ export type WorkerBindings = {
   webhookSecret?: string;
   printAssetSecret?: string;
   reconcileSecret?: string;
+  /**
+   * Bearer token Prodigi must send on `/api/webhooks/prodigi` (#117).
+   * Absent ⇒ the route answers 503; mismatch ⇒ 401. Prodigi itself signs
+   * nothing, so this is the only authentication the callback has.
+   */
+  prodigiWebhookToken?: string;
+  /**
+   * Resend API key for customer email (#117). Absent ⇒ sends are skipped with
+   * a structured log line, never a throw on a paid webhook path.
+   */
+  resendApiKey?: string;
   prodigiKeyConfigured: boolean;
 };
 
@@ -68,6 +79,10 @@ export async function readWorkerBindings(
   // means absent from both sources, not "absent from the Worker env".
   const printAsset = printAssetSecret(env);
   const reconcileSecret = envString("RECONCILE_SECRET", env);
+  // Same pattern as webhookSecret: Worker env wins, process.env is the
+  // fallback inside envString, and an empty string is absent.
+  const prodigiWebhookToken = envString("PRODIGI_WEBHOOK_TOKEN", env);
+  const resendApiKey = envString("RESEND_API_KEY", env);
 
   // The dev seed wins *over* a binding, not only in its absence. `next dev`
   // mounts a real local D1 (or empty proxy) for ORDERS_DB through
@@ -90,6 +105,8 @@ export async function readWorkerBindings(
     webhookSecret,
     printAssetSecret: printAsset ?? undefined,
     reconcileSecret,
+    prodigiWebhookToken,
+    resendApiKey,
     prodigiKeyConfigured: prodigiKeyConfigured(env),
   };
 }
@@ -128,6 +145,7 @@ export function isOrdersStore(value: unknown): value is OrdersStore {
     "putDownloadToken",
     "findDownloadToken",
     "spendDownloadToken",
+    "claimProdigiCallback",
   );
 }
 

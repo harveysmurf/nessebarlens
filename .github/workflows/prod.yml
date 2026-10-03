@@ -78,6 +78,8 @@ jobs:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           PRINT_ASSET_HMAC_SECRET: ${{ secrets.PRINT_ASSET_HMAC_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          PRODIGI_WEBHOOK_TOKEN: ${{ secrets.PRODIGI_WEBHOOK_TOKEN }}
           # Live Prodigi host — staging/preview stays on sandbox.
           PRODIGI_API_BASE: https://api.prodigi.com
           PRODIGI_API_KEY: ${{ secrets.PRODIGI_API_KEY }}

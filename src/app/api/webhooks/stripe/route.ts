@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { fulfillCheckoutSession } from "@/lib/fulfillment";
 import { getConfig } from "@/lib/config";
+import { sendEmailFromApiKey } from "@/lib/email";
 import {
   defaultStripeLookup,
   paymentIntentForDispute,
@@ -146,6 +147,8 @@ export async function POST(request: Request) {
         ttlSeconds: config.download.tokenTtlSeconds,
         maxDownloads: config.download.maxDownloads,
       },
+      // Unset RESEND_API_KEY → skip with a structured log, never a throw.
+      sendEmail: sendEmailFromApiKey(bindings.resendApiKey),
     });
     return NextResponse.json(result.body, { status: result.httpStatus });
   } catch (e) {

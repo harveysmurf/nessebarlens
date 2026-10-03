@@ -72,6 +72,8 @@ test("bindings come from the Cloudflare env when it is available", async () => {
     base: process.env.PRODIGI_API_BASE,
     key: process.env.PRODIGI_SANDBOX_API_KEY,
     reconcile: process.env.RECONCILE_SECRET,
+    prodigiWebhook: process.env.PRODIGI_WEBHOOK_TOKEN,
+    resend: process.env.RESEND_API_KEY,
   };
   try {
     delete process.env.STRIPE_WEBHOOK_SECRET;
@@ -79,6 +81,8 @@ test("bindings come from the Cloudflare env when it is available", async () => {
     delete process.env.PRODIGI_API_BASE;
     delete process.env.PRODIGI_SANDBOX_API_KEY;
     delete process.env.RECONCILE_SECRET;
+    delete process.env.PRODIGI_WEBHOOK_TOKEN;
+    delete process.env.RESEND_API_KEY;
     const orders = memoryOrdersStore();
     const masters = { get: async () => null };
     const bindings = await readWorkerBindings({
@@ -88,6 +92,8 @@ test("bindings come from the Cloudflare env when it is available", async () => {
         STRIPE_WEBHOOK_SECRET: "whsec_from_bindings",
         PRINT_ASSET_HMAC_SECRET: SECRET,
         RECONCILE_SECRET: "reconcile-secret-value",
+        PRODIGI_WEBHOOK_TOKEN: "prodigi-webhook-token-value",
+        RESEND_API_KEY: "re_test_from_bindings",
         PRODIGI_API_BASE: "https://api.sandbox.prodigi.com",
         PRODIGI_SANDBOX_API_KEY: "sandbox-key",
       }),
@@ -97,6 +103,8 @@ test("bindings come from the Cloudflare env when it is available", async () => {
     assert.equal(bindings.webhookSecret, "whsec_from_bindings");
     assert.equal(bindings.printAssetSecret, SECRET);
     assert.equal(bindings.reconcileSecret, "reconcile-secret-value");
+    assert.equal(bindings.prodigiWebhookToken, "prodigi-webhook-token-value");
+    assert.equal(bindings.resendApiKey, "re_test_from_bindings");
     assert.equal(bindings.prodigiKeyConfigured, true);
   } finally {
     for (const [key, value] of Object.entries(saved)) {
@@ -109,7 +117,11 @@ test("bindings come from the Cloudflare env when it is available", async () => {
               ? "PRODIGI_API_BASE"
               : key === "key"
                 ? "PRODIGI_SANDBOX_API_KEY"
-                : "RECONCILE_SECRET";
+                : key === "prodigiWebhook"
+                  ? "PRODIGI_WEBHOOK_TOKEN"
+                  : key === "resend"
+                    ? "RESEND_API_KEY"
+                    : "RECONCILE_SECRET";
       if (value === undefined) delete process.env[envKey];
       else process.env[envKey] = value;
     }

@@ -248,6 +248,34 @@ test("digital payment with a matching total is paid and does not call Prodigi", 
   assert.equal(stored.format, "digital");
 });
 
+test("a paid digital order with an email sends confirmation once (#117)", async () => {
+  const store = memoryOrdersStore();
+  const sent: string[] = [];
+  const result = await fulfillCheckoutSession({
+    ...paidInput({ customerEmail: "buyer@example.com" }),
+    store,
+    sendEmail: async (mail) => {
+      sent.push(`${mail.kind}:${mail.to}`);
+      return { ok: true, message: "sent" };
+    },
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.deepEqual(sent, ["order-confirmation:buyer@example.com"]);
+  const record = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  assert.ok(record.emailsSent.includes("order-confirmation"));
+
+  const again = await fulfillCheckoutSession({
+    ...paidInput({ customerEmail: "buyer@example.com" }),
+    store,
+    sendEmail: async (mail) => {
+      sent.push(`${mail.kind}:${mail.to}`);
+      return { ok: true, message: "sent" };
+    },
+  });
+  assert.equal(again.body.duplicate, true);
+  assert.equal(sent.length, 1, "redelivery must not re-send confirmation");
+});
+
 test("physical payment creates a Prodigi sandbox order and stores the id", async () => {
   const store = memoryOrdersStore();
   const result = await fulfillCheckoutSession({
@@ -1568,4 +1596,290 @@ test("a token write failure does not fail an already-paid order", async () => {
   } finally {
     console.error = realError;
   }
+});
+
+/* --- customer email (#117) --------------------------------------------- */
+
+test("a redelivery that lands the print falls back to the stored recipient email", async () => {
+  // Stripe's customer_email is only set when the buyer typed one, and a
+  // redelivery may carry a session without it. The stored record still holds
+  // the address parseRecipient accepted, and that is the only copy of a mail
+  // address we have — dropping it would silently lose the shipped mail.
+  const store = memoryOrdersStore();
+  const first = await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      customerEmail: "buyer@example.com",
+      metadata: physicalMeta(),
+    }),
+    store,
+    createOrder: async () => ({
+      ok: false,
+      kind: "server",
+      reason: "prodigi-unavailable",
+      message: "Prodigi order HTTP 503",
+      status: 503,
+    }),
+    sendEmail: async () => ({ ok: true, message: "sent" }),
+  });
+  assert.equal(first.httpStatus, 500);
+  assert.ok(
+    !(parseOrderRecord((await store.getOrder(SESSION))!)!.emailsSent.length > 0),
+    "a retryable miss claims nothing",
+  );
+
+  const sent: string[] = [];
+  const second = await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      customerEmail: null,
+      metadata: physicalMeta(),
+    }),
+    store,
+    createOrder: okCreate,
+    sendEmail: async (mail) => {
+      sent.push(`${mail.kind}:${mail.to}`);
+      return { ok: true, message: "sent" };
+    },
+  });
+  assert.equal(second.httpStatus, 200);
+  assert.deepEqual(sent, ["order-confirmation:buyer@example.com"]);
+});
+
+test("a kind already in emailsSent is not claimed or sent twice", async () => {
+  // Stripe redelivers a paid event, so the terminal write can run twice for the
+  // same order. The claim lives in the record, so a second run sees the kind
+  // and must skip the send — otherwise the customer gets two mails.
+  const store = memoryOrdersStore();
+  const sent: string[] = [];
+  const sendEmail = async (mail: { kind: string }) => {
+    sent.push(mail.kind);
+    return { ok: true, message: "sent" };
+  };
+  const first = await fulfillCheckoutSession({
+    ...paidInput({ customerEmail: "buyer@example.com" }),
+    store,
+    sendEmail,
+  });
+  assert.equal(first.httpStatus, 200);
+  assert.deepEqual(sent, ["order-confirmation"]);
+  const redelivery = await fulfillCheckoutSession({
+    ...paidInput({ customerEmail: "buyer@example.com" }),
+    store,
+    sendEmail,
+  });
+  assert.equal(redelivery.httpStatus, 200, "the redelivery is not an error");
+  assert.deepEqual(sent, ["order-confirmation"], "the claim was already taken on the first run");
+  const stored = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  assert.deepEqual(stored.emailsSent, ["order-confirmation"], "the claim is not duplicated");
+});
+
+test("an order with no address at all still completes and claims nothing", async () => {
+  const store = memoryOrdersStore();
+  const sent: string[] = [];
+  const result = await fulfillCheckoutSession({
+    ...paidInput(),
+    store,
+    sendEmail: async (mail) => {
+      sent.push(mail.kind);
+      return { ok: true, message: "sent" };
+    },
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.equal(result.body.status, "paid");
+  assert.deepEqual(sent, [], "there is nowhere to send a confirmation");
+  const stored = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  assert.deepEqual(stored.emailsSent, [], "an unmailed order claims nothing");
+});
+
+test("a retryable Prodigi failure sends no mail: the order may still land", async () => {
+  // The apology email is keyed off OUR terminal write. A retryable miss is not
+  // one — a redelivery may still place the order — so mailing here would tell
+  // a customer their order failed when it has not.
+  const store = memoryOrdersStore();
+  const sent: string[] = [];
+  const lines: string[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => lines.push(String(args[0]));
+  try {
+    const result = await fulfillCheckoutSession({
+      ...paidInput({
+        amountTotal: 1999,
+        prodigiKeyConfigured: true,
+        shippingDetails: SHIPPING,
+        customerEmail: "buyer@example.com",
+        metadata: physicalMeta(),
+      }),
+      store,
+      createOrder: async () => ({
+        ok: false,
+        kind: "server",
+        reason: "prodigi-unavailable",
+        message: "Prodigi order HTTP 503",
+        status: 503,
+      }),
+      sendEmail: async (mail) => {
+        sent.push(mail.kind);
+        return { ok: true, message: "sent" };
+      },
+    });
+    assert.equal(result.httpStatus, 500, "a retryable miss still answers 5xx to Stripe");
+    assert.equal(result.body.error, "prodigi-unavailable", "the stored reason names the cause");
+  } finally {
+    console.error = original;
+  }
+  assert.deepEqual(sent, []);
+  const stored = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  assert.deepEqual(stored.emailsSent, []);
+  assert.ok(lines.some((l) => l.includes("order.unfulfilled")));
+});
+
+test("a sendEmail that reports failure is logged and leaves the write and the 200 alone", async () => {
+  const store = memoryOrdersStore();
+  const lines: string[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => lines.push(String(args[0]));
+  try {
+    const result = await fulfillCheckoutSession({
+      ...paidInput({ customerEmail: "buyer@example.com" }),
+      store,
+      sendEmail: async () => ({ ok: false, message: "Resend HTTP 500" }),
+    });
+    assert.equal(result.httpStatus, 200, "a mail provider hiccup is not a fulfillment failure");
+  } finally {
+    console.error = original;
+  }
+  assert.ok(lines.some((l) => l.includes("email.failed")));
+  assert.ok(lines.some((l) => l.includes("Resend HTTP 500")));
+  const stored = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  assert.ok(stored.emailsSent.includes("order-confirmation"));
+  assert.equal(stored.status, "paid");
+});
+
+test("a sendEmail that throws is contained, not propagated to Stripe", async () => {
+  const store = memoryOrdersStore();
+  const lines: string[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => lines.push(String(args[0]));
+  try {
+    const result = await fulfillCheckoutSession({
+      ...paidInput({ customerEmail: "buyer@example.com" }),
+      store,
+      sendEmail: async () => {
+        throw new Error("resend exploded");
+      },
+    });
+    assert.equal(result.httpStatus, 200);
+  } finally {
+    console.error = original;
+  }
+  assert.ok(lines.some((l) => l.includes("resend exploded")));
+});
+
+test("a sendEmail that throws a non-Error is logged as email-threw", async () => {
+  const store = memoryOrdersStore();
+  const lines: string[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => lines.push(String(args[0]));
+  try {
+    await fulfillCheckoutSession({
+      ...paidInput({ customerEmail: "buyer@example.com" }),
+      store,
+      sendEmail: async () => {
+        throw "just a string";
+      },
+    });
+  } finally {
+    console.error = original;
+  }
+  assert.ok(lines.some((l) => l.includes("email-threw")));
+});
+
+test("a terminal unfulfilled order mails once, naming the kind not the session", async () => {
+  const store = memoryOrdersStore();
+  const mails: Array<{ kind: string; subject: string; text: string }> = [];
+  const fail: CreateProdigiOrder = async () => ({
+    ok: false,
+    kind: "client",
+    reason: "prodigi-validation-error",
+    message: "Prodigi order HTTP 400",
+    status: 400,
+  });
+  const input = paidInput({
+    amountTotal: 1999,
+    prodigiKeyConfigured: true,
+    shippingDetails: SHIPPING,
+    customerEmail: "buyer@example.com",
+    metadata: physicalMeta(),
+  });
+  const first = await fulfillCheckoutSession({
+    ...input,
+    store,
+    createOrder: fail,
+    sendEmail: async (mail) => {
+      mails.push({ kind: mail.kind, subject: mail.subject, text: mail.text });
+      return { ok: true, message: "sent" };
+    },
+  });
+  assert.equal(first.httpStatus, 200);
+  assert.equal(mails.length, 1);
+  assert.equal(mails[0]!.kind, "order-unfulfilled");
+  assert.match(mails[0]!.text, new RegExp(SESSION));
+
+  const again = await fulfillCheckoutSession({
+    ...input,
+    store,
+    createOrder: fail,
+    sendEmail: async (mail) => {
+      mails.push({ kind: mail.kind, subject: mail.subject, text: mail.text });
+      return { ok: true, message: "sent" };
+    },
+  });
+  assert.equal(again.httpStatus, 200);
+  assert.equal(mails.length, 1, "a terminal failure must not apologise twice");
+});
+
+test("a lost lock on an emailed write sends nothing (#117)", async () => {
+  const base = memoryOrdersStore();
+  // A first, failed-but-stored run leaves a retryable record; the redelivery
+  // then loses the race. The loser must not send the customer's mail.
+  await fulfillCheckoutSession({
+    ...paidInput({ customerEmail: "buyer@example.com" }),
+    store: base,
+    createOrder: async () => ({
+      ok: false,
+      kind: "server",
+      reason: "prodigi-unavailable",
+      message: "Prodigi order HTTP 503",
+      status: 503,
+    }),
+  });
+  const sent: string[] = [];
+  const locked = {
+    ...base,
+    async transitionOrder() {
+      return false;
+    },
+  };
+  const result = await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      customerEmail: "buyer@example.com",
+      metadata: physicalMeta(),
+    }),
+    store: locked,
+    createOrder: okCreate,
+    sendEmail: async (mail) => {
+      sent.push(mail.kind);
+      return { ok: true, message: "sent" };
+    },
+  });
+  assert.equal(result.body.duplicate, true);
+  assert.deepEqual(sent, []);
 });
