@@ -31,6 +31,9 @@ const TOML = [
 ].join("\n");
 
 const keys = (n) => Array.from({ length: n }, (_, i) => `cs_test_${i}`);
+const PROD_ID = "c6f34450a61c4c69b3f840e845a7b0d3";
+const PREVIEW_ID = "849af920ace64914904b2799bd0fc073";
+const ALL_IDS = [PROD_ID, PREVIEW_ID];
 
 test("the ORDERS kv block is located with both namespace ids", () => {
   const found = parseOrdersKvBinding(TOML);
@@ -74,6 +77,7 @@ test("a parity mismatch refuses and deletes nothing", () => {
   const result = runRemove([], {
     readFileSync: () => TOML,
     writeFileSync: (p, data) => writes.push([p, data]),
+    listNamespaceIds: () => ALL_IDS,
     listKvKeys: () => keys(5),
     countD1Orders: () => 4,
     deleteNamespace: (_spawn, id) => deletes.push(id),
@@ -91,6 +95,7 @@ test("parity without --yes refuses and deletes nothing", () => {
   const result = runRemove([], {
     readFileSync: () => TOML,
     writeFileSync: (p, data) => writes.push([p, data]),
+    listNamespaceIds: () => ALL_IDS,
     listKvKeys: () => keys(5),
     countD1Orders: () => 5,
     deleteNamespace: (_spawn, id) => deletes.push(id),
@@ -107,6 +112,7 @@ test("parity with --yes deletes both namespaces then rewrites wrangler.toml", ()
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
     writeFileSync: (p, data) => writes.push([p, data]),
+    listNamespaceIds: () => ALL_IDS,
     listKvKeys: () => keys(5),
     countD1Orders: () => 5,
     deleteNamespace: (_spawn, id) => deletes.push(id),
@@ -127,6 +133,7 @@ test("an unknown D1 count is a failed gate, not parity", () => {
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
     writeFileSync: () => assert.fail("must not rewrite the config"),
+    listNamespaceIds: () => ALL_IDS,
     listKvKeys: () => keys(0),
     countD1Orders: () => null,
     deleteNamespace: (_spawn, id) => deletes.push(id),
@@ -141,6 +148,7 @@ test("a failed namespace delete leaves wrangler.toml alone", () => {
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
     writeFileSync: (p, data) => writes.push([p, data]),
+    listNamespaceIds: () => ALL_IDS,
     listKvKeys: () => keys(5),
     countD1Orders: () => 5,
     deleteNamespace: (_spawn, id) => {
@@ -152,11 +160,71 @@ test("a failed namespace delete leaves wrangler.toml alone", () => {
   assert.deepEqual(writes, []);
 });
 
+test("delete succeeded but the rewrite died: a re-run finishes the rewrite", () => {
+  // The inverse of the delete-fails case, and the one Architect gated on: the
+  // namespaces are gone, so a re-run must reach the rewrite instead of dying on
+  // a parity gate it can never satisfy.
+  const writes = [];
+  const deletes = [];
+  // The rewrite failure surfaces as a throw; the CLI's entrypoint turns that
+  // into exit 1. What matters here is the state it leaves behind.
+  assert.throws(
+    () =>
+      runRemove(["--yes"], {
+        readFileSync: () => TOML,
+        writeFileSync: () => {
+          throw new Error("disk full");
+        },
+        listNamespaceIds: () => ALL_IDS,
+        listKvKeys: () => keys(5),
+        countD1Orders: () => 5,
+        deleteNamespace: (_spawn, id) => deletes.push(id),
+      }),
+    /disk full/,
+  );
+  assert.deepEqual(deletes, ALL_IDS, "the first run deleted both namespaces");
+
+  const result = runRemove([], {
+    readFileSync: () => TOML,
+    writeFileSync: (p, data) => writes.push([p, data]),
+    // Both namespaces are gone now, so a KV read would throw — exactly the
+    // state that used to strand the operator.
+    listNamespaceIds: () => [],
+    listKvKeys: () => assert.fail("must not measure parity against a deleted namespace"),
+    countD1Orders: () => assert.fail("must not measure parity on a restart"),
+    deleteNamespace: (_spawn, id) => assert.fail("must not delete again: " + id),
+  });
+  assert.equal(result.exitCode, 0);
+  assert.match(result.stdout, /already deleted/);
+  assert.equal(writes.length, 1);
+  assert.equal(writes[0][0], "wrangler.toml");
+  assert.equal(parseOrdersKvBinding(writes[0][1]), null);
+});
+
+test("one namespace gone and one present is refused as half-removed", () => {
+  // Deleting the survivor on a gate that can only see the survivor is the one
+  // shape that loses data silently, so the half state names itself instead.
+  const deletes = [];
+  const result = runRemove(["--yes"], {
+    readFileSync: () => TOML,
+    writeFileSync: () => assert.fail("must not rewrite the config"),
+    listNamespaceIds: () => [PROD_ID],
+    listKvKeys: () => keys(5),
+    countD1Orders: () => 5,
+    deleteNamespace: (_spawn, id) => deletes.push(id),
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /half-removed/);
+  assert.match(result.stderr, new RegExp(PROD_ID));
+  assert.deepEqual(deletes, []);
+});
+
 test("an absent binding is refused instead of reported as already done", () => {
   const deletes = [];
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML.replace('binding = "ORDERS"', 'binding = "OTHER"'),
     writeFileSync: () => assert.fail("must not rewrite the config"),
+    listNamespaceIds: () => ALL_IDS,
     listKvKeys: () => keys(5),
     countD1Orders: () => 5,
     deleteNamespace: (_spawn, id) => deletes.push(id),
@@ -182,6 +250,9 @@ test("the KV read passes --remote so the gate cannot measure local storage", () 
   }
   assert.ok(calls.length > 0, "expected the script to shell out to wrangler");
   for (const args of calls) {
+    // `kv namespace list` is account-wide and takes no --remote; it is only an
+    // existence probe, and it never reads data.
+    if (args.includes("namespace")) continue;
     assert.ok(
       args.includes("--remote"),
       `wrangler must be explicit about the remote store: ${args.join(" ")}`,

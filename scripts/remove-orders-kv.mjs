@@ -16,6 +16,17 @@
  * not rewritten unless the counts match AND the operator passed `--yes`, so a
  * bare invocation is a no-op rather than an accident.
  *
+ * The run is also restartable. Deleting the namespaces and rewriting
+ * wrangler.toml are separate steps, so a crash between them leaves the data
+ * gone and the binding still named in the config — and re-running would then
+ * find no namespace to count and stop on a gate it can never satisfy. When both
+ * namespaces are already absent, that question is settled: the script says so
+ * and finishes only the rewrite, without asking for `--yes` a second time.
+ * Namespaces that are all still present are gated and deleted exactly as on a
+ * first run. One of two surviving is neither: the gate can no longer see both
+ * sides, so that state refuses and names itself rather than deleting on a
+ * half-covered check.
+ *
  * Usage:
  *   npm run orders:kv:remove              # measures parity, refuses unless --yes
  *   npm run orders:kv:remove -- --yes     # removes after the gate passes
@@ -117,7 +128,7 @@ export function parseCount(stdout) {
   }
   const entry = Array.isArray(parsed) ? parsed[0] : parsed;
   const row = Array.isArray(entry?.results) ? entry.results[0] : null;
-  const value = row?.n ?? row?.count ?? row?.c;
+  const value = row?.n ?? row?.count;
   if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
     return value;
   }
@@ -131,6 +142,7 @@ export function runRemove(argv, options = {}) {
   const listKvKeys = options.listKvKeys ?? defaultListKvKeys;
   const countD1Orders = options.countD1Orders ?? defaultCountD1Orders;
   const deleteNamespace = options.deleteNamespace ?? defaultDeleteNamespace;
+  const listNamespaceIds = options.listNamespaceIds ?? defaultListNamespaceIds;
   const tomlPath = options.tomlPath ?? WRANGLER_TOML;
 
   let parsed;
@@ -165,6 +177,50 @@ export function runRemove(argv, options = {}) {
         `no [[kv_namespaces]] block for binding ${KV_BINDING} in ${tomlPath}: nothing for this script to remove. ` +
         "If a previous run deleted the namespaces but died before rewriting the file, finish by hand.",
     };
+  }
+
+  // Restartability: if a previous run deleted the namespaces and then died
+  // before rewriting the config, the binding is still named here but the data
+  // is gone. Gating on counts now could only ever fail (KV empty, D1 not), so
+  // the already-deleted state is detected up front and only the rewrite runs.
+  let present;
+  try {
+    present = new Set(listNamespaceIds(spawn));
+  } catch (e) {
+    return {
+      exitCode: 1,
+      stdout: "",
+      stderr: `${e instanceof Error ? e.message : String(e)} — cannot tell whether ${KV_BINDING} still exists; nothing was deleted.`,
+    };
+  }
+  const ids = [binding.id, binding.previewId].filter(Boolean);
+  const remaining = ids.filter((id) => present.has(id));
+  const alreadyDeleted = remaining.length === 0;
+
+  // Half-deleted is its own state and must not fall through to the gate: the
+  // parity check reads the surviving namespace's keys, and the missing one is
+  // exactly what the operator needs told plainly. Deleting the survivor on a
+  // gate that no longer covers the missing one is the one shape where we would
+  // lose data silently, so this refuses and names the state instead.
+    const gone = ids.filter((id) => !present.has(id));
+  if (gone.length > 0 && remaining.length > 0) {
+    return {
+      exitCode: 1,
+      stdout: "",
+      stderr:
+        `${KV_BINDING} is half-removed: ${gone.join(", ")} no longer exist while ${remaining.join(", ")} ` +
+        `still ${remaining.length === 1 ? "does" : "do"}. A parity check can no longer cover both sides. ` +
+        "Confirm the surviving namespace against D1, then delete it and the binding by hand. Nothing was deleted.",
+    };
+  }
+
+  if (alreadyDeleted) {
+    return finishRewrite({
+      tomlPath,
+      writeFile,
+      toml,
+      summary: `orders:kv:remove already deleted ${ids.join(", ")}; completing the ${tomlPath} rewrite\n`,
+    });
   }
 
   let kvKeys;
@@ -203,8 +259,7 @@ export function runRemove(argv, options = {}) {
   }
 
   const removed = [];
-  for (const id of [binding.id, binding.previewId]) {
-    if (!id) continue;
+  for (const id of remaining) {
     try {
       deleteNamespace(spawn, id);
       removed.push(id);
@@ -213,21 +268,56 @@ export function runRemove(argv, options = {}) {
         exitCode: 1,
         stdout: summary,
         stderr:
-          `${e instanceof Error ? e.message : String(e)} — ${removed.length} of 2 namespaces deleted so far. ` +
+          `${e instanceof Error ? e.message : String(e)} — ${removed.length} of ${remaining.length} namespaces deleted so far. ` +
           `${tomlPath} was NOT rewritten; finish the remaining delete by hand.`,
       };
     }
   }
 
+  return finishRewrite({ tomlPath, writeFile, toml, summary, removed });
+}
+
+/**
+ * Drop the ORDERS block from wrangler.toml. Factored out because the two
+ * endings — first run and restart after a completed delete — do the same final
+ * step and must not be able to drift apart.
+ */
+function finishRewrite({ tomlPath, writeFile, toml, summary, removed = [] }) {
   const edited = removeOrdersKvBinding(toml);
   writeFile(tomlPath, edited.text);
+  const what =
+    removed.length > 0
+      ? `removed namespaces ${removed.join(", ")} and the ${KV_BINDING} binding from ${tomlPath}`
+      : `removed the ${KV_BINDING} binding from ${tomlPath}`;
   return {
     exitCode: 0,
-    stdout: summary + `removed namespaces ${removed.join(", ")} and the ${KV_BINDING} binding from ${tomlPath}\n`,
+    stdout: summary + what + "\n",
     stderr: "",
     removed,
     bindingRemoved: edited.removed,
   };
+}
+
+/**
+ * Ids of every KV namespace on the account. Account-wide by nature, so it has
+ * no --remote to pass; it is a "does this id still exist" probe, not a data
+ * read.
+ */
+function defaultListNamespaceIds(spawn) {
+  const result = spawn("npx", ["wrangler", "kv", "namespace", "list", "--json"], {
+    encoding: "utf8",
+  });
+  if ((result.status ?? 1) !== 0) {
+    throw new Error(result.stderr || "kv namespace list failed");
+  }
+  let parsed;
+  try {
+    parsed = JSON.parse(result.stdout || "[]");
+  } catch {
+    throw new Error("could not parse `wrangler kv namespace list` output");
+  }
+  const list = Array.isArray(parsed) ? parsed : parsed.result ?? parsed.namespaces ?? [];
+  return list.map((entry) => (typeof entry === "string" ? entry : entry?.id)).filter(Boolean);
 }
 
 function defaultListKvKeys(spawn) {
