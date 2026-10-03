@@ -143,9 +143,12 @@ test("the digital-licence spec selects digital before asserting the digital pric
  * These assert the arrangement rather than the outcome, for the same reason as
  * the split above: a skip is invisible in CI unless something pins it.
  */
-test("the digital-licence spec skips itself with a reason, before it touches the browser", () => {
+test("the digital-licence spec skips itself with a reason, before it takes any action", () => {
   const spec = fs.readFileSync(path.join(root, "e2e", "smoke.spec.ts"), "utf8");
   assert.match(spec, /process\.env\.HOSTED_DIGITAL_SKIP_REASON/);
+  // The title has to name the digital flow, or a reader cannot tell which spec
+  // the skip belongs to without reading the body — and neither can this test.
+  assert.match(spec, /test\("home \u2192 photo \u2192 configurator \u2192 price \u2192 Stripe \u2192 success page \(digital licence\)"/);
   const testBody = spec.slice(spec.indexOf("home \u2192 photo \u2192 configurator"));
   const skipAt = testBody.search(/test\.skip\(Boolean\(digitalSkipReason\), digitalSkipReason/);
   const firstActionAt = testBody.search(/page\.goto|page\.locator|checkout\.click/);

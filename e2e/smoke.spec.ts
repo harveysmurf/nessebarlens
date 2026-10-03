@@ -57,12 +57,13 @@ const digitalSkipReason = process.env.HOSTED_DIGITAL_SKIP_REASON?.trim();
 test.describe("@hosted checkout smoke flow", () => {
   test.skip(!hasStripe, "no sk_test_ STRIPE_SECRET_KEY configured");
 
-  test("home → photo → configurator → price → Stripe → success page", async ({
+  test("home → photo → configurator → price → Stripe → success page (digital licence)", async ({
     page,
   }) => {
     // First statement in the body: a skip after the first click would leave a
     // half-run test in the report, which is the shape that hides a real
-    // regression behind an explained skip.
+    // regression behind an explained skip. The browser fixture is already
+    // launched by this point; what this prevents is any action being taken.
     test.skip(Boolean(digitalSkipReason), digitalSkipReason || "");
 
     await page.goto("/");
