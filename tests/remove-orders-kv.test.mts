@@ -207,6 +207,66 @@ test("an order in the preview namespace alone still refuses", () => {
   assert.deepEqual(deletes, []);
 });
 
+test("a written-off order proceeds, and the disposition is printed, not silent", () => {
+  // The live case: a Stripe test-mode paid record in the ephemeral preview
+  // namespace that should never reach production D1. Dropping it is a decision,
+  // so it needs a stated reason and it must survive in the run output.
+  const deletes = [];
+  const writes = [];
+  const result = runRemove(["--yes", "--write-off", "cs_test_stagingrec", "test-mode staging record"], {
+    readFileSync: () => TOML,
+    writeFileSync: (p, data) => writes.push([p, data]),
+    listNamespaceIds: () => ALL_IDS,
+    listKvKeys: (_spawn, id) => (id === PROD_ID ? [] : ["cs_test_stagingrec"]),
+    getKvValue: () => orderValue("cs_test_stagingrec"),
+    listD1Sessions: () => [],
+    listD1Tokens: () => [],
+    deleteNamespace: (_spawn, id) => deletes.push(id),
+  });
+  assert.equal(result.exitCode, 0);
+  assert.deepEqual(deletes, [PROD_ID, PREVIEW_ID]);
+  assert.match(result.stdout, /"unmigratedOrders":0/);
+  assert.match(result.stdout, /cs_test_stagingrec: test-mode staging record/);
+});
+
+test("--write-off needs a reason, and one the gate asked for", () => {
+  const base = {
+    readFileSync: () => TOML,
+    writeFileSync: () => assert.fail("must not rewrite the config"),
+    listNamespaceIds: () => ALL_IDS,
+    listKvKeys: () => ["cs_test_stagingrec"],
+    getKvValue: () => orderValue("cs_test_stagingrec"),
+    listD1Sessions: () => [],
+    listD1Tokens: () => [],
+    deleteNamespace: () => assert.fail("must not delete"),
+  };
+  const noReason = runRemove(["--yes", "--write-off", "cs_test_stagingrec"], base);
+  assert.equal(noReason.exitCode, 2);
+  assert.match(noReason.stderr, /needs a reason/);
+  // A waiver the gate never asked for is a stale runbook entry, not a pass.
+  const unmatched = runRemove(["--yes", "--write-off", "cs_test_othersess", "stale"], base);
+  assert.equal(unmatched.exitCode, 1);
+  assert.match(unmatched.stderr, /the gate did not report as an unmigrated order/);
+});
+
+test("a write-off does not wave through the other orders", () => {
+  const deletes = [];
+  const result = runRemove(["--yes", "--write-off", "cs_test_stagingrec", "test-mode staging record"], {
+    readFileSync: () => TOML,
+    writeFileSync: () => assert.fail("must not rewrite the config"),
+    listNamespaceIds: () => ALL_IDS,
+    listKvKeys: () => ["cs_test_stagingrec", "cs_test_realorder"],
+    getKvValue: (_spawn, _id, key) => orderValue(key),
+    listD1Sessions: () => [],
+    listD1Tokens: () => [],
+    deleteNamespace: (_spawn, id) => deletes.push(id),
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /cs_test_realorder/);
+  assert.ok(!result.stderr.includes("cs_test_stagingrec"));
+  assert.deepEqual(deletes, []);
+});
+
 test("a clean check without --yes refuses and deletes nothing", () => {
   const deletes = [];
   const writes = [];

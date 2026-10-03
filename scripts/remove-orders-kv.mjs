@@ -40,6 +40,13 @@
  * Usage:
  *   npm run orders:kv:remove              # checks KV order coverage, refuses unless --yes
  *   npm run orders:kv:remove -- --yes     # removes after the gate passes
+ *
+ * Sometimes the right answer for an unmigrated order is that it should never have
+ * been in D1 — a Stripe test-mode record in the ephemeral preview namespace, for
+ * instance. That is a decision, so it is not a way to get past the gate: it needs
+ * `--write-off <session_id> <reason>`, the reason is mandatory, the disposition is
+ * printed in the run summary, and a write-off the gate did not ask for is an error
+ * rather than a silent pass.
  */
 
 import { spawnSync } from "node:child_process";
@@ -60,12 +67,28 @@ export const WRANGLER_TOML = "wrangler.toml";
 
 export function parseArgs(argv) {
   let confirmed = false;
-  for (const arg of argv) {
+  const writeOffs = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const arg = argv[i];
     if (arg === "--yes") confirmed = true;
-    else if (arg === "--help" || arg === "-h") return { help: true, confirmed: false };
-    else throw new Error(`unknown argument: ${arg}`);
+    else if (arg === "--help" || arg === "-h") return { help: true, confirmed: false, writeOffs };
+    else if (arg === "--write-off") {
+      const sessionId = argv[i + 1];
+      const reason = argv[i + 2];
+      if (!sessionId || sessionId.startsWith("--")) {
+        throw new Error("--write-off needs a session id");
+      }
+      if (!reason || reason.startsWith("--")) {
+        throw new Error(`--write-off ${sessionId} needs a reason: dropping an order record is a decision, not a default`);
+      }
+      if (writeOffs.some((w) => w.sessionId === sessionId)) {
+        throw new Error(`--write-off ${sessionId} given twice`);
+      }
+      writeOffs.push({ sessionId, reason });
+      i += 2;
+    } else throw new Error(`unknown argument: ${arg}`);
   }
-  return { help: false, confirmed };
+  return { help: false, confirmed, writeOffs };
 }
 
 /**
@@ -228,9 +251,14 @@ export function runRemove(argv, options = {}) {
     return {
       exitCode: 0,
       stdout:
-        "Usage: node scripts/remove-orders-kv.mjs [--yes]\n" +
+        "Usage: node scripts/remove-orders-kv.mjs [--yes] [--write-off <session_id> <reason>]\n" +
         "\n" +
-        "Checks that every completed order and download grant in KV ORDERS exists in D1,\n        and refuses to delete unless it does.\n",
+        "Checks that every completed order and download grant in KV ORDERS exists in D1,\n" +
+        "and refuses to delete unless it does.\n\n" +
+        "--write-off drops a specific unmigrated order that is deliberately not being\n" +
+        "migrated (e.g. a Stripe test-mode record in the preview namespace). It requires a\n" +
+        "reason, is printed in the run summary, and is rejected if the gate did not report\n" +
+        "that order.\n",
       stderr: "",
     };
   }
@@ -342,19 +370,50 @@ export function runRemove(argv, options = {}) {
     return { exitCode: 1, stdout: "", stderr: e instanceof Error ? e.message : String(e) };
   }
 
-  const summary = `orders:kv:remove gate ${JSON.stringify({
+  // An order the operator has explicitly written off is not silently dropped: it
+  // is named, matched to a required reason, and printed in the run summary so the
+  // disposition is auditable after the namespaces are gone. A write-off that
+  // matches nothing is an error rather than a no-op — a stale waiver left in a
+  // runbook must not read as a clean gate.
+  const waived = [];
+  const unwaived = [];
+  for (const sessionId of unmigrated) {
+    const waiver = parsed.writeOffs.find((w) => w.sessionId === sessionId);
+    if (waiver) waived.push(waiver);
+    else unwaived.push(sessionId);
+  }
+  const unused = parsed.writeOffs.filter(
+    (w) => !waived.some((used) => used.sessionId === w.sessionId),
+  );
+  if (unused.length > 0) {
+    return {
+      exitCode: 1,
+      stdout: "",
+      stderr:
+        `--write-off names ${unused.map((w) => w.sessionId).join(", ")}, which the gate did not report as an unmigrated order. ` +
+        "A write-off is only valid for an order the gate itself found; check the id. Nothing was deleted.",
+    };
+  }
+
+  let summary = `orders:kv:remove gate ${JSON.stringify({
     d1Orders: d1Sessions.length,
     kvKeys: checked,
-    unmigratedOrders: unmigrated.length,
+    unmigratedOrders: unwaived.length,
     unmigratedTokens: unmigratedTokens.length,
+    writtenOff: waived.map((w) => w.sessionId),
   })}\n`;
-  if (unmigrated.length > 0) {
+  if (waived.length > 0) {
+    const lines = waived.map((w) => `  ${w.sessionId}: ${w.reason}`).join("\n");
+    summary += `written off by hand, NOT migrated (decision of record):\n${lines}\n`;
+  }
+  if (unwaived.length > 0) {
     return {
       exitCode: 1,
       stdout: summary,
       stderr:
-        `gate failed: ${unmigrated.length} KV key(s) hold a completed order with no row in D1: ` +
-        `${unmigrated.join(", ")}. Run npm run migrate:orders first, then re-check. Nothing was deleted.`,
+        `gate failed: ${unwaived.length} KV key(s) hold a completed order with no row in D1: ` +
+        `${unwaived.join(", ")}. Run npm run migrate:orders first, then re-check, or pass ` +
+        `--write-off <session_id> <reason> for a record deliberately dropped. Nothing was deleted.`,
     };
   }
   if (unmigratedTokens.length > 0) {
@@ -449,14 +508,6 @@ export function defaultListNamespaceIds(spawn) {
   return ids;
 }
 
-/**
- * Key names in one namespace. Addressed by --namespace-id rather than --binding
- * because the gate has to read the preview namespace as well, and a binding
- * resolves to the production namespace only.
- *
- * `wrangler kv key list` has no pagination flag, so one call is the whole
- * namespace; the cursor loop the migration script uses is not available here.
- */
 /**
  * One page of keys for a namespace, by id.
  *
