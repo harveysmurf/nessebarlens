@@ -35,6 +35,8 @@ function run(
   target: "preview" | "production",
   secret: string | undefined,
   drop?: "token" | "account",
+  /** Override the #117 secrets; omitted means "both present and valid". */
+  extra?: Record<string, string>,
 ): { status: number | null; stderr: string; stdout: string } {
   const dir = shimDir();
   const result = spawnSync("bash", [script, target], {
@@ -57,10 +59,45 @@ function run(
       ...(secret === undefined
         ? {}
         : { PRINT_ASSET_HMAC_SECRET: secret }),
+      ...(extra ?? {
+        RESEND_API_KEY: "re_test_key",
+        PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+      }),
     },
   });
   fs.rmSync(dir, { recursive: true, force: true });
   return { status: result.status, stderr: result.stderr, stdout: result.stdout };
+}
+
+/** Same run, but hands back the prepared secrets file so their presence is asserted. */
+function runAndReadSecrets(
+  target: "preview" | "production",
+  extra: Record<string, string> | undefined,
+): { status: number | null; secrets: Record<string, string> } {
+  const dir = shimDir();
+  const out = path.join(dir, "secrets.json");
+  const result = spawnSync("bash", [script, target], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${dir}:${process.env.PATH}`,
+      CLOUDFLARE_API_TOKEN: "test-token",
+      CLOUDFLARE_ACCOUNT_ID: "test-account",
+      STRIPE_SECRET_KEY: target === "production" ? "sk_live_test" : "sk_test_test",
+      STRIPE_WEBHOOK_SECRET: "whsec_test",
+      PRINT_ASSET_HMAC_SECRET: valid,
+      PRODIGI_API_BASE: "https://api.sandbox.prodigi.com",
+      PRODIGI_SANDBOX_API_KEY: "sandbox-key",
+      SYNC_SCOPE: "version-only",
+      SECRETS_OUT: out,
+      ...(extra ?? {}),
+    },
+  });
+  const secrets = fs.existsSync(out)
+    ? (JSON.parse(fs.readFileSync(out, "utf8")) as Record<string, string>)
+    : {};
+  fs.rmSync(dir, { recursive: true, force: true });
+  return { status: result.status, secrets };
 }
 
 const valid = "s".repeat(MIN_LENGTH);
@@ -117,4 +154,62 @@ test("a missing Cloudflare account id fails loudly too", () => {
   const result = run("production", valid, "account");
   assert.equal(result.status, 1);
   assert.match(result.stderr, /CLOUDFLARE_ACCOUNT_ID/);
+});
+
+// --- #117: transactional email + Prodigi callback bearer ------------------
+//
+// Both ride on the deploying version via --secrets-file. A key missing from
+// that file is not "the feature is off": the order flow succeeds and the
+// customer gets no confirmation, or the callback route 503s forever. These
+// assert both the guard and the presence in the prepared file, because a guard
+// that fires while the value is still omitted from the JSON would be a green
+// deploy that loses the secret anyway.
+
+test("production fails when RESEND_API_KEY is missing", () => {
+  const result = run("production", valid, undefined, { RESEND_API_KEY: "" });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /RESEND_API_KEY/);
+});
+
+test("preview warns but does not fail without RESEND_API_KEY", () => {
+  const result = run("preview", valid, undefined, { RESEND_API_KEY: "" });
+  assert.equal(result.status, 0);
+  assert.match(result.stderr, /warning: RESEND_API_KEY/);
+});
+
+test("production fails when PRODIGI_WEBHOOK_TOKEN is missing", () => {
+  const result = run("production", valid, undefined, { RESEND_API_KEY: "re_live_key", PRODIGI_WEBHOOK_TOKEN: "" });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /PRODIGI_WEBHOOK_TOKEN/);
+});
+
+test("production rejects a Prodigi webhook token short enough to guess", () => {
+  const result = run("production", valid, undefined, { RESEND_API_KEY: "re_live_key", PRODIGI_WEBHOOK_TOKEN: "w".repeat(31) });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /at least 32 characters/);
+});
+
+test("padding does not smuggle a short webhook token past the length guard", () => {
+  const result = run("production", valid, undefined, { RESEND_API_KEY: "re_live_key", PRODIGI_WEBHOOK_TOKEN: "w".repeat(31) + "\n" });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /at least 32 characters/);
+});
+
+test("both #117 secrets reach the file the deploying version carries", () => {
+  const { status, secrets } = runAndReadSecrets("production", {
+    RESEND_API_KEY: "re_live_key",
+    PRODIGI_WEBHOOK_TOKEN: "w".repeat(64),
+  });
+  assert.equal(status, 0);
+  assert.equal(secrets.RESEND_API_KEY, "re_live_key");
+  assert.equal(secrets.PRODIGI_WEBHOOK_TOKEN, "w".repeat(64));
+});
+
+test("a padded Resend key is trimmed, not dropped", () => {
+  const { status, secrets } = runAndReadSecrets("production", {
+    RESEND_API_KEY: "  re_live_key\n",
+    PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+  });
+  assert.equal(status, 0);
+  assert.equal(secrets.RESEND_API_KEY, "re_live_key");
 });

@@ -105,6 +105,54 @@ else
   export PRINT_ASSET_HMAC_SECRET="$PRINT_SECRET"
 fi
 
+# Transactional email (#117). RESEND_API_KEY rides on the deploying version, so
+# a key missing here is not "email is off": the order flow still succeeds and
+# the customer gets no confirmation at all. Same shape as the print HMAC --
+# hard error in production, warning in preview, because a preview build
+# legitimately runs without sending mail.
+RESEND_KEY="${RESEND_API_KEY:-}"
+RESEND_KEY="${RESEND_KEY#"${RESEND_KEY%%[![:space:]]*}"}"
+RESEND_KEY="${RESEND_KEY%"${RESEND_KEY##*[![:space:]]}"}"
+if [[ -z "$RESEND_KEY" ]]; then
+  if [[ "$TARGET" == "production" ]]; then
+    echo "production requires RESEND_API_KEY" >&2
+    echo "without it orders succeed and no confirmation email is sent" >&2
+    exit 1
+  fi
+  echo "warning: RESEND_API_KEY unset — no transactional email on this preview" >&2
+else
+  export RESEND_API_KEY="$RESEND_KEY"
+fi
+
+# Bearer token for the Prodigi CloudEvent callback (#117). Prodigi signs nothing,
+# so this is our own secret and Prodigi must be configured to send it. Unset
+# means the route answers 503 "prodigi-webhook-unconfigured" rather than
+# accepting callbacks nobody authenticated -- a deliberate, visible outage
+# rather than an open endpoint. Production-only for the same reason: a preview
+# URL is never registered with Prodigi, so there is nothing to authenticate.
+WEBHOOK_TOKEN="${PRODIGI_WEBHOOK_TOKEN:-}"
+WEBHOOK_TOKEN="${WEBHOOK_TOKEN#"${WEBHOOK_TOKEN%%[![:space:]]*}"}"
+WEBHOOK_TOKEN="${WEBHOOK_TOKEN%"${WEBHOOK_TOKEN##*[![:space:]]}"}"
+if [[ -z "$WEBHOOK_TOKEN" ]]; then
+  if [[ "$TARGET" == "production" ]]; then
+    echo "production requires PRODIGI_WEBHOOK_TOKEN" >&2
+    echo "without it /api/webhooks/prodigi answers 503 for every callback" >&2
+    exit 1
+  fi
+  echo "warning: PRODIGI_WEBHOOK_TOKEN unset — /api/webhooks/prodigi will 503 on this preview" >&2
+else
+  # 32 hex chars minimum, same bar as the print HMAC: a token short enough to
+  # guess is worse than no token, because it looks configured.
+  if [[ ${#WEBHOOK_TOKEN} -lt 32 ]]; then
+    if [[ "$TARGET" == "production" ]]; then
+      echo "production requires PRODIGI_WEBHOOK_TOKEN with at least 32 characters (got ${#WEBHOOK_TOKEN})" >&2
+      exit 1
+    fi
+    echo "warning: PRODIGI_WEBHOOK_TOKEN under 32 characters — weak bearer token on this preview" >&2
+  fi
+  export PRODIGI_WEBHOOK_TOKEN="$WEBHOOK_TOKEN"
+fi
+
 # Secrets go through a 0600 file rather than stdin so the values never appear in
 # the process list, and the file is removed on every exit path. In version-only
 # mode the caller needs the file to survive the exit, so it names the path via
@@ -149,6 +197,15 @@ else:
 print_secret = os.environ.get("PRINT_ASSET_HMAC_SECRET", "").strip()
 if len(print_secret) >= 32:
     secrets["PRINT_ASSET_HMAC_SECRET"] = print_secret
+# Email + Prodigi callback bearer (#117). Re-checked here for the same reason as
+# the print HMAC: bash judged the length, Python must not disagree about whether
+# a value survived, or the guard is decoration.
+resend_key = os.environ.get("RESEND_API_KEY", "").strip()
+if resend_key:
+    secrets["RESEND_API_KEY"] = resend_key
+webhook_token = os.environ.get("PRODIGI_WEBHOOK_TOKEN", "").strip()
+if len(webhook_token) >= 32:
+    secrets["PRODIGI_WEBHOOK_TOKEN"] = webhook_token
 
 with open(out_path, "w") as fh:
     json.dump(secrets, fh)

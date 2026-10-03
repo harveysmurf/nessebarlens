@@ -83,6 +83,8 @@ jobs:
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
           PRINT_ASSET_HMAC_SECRET: ${{ secrets.PRINT_ASSET_HMAC_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          PRODIGI_WEBHOOK_TOKEN: ${{ secrets.PRODIGI_WEBHOOK_TOKEN }}
           # Explicit host — never inferred from which Prodigi key is set.
           PRODIGI_API_BASE: https://api.sandbox.prodigi.com
           PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
