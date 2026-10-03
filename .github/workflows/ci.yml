@@ -134,16 +134,24 @@ jobs:
           if-no-files-found: ignore
 
   # The hosted round-trip: configurator → Stripe's own checkout page → our
-  # success page. Genuinely useful when it works, and structurally outside our
-  # control, so it is `continue-on-error` rather than skipped.
+  # success page. Useful when it works, and partly outside our control.
   #
-  # `continue-on-error`, not `if: always()` on the specs and not a skip. A skip
-  # would go green while testing nothing, which is the silent-untested trap: the
-  # next red would have no way to say whether Stripe's gate moved or our
-  # redirect broke. Attempting the run keeps the trace and the test list, so a
-  # human can tell those two apart. The cost is that this job reports orange
-  # whenever the gate bites, which is the point — the signal stays visible
-  # instead of disappearing into a green check.
+  # Two specs live under `@hosted` and they are not equally blocked (#169):
+  #
+  #   - physical print reaches Stripe and then cancels. Nothing is ever
+  #     submitted, so Stripe's bot check and AI attestation never come into it,
+  #     and this spec can genuinely pass. It is the job's real signal — a red
+  #     here means the Prodigi quote, the checkout redirect or the cancel page
+  #     regressed.
+  #   - digital licence pays on that page, which is exactly what the
+  #     attestation gates. It cannot pass on a runner, so HOSTED_DIGITAL_SKIP_REASON
+  #     is set below and the spec skips itself with that reason in the report.
+  #
+  # The job still reports orange whenever something real breaks, which is what
+  # `continue-on-error` was for; #169 removed the guaranteed-red half rather
+  # than the reporting. The skip is a spec-level skip, not a grep exclusion, so
+  # the test list still shows the digital flow as skipped with its reason
+  # instead of it quietly disappearing from coverage.
   e2e-hosted-checkout:
     name: E2E hosted checkout (best effort)
     if: github.event_name == 'pull_request'
@@ -213,14 +221,20 @@ jobs:
       # trace of the last red run shows `getcaptcha` with no matching
       # `checkcaptcha`, and the page simply never leaves after Pay. A real
       # display and a real window is the closest a runner gets to a browser a
-      # person would use, which is what the bot check is measuring. It is worth
-      # saying plainly that this is not expected to be enough — a later run
-      # added an attestation dialog in front of the same submit. It stays because
-      # the job no longer depends on it, not because it is believed to hold.
+      # person would use, which is what the bot check is measuring.
+      #
+      # Since #169 nothing here submits a payment — the digital flow skips itself
+      # and the physical one cancels — so the gate no longer applies to what is
+      # left of the job, and this stays only for anyone re-enabling the digital
+      # run by hand. It was never believed to hold against the attestation
+      # dialog that replaced the bot check.
       - name: E2E hosted checkout
         run: xvfb-run --auto-servernum --server-args="-screen 0 1280x1024x24" npm run test:e2e -- --grep @hosted
         env:
           HEADED: "1"
+          # #169: the digital-licence flow submits a payment on Stripe's hosted
+          # page, behind an AI-attestation dialog that is not ours to click.
+          HOSTED_DIGITAL_SKIP_REASON: "Stripe's AI-attestation gate blocks the hosted submit in CI (#169)"
           STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
           PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
           PRINT_ASSET_HMAC_SECRET: ${{ secrets.PRINT_ASSET_HMAC_SECRET }}

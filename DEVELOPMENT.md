@@ -177,7 +177,7 @@ pull-request-only jobs in `ci.yml`.
 | Job | Runs | Gates? |
 |-----|------|--------|
 | `e2e-smoke` | the five seeded success-page states + the live-key guard | **yes** — required, and it needs no secret at all |
-| `e2e-hosted-checkout` | the two specs that reach Stripe's hosted checkout page | no — `continue-on-error`, still runs, still uploads its trace |
+| `e2e-hosted-checkout` | the two specs that reach Stripe's hosted checkout page (the digital one skips itself in CI, #169) | no — `continue-on-error`, still runs, still uploads its trace |
 
 The split is the `@hosted` tag on one describe in `e2e/smoke.spec.ts`; CI
 selects on it with `--grep @hosted` / `--grep-invert @hosted`.
@@ -189,12 +189,21 @@ be quoted as one. Stripe gates `checkout.stripe.com` behind an hCaptcha token
 and an explicit "I am an AI agent" attestation; test mode changes payment
 behaviour only, and neither is configurable away. The attestation asks a yes/no
 question whose answer is meant to be a human's, so there is no acceptable
-automated way past it — the job attempts the run and reports orange when the
-gate bites, rather than skipping, because a skip would go green having tested
-nothing and the next red could not say whether Stripe moved or our redirect
-broke. Fully automating that page means moving to the embedded Payment Element
-(PCI scope change), not a CI flag. Run the hosted specs by hand when you want
-to look at them; do not gate on them.
+automated way past it. Fully automating that page means moving to the embedded
+Payment Element (PCI scope change), not a CI flag. Run the hosted specs by hand
+when you want to look at them; do not gate on them.
+
+**The two hosted specs are not equally blocked (#169).** The physical-print spec
+reaches Stripe and cancels — nothing is submitted, so the gate never applies and
+it can genuinely pass; it is this job's real signal, so a red run means the
+Prodigi quote, the checkout redirect or the cancel page regressed. The
+digital-licence spec pays on that page, which is exactly what the attestation
+gates, so it cannot pass on a runner. CI therefore sets
+`HOSTED_DIGITAL_SKIP_REASON` and the spec skips itself with that reason, which
+keeps it visible in the test list instead of hiding it behind a grep. Locally the
+variable is unset and the full flow runs. The point of the change is not to hide
+a red: it is to stop a guaranteed-red job from reading as noise, so the red that
+is real stands out. `tests/e2e-harness-env.test.mts` pins both halves.
 
 Needs `npx playwright install chromium` once, and three values: a **sandbox**
 Stripe key, the **Prodigi sandbox** key, and any `PRINT_ASSET_HMAC_SECRET` (it
