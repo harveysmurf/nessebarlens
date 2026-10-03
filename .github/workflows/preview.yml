@@ -5,6 +5,14 @@ on:
     types: [opened, synchronize, reopened, closed]
     branches: [main]
 
+# Default to the least privilege every job here needs: read the
+# repository and nothing else. No job in this workflow calls the
+# GitHub API, writes a comment, or pushes anything, so the default
+# token (write-all inside a repo) was strictly more than the work
+# required. A job needing more declares it on the job.
+permissions:
+  contents: read
+
 concurrency:
   group: preview-${{ github.event.pull_request.number }}
   cancel-in-progress: true
@@ -26,11 +34,14 @@ jobs:
       NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
       NEXT_PUBLIC_WEB_IMAGES_BASE: ${{ secrets.NEXT_PUBLIC_WEB_IMAGES_BASE }}
     steps:
-      # A local action must exist on disk before it can run, so the checkout
-      # that loads it cannot itself live inside it.
-      - uses: actions/checkout@v4
+      # The checkout is for the repository, not for the local action: `$/`
+      # loads .github/actions/setup from the running commit, so it does not
+      # depend on the workspace being populated first.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
 
       - name: Lint
         run: npm run lint
@@ -157,7 +168,7 @@ jobs:
 
       - name: Comment preview URL
         if: always()
-        uses: actions/github-script@v7
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         with:
           script: |
             const url = '${{ steps.deploy.outputs.url }}';
@@ -210,11 +221,14 @@ jobs:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
     steps:
-      # A local action must exist on disk before it can run, so the checkout
-      # that loads it cannot itself live inside it.
-      - uses: actions/checkout@v4
+      # The checkout is for the repository, not for the local action: `$/`
+      # loads .github/actions/setup from the running commit, so it does not
+      # depend on the workspace being populated first.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
 
-      - uses: ./.github/actions/setup
+      - uses: $/.github/actions/setup
         with:
           install-args: --ignore-scripts
 

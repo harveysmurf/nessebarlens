@@ -13,7 +13,14 @@ import test from "node:test";
 
 const root = path.join(import.meta.dirname, "..");
 const workflowDir = path.join(root, ".github", "workflows");
+// #165 moved same-repo references to the `$/` self-repository syntax, which
+// resolves at the running commit instead of against the checked-out workspace.
+// Both spellings are accepted so a later switch back does not read as a
+// regression, and so neither one can quietly appear twice in one job.
+const sameRepo = (path: string) => String.raw`(?:\$|\.)\/\.github/${path}`;
 const setupAction = "./.github/actions/setup";
+const setupActionRef = String.raw`uses:\s*"?'?${sameRepo("actions/setup")}\b`;
+const reusableWorkflowRef = String.raw`uses:\s*"?'?${sameRepo("workflows/")}`;
 
 /**
  * Workflows that never run code from this repository, so there is nothing for
@@ -57,22 +64,19 @@ test("no workflow inlines setup-node or bare npm ci, and checks out exactly once
     if (noRepoCode.includes(name)) continue;
     const jobsText = text.slice(text.search(/^jobs:[ \t]*$/m));
     for (const block of jobsText.split(/\n {2}(?=[a-z][\w-]*:\n)/).slice(1)) {
-      if (/^\s*uses:\s*\.\/\.github\/workflows\//m.test(block)) continue;
+      if (new RegExp(String.raw`^\s*${reusableWorkflowRef}`, "m").test(block)) continue;
       const count = [...block.matchAll(checkoutStep)].length;
       assert.equal(
         count,
         1,
-        `${name} has a job with ${count} checkout steps; exactly one is expected (the composite action cannot do the checkout that loads it)`,
+        `${name} has a job with ${count} checkout steps; exactly one is expected (the shared action does not check out, and every job needs the repository on disk)`,
       );
-      assert.ok(
-        block.includes(setupAction),
-        `${name} has a job that checks out but never calls ${setupAction}`,
-      );
-      const [firstCheckout] = [...block.matchAll(checkoutStep)];
-      const setupIdx = block.indexOf(setupAction);
-      assert.ok(
-        (firstCheckout?.index ?? -1) < setupIdx,
-        `${name} calls ${setupAction} before its checkout, so the action is not on disk yet`,
+      const setupCalls = [...block.matchAll(new RegExp(setupActionRef, "g"))]
+        .length;
+      assert.equal(
+        setupCalls,
+        1,
+        `${name} has a job with ${setupCalls} setup calls; exactly one is expected`,
       );
     }
   }
@@ -84,8 +88,8 @@ test("every workflow uses the shared setup composite action", () => {
     if (noRepoCode.includes(name)) continue;
     assert.match(
       text,
-      /uses:\s*\.\/\.github\/actions\/setup\b/,
-      `${name} never calls ${setupAction}`,
+      new RegExp(setupActionRef),
+      `${name} never calls the shared setup action`,
     );
   }
 });
@@ -120,11 +124,13 @@ test("prod.yml deploy needs a job that calls ci.yml", () => {
   assert.ok(jobBlocks.length > 0, "prod.yml has no jobs under jobs:");
 
   const callers = jobBlocks
-    .filter(([, , body]) => /uses:\s*\.\/\.github\/workflows\/ci\.yml\b/.test(body))
+    .filter(([, , body]) =>
+      new RegExp(String.raw`uses:\s*"?'?${sameRepo("workflows/ci\.yml")}\b`).test(body),
+    )
     .map(([, id]) => id);
   assert.ok(
     callers.length > 0,
-    "prod.yml has no job that uses ./.github/workflows/ci.yml",
+    "prod.yml has no job that calls the ci.yml reusable workflow",
   );
 
   const deploy = jobBlocks.find(([, id]) => id === "deploy");
