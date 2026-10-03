@@ -8,5 +8,5 @@
  * violation `tests/single-source-grammar.test.mts` exists to fail on.
  */
 
-/** Matches a path ending in .js/.jsx/.mjs/.cjs/.ts/.tsx/.mts/.cts. */
+/** Matches a path ending in a JavaScript/TypeScript extension: the base .js/.jsx/.ts/.tsx, each optionally prefixed with `m` or `c` and suffixed with `s` (so .mjs, .mts, .cts and the theoretical .mjsx match too). */
 export const FILE_NAME = /\.[cm]?[jt]sx?$/;
