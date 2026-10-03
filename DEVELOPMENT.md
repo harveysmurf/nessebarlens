@@ -346,8 +346,9 @@ a host serving a reverted build is a support incident, not a deploy.
   `npm run migrate:orders` only — the application no longer reads it. Do not
   delete the namespace before the migration has run, or the source data is gone.
 - `[[d1_databases]]` binding `ORDERS_DB`, database `nessebar-lens-orders`,
-  `migrations_dir = "migrations"`. Paste the real `database_id` after
-  `npx wrangler d1 create nessebar-lens-orders` (see D1 subsection below).
+  `migrations_dir = "migrations"`. The `database_id` is committed; the database
+  exists and `migrations/` is applied. Re-create only if the account is reset —
+  see the D1 subsection below.
 - Do **not** add `[triggers] crons`. OpenNext's generated
   `.open-next/worker.js` exports only `default { fetch }` plus the DO classes,
   so a cron trigger would be silently ignored. The reconciler is a Next route
@@ -363,12 +364,19 @@ a host serving a reverted build is a support incident, not a deploy.
 
 ### D1 orders database
 
+Already created and applied — these are only for a fresh account:
+
 ```bash
 npx wrangler d1 create nessebar-lens-orders
 # paste the id into wrangler.toml [[d1_databases]].database_id
 npx wrangler d1 migrations apply nessebar-lens-orders --local
 npx wrangler d1 migrations apply nessebar-lens-orders --remote
 ```
+
+The deployed database holds only the schema (`orders`, `download_tokens`) and no
+rows: `migrations/` was applied before any order existed. `npm run migrate:orders`
+is what moves real orders out of KV, and until it has run the site has no order
+history in D1 — the reconciler therefore finds nothing to recover and is a no-op.
 
 One-shot KV → D1 migration (keep the KV binding until this has succeeded):
 

@@ -33,9 +33,7 @@ preview_id = "849af920ace64914904b2799bd0fc073"
 [[d1_databases]]
 binding = "ORDERS_DB"
 database_name = "nessebar-lens-orders"
-# PLACEHOLDER — the operator must run `npx wrangler d1 create nessebar-lens-orders`
-# and paste the real id here before this Worker can deploy. See DEVELOPMENT.md §5.
-database_id = "00000000-0000-0000-0000-000000000000"
+database_id = "466035f5-fa14-4f0c-9d7a-2471025fe6f1"
 migrations_dir = "migrations"
 
 [[r2_buckets]]
