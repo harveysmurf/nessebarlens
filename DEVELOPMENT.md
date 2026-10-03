@@ -255,6 +255,36 @@ ORDERS_DEV_SEED=e2e/fixtures/orders-seed.json npm run dev
 # then open /checkout/success?session_id=cs_test_e2edigitalpaid00000001
 ```
 
+### Live Stripe API verification (#101, #134)
+
+`scripts/verify-stripe-integration.mjs` checks the two API shapes the
+refund/dispute revocation path (`src/lib/order-revocation.ts`) is written
+against and that no stub can prove: that
+`checkout.sessions.list({payment_intent})` returns the session a payment came
+from, and that a dispute names a Charge id whose `payment_intent` leads back to
+the order. It runs the real test-mode API and is deliberately **not** in
+`ci.yml` — it creates real objects in the Stripe test environment, so
+`verify-stripe.yml` schedules it on its own.
+
+```bash
+STRIPE_SECRET_KEY=sk_test_… node scripts/verify-stripe-integration.mjs
+```
+
+It refuses any key that is not `sk_test_` before spending anything.
+
+**It needs at least one completed Checkout Session to exist in the account**
+(#134). Completing a Checkout Session has no server-side API — the hosted page
+is the only completion path, and `POST /v1/checkout/sessions/{id}/complete`
+plus `POST /v1/disputes`, which the first version of this script used, both
+answer 404 `Unrecognized request URL` on every Stripe API version. So the
+lookup is verified against a real completed session already in the account, and
+the dispute is raised the documented way: paying with the
+`pm_card_createDispute` test PaymentMethod makes Stripe open it. A new test
+account with no completed session fails that one check with the fix in the
+message — run `npm run test:e2e`, or complete one test checkout by hand.
+`tests/verify-stripe-script.test.mts` pins the decisions the script makes about
+which session, which dispute and which refund order.
+
 ---
 
 ## 5. Build & deploy
@@ -858,3 +888,10 @@ the guard to keep the honest copy honest.
   signature, POST to `/api/webhooks/stripe`, assert the record. It does not
   exist yet; log it rather than folding it into the browser smoke, which would
   put signature timing and a network loop into a job that should stay cheap.
+- The refund/dispute revocation path's two Stripe API shapes **are** verified
+  against live test-mode Stripe as of #134 — the payment-intent lookup and the
+  dispute→charge→payment-intent hop (§4, "Live Stripe API verification"). What
+  remains unverified is that a real `charge.dispute.created` delivery reaches
+  `/api/webhooks/stripe` with our signature secret on it: no test can deliver a
+  signed webhook without the endpoint, which is the same gap the bullet above
+  describes from the other end.
