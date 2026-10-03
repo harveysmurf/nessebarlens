@@ -1,27 +1,29 @@
 /**
  * Refund and dispute revocation.
  *
- * ORDERS is keyed by Stripe Checkout session id and stores no payment intent,
- * so `charge.refunded` — whose object *is* a Charge, carrying
+ * The orders store is keyed by Stripe Checkout session id and stores no payment
+ * intent, so `charge.refunded` — whose object *is* a Charge, carrying
  * `payment_intent` — has nothing to look the order up by. We ask Stripe:
  * `checkout.sessions.list({ payment_intent })` returns the session that
  * payment came from, and that session id is our primary key.
  *
- * The alternative (storing `payment_intent` on the record plus a second
- * `pi_…` KV index key) was rejected: KV cannot enumerate that index, so it
- * would grow forever and never be provably complete, and it would only ever
- * cover orders placed *after* the deploy — every already-paid record, which is
- * where the money at risk actually is, would stay unrefundable by webhook.
- * One read against an API we already call from /api/checkout reaches all of
- * them.
+ * The alternative (storing `payment_intent` on the record plus a second index)
+ * was rejected under KV because the index could not be enumerated and would
+ * grow forever; under D1 it is still rejected — one read against an API we
+ * already call from /api/checkout reaches every already-paid record, which is
+ * where the money at risk actually is.
  *
  * The cost of that choice, stated plainly: revocation now depends on Stripe
  * being reachable at the moment the webhook fires. That is why a lookup
  * failure answers 5xx (Stripe redelivers) rather than 200, and why the status
  * write happens after the lookup rather than being skipped on failure.
+ *
+ * Writes use `transitionOrder` (#116) so a double-refund webhook cannot cancel
+ * the same Prodigi order twice: the losing transition answers 200 duplicate
+ * and skips cancel.
  */
 
-import { type OrdersKv } from "./fulfillment";
+import { type OrdersStore } from "./orders-store";
 import { describeCorruptOrder, reportCorruptOrder } from "./order-corrupt";
 import {
   isRevoked,
@@ -121,7 +123,7 @@ export type RevocationOutcome =
   | { httpStatus: 500; body: Record<string, unknown> };
 
 export type RevokeInput = {
-  kv: OrdersKv;
+  store: OrdersStore;
   status: RevokedStatus;
   paymentIntent: string | null | undefined;
   now: string;
@@ -176,7 +178,7 @@ export async function revokeOrderByPaymentIntent(
     };
   }
 
-  const raw = await input.kv.get(sessionId);
+  const raw = await input.store.getOrder(sessionId);
   if (raw === null) {
     return {
       httpStatus: 200,
@@ -225,8 +227,24 @@ export async function revokeOrderByPaymentIntent(
   };
 
   // Write first, cancel second. Revocation is the part that protects the
-  // customer; a Prodigi failure must not be able to delay or undo it.
-  await input.kv.put(sessionId, JSON.stringify(revoked));
+  // customer; a Prodigi failure must not be able to delay or undo it. The
+  // transition is the claim: a concurrent second refund that loses the
+  // optimistic lock answers duplicate below and must not cancel Prodigi twice.
+  const claimed = await input.store.transitionOrder({
+    sessionId,
+    fromAttempts: order.attempts,
+    record: revoked,
+  });
+  if (!claimed) {
+    return {
+      httpStatus: 200,
+      body: {
+        received: true,
+        duplicate: true,
+        sessionId,
+      },
+    };
+  }
 
   const cancellation =
     order.format !== "digital" &&

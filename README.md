@@ -9,7 +9,7 @@ Checkout flow, and fulfillment through Prodigi for physical orders.
 - **Next.js 15** App Router (React 19), built with `@opennextjs/cloudflare`
 - **Tailwind CSS 4**; Inter + Cormorant Garamond vendored in `src/fonts/` (offline builds)
 - **TypeScript 5**, **ESLint 9**, **node:test** — no test runner framework
-- Cloudflare Workers (OpenNext), with KV (`ORDERS`) and R2 (`WEB` derivatives, `MASTERS` masters)
+- Cloudflare Workers (OpenNext), with D1 (`ORDERS_DB`) and R2 (`WEB` derivatives, `MASTERS` masters)
 - Stripe for payments, Prodigi for print fulfillment
 
 ## Run it locally
@@ -54,5 +54,5 @@ Two things worth knowing before you touch the payment or fulfillment path:
 - Prices are per-photo and per-Prodigi-quote with a flat EUR shipping amount, so
   adaptive pricing is explicitly **disabled** on Checkout sessions — a converted
   local amount is one we neither set nor reconcile.
-- Fulfillment is driven by the Stripe webhook, which records the order to KV.
+- Fulfillment is driven by the Stripe webhook, which records the order to D1.
   Unconfigured config fails as a retryable 503, never as an upstream 502.

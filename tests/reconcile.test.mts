@@ -1,0 +1,359 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import {
+  reconcileOrders,
+  RECONCILE_BATCH,
+  RECONCILE_LOOKBACK_HOURS,
+  RECONCILE_STUCK_HOURS,
+  type ReconcileSession,
+  type ReconcileStripe,
+} from "../src/lib/reconcile.ts";
+import { memoryOrdersStore } from "./fake-orders-store.mts";
+import { parseOrderRecord, type OrderRecord } from "../src/lib/order-decision.ts";
+import type { CreateProdigiOrder } from "../src/lib/prodigi-order.ts";
+
+const NOW = Date.parse("2026-10-03T00:00:00.000Z");
+
+function session(id: string, extra: Partial<ReconcileSession> = {}): ReconcileSession {
+  return {
+    id,
+    payment_status: "paid",
+    currency: "eur",
+    amount_total: 3000,
+    metadata: {
+      photoSlug: "dawn",
+      format: "digital",
+      size: "",
+      frame: "",
+      quoteEur: "30",
+    },
+    shipping_details: null,
+    customer_details: { email: null, phone: null },
+    ...extra,
+  };
+}
+
+function retryable(sessionId: string, createdAt: string): OrderRecord {
+  return {
+    v: 1,
+    sessionId,
+    merchantReference: sessionId,
+    terminal: false,
+    status: "paid-unfulfilled",
+    photoSlug: "dawn",
+    format: "giclee",
+    size: "30x40",
+    frame: "",
+    quoteEur: 15,
+    amountTotal: 1999,
+    currency: "eur",
+    // A real retryable reason: the reconciler only retries what
+    // isRetryableProdigiReason accepts, and a typo'd reason would make this
+    // fixture silently ineligible.
+    reason: "prodigi-auth-error",
+    masterKey: null,
+    recipient: {
+      name: "Test",
+      line1: "1 St",
+      line2: "",
+      city: "Nessebar",
+      state: "",
+      postcode: "8230",
+      countryCode: "BG",
+      email: "t@example.com",
+      phone: null,
+    },
+    prodigiOrderId: null,
+    prodigiStage: null,
+    assetUrl: null,
+    updatedAt: createdAt,
+    createdAt,
+    attempts: 1,
+  };
+}
+
+test("reconcile is a no-op on an empty store", async () => {
+  const store = memoryOrdersStore();
+  const stripe: ReconcileStripe = {
+    retrieveCheckoutSession: async () => null,
+    listPaidCheckoutSessions: async () => [],
+  };
+  const summary = await reconcileOrders({
+    store,
+    stripe,
+    prodigiKeyConfigured: true,
+    nowMs: NOW,
+  });
+  assert.deepEqual(summary, {
+    retried: 0,
+    recovered: 0,
+    claimedByOther: 0,
+    stuck: 0,
+    checked: 0,
+    missed: 0,
+  });
+});
+
+test("reconcile retries a retryable order and skips terminal ones", async () => {
+  const stuckAge = new Date(NOW - (RECONCILE_STUCK_HOURS + 1) * 3600_000).toISOString();
+  const store = memoryOrdersStore();
+  await store.putOrder(retryable("cs_test_retryable000000001", stuckAge));
+  await store.putOrder({
+    ...retryable("cs_test_terminal00000000001", stuckAge),
+    terminal: true,
+    reason: "prodigi-client",
+  });
+
+  let creates = 0;
+  const createOrder: CreateProdigiOrder = async () => {
+    creates += 1;
+    return {
+      ok: true,
+      orderId: "ord_1",
+      stage: "InProgress",
+      assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+    };
+  };
+
+  const stripe: ReconcileStripe = {
+    retrieveCheckoutSession: async (id) => session(id, {
+      amount_total: 1999,
+      metadata: {
+        photoSlug: "dawn",
+        format: "giclee",
+        size: "30x40",
+        frame: "",
+        quoteEur: "15",
+        merchandiseEur: "15",
+        shippingEur: "4.99",
+        sku: "GLOBAL-FAP-12X16",
+      },
+      shipping_details: {
+        name: "Test",
+        address: {
+          line1: "1 St",
+          line2: "",
+          city: "Nessebar",
+          state: "",
+          postal_code: "8230",
+          country: "BG",
+        },
+      },
+      customer_details: { email: "t@example.com", phone: null },
+    }),
+    listPaidCheckoutSessions: async () => [],
+  };
+
+  const errors: string[] = [];
+  const real = console.error;
+  console.error = (msg?: unknown) => {
+    errors.push(String(msg));
+  };
+  try {
+    const summary = await reconcileOrders({
+      store,
+      stripe,
+      prodigiKeyConfigured: true,
+      createOrder,
+      nowMs: NOW,
+    });
+    assert.equal(summary.checked, 1);
+    assert.equal(summary.retried, 1);
+    assert.equal(summary.stuck, 1);
+    assert.equal(creates, 1);
+    assert.match(errors.join("\n"), /order\.stuck/);
+  } finally {
+    console.error = real;
+  }
+});
+
+test("reconcile recovers a paid Stripe session with no stored order", async () => {
+  const store = memoryOrdersStore();
+  const stripe: ReconcileStripe = {
+    retrieveCheckoutSession: async () => null,
+    listPaidCheckoutSessions: async () => [session("cs_test_missedwebhook0000001")],
+  };
+  const summary = await reconcileOrders({
+    store,
+    stripe,
+    prodigiKeyConfigured: true,
+    createOrder: async () => ({
+      ok: true,
+      orderId: "ord_collected",
+      stage: "InProgress",
+      assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+    }),
+    nowMs: NOW,
+  });
+  assert.equal(summary.missed, 1);
+  assert.equal(summary.recovered, 1);
+  assert.ok(await store.getOrder("cs_test_missedwebhook0000001"));
+});
+
+test("a retry whose claim is lost is counted as claimedByOther, not as a retry", async () => {
+  // The distinction is the point of the counter: `retried` means this run placed
+  // the print, `claimedByOther` means a concurrent run owns it. Folding the
+  // loser into `retried` would let a summary read as "two prints placed" when
+  // one was.
+  const store = memoryOrdersStore();
+  await store.putOrder(retryable("cs_test_lostclaim00000000001", new Date(NOW).toISOString()));
+  // Every claim loses, so no Prodigi call can be made by this run.
+  const losing = { ...store, async transitionOrder() { return false; } };
+  let creates = 0;
+  const summary = await reconcileOrders({
+    store: losing,
+    stripe: {
+      retrieveCheckoutSession: async (id) => session(id, { amount_total: 1999 }),
+      listPaidCheckoutSessions: async () => [],
+    },
+    prodigiKeyConfigured: true,
+    createOrder: async () => {
+      creates += 1;
+      return { ok: true, orderId: "ord_x", stage: null, assetUrl: null };
+    },
+    nowMs: NOW,
+  });
+  assert.equal(summary.checked, 1);
+  assert.equal(summary.claimedByOther, 1);
+  assert.equal(summary.retried, 0);
+  assert.equal(creates, 0);
+});
+
+test("a run with no arguments uses the shipped defaults, not the caller's", async () => {
+  // The route passes nothing: batch, lookback and stuck-hours must come from
+  // the module's own constants, and "now" from the wall clock. The order below
+  // is old enough to be stuck on any clock, which is what makes this a test of
+  // the defaults rather than of a fixture.
+  const store = memoryOrdersStore();
+  await store.putOrder(retryable("cs_test_defaults000000000001", "2020-01-01T00:00:00.000Z"));
+  // Terminal, so the retryable query skips it — but it is still a stored order,
+  // which is what makes the paid session below a *known* session.
+  await store.putOrder({
+    ...retryable("cs_test_alreadyknown0000000001", "2020-01-01T00:00:00.000Z"),
+    terminal: true,
+    reason: "prodigi-client",
+  });
+  const order = parseOrderRecord((await store.getOrder("cs_test_alreadyknown0000000001"))!)!;
+  const errors: string[] = [];
+  const real = console.error;
+  console.error = (msg?: unknown) => {
+    errors.push(String(msg));
+  };
+  let created: { createdGte: number; limit: number } | null = null;
+  try {
+    const summary = await reconcileOrders({
+      store,
+      stripe: {
+        // A retryable order whose session Stripe no longer knows: nothing to
+        // place, and the run must survive it rather than 500 on the way past.
+        retrieveCheckoutSession: async () => null,
+        listPaidCheckoutSessions: async (input) => {
+          created = { createdGte: input.createdGte, limit: input.limit };
+          // One we already know about, and one we never received a webhook for:
+          // the second is the half of the reconciler that has work to do, and it
+          // runs on the wall clock because this run passed no `nowMs`.
+          return [
+            session("cs_test_alreadyknown0000000001"),
+            session("cs_test_unheardof000000000001"),
+          ];
+        },
+      },
+      prodigiKeyConfigured: false,
+    });
+    assert.equal(summary.checked, 1);
+    assert.equal(summary.stuck, 1);
+    assert.match(errors.join("\n"), /order\.stuck/);
+    assert.equal(order.status, "paid-unfulfilled");
+    // A paid session we already know about is not a missed webhook.
+    assert.equal(summary.missed, 1);
+    assert.equal(summary.recovered, 1);
+    const recovered = parseOrderRecord(
+      (await store.getOrder("cs_test_unheardof000000000001"))!,
+    );
+    assert.ok(recovered, "the unheard-of session was not recovered");
+    assert.ok(
+      Date.parse(recovered.updatedAt) > Date.parse("2026-01-01T00:00:00.000Z"),
+      "a run with no nowMs must stamp the wall clock, not the fixture's",
+    );
+  } finally {
+    console.error = real;
+  }
+  assert.ok(created);
+  const lookbackSeconds = Date.now() / 1000 - (created as { createdGte: number }).createdGte;
+  assert.ok(
+    Math.abs(lookbackSeconds - RECONCILE_LOOKBACK_HOURS * 3600) < 60,
+    `lookback should be the default, got ${lookbackSeconds} seconds`,
+  );
+  assert.equal((created as { limit: number }).limit, RECONCILE_BATCH);
+});
+
+test("the reconciler prefers Stripe's collected shipping over the legacy field", async () => {
+  // Stripe moved shipping to `collected_information` and kept the old field
+  // populated for a while. Reading the wrong one ships the print to an address
+  // the customer never confirmed, so the new field has to win.
+  const store = memoryOrdersStore();
+  const recovered: ReconcileSession = session("cs_test_collected00000000001", {
+    // 15.00 merchandise + 4.99 shipping. An amount Stripe and the metadata
+    // disagree on is refused as amount-mismatch, which would hide the address
+    // we are actually here to check.
+    amount_total: 1999,
+    customer_details: { email: "t@example.com", phone: null },
+    metadata: {
+      photoSlug: "dawn",
+      format: "giclee",
+      size: "30x40",
+      frame: "",
+      quoteEur: "15",
+      merchandiseEur: "15",
+      shippingEur: "4.99",
+      sku: "GLOBAL-FAP-12X16",
+    },
+    collected_information: {
+      shipping_details: {
+        name: "Collected",
+        address: {
+          line1: "9 New Rd",
+          line2: "",
+          city: "Sofia",
+          state: "",
+          postal_code: "1000",
+          country: "BG",
+        },
+      },
+    },
+    shipping_details: {
+      name: "Legacy",
+      address: {
+        line1: "1 Old Rd",
+        line2: "",
+        city: "Varna",
+        state: "",
+        postal_code: "9000",
+        country: "BG",
+      },
+    },
+  });
+  const summary = await reconcileOrders({
+    store,
+    stripe: {
+      retrieveCheckoutSession: async () => null,
+      listPaidCheckoutSessions: async () => [recovered],
+    },
+    prodigiKeyConfigured: true,
+    createOrder: async () => ({
+      ok: true,
+      orderId: "ord_collected",
+      stage: "InProgress",
+      assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+    }),
+    nowMs: NOW,
+  });
+  assert.equal(summary.missed, 1);
+  const raw = (await store.getOrder("cs_test_collected00000000001"))!;
+  assert.ok(raw, "the recovered session was not stored");
+  const stored = parseOrderRecord(raw);
+  assert.ok(stored, `unparseable stored order: ${String(raw)}`);
+  assert.equal(stored.recipient?.name, "Collected");
+  assert.equal(stored.recipient?.line1, "9 New Rd");
+  assert.equal(stored.recipient?.city, "Sofia");
+});

@@ -20,7 +20,7 @@ import { MASTERS_BUCKET_NAME } from "../src/lib/derivative-ladder.ts";
 import { MASTERS_BUCKET, MASTER_MARKER } from "../src/lib/master-guard.ts";
 import { FILM_LOOKS, filmLookClass } from "../src/lib/photos.ts";
 import { AWAITING_PRODIGI_REASON } from "../src/lib/order-decision.ts";
-import { ORDERS_KV_UNAVAILABLE_ERROR } from "../src/lib/orders-kv.ts";
+import { ORDERS_STORE_UNAVAILABLE_ERROR } from "../src/lib/orders-store.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
@@ -573,28 +573,23 @@ test("the two body rejections stay one literal each, and stay different", () => 
   );
 });
 
-test("the orders-kv rejection is spelled once, in orders-kv.ts", () => {
-  // The three 503 sites (two in the download route, one in the webhook) all
-  // answer with this string, and it is what an operator greps for when a paid
-  // download fails. Re-inlining it in any of the three is invisible to a
-  // behavioural test while the copies still agree, which is the same blind
-  // spot the awaiting-prodigi guard above exists for. The prose in
-  // prodigi-order.ts and stripe/route.ts mentions the string in a comment;
-  // this walks the AST, so only real literals are counted.
+test("the orders-store rejection is spelled once, in orders-store.ts", () => {
+  // The 503 sites (download route, webhook, reconcile) all answer with this
+  // string, and it is what an operator greps for when a paid download fails.
+  // Re-inlining it in any site is invisible to a behavioural test while the
+  // copies still agree. The prose in prodigi-order.ts and stripe/route.ts
+  // mentions the string in a comment; this walks the AST, so only real
+  // literals are counted.
   const sites = stringLiteralSites().filter(
-    (s) => s.literal === ORDERS_KV_UNAVAILABLE_ERROR,
+    (s) => s.literal === ORDERS_STORE_UNAVAILABLE_ERROR,
   );
   assert.deepEqual(
     sites.map((s) => s.file),
-    ["src/lib/orders-kv.ts"],
-    `"${ORDERS_KV_UNAVAILABLE_ERROR}" spelled outside its owner: ${sites
+    ["src/lib/orders-store.ts"],
+    `"${ORDERS_STORE_UNAVAILABLE_ERROR}" spelled outside its owner: ${sites
       .map((s) => `${s.file}:${s.line}`)
       .join(", ")}`,
   );
-  // Non-vacuous: the owner must actually hold the literal, or the deepEqual
-  // above would pass on an empty list after a rename of the constant's value.
-  // The 503 needs no equivalent here — the route tests assert the status
-  // against the live response, which is the side that can actually be wrong.
   assert.equal(sites.length, 1);
 });
 
@@ -746,7 +741,14 @@ test("the pure half of fulfillment reaches no effect", () => {
     "utf8",
   );
   assert.match(effects, /createProdigiOrder/, "fulfillment must call Prodigi");
-  assert.match(effects, /kv\.put\(/, "fulfillment must write ORDERS");
+  // The ORDERS write is a store-port call (#116), so the assertion names the
+  // port methods rather than a binding's own `kv.put`. Both are writes: if the
+  // port is ever bypassed for a direct binding write, this turns red.
+  assert.match(
+    effects,
+    /\.(putOrder|transitionOrder)\(/,
+    "fulfillment must write ORDERS through the store port",
+  );
 });
 
 test("the pure half is importable with no bindings, KV or Prodigi available", async () => {

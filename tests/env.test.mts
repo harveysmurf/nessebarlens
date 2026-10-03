@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { envFlag, envString, envStringStrippedSlash, stripTrailingSlashes } from "../src/lib/env.ts";
+import { envFlag, envIntInRange, envString, envStringStrippedSlash, stripTrailingSlashes } from "../src/lib/env.ts";
 import { prodigiApiBase, prodigiApiKey } from "../src/lib/prodigi-config.ts";
 
 function withEnv<T>(name: string, value: string | undefined, fn: () => T): T {
@@ -95,4 +95,29 @@ test("envFlag is opt-in: only true or 1 turn a gate on", () => {
   }
   assert.equal(envFlag("X", {}), false);
   assert.equal(envFlag("X", { X: 42 }), false);
+});
+
+test("envIntInRange falls back on anything it cannot use as a number", () => {
+  // The download limit and token lifetime are configured through this, and a
+  // paid download must degrade to the documented default rather than break:
+  // so unset, non-numeric, fractional, below the floor, and unsafe all fall
+  // back, and only an in-range integer is taken.
+  assert.equal(envIntInRange("X", {}, 5, 1), 5, "unset");
+  assert.equal(envIntInRange("X", { X: "  " }, 5, 1), 5, "blank");
+  assert.equal(envIntInRange("X", { X: "abc" }, 5, 1), 5, "not a number");
+  assert.equal(envIntInRange("X", { X: "3.5" }, 5, 1), 5, "fractional");
+  assert.equal(envIntInRange("X", { X: "0" }, 5, 1), 5, "below the floor");
+  assert.equal(envIntInRange("X", { X: "-2" }, 5, 1), 5, "negative below the floor");
+  assert.equal(envIntInRange("X", { X: "1e9" }, 5, 1), 5, "exponent is not an integer literal");
+  assert.equal(envIntInRange("X", { X: "Infinity" }, 5, 1), 5, "unbounded");
+  assert.equal(
+    envIntInRange("X", { X: "99999999999999999999" }, 5, 1),
+    5,
+    "past Number.MAX_SAFE_INTEGER",
+  );
+  assert.equal(envIntInRange("X", { X: "7" }, 5, 1), 7, "usable");
+  assert.equal(envIntInRange("X", { X: " 7 " }, 5, 1), 7, "trimmed");
+  // A negative is a legitimate value when the floor allows it, so the floor —
+  // not the sign — is what rejects.
+  assert.equal(envIntInRange("X", { X: "-3" }, 5, -5), -3, "negative above the floor");
 });

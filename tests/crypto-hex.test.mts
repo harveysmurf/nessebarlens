@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { hmacSha256Hex, timingSafeEqualHex } from "../src/lib/crypto-hex.ts";
+import { hmacSha256Hex, timingSafeEqualHex, timingSafeEqualString } from "../src/lib/crypto-hex.ts";
 
 test("hmacSha256Hex is stable and hex-encoded", async () => {
   const a = await hmacSha256Hex("hello", "secret");
@@ -15,4 +15,11 @@ test("timingSafeEqualHex is case-insensitive and length-safe", () => {
   assert.equal(timingSafeEqualHex("abcd", "abce"), false);
   assert.equal(timingSafeEqualHex("abcd", "abc"), false);
   assert.equal(timingSafeEqualHex("", ""), true);
+});
+
+test("timingSafeEqualString compares exact bytes and rejects length mismatch", () => {
+  assert.equal(timingSafeEqualString("secret", "secret"), true);
+  assert.equal(timingSafeEqualString("secret", "Secret"), false);
+  assert.equal(timingSafeEqualString("secret", "secre"), false);
+  assert.equal(timingSafeEqualString("", ""), true);
 });

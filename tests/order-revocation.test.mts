@@ -14,9 +14,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  type OrdersKv,
-} from "../src/lib/fulfillment.ts";
+import { memoryOrdersStore } from "./fake-orders-store.mts";
 import {
   isOrderStatus,
   isRevoked,
@@ -39,19 +37,8 @@ const NOW = "2026-10-01T12:00:00.000Z";
 
 process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
 
-function memoryKv(seed: Record<string, string> = {}): OrdersKv & {
-  store: Map<string, string>;
-} {
-  const store = new Map<string, string>(Object.entries(seed));
-  return {
-    store,
-    async get(key) {
-      return store.has(key) ? store.get(key)! : null;
-    },
-    async put(key, value) {
-      store.set(key, value);
-    },
-  };
+function memoryKv(seed: Record<string, string> = {}) {
+  return memoryOrdersStore({ orders: seed });
 }
 
 function digitalPaidRecord(overrides: Record<string, unknown> = {}): string {
@@ -102,9 +89,9 @@ async function captureErrors(body: () => Promise<void>): Promise<string[]> {
 }
 
 test("a full refund revokes the download", async () => {
-  const kv = memoryKv({ [SESSION]: digitalPaidRecord() });
+  const store = memoryKv({ [SESSION]: digitalPaidRecord() });
   const result = await revokeOrderByPaymentIntent({
-    kv,
+    store,
     status: "refunded",
     paymentIntent: INTENT,
     now: NOW,
@@ -112,7 +99,7 @@ test("a full refund revokes the download", async () => {
   });
 
   assert.equal(result.httpStatus, 200);
-  const order = parseOrderRecord(kv.store.get(SESSION)!);
+  const order = parseOrderRecord((await store.getOrder(SESSION))!);
   assert.ok(order);
   assert.equal(order.status, "refunded");
   assert.equal(order.masterKey, null, "the record must stop naming the master");
@@ -121,15 +108,15 @@ test("a full refund revokes the download", async () => {
 });
 
 test("revocation is terminal at the download route, not just in the record", async () => {
-  const kv = memoryKv({ [SESSION]: digitalPaidRecord() });
+  const store = memoryKv({ [SESSION]: digitalPaidRecord() });
   await revokeOrderByPaymentIntent({
-    kv,
+    store,
     status: "refunded",
     paymentIntent: INTENT,
     now: NOW,
     stripe: lookup(),
   });
-  const order = parseOrderRecord(kv.store.get(SESSION)!);
+  const order = parseOrderRecord((await store.getOrder(SESSION))!);
   assert.ok(order);
 
   const resolved = await resolveDownload(order, undefined);
@@ -138,9 +125,9 @@ test("revocation is terminal at the download route, not just in the record", asy
 });
 
 test("a dispute revokes the download", async () => {
-  const kv = memoryKv({ [SESSION]: digitalPaidRecord() });
+  const store = memoryKv({ [SESSION]: digitalPaidRecord() });
   const result = await revokeOrderByPaymentIntent({
-    kv,
+    store,
     status: "disputed",
     paymentIntent: INTENT,
     now: NOW,
@@ -148,7 +135,7 @@ test("a dispute revokes the download", async () => {
   });
   assert.equal(result.httpStatus, 200);
   assert.equal(
-    parseOrderRecord(kv.store.get(SESSION)!)?.status,
+    parseOrderRecord((await store.getOrder(SESSION))!)?.status,
     "disputed",
   );
 });
@@ -158,25 +145,25 @@ test("a revoked record stays parseable and still refuses to download", async () 
   // record ever fails to parse, /api/download answers 500 "corrupt-order"
   // instead of refusing — the customer still cannot get the file, but the
   // operator loses the ability to see why.
-  const kv = memoryKv({ [SESSION]: digitalPaidRecord() });
+  const store = memoryKv({ [SESSION]: digitalPaidRecord() });
   await revokeOrderByPaymentIntent({
-    kv,
+    store,
     status: "refunded",
     paymentIntent: INTENT,
     now: NOW,
     stripe: lookup(),
   });
-  const raw = kv.store.get(SESSION)!;
+  const raw = (await store.getOrder(SESSION))!;
   assert.ok(parseOrderRecord(raw));
   assert.equal(JSON.parse(raw).masterKey, null);
 });
 
 test("a lookup failure answers 5xx so Stripe redelivers, and writes nothing", async () => {
-  const kv = memoryKv({ [SESSION]: digitalPaidRecord() });
-  const before = kv.store.get(SESSION);
+  const store = memoryKv({ [SESSION]: digitalPaidRecord() });
+  const before = await store.getOrder(SESSION);
   const lines = await captureErrors(() =>
     revokeOrderByPaymentIntent({
-      kv,
+      store,
       status: "refunded",
       paymentIntent: INTENT,
       now: NOW,
@@ -185,11 +172,11 @@ test("a lookup failure answers 5xx so Stripe redelivers, and writes nothing", as
           throw new Error("stripe 503");
         },
       }),
-    }).then((result) => {
+    }).then(async (result) => {
       assert.equal(result.httpStatus, 500);
       // Nothing written: we could not identify the order, so writing would
       // mean writing to a key we guessed.
-      assert.equal(kv.store.get(SESSION), before);
+      assert.equal(await store.getOrder(SESSION), before);
     }),
   );
   assert.equal(lines.length, 1);
@@ -197,9 +184,9 @@ test("a lookup failure answers 5xx so Stripe redelivers, and writes nothing", as
 });
 
 test("an unknown payment intent and an unknown order are both 200 no-ops", async () => {
-  const kv = memoryKv();
+  const store = memoryKv();
   const noSession = await revokeOrderByPaymentIntent({
-    kv,
+    store,
     status: "refunded",
     paymentIntent: INTENT,
     now: NOW,
@@ -209,7 +196,7 @@ test("an unknown payment intent and an unknown order are both 200 no-ops", async
   assert.equal(noSession.body.ignored, "unknown-payment-intent");
 
   const noOrder = await revokeOrderByPaymentIntent({
-    kv,
+    store,
     status: "refunded",
     paymentIntent: INTENT,
     now: NOW,
@@ -220,9 +207,9 @@ test("an unknown payment intent and an unknown order are both 200 no-ops", async
 });
 
 test("an event with no payment intent is ignored, not guessed at", async () => {
-  const kv = memoryKv({ [SESSION]: digitalPaidRecord() });
+  const store = memoryKv({ [SESSION]: digitalPaidRecord() });
   const result = await revokeOrderByPaymentIntent({
-    kv,
+    store,
     status: "refunded",
     paymentIntent: null,
     now: NOW,
@@ -230,20 +217,20 @@ test("an event with no payment intent is ignored, not guessed at", async () => {
   });
   assert.equal(result.httpStatus, 200);
   assert.equal(result.body.ignored, "no-payment-intent");
-  assert.equal(parseOrderRecord(kv.store.get(SESSION)!)?.status, "paid");
+  assert.equal(parseOrderRecord((await store.getOrder(SESSION))!)?.status, "paid");
 });
 
 test("a second refund is a duplicate, not a second write", async () => {
-  const kv = memoryKv({ [SESSION]: digitalPaidRecord() });
+  const store = memoryKv({ [SESSION]: digitalPaidRecord() });
   const first = await revokeOrderByPaymentIntent({
-    kv,
+    store,
     status: "refunded",
     paymentIntent: INTENT,
     now: NOW,
     stripe: lookup(),
   });
   const second = await revokeOrderByPaymentIntent({
-    kv,
+    store,
     status: "refunded",
     paymentIntent: INTENT,
     now: NOW,
@@ -257,10 +244,10 @@ test("a second refund is a duplicate, not a second write", async () => {
 test("a corrupt record is logged and left alone", async () => {
   // Overwriting an unparseable record would destroy whatever a human is
   // looking at, so we refuse and complain instead.
-  const kv = memoryKv({ [SESSION]: '{"v":1,"sessionId":"' + SESSION + '"}' });
+  const store = memoryKv({ [SESSION]: '{"v":1,"sessionId":"' + SESSION + '"}' });
   const lines = await captureErrors(() =>
     revokeOrderByPaymentIntent({
-      kv,
+      store,
       status: "refunded",
       paymentIntent: INTENT,
       now: NOW,
@@ -273,7 +260,7 @@ test("a corrupt record is logged and left alone", async () => {
 });
 
 test("a physical refund attempts a Prodigi cancel and still revokes", async () => {
-  const kv = memoryKv({
+  const store = memoryKv({
     [SESSION]: digitalPaidRecord({
       format: "giclee",
       size: "30x40",
@@ -302,7 +289,7 @@ test("a physical refund attempts a Prodigi cancel and still revokes", async () =
   };
 
   const result = await revokeOrderByPaymentIntent({
-    kv,
+    store,
     status: "refunded",
     paymentIntent: INTENT,
     now: NOW,
@@ -315,7 +302,7 @@ test("a physical refund attempts a Prodigi cancel and still revokes", async () =
 });
 
 test("a failed Prodigi cancel revokes anyway and logs for a human", async () => {
-  const kv = memoryKv({
+  const store = memoryKv({
     [SESSION]: digitalPaidRecord({
       format: "giclee",
       size: "30x40",
@@ -346,7 +333,7 @@ test("a failed Prodigi cancel revokes anyway and logs for a human", async () => 
 
   const lines = await captureErrors(() =>
     revokeOrderByPaymentIntent({
-      kv,
+      store,
       status: "disputed",
       paymentIntent: INTENT,
       now: NOW,
@@ -364,17 +351,17 @@ test("a failed Prodigi cancel revokes anyway and logs for a human", async () => 
 
   assert.match(lines.join("\n"), /order\.prodigi-cancel-failed/);
   assert.match(lines.join("\n"), /in-production/);
-  const order = parseOrderRecord(kv.store.get(SESSION)!);
+  const order = parseOrderRecord((await store.getOrder(SESSION))!);
   assert.equal(order?.status, "disputed");
 });
 
 test("a digital refund never touches Prodigi", async () => {
-  const kv = memoryKv({ [SESSION]: digitalPaidRecord() });
+  const store = memoryKv({ [SESSION]: digitalPaidRecord() });
   const cancel: CancelProdigiOrder = async () => {
     throw new Error("must not be called");
   };
   const result = await revokeOrderByPaymentIntent({
-    kv,
+    store,
     status: "refunded",
     paymentIntent: INTENT,
     now: NOW,
@@ -495,7 +482,7 @@ test("a lookup that throws something without a message still logs", async () => 
   // event entirely because there was no .message to interpolate.
   const lines = await captureErrors(() =>
     revokeOrderByPaymentIntent({
-      kv: memoryKv(),
+      store: memoryKv(),
       status: "refunded",
       paymentIntent: INTENT,
       now: NOW,
@@ -563,7 +550,7 @@ test("a physical refund uses the real cancel when none is injected", async () =>
   delete process.env.PRODIGI_API_BASE;
   delete process.env.PRODIGI_SANDBOX_API_KEY;
   delete process.env.PRODIGI_API_KEY;
-  const kv = memoryKv({
+  const store = memoryKv({
     [SESSION]: digitalPaidRecord({
       format: "canvas",
       size: "30x40",
@@ -586,7 +573,7 @@ test("a physical refund uses the real cancel when none is injected", async () =>
   });
   const lines = await captureErrors(() =>
     revokeOrderByPaymentIntent({
-      kv,
+      store,
       status: "refunded",
       paymentIntent: INTENT,
       now: NOW,
@@ -600,7 +587,7 @@ test("a physical refund uses the real cancel when none is injected", async () =>
     }),
   );
   assert.match(lines.join("\n"), /order\.prodigi-cancel-failed/);
-  assert.equal(parseOrderRecord(kv.store.get(SESSION)!)?.status, "refunded");
+  assert.equal(parseOrderRecord((await store.getOrder(SESSION))!)?.status, "refunded");
   for (const key of ["PRODIGI_API_BASE", "PRODIGI_SANDBOX_API_KEY", "PRODIGI_API_KEY"] as const) {
     if (saved[key] === undefined) delete process.env[key];
     else process.env[key] = saved[key];
@@ -610,7 +597,7 @@ test("a physical refund uses the real cancel when none is injected", async () =>
 test("a physical order with no Prodigi id is revoked without a cancel", async () => {
   // paid-unfulfilled physical orders carry no prodigiOrderId. There is nothing
   // to cancel, and inventing a call would be a request to a URL we made up.
-  const kv = memoryKv({
+  const store = memoryKv({
     [SESSION]: digitalPaidRecord({
       format: "giclee",
       size: "30x40",
@@ -638,7 +625,7 @@ test("a physical order with no Prodigi id is revoked without a cancel", async ()
     throw new Error("there is no order id to cancel");
   };
   const result = await revokeOrderByPaymentIntent({
-    kv,
+    store,
     status: "disputed",
     paymentIntent: INTENT,
     now: NOW,
@@ -647,5 +634,50 @@ test("a physical order with no Prodigi id is revoked without a cancel", async ()
   });
   assert.equal(result.httpStatus, 200);
   assert.equal(result.body.prodigiCancelled, null);
-  assert.equal(parseOrderRecord(kv.store.get(SESSION)!)?.status, "disputed");
+  assert.equal(parseOrderRecord((await store.getOrder(SESSION))!)?.status, "disputed");
+});
+
+test("a refund that loses the claim answers duplicate and cancels nothing", async () => {
+  // The optimistic lock is the whole reason two concurrent refunds cannot
+  // both cancel a Prodigi order: the loser must stop before the cancel, not
+  // after it.
+  const base = memoryKv({
+    [SESSION]: digitalPaidRecord({
+      format: "giclee",
+      size: "30x40",
+      masterKey: null,
+      recipient: {
+        name: "Test Buyer",
+        line1: "1 Harbor St",
+        line2: "",
+        city: "Nessebar",
+        state: "",
+        postcode: "8230",
+        countryCode: "BG",
+        email: null,
+        phone: null,
+      },
+      prodigiOrderId: "ord_racer",
+      prodigiStage: "created",
+      assetUrl: "https://nessebarlens.com/api/print-asset?photo=dawn&sig=x",
+    }),
+  });
+  const store = { ...base, async transitionOrder() { return false; } };
+  const calls: string[] = [];
+  const cancel: CancelProdigiOrder = async ({ prodigiOrderId }) => {
+    calls.push(prodigiOrderId);
+    return { ok: true, status: 200 };
+  };
+  const result = await revokeOrderByPaymentIntent({
+    store,
+    status: "refunded",
+    paymentIntent: INTENT,
+    now: NOW,
+    stripe: lookup(),
+    cancel,
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.equal(result.body.duplicate, true);
+  assert.equal(result.body.sessionId, SESSION);
+  assert.deepEqual(calls, [], "a lost claim must not cancel a second time");
 });

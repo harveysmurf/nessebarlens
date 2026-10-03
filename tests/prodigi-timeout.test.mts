@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
+import { memoryOrdersStore } from "./fake-orders-store.mts";
 
 import {
   isProdigiTimeout,
@@ -230,13 +231,7 @@ test("a timeout on the order path is stored non-terminal and answered 5xx", asyn
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   process.env.PRINT_ASSET_HMAC_SECRET = "prodigi-timeout-hmac-secret-32ch!";
   globalThis.fetch = hangingFetch();
-  const store = new Map<string, string>();
-  const kv = {
-    get: async (key: string) => store.get(key) ?? null,
-    put: async (key: string, value: string) => {
-      store.set(key, value);
-    },
-  };
+  const store = memoryOrdersStore();
   try {
     const result = await fulfillCheckoutSession({
       sessionId: "cs_test_abcdefgh",
@@ -267,12 +262,14 @@ test("a timeout on the order path is stored non-terminal and answered 5xx", asyn
       customerPhone: null,
       prodigiKeyConfigured: true,
       now: "2026-01-01T00:00:00.000Z",
-      kv,
+      store,
     });
     // 5xx so Stripe redelivers; the record has to survive the round trip
     // through parseOrderRecord, or the retry has nothing to pick up.
     assert.equal(result.httpStatus, 500);
-    const stored = parseOrderRecord(store.get("cs_test_abcdefgh")!);
+    const stored = parseOrderRecord(
+      (await store.getOrder("cs_test_abcdefgh"))!,
+    );
     assert.notEqual(stored, null, "the stored record must be readable");
     assert.equal(stored!.reason, "prodigi-timeout");
     assert.equal(stored!.terminal, false, "a redelivery must still be allowed");

@@ -302,7 +302,7 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   // Same fail-closed idea for the credential, and it has to be a *return*:
   // prodigiApiKey/prodigiOrdersUrl throw when PRODIGI_API_BASE is unset or is
   // not an allowed host, and a throw here escapes fulfillCheckoutSession to
-  // the route's catch-all — which answers 500 "orders-kv-unavailable", a
+  // the route's catch-all — which answers 500 "orders-store-unavailable", a
   // diagnosis that points at the KV binding instead of the missing key, and
   // writes no record at all, so the paid order is invisible.
   let ordersUrl: string;

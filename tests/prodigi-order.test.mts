@@ -535,7 +535,7 @@ test("an unconfigured Prodigi key is a retryable failure, not a crash", async ()
   // first and the key path was never exercised.
   //
   // A throw here used to escape createProdigiOrder entirely and land in the
-  // route's catch-all as "orders-kv-unavailable" — a diagnosis pointing at the
+  // route's catch-all as "orders-store-unavailable" — a diagnosis pointing at the
   // KV binding rather than the missing key, with no record written at all.
   const saved = process.env.PRODIGI_SANDBOX_API_KEY;
   await withProdigiEnv(async () => {

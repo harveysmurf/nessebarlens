@@ -11,7 +11,7 @@ A minimalist photography storefront for the Old Town of Nessebar. Three gallerie
 (Fine Art, Archive, Film). Visitors configure a photo — size, frame, paper — see a
 live price, and buy: payment is a Stripe Checkout Session, and a print is
 fulfilled by Prodigi with a digitally-delivered file as the alternative. Fulfillment
-is driven by the Stripe webhook, which records the order in KV.
+is driven by the Stripe webhook, which records the order in D1.
 
 Stack:
 
@@ -20,8 +20,9 @@ Stack:
 - **Tailwind CSS 4** for styling. **Inter** (sans) + **Cormorant Garamond**
   (serif) are vendored locally in `src/fonts/` — builds are offline.
 - **TypeScript 5**, **ESLint 9** (next/core-web-vitals), **node:test** for tests.
-- Bindings: KV `ORDERS`, R2 `WEB` (public derivatives), R2 `MASTERS` (private
-  masters). Stripe for payments.
+- Bindings: D1 `ORDERS_DB` (orders + download tokens), R2 `WEB` (public
+  derivatives), R2 `MASTERS` (private masters). Stripe for payments. The KV
+  `ORDERS` binding remains in `wrangler.toml` for the one-shot migration only.
 
 ---
 
@@ -340,15 +341,72 @@ a host serving a reverted build is a support incident, not a deploy.
 - Do **not** set `pages_build_output_dir` — that makes Wrangler treat the config as
   a Pages config where `ASSETS` is reserved.
 - R2 S3 access keys are unused; Workers use bucket bindings only (`WEB`,
-  `MASTERS`). ORDERS KV + WEB/MASTERS R2 are attached on the Worker.
+  `MASTERS`). `ORDERS_DB` D1 + WEB/MASTERS R2 are attached on the Worker.
+- The KV `ORDERS` binding stays in `wrangler.toml` for the one-shot
+  `npm run migrate:orders` only — the application no longer reads it. Do not
+  delete the namespace before the migration has run, or the source data is gone.
+- `[[d1_databases]]` binding `ORDERS_DB`, database `nessebar-lens-orders`,
+  `migrations_dir = "migrations"`. The `database_id` is committed; the database
+  exists and `migrations/` is applied. Re-create only if the account is reset —
+  see the D1 subsection below.
+- Do **not** add `[triggers] crons`. OpenNext's generated
+  `.open-next/worker.js` exports only `default { fetch }` plus the DO classes,
+  so a cron trigger would be silently ignored. The reconciler is a Next route
+  invoked by GitHub Actions (`.github/workflows/reconcile.yml`).
 - The `preview_id` on the ORDERS KV binding is a **KV namespace** preview id
-  (`wrangler dev`), not a Pages preview-deployment concept. It stays: `wrangler
-  dev` uses it to avoid writing to the live namespace.
-- Runtime secrets (Stripe/Prodigi) live as **Worker secrets**, scoped per version.
+  (`wrangler dev`), not a Pages preview-deployment concept. It stays while the
+  KV namespace exists for migration.
+- Runtime secrets (Stripe/Prodigi/RECONCILE_SECRET) live as **Worker secrets**, scoped per version.
   Sync with `scripts/sync-worker-secrets.sh`; rotate with `wrangler secret put`.
   `NEXT_PUBLIC_*` bake at build from GitHub Environment secrets and are
   deliberately not in the secret map — a `NEXT_PUBLIC_*` entry there would be a
   value that looks live and never changes.
+
+### D1 orders database
+
+Already created and applied — these are only for a fresh account:
+
+```bash
+npx wrangler d1 create nessebar-lens-orders
+# paste the id into wrangler.toml [[d1_databases]].database_id
+npx wrangler d1 migrations apply nessebar-lens-orders --local
+npx wrangler d1 migrations apply nessebar-lens-orders --remote
+```
+
+The deployed database holds only the schema (`orders`, `download_tokens`) and no
+rows: `migrations/` was applied before any order existed. `npm run migrate:orders`
+is what moves real orders out of KV, and until it has run the site has no order
+history in D1 — the reconciler therefore finds nothing to recover and is a no-op.
+
+One-shot KV → D1 migration (keep the KV binding until this has succeeded):
+
+```bash
+npm run migrate:orders            # INSERT … ON CONFLICT DO NOTHING
+npm run migrate:orders -- --overwrite
+```
+
+Operator view (CLI, not an admin route — this Worker serves customers):
+
+```bash
+npm run orders -- --status paid-unfulfilled --limit 50
+```
+
+### Reconciler
+
+`POST /api/internal/reconcile`, guarded by `x-reconcile-secret` /
+`RECONCILE_SECRET`. Triggered every 15 minutes by
+`.github/workflows/reconcile.yml`, and on demand via `workflow_dispatch`
+(force a run after rotating a Prodigi key). It retries paid-unfulfilled
+non-terminal orders through the same `fulfillCheckoutSession` the webhook
+uses, recovers paid Stripe sessions with no stored order, and logs
+`order.stuck` for #100.
+
+GitHub Actions scheduled workflows are best-effort AND auto-disable after
+60 days of repository inactivity, so for a print site that can sit quiet in
+maintenance mode "the reconciler silently stopped" is a real latent risk.
+The failure mode is a later run, not lost money, so this is acceptable now.
+The upgrade path is a separate Cloudflare-Cron worker, or a trigger-shim
+worker that only calls the route.
 
 ---
 
@@ -562,7 +620,7 @@ Three invariants: (1) `sku` and `unitCostEur` never enter the cached
   `src/lib/order-decision.ts` (pure: what a session means, what a stored record
   says, whether a customer may download) and the effects in
   `src/lib/fulfillment.ts`, which writes the
-  order to KV `ORDERS`. A *retryable* failure (Prodigi 401/403/429/5xx, an
+  order to D1 `ORDERS_DB`. A *retryable* failure (Prodigi 401/403/429/5xx, an
   unconfigured key or asset secret) is written `terminal: false` and the webhook
   answers 5xx so Stripe redelivers for ~3 days; a terminal one answers 200. The
   record's `reason` says which, so an operator can tell "rotate the key" from
@@ -572,12 +630,11 @@ Three invariants: (1) `sku` and `unitCostEur` never enter the cached
   `storeOrder`, the only ORDERS write in the order path, which emits one
   structured `console.error` whenever the stored record is `paid-unfulfilled`:
   `{"event":"order.unfulfilled","sessionId","reason","terminal","format"}`, plus
-  `"detail"` carrying the upstream message on a retryable Prodigi failure. KV has
-  no operator view, so that line is the only trace of an order we took money for
-  and did not ship. Find them with `wrangler tail` on the production worker, or
-  in Cloudflare **Workers Logs** filtered on `order.unfulfilled`; locally, run
-  `npm test` and read stderr. `AWAITING_PRODIGI_REASON` is excluded — it is an
-  internal marker rewritten by the same call, not an outcome.
+  `"detail"` carrying the upstream message on a retryable Prodigi failure.
+  Find them with `wrangler tail` on the production worker, or in Cloudflare
+  **Workers Logs** filtered on `order.unfulfilled`; locally, run `npm test` and
+  read stderr. `AWAITING_PRODIGI_REASON` is excluded — it is an internal marker
+  rewritten by the same call, not an outcome. Operator view: `npm run orders`.
 - **One payment, one Prodigi order.** `idempotencyKey` is the Stripe session id, so
   a redelivery that re-attempts gets Prodigi's `alreadyExists` with the original
   order rather than a second print.

@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { isCheckoutSessionId, orderViewState } from "@/lib/order-decision";
 import { readOrderRecord } from "@/lib/order-corrupt";
 import {
-  ORDERS_KV_UNAVAILABLE_ERROR,
-  ORDERS_KV_UNAVAILABLE_STATUS,
-} from "@/lib/orders-kv";
+  ORDERS_STORE_UNAVAILABLE_ERROR,
+  ORDERS_STORE_UNAVAILABLE_STATUS,
+} from "@/lib/orders-store";
 import { NO_STORE_HEADERS } from "@/lib/private-headers";
 import { readWorkerBindings } from "@/lib/worker-bindings";
 
@@ -34,20 +34,20 @@ export async function GET(request: Request) {
   }
 
   const bindings = await readWorkerBindings();
-  if (!bindings.ORDERS) {
+  if (!bindings.ORDERS_DB) {
     return NextResponse.json(
-      { error: ORDERS_KV_UNAVAILABLE_ERROR },
-      { status: ORDERS_KV_UNAVAILABLE_STATUS, headers: NO_STORE_HEADERS },
+      { error: ORDERS_STORE_UNAVAILABLE_ERROR },
+      { status: ORDERS_STORE_UNAVAILABLE_STATUS, headers: NO_STORE_HEADERS },
     );
   }
 
   let raw: string | null;
   try {
-    raw = await bindings.ORDERS.get(sessionId);
+    raw = await bindings.ORDERS_DB.getOrder(sessionId);
   } catch {
     return NextResponse.json(
-      { error: ORDERS_KV_UNAVAILABLE_ERROR },
-      { status: ORDERS_KV_UNAVAILABLE_STATUS, headers: NO_STORE_HEADERS },
+      { error: ORDERS_STORE_UNAVAILABLE_ERROR },
+      { status: ORDERS_STORE_UNAVAILABLE_STATUS, headers: NO_STORE_HEADERS },
     );
   }
 

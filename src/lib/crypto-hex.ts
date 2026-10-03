@@ -43,3 +43,19 @@ export function timingSafeEqualHex(expected: string, actual: string): boolean {
   }
   return mismatch === 0;
 }
+
+/**
+ * Constant-time string compare for non-hex secrets (reconcile shared secret).
+ *
+ * Length is still compared first — a mismatch returns false immediately, which
+ * leaks length the same way `timingSafeEqualHex` does. The bytes that are
+ * compared run in fixed time for equal-length inputs.
+ */
+export function timingSafeEqualString(expected: string, actual: string): boolean {
+  if (expected.length !== actual.length) return false;
+  let mismatch = 0;
+  for (let i = 0; i < expected.length; i++) {
+    mismatch |= expected.charCodeAt(i) ^ actual.charCodeAt(i);
+  }
+  return mismatch === 0;
+}
