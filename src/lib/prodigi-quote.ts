@@ -6,13 +6,16 @@ import {
   type PrintSize,
 } from "./pricing";
 import {
+  classifyProdigiStatus,
   detailSuffix,
   isProdigiTimeout,
   PRODIGI_QUOTE_TIMEOUT_MS,
   PRODIGI_SHIPPING_METHOD,
   prodigiTimeoutSignal,
+  prodigiUrl,
+  type ProdigiResult,
 } from "./prodigi-config";
-import { prodigiApiKey, prodigiQuotesUrl } from "./config";
+import { prodigiConfig } from "./config";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
 
 export type PhysicalQuote = {
@@ -22,13 +25,6 @@ export type PhysicalQuote = {
   merchandiseEur: number;
 };
 
-/**
- * Prodigi's own message from a failed response, appended to ours.
- *
- * The reader itself lives in prodigi-config so the order path (#135) reports the
- * upstream reason the same way from the same code, rather than the two drifting.
- */
-
 type ProdigiQuoteResponse = {
   quotes?: Array<{
     items?: Array<{ unitCost?: { amount?: string } }>;
@@ -36,50 +32,46 @@ type ProdigiQuoteResponse = {
   }>;
 };
 
-// The shared grammar caps the integer part at six digits, which the local copy
-// of this check did not. A quote that large is not a real quote, and rejecting
-// it here is the same answer the stored-record path already gave.
-function requiredEurAmount(raw: string | undefined, label: string): number {
-  const amount = parseEurAmount(raw);
-  if (amount === null) {
-    throw new Error(`Prodigi quote missing ${label}`);
-  }
-  return amount;
-}
-
 export async function quotePhysical(opts: {
   format: PhysicalFormat;
   size: PrintSize;
   frame?: FrameFinish | null;
   destinationCountryCode?: string;
-}): Promise<PhysicalQuote> {
+}): Promise<ProdigiResult<PhysicalQuote>> {
   const entry = resolveSku(opts.format, opts.size, opts.frame ?? null);
   const destinationCountryCode =
     opts.destinationCountryCode?.trim() || DEFAULT_SHIPPING_COUNTRY;
 
   // The host and the key are read before the request for the same reason
-  // createProdigiOrder does it: prodigiQuotesUrl/prodigiApiKey throw when
-  // PRODIGI_API_BASE is unset or not allowlisted, and a throw inside the
-  // fetch() argument list skips the try below entirely. The message still
-  // reaches isProdigiUnconfigured, so the route answers 503 for a config
-  // problem and 502 for Prodigi being unhealthy.
-  const quotesUrl = prodigiQuotesUrl();
-  const apiKey = prodigiApiKey();
+  // createProdigiOrder does it: a configuration read that fails must become a
+  // returned failure, not a throw that escapes the fetch. `prodigiConfig`
+  // returns a tagged result, so an unconfigured deployment is a distinct kind
+  // the route maps to 503 rather than a message it has to match.
+  const config = prodigiConfig();
+  if (!config.ok) {
+    return {
+      ok: false,
+      kind: "unconfigured",
+      reason: "prodigi-unconfigured",
+      message: config.message,
+      status: null,
+    };
+  }
 
   // Bounded, so a hung Prodigi answers the customer's spinner with an error
   // instead of an open request (#104). The message says it timed out rather
-  // than naming the deadline, because prodigiErrorStatus reads this string and
-  // the timeout is upstream slowness -- a 502 that sends an operator to Prodigi's
-  // status page is the right destination here.
+  // than naming the deadline: a timeout is upstream slowness, and the 502 that
+  // prodigiFailureFrom derives from it sends an operator to Prodigi's status
+  // page, which is the right destination here.
   const signal = prodigiTimeoutSignal(PRODIGI_QUOTE_TIMEOUT_MS);
 
   let res: Response;
   try {
-    res = await fetch(quotesUrl, {
+    res = await fetch(prodigiUrl(config.base, "v4.0/quotes"), {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "X-API-Key": apiKey,
+        "X-API-Key": config.key,
       },
       signal,
       body: JSON.stringify({
@@ -97,13 +89,25 @@ export async function quotePhysical(opts: {
       }),
     });
   } catch (e) {
-    // The timeout is re-thrown with its own wording rather than left as the
-    // platform's. Both reach the route's catch and become a 502 either way, but
+    // A timeout and any other network failure both return rather than throw.
     // "Prodigi quote timed out" tells an operator to look at Prodigi's latency
     // while "fetch failed" tells them nothing about which deadline was hit.
-    throw isProdigiTimeout(e, signal)
-      ? new Error("Prodigi quote timed out")
-      : e;
+    if (isProdigiTimeout(e, signal)) {
+      return {
+        ok: false,
+        kind: "timeout",
+        reason: "prodigi-timeout",
+        message: "Prodigi quote timed out",
+        status: null,
+      };
+    }
+    return {
+      ok: false,
+      kind: "server",
+      reason: "prodigi-unavailable",
+      message: e instanceof Error ? e.message : "network-error",
+      status: null,
+    };
   }
 
   // The body is read once, before the status is judged, because a Prodigi error
@@ -115,34 +119,71 @@ export async function quotePhysical(opts: {
   const raw = await res.text();
 
   if (!res.ok) {
-    throw new Error(`Prodigi quote HTTP ${res.status}${detailSuffix(raw)}`);
+    const { kind, reason } = classifyProdigiStatus(res.status);
+    return {
+      ok: false,
+      kind,
+      reason,
+      message: `Prodigi quote HTTP ${res.status}${detailSuffix(raw)}`,
+      status: res.status,
+    };
   }
 
   let data: ProdigiQuoteResponse;
   try {
     data = JSON.parse(raw) as ProdigiQuoteResponse;
   } catch {
-    throw new Error("Prodigi quote returned invalid JSON");
+    return {
+      ok: false,
+      kind: "server",
+      reason: "prodigi-unavailable",
+      message: "Prodigi quote returned invalid JSON",
+      status: res.status,
+    };
   }
 
   const quote = data.quotes?.[0];
   if (!quote) {
-    throw new Error("Prodigi quote missing quotes[0]");
+    return {
+      ok: false,
+      kind: "server",
+      reason: "prodigi-unavailable",
+      message: "Prodigi quote missing quotes[0]",
+      status: res.status,
+    };
   }
 
-  const unitCostEur = requiredEurAmount(
-    quote.items?.[0]?.unitCost?.amount,
-    "unitCost",
-  );
-  const shippingEur = requiredEurAmount(
-    quote.costSummary?.shipping?.amount,
-    "shipping",
-  );
+  // The shared amount grammar caps the integer part at six digits, so a quote
+  // that large reads as missing — the same label as a field Prodigi did not
+  // send, because both mean "this quote cannot be priced".
+  const unitCostEur = parseEurAmount(quote.items?.[0]?.unitCost?.amount);
+  if (unitCostEur === null) {
+    return {
+      ok: false,
+      kind: "server",
+      reason: "prodigi-unavailable",
+      message: "Prodigi quote missing unitCost",
+      status: res.status,
+    };
+  }
+  const shippingEur = parseEurAmount(quote.costSummary?.shipping?.amount);
+  if (shippingEur === null) {
+    return {
+      ok: false,
+      kind: "server",
+      reason: "prodigi-unavailable",
+      message: "Prodigi quote missing shipping",
+      status: res.status,
+    };
+  }
 
   return {
-    sku: entry.sku,
-    unitCostEur,
-    shippingEur,
-    merchandiseEur: merchandiseFromUnitCost(unitCostEur),
+    ok: true,
+    value: {
+      sku: entry.sku,
+      unitCostEur,
+      shippingEur,
+      merchandiseEur: merchandiseFromUnitCost(unitCostEur),
+    },
   };
 }

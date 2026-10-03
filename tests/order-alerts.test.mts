@@ -238,9 +238,11 @@ test("a fulfilled order logs nothing", async () => {
       }),
       createOrder: async () => ({
         ok: true,
-        orderId: "ord_1",
-        stage: "InProgress",
-        assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+        value: {
+          orderId: "ord_1",
+          stage: "InProgress",
+          assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+        },
       }),
     });
     assert.equal(result.body.status, "paid");
@@ -273,6 +275,7 @@ test("the internal awaiting-prodigi marker is not an alert", () => {
     terminal: true,
     status: "paid-unfulfilled",
     photoSlug: "dawn",
+    kind: "physical",
     format: "giclee",
     size: "30x40",
     frame: "",

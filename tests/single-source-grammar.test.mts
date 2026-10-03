@@ -755,8 +755,9 @@ test("the pure half is importable with no bindings, KV or Prodigi available", as
   // The acceptance criterion for #148 that only a run can prove: order-decision
   // imports cleanly in a process that has no Cloudflare context, no ORDERS KV
   // and no Prodigi key. `getCloudflareContext` throws on a missing context and
-  // `prodigiApiKey` throws on a missing key, so if the pure half reached either
-  // at module scope this import rejects rather than returning a module.
+  // `readProdigiConfig` reports an unconfigured result on a missing key, so if
+  // the pure half reached either at module scope this import rejects rather
+  // than returning a module.
   const previous = { ...process.env };
   try {
     for (const key of [
@@ -785,6 +786,7 @@ test("the pure half is importable with no bindings, KV or Prodigi available", as
           terminal: true,
           status: "paid",
           photoSlug: "dawn",
+          kind: "physical",
           format: "giclee",
           size: "",
           frame: "",

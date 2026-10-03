@@ -19,9 +19,9 @@
 
 import {
   createProdigiOrder,
-  isRetryableProdigiReason,
   type CreateProdigiOrder,
 } from "./prodigi-order";
+import { isRetryableProdigiReason } from "./prodigi-config";
 import {
   AWAITING_PRODIGI_REASON,
   decideFulfillment,
@@ -36,8 +36,8 @@ import {
   ensureDownloadToken,
   type DownloadTokenLimits,
 } from "./download-token";
-import type { FrameFinish, PrintSize } from "./pricing";
-import type { PhysicalFormat } from "./sku-map";
+import type { FrameFinish } from "./pricing";
+import { isFrameFinishValue, isPrintSize } from "./sku-map";
 import type { OrdersStore } from "./orders-store";
 
 function reportUnfulfilled(record: OrderRecord, detail?: string): void {
@@ -96,7 +96,7 @@ async function issueTokenIfDigital(
   store: OrdersStore,
   limits?: DownloadTokenLimits,
 ): Promise<void> {
-  if (record.format !== "digital" || record.status !== "paid") return;
+  if (record.kind !== "digital" || record.status !== "paid") return;
   const minted = await ensureDownloadToken({
     store,
     sessionId: record.sessionId,
@@ -210,81 +210,115 @@ export async function fulfillCheckoutSession(
       isRetryableProdigiReason(record.reason))
   ) {
     const create = input.createOrder ?? createProdigiOrder;
-    const format = record.format as PhysicalFormat;
-    const size = record.size as PrintSize;
-    const frame = record.frame === "" ? null : (record.frame as FrameFinish);
-    const recipient = record.recipient!;
-    const result = await create({
-      sessionId: record.sessionId,
-      photoSlug: record.photoSlug,
-      format,
-      size,
-      frame,
-      recipient,
-    });
 
-    if (!result.ok && result.kind === "server") {
-      // We hold paid money and cannot fulfil it. No auto-refund (Simo's call:
-      // refunds are hard to reverse and a config failure wants eyes), so: write
-      // the order with its specific reason, log loudly for a human, and answer
-      // 5xx so Stripe keeps redelivering for ~3 days — long enough to fix the
-      // key or the HMAC secret and still land the order.
+    if (
+      record.kind !== "physical" ||
+      !isPrintSize(record.size) ||
+      record.recipient === null ||
+      (record.frame !== "" && !isFrameFinishValue(record.frame))
+    ) {
+      // A record in the retryable state that is not a complete physical order
+      // cannot be a normal write: buildRecord only writes awaiting-prodigi and
+      // the retryable reasons after the size/frame/recipient checks pass, so a
+      // tampered or legacy record can name one of those reasons without the
+      // physical shape. Park it as a terminal bad-metadata order — the same
+      // reason buildRecord uses for metadata that names nothing we can fulfill —
+      // so it is answered 200 and never retried into a Prodigi call that would
+      // send it garbage.
       record = {
         ...record,
-        // Same derivation as the client branch below, so the two can never
-        // disagree about what a stored reason means.
-        terminal: !isRetryableProdigiReason(result.reason),
-        reason: result.reason,
-        prodigiOrderId: null,
-        prodigiStage: null,
-        assetUrl: null,
-      };
-      if (fromAttempts !== null) {
-        await storeTransition(input.store, fromAttempts, record, result.message);
-      } else {
-        await storeNewOrder(input.store, record, result.message);
-      }
-      return {
-        httpStatus: 500,
-        body: { error: result.reason, message: result.message },
-      };
-    }
-
-    if (!result.ok) {
-      record = {
-        ...record,
-        // Keep the specific cause. A single "prodigi-error" for an auth
-        // failure, a rate limit and a malformed body makes the stored record
-        // useless for telling "rotate the key" from "back off" from "we sent
-        // something Prodigi does not accept".
-        //
-        // And derive `terminal` from that reason rather than inheriting it: on
-        // a first attempt the shell happens to say terminal:true, but a
-        // redelivery of a retryable failure spreads a record that says false,
-        // so inheriting left a non-retryable validation error stored as
-        // "still retryable" — the invariant "terminal ⇔ no further automatic
-        // action" broken, and a reconciler or operator view (#116) that trusts
-        // `terminal` would misreport the order. One function, so a reason
-        // added to the retryable set cannot be stored with the wrong flag.
-        terminal: !isRetryableProdigiReason(result.reason),
-        reason: result.reason,
+        terminal: true,
+        reason: "bad-metadata",
         prodigiOrderId: null,
         prodigiStage: null,
         assetUrl: null,
       };
     } else {
-      record = {
-        ...record,
-        // The retry landed, so this session is finished: from here on a
-        // redelivery is a plain duplicate.
-        terminal: true,
-        status: "paid",
-        reason: null,
-        masterKey: null,
-        prodigiOrderId: result.orderId,
-        prodigiStage: result.stage,
-        assetUrl: result.assetUrl,
-      };
+      // `record` is a physical order with a valid size and recipient; its frame
+      // is "" or a known finish, so it maps to FrameFinish | null without a cast.
+      const frame: FrameFinish | null =
+        record.frame === ""
+          ? null
+          : isFrameFinishValue(record.frame)
+            ? record.frame
+            : null;
+      const result = await create({
+        sessionId: record.sessionId,
+        photoSlug: record.photoSlug,
+        format: record.format,
+        size: record.size,
+        frame,
+        recipient: record.recipient,
+      });
+
+      if (
+        !result.ok &&
+        (result.kind === "server" ||
+          result.kind === "timeout" ||
+          result.kind === "unconfigured")
+      ) {
+        // We hold paid money and cannot fulfil it. No auto-refund (Simo's call:
+        // refunds are hard to reverse and a config failure wants eyes), so: write
+        // the order with its specific reason, log loudly for a human, and answer
+        // 5xx so Stripe keeps redelivering for ~3 days — long enough to fix the
+        // key or the HMAC secret and still land the order.
+        record = {
+          ...record,
+          // Same derivation as the client branch below, so the two can never
+          // disagree about what a stored reason means.
+          terminal: !isRetryableProdigiReason(result.reason),
+          reason: result.reason,
+          prodigiOrderId: null,
+          prodigiStage: null,
+          assetUrl: null,
+        };
+        if (fromAttempts !== null) {
+          await storeTransition(input.store, fromAttempts, record, result.message);
+        } else {
+          await storeNewOrder(input.store, record, result.message);
+        }
+        return {
+          httpStatus: 500,
+          body: { error: result.reason, message: result.message },
+        };
+      }
+
+      if (!result.ok) {
+        record = {
+          ...record,
+          // Keep the specific cause. A single "prodigi-error" for an auth
+          // failure, a rate limit and a malformed body makes the stored record
+          // useless for telling "rotate the key" from "back off" from "we sent
+          // something Prodigi does not accept".
+          //
+          // And derive `terminal` from that reason rather than inheriting it: on
+          // a first attempt the shell happens to say terminal:true, but a
+          // redelivery of a retryable failure spreads a record that says false,
+          // so inheriting left a non-retryable validation error stored as
+          // "still retryable" — the invariant "terminal ⇔ no further automatic
+          // action" broken, and a reconciler or operator view (#116) that trusts
+          // `terminal` would misreport the order. One function, so a reason
+          // added to the retryable set cannot be stored with the wrong flag.
+          terminal: !isRetryableProdigiReason(result.reason),
+          reason: result.reason,
+          prodigiOrderId: null,
+          prodigiStage: null,
+          assetUrl: null,
+        };
+      } else {
+        record = {
+          ...record,
+          // The retry landed, so this session is finished: from here on a
+          // redelivery is a plain duplicate.
+          terminal: true,
+          status: "paid",
+          reason: null,
+          masterKey: null,
+          prodigiOrderId: result.value.orderId,
+          prodigiStage: result.value.stage,
+          assetUrl: result.value.assetUrl,
+        };
+      }
     }
   }
 

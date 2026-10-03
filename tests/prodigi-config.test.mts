@@ -6,27 +6,20 @@ import test from "node:test";
 import {
   PRODIGI_LIVE_API_BASE,
   PRODIGI_SANDBOX_API_BASE,
-  isProdigiUnconfigured,
-  prodigiApiBase,
-  prodigiApiKey,
-  prodigiErrorStatus,
-  prodigiFailure,
+  classifyProdigiStatus,
+  isRetryableProdigiReason,
+  prodigiApiBaseIfAllowed,
+  prodigiFailureFrom,
   prodigiKeyConfigured,
+  prodigiUrl,
+  readProdigiConfig,
 } from "../src/lib/prodigi-config.ts";
 
-/**
- * Every message this module can actually produce, by calling the function
- * that throws it with the env that provokes it. Enumerating them by hand was
- * the thing that rotted: a fourth throw site could be added and nothing would
- * notice it was unclassified, so an unset secret would report itself as 502 —
- * "Prodigi is down" — when it means "this deploy is misconfigured".
- */
 /**
  * Every variable prodigi-config reads. Its readers layer the passed env over
  * process.env, so an env of `{}` means "unset" only if the ambient environment
  * does not have them. Without this a developer machine or a CI runner with
- * PRODIGI_API_KEY exported makes "unset" read as configured, and the test that
- * says every throw is classified stops exercising the throw at all.
+ * PRODIGI_API_KEY exported makes "unset" read as configured.
  */
 const PRODIGI_KEYS = [
   "PRODIGI_API_BASE",
@@ -50,225 +43,241 @@ function withCleanEnv<T>(body: () => T): T {
   }
 }
 
-function throwableMessages(): string[] {
-  return withCleanEnv(() => {
-  const messages: string[] = [];
-
-  for (const env of [
-    {}, // unset
-    { PRODIGI_API_BASE: "https://api.example.com" }, // not an allowed host
-    { PRODIGI_API_BASE: " " }, // blank
-    { PRODIGI_API_BASE: 42 }, // wrong type
-  ]) {
-    try {
-      prodigiApiBase(env);
-      assert.fail(`prodigiApiBase should throw for ${JSON.stringify(env)}`);
-    } catch (error) {
-      messages.push((error as Error).message);
-    }
-  }
-
-  for (const env of [
-    { PRODIGI_API_BASE: PRODIGI_SANDBOX_API_BASE },
-    { PRODIGI_API_BASE: PRODIGI_LIVE_API_BASE },
-  ]) {
-    try {
-      prodigiApiKey(env);
-      assert.fail(`prodigiApiKey should throw for ${JSON.stringify(env)}`);
-    } catch (error) {
-      messages.push((error as Error).message);
-    }
-  }
-
-  return messages;
-  });
-}
-
-test("every message this module can throw is classified as unconfigured", () => {
-  const messages = throwableMessages();
-  assert.equal(messages.length, 6, "the throw-site inventory changed");
-  for (const message of messages) {
-    assert.equal(
-      isProdigiUnconfigured(message),
-      true,
-      `unclassified: ${message}`,
+test("readProdigiConfig returns the matched base and key for both hosts", () =>
+  withCleanEnv(() => {
+    assert.deepEqual(
+      readProdigiConfig({
+        PRODIGI_API_BASE: PRODIGI_SANDBOX_API_BASE,
+        PRODIGI_SANDBOX_API_KEY: "sbx",
+      }),
+      { ok: true, base: PRODIGI_SANDBOX_API_BASE, key: "sbx" },
     );
-    assert.equal(prodigiErrorStatus(message), 503, `wrong status: ${message}`);
-  }
-});
+    assert.deepEqual(
+      readProdigiConfig({
+        PRODIGI_API_BASE: PRODIGI_LIVE_API_BASE,
+        PRODIGI_API_KEY: "live",
+      }),
+      { ok: true, base: PRODIGI_LIVE_API_BASE, key: "live" },
+    );
+  }));
 
-test("this module has no throw site the inventory test does not reach", () => {
-  // The enumeration above calls the two functions that throw. If a third
-  // function starts throwing, that message would be served as 502 and this is
-  // what says so -- an inventory that only covers the sites it knows about
-  // would otherwise quietly stop being complete.
-  const source = fs.readFileSync(
-    path.join(import.meta.dirname, "..", "src/lib/prodigi-config.ts"),
-    "utf8",
+test("readProdigiConfig reports the three unconfigured ways with one reason", () =>
+  withCleanEnv(() => {
+    const cases: Array<{ env: Record<string, unknown>; match: RegExp }> = [
+      { env: {}, match: /PRODIGI_API_BASE must be/ },
+      { env: { PRODIGI_API_BASE: "https://evil.example" }, match: /PRODIGI_API_BASE must be/ },
+      { env: { PRODIGI_API_BASE: " " }, match: /PRODIGI_API_BASE must be/ },
+      { env: { PRODIGI_API_BASE: 42 }, match: /PRODIGI_API_BASE must be/ },
+      {
+        env: { PRODIGI_API_BASE: PRODIGI_SANDBOX_API_BASE },
+        match: /PRODIGI_SANDBOX_API_KEY is not set/,
+      },
+      {
+        env: { PRODIGI_API_BASE: PRODIGI_SANDBOX_API_BASE, PRODIGI_SANDBOX_API_KEY: "" },
+        match: /PRODIGI_SANDBOX_API_KEY is not set/,
+      },
+      {
+        env: { PRODIGI_API_BASE: PRODIGI_LIVE_API_BASE },
+        match: /PRODIGI_API_KEY is not set/,
+      },
+    ];
+    for (const { env, match } of cases) {
+      const result = readProdigiConfig(env);
+      assert.equal(result.ok, false, JSON.stringify(env));
+      if (result.ok) continue;
+      assert.equal(result.kind, "unconfigured", JSON.stringify(env));
+      assert.equal(result.reason, "prodigi-unconfigured", JSON.stringify(env));
+      assert.equal(result.status, null, JSON.stringify(env));
+      assert.match(result.message, match);
+    }
+  }));
+
+test("a sandbox host with only the live key is not configured", () =>
+  withCleanEnv(() => {
+    assert.equal(
+      readProdigiConfig({
+        PRODIGI_API_BASE: PRODIGI_SANDBOX_API_BASE,
+        PRODIGI_API_KEY: "live",
+      }).ok,
+      false,
+    );
+  }));
+
+test("prodigiKeyConfigured and prodigiApiBaseIfAllowed share the one read", () =>
+  withCleanEnv(() => {
+    assert.equal(prodigiKeyConfigured({}), false);
+    assert.equal(
+      prodigiKeyConfigured({ PRODIGI_API_BASE: PRODIGI_SANDBOX_API_BASE }),
+      false,
+    );
+    assert.equal(
+      prodigiKeyConfigured({
+        PRODIGI_API_BASE: PRODIGI_SANDBOX_API_BASE,
+        PRODIGI_SANDBOX_API_KEY: "k",
+      }),
+      true,
+    );
+    assert.equal(prodigiApiBaseIfAllowed({}), undefined);
+    assert.equal(
+      prodigiApiBaseIfAllowed({ PRODIGI_API_BASE: "https://evil.example" }),
+      undefined,
+    );
+    assert.equal(
+      prodigiApiBaseIfAllowed({
+        PRODIGI_API_BASE: `${PRODIGI_SANDBOX_API_BASE}/`,
+      }),
+      PRODIGI_SANDBOX_API_BASE,
+    );
+  }));
+
+test("prodigiUrl builds an endpoint from the already-validated base", () => {
+  assert.equal(
+    prodigiUrl(PRODIGI_SANDBOX_API_BASE, "v4.0/quotes"),
+    `${PRODIGI_SANDBOX_API_BASE}/v4.0/quotes`,
   );
-  const throwers = new Set<string>();
-  for (const match of source.matchAll(
-    /export function (\w+)[\s\S]*?^}/gm,
-  )) {
-    if (match[0]!.includes("throw new Error")) throwers.add(match[1]!);
-  }
-  assert.deepEqual([...throwers].sort(), ["prodigiApiBase", "prodigiApiKey"]);
+  assert.equal(
+    prodigiUrl(PRODIGI_LIVE_API_BASE, "v4.0/orders"),
+    `${PRODIGI_LIVE_API_BASE}/v4.0/orders`,
+  );
 });
 
-test("a real Prodigi failure is 502, not our misconfiguration", () => {
-  for (const message of [
-    "Prodigi returned 500",
-    "The API key you provided is not set", // similar words, not our message
-    "PRODIGI_API_KEY is unset", // near miss
-    "PRODIGI_API_BASE must be something else entirely",
-    "",
+test("classifyProdigiStatus maps each status to its retry kind and reason", () => {
+  assert.deepEqual(classifyProdigiStatus(401), { kind: "server", reason: "prodigi-auth-error" });
+  assert.deepEqual(classifyProdigiStatus(403), { kind: "server", reason: "prodigi-auth-error" });
+  assert.deepEqual(classifyProdigiStatus(429), { kind: "server", reason: "prodigi-rate-limit" });
+  assert.deepEqual(classifyProdigiStatus(500), { kind: "server", reason: "prodigi-unavailable" });
+  assert.deepEqual(classifyProdigiStatus(503), { kind: "server", reason: "prodigi-unavailable" });
+  assert.deepEqual(classifyProdigiStatus(400), { kind: "client", reason: "prodigi-validation-error" });
+  assert.deepEqual(classifyProdigiStatus(422), { kind: "client", reason: "prodigi-validation-error" });
+});
+
+test("isRetryableProdigiReason names every retryable reason, and only those", () => {
+  for (const reason of [
+    "prodigi-auth-error",
+    "prodigi-rate-limit",
+    "prodigi-unavailable",
+    "prodigi-timeout",
+    "prodigi-asset-unconfigured",
+    "prodigi-unconfigured",
   ]) {
-    assert.equal(isProdigiUnconfigured(message), false, message);
-    assert.equal(prodigiErrorStatus(message), 502, message);
+    assert.equal(isRetryableProdigiReason(reason), true, reason);
+  }
+  assert.equal(isRetryableProdigiReason("prodigi-validation-error"), false);
+  assert.equal(isRetryableProdigiReason("prodigi-error"), false);
+  assert.equal(isRetryableProdigiReason(null), false);
+});
+
+test("prodigiFailureFrom maps kind to code and status in one place", () => {
+  const detail = "PRODIGI_SANDBOX_API_KEY is not set";
+  const unconfigured = prodigiFailureFrom({
+    ok: false,
+    kind: "unconfigured",
+    reason: "prodigi-unconfigured",
+    message: detail,
+    status: null,
+  });
+  assert.deepEqual(unconfigured, {
+    code: "prodigi-unconfigured",
+    error: "Pricing is temporarily unavailable, please try again.",
+    status: 503,
+    detail,
+  });
+
+  for (const kind of ["timeout", "client", "server"] as const) {
+    const failure = prodigiFailureFrom({
+      ok: false,
+      kind,
+      reason: "prodigi-unavailable",
+      message: "Prodigi quote HTTP 502",
+      status: 502,
+    });
+    assert.equal(failure.code, "prodigi-unavailable", kind);
+    assert.equal(failure.status, 502, kind);
+    assert.equal(failure.detail, "Prodigi quote HTTP 502", kind);
   }
 });
 
-test("prodigiErrorStatus is the one place the 503/502 split is decided", () => {
-  const source = fs.readFileSync(
-    path.join(import.meta.dirname, "..", "src/lib/prodigi-config.ts"),
-    "utf8",
-  );
+test("an upstream message that echoes a config string is still a 502, not a 503", () => {
+  // #118: classification no longer matches message text, so a Prodigi body that
+  // merely contains our config wording cannot be mistaken for our own
+  // misconfiguration. The kind is the only signal prodigiFailureFrom reads.
+  const failure = prodigiFailureFrom({
+    ok: false,
+    kind: "server",
+    reason: "prodigi-unavailable",
+    message: "Prodigi quote HTTP 400: PRODIGI_SANDBOX_API_KEY is not set",
+    status: 400,
+  });
+  assert.equal(failure.code, "prodigi-unavailable");
+  assert.equal(failure.status, 502);
+});
+
+test("prodigiFailureFrom never puts the internal detail in the customer fields (#107)", () => {
+  for (const message of [
+    "PRODIGI_API_KEY is not set",
+    "Prodigi quote HTTP 429",
+    "Prodigi order HTTP 500: {\"detail\":\"invalid key\"}",
+  ]) {
+    for (const kind of ["unconfigured", "timeout", "client", "server"] as const) {
+      const failure = prodigiFailureFrom({
+        ok: false,
+        kind,
+        reason: "prodigi-unavailable",
+        message,
+        status: kind === "unconfigured" ? null : 502,
+      });
+      assert.equal(failure.error.includes(failure.detail), false, message);
+      assert.equal(failure.code.includes(failure.detail), false, message);
+      assert.match(failure.error, /^Pricing is temporarily unavailable/);
+    }
+  }
+});
+
+test("no Prodigi module classifies a failure by matching its message text", () => {
+  // The classification moved onto the `kind` of a failed result, so nothing in
+  // the Prodigi modules may still compare a message string to a config message.
+  // The removed predicate and its status sibling must be gone, and the URL
+  // builder must exist in their place.
+  const root = path.join(import.meta.dirname, "..", "src", "lib");
+  for (const rel of ["prodigi-config.ts", "prodigi-quote.ts", "prodigi-order.ts"]) {
+    const src = fs.readFileSync(path.join(root, rel), "utf8");
+    assert.equal(
+      src.includes("isProdigiUnconfigured"),
+      false,
+      `${rel} still classifies by message text`,
+    );
+    assert.equal(
+      src.includes("prodigiErrorStatus"),
+      false,
+      `${rel} still maps a message string to a status`,
+    );
+  }
+  const config = fs.readFileSync(path.join(root, "prodigi-config.ts"), "utf8");
+  assert.match(config, /export function readProdigiConfig/);
+  assert.match(config, /export function prodigiFailureFrom/);
+});
+
+test("the two Prodigi routes take their status from prodigiFailureFrom", () => {
+  const root = path.join(import.meta.dirname, "..");
   for (const route of ["quote", "checkout"]) {
-    const routeSource = fs.readFileSync(
-      path.join(import.meta.dirname, "..", `src/app/api/${route}/route.ts`),
+    const src = fs.readFileSync(
+      path.join(root, `src/app/api/${route}/route.ts`),
       "utf8",
     );
-    // Asserted on the call name only, never on the argument spelling: a route
-    // that renames its catch binding must not break a guard about classification.
     assert.ok(
-      routeSource.includes("prodigiFailure("),
+      src.includes("prodigiFailureFrom("),
       `${route} must take its Prodigi status from prodigi-config`,
     );
+    // The routes no longer catch a thrown Prodigi call, so a re-derived
+    // message or a hand-rolled 503/502 split would be the old contract back.
+    assert.equal(/e instanceof Error \? e\.message :/.test(src), false, route);
     assert.equal(
-      /e instanceof Error \? e\.message :/.test(routeSource),
-      false,
-      `${route} re-derives the Prodigi error message`,
-    );
-    assert.equal(
-      /isProdigiUnconfigured\([^)]*\)\s*\?\s*503\s*:\s*502/.test(routeSource),
+      /prodigi-unconfigured\s*\?\s*503\s*:\s*502/.test(src),
       false,
       `${route} re-decides the 503/502 split`,
     );
-  }
-  assert.match(source, /export function prodigiErrorStatus/);
-});
-
-test("a configured key is reported as configured on both hosts", () => withCleanEnv(() => {
-  assert.equal(prodigiKeyConfigured({}), false);
-  assert.equal(
-    prodigiKeyConfigured({ PRODIGI_API_BASE: PRODIGI_SANDBOX_API_BASE }),
-    false,
-  );
-  assert.equal(
-    prodigiKeyConfigured({
-      PRODIGI_API_BASE: PRODIGI_SANDBOX_API_BASE,
-      PRODIGI_SANDBOX_API_KEY: "k",
-    }),
-    true,
-  );
-  // A live base with only the sandbox key is not configured — the key and the
-  // host have to be a matched pair, which is why the key name is chosen from
-  // the base rather than sniffed.
-  assert.equal(
-    prodigiKeyConfigured({
-      PRODIGI_API_BASE: PRODIGI_LIVE_API_BASE,
-      PRODIGI_SANDBOX_API_KEY: "k",
-    }),
-    false,
-  );
-  assert.equal(
-    prodigiKeyConfigured({
-      PRODIGI_API_BASE: PRODIGI_LIVE_API_BASE,
-      PRODIGI_API_KEY: "k",
-    }),
-    true,
-  );
-}));
-
-test("prodigiFailure unwraps the message and classifies it in one step", () => {
-  assert.deepEqual(
-    prodigiFailure(new Error("Prodigi is not set")),
-    {
-      code: "prodigi-unavailable",
-      error: "Pricing is temporarily unavailable, please try again.",
-      status: 502,
-      detail: "Prodigi is not set",
-    },
-  );
-  // A misconfigured deploy must keep reporting 503, not slip to 502 now that
-  // the message is unwrapped in a different place.
-  assert.deepEqual(
-    prodigiFailure(new Error("PRODIGI_API_KEY is not set")),
-    {
-      code: "prodigi-unconfigured",
-      error: "Pricing is temporarily unavailable, please try again.",
-      status: 503,
-      detail: "PRODIGI_API_KEY is not set",
-    },
-  );
-  assert.equal(
-    prodigiFailure(new Error("PRODIGI_SANDBOX_API_KEY is not set")).status,
-    503,
-  );
-});
-
-test("prodigiFailure falls back to the one message for a non-Error throw", () => {
-  assert.deepEqual(prodigiFailure("just a string"), {
-    code: "prodigi-unavailable",
-    error: "Pricing is temporarily unavailable, please try again.",
-    status: 502,
-    detail: "Quote failed",
-  });
-  assert.deepEqual(prodigiFailure(undefined), {
-    code: "prodigi-unavailable",
-    error: "Pricing is temporarily unavailable, please try again.",
-    status: 502,
-    detail: "Quote failed",
-  });
-});
-
-test("prodigiFailure's customer-facing fields never carry the detail (#107)", () => {
-  // The property under test is that whatever goes into a response body, the
-  // internal message does not. Enumerated rather than sampled so a new throw
-  // site is covered by the same assertion, and asserted per-field because a
-  // route that spreads the whole failure would pass a single combined check.
-  for (const thrown of [
-    new Error("PRODIGI_API_KEY is not set"),
-    new Error("PRODIGI_API_BASE must be https://api.sandbox.prodigi.com"),
-    new Error("Prodigi quote HTTP 429"),
-    new Error("Prodigi quotes HTTP 500: {\"detail\":\"invalid key\"}"),
-    "just a string",
-    undefined,
-  ]) {
-    const failure = prodigiFailure(thrown);
-    const detail = failure.detail;
-    assert.equal(failure.error.includes(detail), false, failure.error);
-    assert.equal(failure.code.includes(detail), false, failure.code);
-    assert.match(failure.error, /^Pricing is temporarily unavailable/);
-  }
-});
-
-test("a Prodigi route cannot serialize the failure detail (#107)", () => {
-  // The type is not the guarantee: a route writing `{ ...failure }` compiles
-  // and ships the detail. The body is asserted field-by-field instead.
-  for (const route of ["quote", "checkout"]) {
-    const source = fs.readFileSync(
-      path.join(import.meta.dirname, "..", `src/app/api/${route}/route.ts`),
-      "utf8",
-    );
-    assert.equal(
-      /\.\.\.failure\b/.test(source),
-      false,
-      `${route} spreads the whole Prodigi failure into its body`,
-    );
-    assert.ok(
-      source.includes("failure.detail"),
-      `${route} must log the internal Prodigi detail`,
-    );
+    // The internal detail must reach the log and only the log (#107).
+    assert.ok(src.includes("failure.detail"), `${route} must log the detail`);
+    assert.equal(/\.\.\.failure\b/.test(src), false, `${route} spreads the failure`);
   }
 });

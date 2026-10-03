@@ -18,7 +18,8 @@
  * be corrected later by anyone.
  */
 
-import { prodigiApiKey, prodigiOrdersUrl } from "./config";
+import { prodigiUrl } from "./prodigi-config";
+import { prodigiConfig } from "./config";
 
 /** A thrown value that is not an Error still has to name the failure. */
 function errorMessage(e: unknown, fallback: string): string {
@@ -46,21 +47,19 @@ export function isSafeProdigiOrderId(value: unknown): value is string {
 }
 
 /**
- * The order's own cancel endpoint.
+ * The order's own cancel endpoint, built from an already-validated base.
  *
- * `env` is optional and forwards undefined rather than defaulting to
- * process.env here: prodigiOrdersUrl() already owns that default, and it is in
- * config.ts, which is where the AST guard expects the one read. A default in
- * this signature would be a second, invisible way to reach the environment.
+ * `base` is the host readProdigiConfig returned (trailing slash stripped), so
+ * this never re-reads the environment and never throws on an unconfigured
+ * deployment — the caller has already failed closed on the read before reaching
+ * here. The one thing it still refuses is an order id that could escape its
+ * path segment.
  */
-export function prodigiCancelUrl(
-  prodigiOrderId: string,
-  env?: Record<string, unknown>,
-): string {
+export function prodigiCancelUrl(prodigiOrderId: string, base: string): string {
   if (!isSafeProdigiOrderId(prodigiOrderId)) {
     throw new Error("unsafe Prodigi order id");
   }
-  return `${prodigiOrdersUrl(env)}/${prodigiOrderId}/cancel`;
+  return prodigiUrl(base, `v4.0/orders/${prodigiOrderId}/cancel`);
 }
 
 /**
@@ -69,11 +68,19 @@ export function prodigiCancelUrl(
  * is already the session id on their side.
  */
 export const cancelProdigiOrder: CancelProdigiOrder = async (input) => {
+  const config = prodigiConfig();
+  if (!config.ok) {
+    return {
+      ok: false,
+      status: null,
+      reason: "prodigi-cancel-unconfigured",
+      message: config.message,
+    };
+  }
+
   let url: string;
-  let apiKey: string;
   try {
-    url = prodigiCancelUrl(input.prodigiOrderId);
-    apiKey = prodigiApiKey();
+    url = prodigiCancelUrl(input.prodigiOrderId, config.base);
   } catch (e) {
     return {
       ok: false,
@@ -82,6 +89,7 @@ export const cancelProdigiOrder: CancelProdigiOrder = async (input) => {
       message: errorMessage(e, "prodigi-unconfigured"),
     };
   }
+  const apiKey = config.key;
 
   let res: Response;
   try {

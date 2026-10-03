@@ -3,7 +3,7 @@ import { readJsonBody } from "@/lib/json-body";
 import { parseQuoteBody } from "@/lib/checkout-body";
 import { DEFAULT_SHIPPING_COUNTRY } from "@/lib/ship-to-countries";
 import { quotePhysical } from "@/lib/prodigi-quote";
-import { prodigiFailure } from "@/lib/prodigi-config";
+import { prodigiFailureFrom } from "@/lib/prodigi-config";
 import { readCachedQuote, writeCachedQuote } from "@/lib/quote-cache";
 
 export async function POST(request: Request) {
@@ -34,33 +34,34 @@ export async function POST(request: Request) {
     return NextResponse.json(cached);
   }
 
-  try {
-    const quote = await quotePhysical(cacheKey);
-    // Only the two public numbers are cached — sku and unitCostEur are ours.
-    await writeCachedQuote(cacheKey, {
-      merchandiseEur: quote.merchandiseEur,
-      shippingEur: quote.shippingEur,
-    });
-    // Ship only what the browser prices with. quotePhysical also carries `sku`
-    // and `unitCostEur`, and this route is unauthenticated — returning the
-    // whole object handed any caller our exact wholesale cost for all nine
-    // pinned SKUs, the SKU codes themselves, and the 1.2x multiplier, which is
-    // the margin. Checkout reads `sku` from quotePhysical server-side, so
-    // nothing downstream needs them over the wire.
-    return NextResponse.json({
-      merchandiseEur: quote.merchandiseEur,
-      shippingEur: quote.shippingEur,
-    });
-  } catch (e) {
-    // An unset key is a deployment problem, not a bad gateway: prodigiFailure
+  const result = await quotePhysical(cacheKey);
+  if (!result.ok) {
+    // An unset key is a deployment problem, not a bad gateway: prodigiFailureFrom
     // makes that 503-vs-502 call once, for both Prodigi routes. The internal
     // message goes to the log and only the code and the safe copy go over the
     // wire — this route is unauthenticated (#107).
-    const failure = prodigiFailure(e);
-    console.error("prodigi.quote", failure.code, failure.detail, e);
+    const failure = prodigiFailureFrom(result);
+    console.error("prodigi.quote", failure.code, failure.detail);
     return NextResponse.json(
       { error: failure.error, code: failure.code },
       { status: failure.status },
     );
   }
+  const quote = result.value;
+
+  // Only the two public numbers are cached — sku and unitCostEur are ours.
+  await writeCachedQuote(cacheKey, {
+    merchandiseEur: quote.merchandiseEur,
+    shippingEur: quote.shippingEur,
+  });
+  // Ship only what the browser prices with. quotePhysical also carries `sku`
+  // and `unitCostEur`, and this route is unauthenticated — returning the
+  // whole object handed any caller our exact wholesale cost for all nine
+  // pinned SKUs, the SKU codes themselves, and the 1.2x multiplier, which is
+  // the margin. Checkout reads `sku` from quotePhysical server-side, so
+  // nothing downstream needs them over the wire.
+  return NextResponse.json({
+    merchandiseEur: quote.merchandiseEur,
+    shippingEur: quote.shippingEur,
+  });
 }

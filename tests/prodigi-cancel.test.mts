@@ -60,12 +60,10 @@ async function withFetch<T>(
 }
 
 test("the cancel url is the order's own cancel endpoint", () => {
-  withProdigiEnv(() => {
-    assert.equal(
-      prodigiCancelUrl("ord_abc123"),
-      "https://api.sandbox.prodigi.com/v4.0/orders/ord_abc123/cancel",
-    );
-  });
+  assert.equal(
+    prodigiCancelUrl("ord_abc123", "https://api.sandbox.prodigi.com"),
+    "https://api.sandbox.prodigi.com/v4.0/orders/ord_abc123/cancel",
+  );
 });
 
 test("an order id that could escape its path segment is refused", () => {
@@ -82,7 +80,7 @@ test("an order id that could escape its path segment is refused", () => {
   ]) {
     assert.equal(isSafeProdigiOrderId(bad), false, bad);
     assert.throws(
-      () => withProdigiEnv(() => prodigiCancelUrl(bad)),
+      () => prodigiCancelUrl(bad, "https://api.sandbox.prodigi.com"),
       /unsafe Prodigi order id/,
     );
   }

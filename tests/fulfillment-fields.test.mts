@@ -90,8 +90,7 @@ test("each scalar guard on a stored record rejects its own value", () => {
     { status: "unpaid" },
     { status: 1 },
     { status: null },
-    { format: "poster" },
-    { format: "" },
+    { format: 42 },
     { photoSlug: 7 },
     { size: 30 },
     { frame: null },
@@ -180,7 +179,6 @@ test("a paid digital record must carry the master key its slug implies", () => {
     { photoSlug: "cobblestones" },
     { prodigiOrderId: "ord_1" },
     { assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" },
-    { recipient: RECIPIENT },
   ]) {
     assert.equal(
       parseOrderRecord(JSON.stringify(digital(patch))),

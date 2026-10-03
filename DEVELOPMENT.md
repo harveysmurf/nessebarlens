@@ -740,14 +740,18 @@ Three invariants: (1) `sku` and `unitCostEur` never enter the cached
   order rather than a second print.
 - **Own your config errors.** A misconfiguration of *our* deploy must never
   surface as an upstream 502/500. Two corollaries:
-  1. Read config getters (`prodigiApiKey`, `prodigiOrdersUrl`, `prodigiQuotesUrl`)
-     **before** the request — never inside the `fetch()` argument list, where a
-     throw skips the try/catch that translates it.
+  1. Read the Prodigi config (`prodigiConfig()` → `readProdigiConfig`) **before**
+     the request — never inside the `fetch()` argument list. The read returns a
+     tagged result (`ok: false, kind: "unconfigured"`), so an unconfigured
+     deployment is a distinct kind the caller maps to 503 rather than a throw it
+     has to catch.
   2. Every "we are not configured" path produces a **distinct, retryable reason**
      and a **503**, so the record and the log say *what* is unset.
 
-  `isProdigiUnconfigured` is the single predicate for "our fault, not Prodigi's";
-  a new config error that does not match it silently becomes a 502.
+  `kind: "unconfigured"` on a failed `ProdigiResult` is the one signal for "our
+  fault, not Prodigi's"; nothing matches the message text any more, so a new
+  config error is classified by its kind rather than by whether its wording was
+  remembered.
 
 - **Shipping constant coupling.** `eurToCents` in `pricing.ts` is the one EUR→cents
   rounding in the repo — Stripe line items, the webhook's amount check and the
@@ -823,13 +827,14 @@ the guard to keep the honest copy honest.
   the 20 placeholders. `npm run ingest` (§6a) does that; the ladder stays off
   until the upload is verified.
 - If a 502 shows up from `/api/quote` or `/api/checkout` and it is *not* Prodigi
-  being down, look at `prodigiErrorStatus` first. 503 means this deploy is
-  misconfigured (unset Prodigi key, or a `PRODIGI_API_BASE` outside the two
-  allowed hosts); 502 means Prodigi. The split is exact string equality against
-  the messages `src/lib/prodigi-config.ts` throws, so a *new* throw site that
-  forgets to be classified reports a deploy problem as a bad gateway.
-  `tests/prodigi-config.test.mts` enumerates them; that is the file to extend
-  when the module gains one.
+  being down, the failure's `kind` is the answer: 503 means this deploy is
+  misconfigured (`kind: "unconfigured"` — unset Prodigi key, or a
+  `PRODIGI_API_BASE` outside the two allowed hosts); 502 means Prodigi
+  (`kind: "timeout" | "client" | "server"`). The mapping lives in one function,
+  `prodigiFailureFrom` in `src/lib/prodigi-config.ts`, and it reads only the
+  `kind` — never the message text — so a new failure cannot slip into the wrong
+  status. `tests/prodigi-config.test.mts` pins the kind→status mapping; that is
+  the file to extend when the module gains a kind.
 - `PRODIGI_SHIPPING_METHOD` ("Budget") is the value we quote and buy with, and
   no unit test can confirm Prodigi still accepts that string for the pinned SKUs.
   It is a sandbox check, not a test.

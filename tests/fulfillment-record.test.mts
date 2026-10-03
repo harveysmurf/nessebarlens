@@ -140,13 +140,68 @@ test("the stored format is checked against the sellable list, not a local copy",
   assert.ok(parseOrderRecord(JSON.stringify(unfulfilled({ format: "giclee" }))));
   assert.ok(parseOrderRecord(JSON.stringify(unfulfilled({ format: "framed" }))));
   assert.ok(parseOrderRecord(JSON.stringify(unfulfilled({ format: "digital" }))));
-  for (const format of ["poster", "Giclee", "", null, 7, {}, ["giclee"]]) {
+  // A format string the catalog does not know is not a rejected record — it is
+  // an UnknownOrder that keeps the raw string (#118), so nothing that parses
+  // today stops parsing. A non-string format is still rejected.
+  for (const format of ["poster", "Giclee", ""]) {
+    const parsed = parseOrderRecord(JSON.stringify(unfulfilled({ format })));
+    assert.notEqual(parsed, null, JSON.stringify(format));
+    assert.equal(parsed!.kind, "unknown", JSON.stringify(format));
+    assert.equal(parsed!.format, format, JSON.stringify(format));
+  }
+  for (const format of [null, 7, {}, ["giclee"]]) {
     assert.equal(
       parseOrderRecord(JSON.stringify(unfulfilled({ format }))),
       null,
       JSON.stringify(format),
     );
   }
+});
+
+test("a legacy digital record still carrying size/frame/recipient parses as digital", () => {
+  // #118: older digital records wrote a size, a frame and (in some shapes) a
+  // recipient even though a digital order has none. The tolerant parser must
+  // drop those extras rather than reject the record — a stored order becoming
+  // unreadable is data loss, and every record that parsed before must keep
+  // parsing.
+  const digital = {
+    v: 1,
+    sessionId: SESSION,
+    merchantReference: SESSION,
+    terminal: true,
+    status: "paid",
+    photoSlug: "dawn",
+    format: "digital",
+    size: "50x70",
+    frame: "brown",
+    quoteEur: 30,
+    amountTotal: 3000,
+    currency: "eur",
+    reason: null,
+    masterKey: "prints/dawn.jpg",
+    recipient: {
+      name: "Legacy Buyer",
+      line1: "1 Old Rd",
+      line2: "",
+      city: "Nessebar",
+      state: "",
+      postcode: "8230",
+      countryCode: "BG",
+      email: null,
+      phone: null,
+    },
+    prodigiOrderId: null,
+    prodigiStage: null,
+    assetUrl: null,
+    updatedAt: NOW,
+  };
+  const parsed = parseOrderRecord(JSON.stringify(digital));
+  assert.notEqual(parsed, null, "a legacy digital record must still parse");
+  assert.equal(parsed!.kind, "digital");
+  assert.equal(parsed!.format, "digital");
+  assert.equal(parsed!.size, "", "the stored size is dropped");
+  assert.equal(parsed!.frame, "", "the stored frame is dropped");
+  assert.equal(parsed!.recipient, null, "the stored recipient is dropped");
 });
 
 test("an unusable print size, or framed with no frame finish, is bad-metadata", () => {
