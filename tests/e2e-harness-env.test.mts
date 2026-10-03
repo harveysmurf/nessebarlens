@@ -133,3 +133,54 @@ test("the digital-licence spec selects digital before asserting the digital pric
   assert.ok(select !== -1, "the spec must select the digital format");
   assert.ok(price !== -1 && price > select, "the price assertion must come after the selection");
 });
+/**
+ * #169: the hosted job was red on every run because one of its two specs
+ * submits a payment on Stripe's hosted page, behind an AI-attestation dialog
+ * nobody should click on a runner. A guaranteed-red job is noise, and it hides
+ * the regression the other spec exists to catch. The blocked spec now skips
+ * itself with the reason, and the job's red means the physical flow broke.
+ *
+ * These assert the arrangement rather than the outcome, for the same reason as
+ * the split above: a skip is invisible in CI unless something pins it.
+ */
+test("the digital-licence spec skips itself with a reason, before it takes any action", () => {
+  const spec = fs.readFileSync(path.join(root, "e2e", "smoke.spec.ts"), "utf8");
+  assert.match(spec, /process\.env\.HOSTED_DIGITAL_SKIP_REASON/);
+  // The title has to name the digital flow, or a reader cannot tell which spec
+  // the skip belongs to without reading the body — and neither can this test.
+  assert.match(spec, /test\("home \u2192 photo \u2192 configurator \u2192 price \u2192 Stripe \u2192 success page \(digital licence\)"/);
+  const testBody = spec.slice(spec.indexOf("home \u2192 photo \u2192 configurator"));
+  const skipAt = testBody.search(/test\.skip\(Boolean\(digitalSkipReason\), digitalSkipReason/);
+  const firstActionAt = testBody.search(/page\.goto|page\.locator|checkout\.click/);
+  assert.ok(skipAt !== -1, "the digital spec must skip on the reason CI supplies");
+  assert.ok(
+    skipAt < firstActionAt,
+    "the skip has to come first, or the report shows a half-run test under an explained skip",
+  );
+  // The physical spec is the job's signal now, so the skip must not be able to
+  // reach it: it is a statement inside one test body, not a describe-wide one.
+  assert.ok(
+    !/test\.describe\("physical print",[\s\S]{0,400}test\.skip\(Boolean\(digitalSkipReason\)/.test(spec),
+    "the skip belongs to the digital flow only",
+  );
+});
+
+test("the hosted job sets the skip reason and names the gate that causes it", () => {
+  const ci = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
+  const job = ci.match(/^ {2}e2e-hosted-checkout:\n((?:(?: {4}|\t).*\n|\n)*)/m);
+  assert.ok(job);
+  const reason = job[1].match(/HOSTED_DIGITAL_SKIP_REASON:\s*"([^"]+)"/);
+  assert.ok(reason, "the hosted job must tell the spec why it is skipping");
+  assert.match(reason[1], /attestation/i, "the skip reason has to name the gate, not just say skipped");
+  // Only the soft job. A required job that skipped the digital flow would be
+  // reporting green while covering less than it claims.
+  const required = ci.match(/^ {2}e2e-smoke:\n((?:(?: {4}|\t).*\n|\n)*)/m);
+  assert.ok(required);
+  assert.doesNotMatch(required[1], /HOSTED_DIGITAL_SKIP_REASON/);
+});
+
+test("the reason for the skip is written down where the next reader looks", () => {
+  const docs = fs.readFileSync(path.join(root, "DEVELOPMENT.md"), "utf8");
+  assert.match(docs, /HOSTED_DIGITAL_SKIP_REASON/);
+  assert.match(docs, /attestation/i);
+});
