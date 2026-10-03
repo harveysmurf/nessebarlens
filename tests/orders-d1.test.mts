@@ -37,6 +37,8 @@ const BASE_ORDER: OrderRecord = {
   updatedAt: "2026-10-02T00:00:00.000Z",
   createdAt: "2026-10-02T00:00:00.000Z",
   attempts: 1,
+  shipments: [],
+  emailsSent: [],
 };
 
 test("getOrder returns null when missing and the raw JSON when present", async () => {

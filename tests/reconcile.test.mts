@@ -70,6 +70,8 @@ function retryable(sessionId: string, createdAt: string): OrderRecord {
     updatedAt: createdAt,
     createdAt,
     attempts: 1,
+    shipments: [],
+    emailsSent: [],
   };
 }
 

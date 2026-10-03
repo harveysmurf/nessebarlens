@@ -42,6 +42,13 @@ export type ProdigiOrderRequest = {
   merchantReference: string;
   idempotencyKey: string;
   shippingMethod: typeof PRODIGI_SHIPPING_METHOD;
+  /**
+   * Where Prodigi posts CloudEvents for this order (#117). Same origin as
+   * the site — derived from siteUrl(), never a second env var. Optional at
+   * the type level only so older fixtures without it still type-check; every
+   * live body includes it.
+   */
+  callbackUrl: string;
   recipient: {
     name: string;
     email?: string;
@@ -157,10 +164,20 @@ export function buildProdigiOrderBody(input: {
   if (input.recipient.email) recipient.email = input.recipient.email;
   if (input.recipient.phone) recipient.phoneNumber = input.recipient.phone;
 
+  // Same-origin callback as the asset URL: siteUrl() is the one public
+  // origin, and inventing a PRODIGI_CALLBACK_URL would only be useful to
+  // *disable* callbacks — which we do not want. Prodigi posts CloudEvents
+  // here; auth is the bearer token on the route, not a secret path segment.
+  const callbackUrl = `${siteUrl()}/api/webhooks/prodigi`;
+  if (new URL(callbackUrl).origin !== new URL(siteUrl()).origin) {
+    throw new Error("callback url must be on the site origin");
+  }
+
   const body: ProdigiOrderRequest = {
     merchantReference: input.sessionId,
     idempotencyKey: input.sessionId,
     shippingMethod: PRODIGI_SHIPPING_METHOD,
+    callbackUrl,
     recipient,
     items: [
       {

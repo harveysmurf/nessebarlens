@@ -289,6 +289,10 @@ test("the internal awaiting-prodigi marker is not an alert", () => {
     prodigiStage: null,
     assetUrl: null,
     updatedAt: NOW,
+    createdAt: NOW,
+    attempts: 1,
+    shipments: [],
+    emailsSent: [],
   };
   assert.equal(isUnfulfilledOutcome(base), false);
   assert.equal(

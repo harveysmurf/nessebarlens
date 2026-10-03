@@ -64,6 +64,10 @@ test("Prodigi order body uses SKU + placeholder and never leaks masters", () => 
   });
   assert.equal(body.idempotencyKey, "cs_test_abcdefgh");
   assert.equal(body.merchantReference, "cs_test_abcdefgh");
+  assert.equal(
+    body.callbackUrl,
+    "https://nessebarlens.com/api/webhooks/prodigi",
+  );
   // The value the customer was quoted with, read from the one constant —
   // not re-spelled here, because a test that repeats the literal asserts
   // nothing about whether quote and order agree.

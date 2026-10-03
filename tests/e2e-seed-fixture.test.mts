@@ -108,6 +108,8 @@ test("the seed is in-memory: a put is visible to get, and nothing persists", asy
     updatedAt: "2026-10-02T00:00:00.000Z",
     createdAt: "2026-10-02T00:00:00.000Z",
     attempts: 1,
+    shipments: [],
+    emailsSent: [],
   });
   assert.ok(await store.getOrder("cs_test_written_here_0000000099"));
 
@@ -275,6 +277,8 @@ test("the seeded store's conditional write and query match the port contract", a
     updatedAt: "2026-10-02T12:00:00.000Z",
     createdAt: "2026-10-02T12:00:00.000Z",
     attempts: 1,
+    shipments: [],
+    emailsSent: [],
   };
 
   // No row yet, and a stored row whose attempts moved: both must decline.
@@ -355,6 +359,8 @@ test("a record written without a createdAt gets updatedAt, and a missing token r
     updatedAt: "2026-10-02T09:00:00.000Z",
     createdAt: "",
     attempts: 1,
+    shipments: [],
+    emailsSent: [],
   };
   await store.putOrder(record);
   const written = parseOrderRecord((await store.getOrder(SESSION))!)!;

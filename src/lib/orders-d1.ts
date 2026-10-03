@@ -188,6 +188,21 @@ export function d1OrdersStore(db: D1Database): OrdersStore {
       return row === null ? null : row.index_record;
     },
 
+    async claimProdigiCallback(eventId) {
+      // received_at is wall-clock for operators grepping the table; the
+      // uniqueness of event_id is the whole contract, not the timestamp.
+      const receivedAt = new Date().toISOString();
+      const result = await db
+        .prepare(
+          `INSERT INTO prodigi_callbacks (event_id, received_at)
+           VALUES (?, ?)
+           ON CONFLICT(event_id) DO NOTHING`,
+        )
+        .bind(eventId, receivedAt)
+        .run();
+      return result.meta.changes > 0;
+    },
+
     async spendDownloadToken(token, nowMs) {
       const nowSec = Math.floor(nowMs / 1000);
       // Decrement and rewrite both JSON blobs in one statement so a concurrent
