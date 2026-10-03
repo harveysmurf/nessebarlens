@@ -13,10 +13,14 @@
  *      appended in the same optimistic-locked `transitionOrder` (or the same
  *      `putOrder`) that writes the stage/shipments the email is about, so a
  *      lost lock or a redelivery that already carries the kind never sends.
- *   2. The Resend `Idempotency-Key: <sessionId>:<kind>` covers the residual
- *      window between a successful HTTP call and a lost response: Resend will
- *      not create a second message for the same key, even if we retry the
- *      POST because we never saw the 2xx.
+ *      One gap the claim does not close by itself: `putOrder` is an upsert
+ *      (ON CONFLICT DO UPDATE), so two concurrent first deliveries can both
+ *      reach the send. Layer 2 is what makes that safe.
+ *   2. The Resend `Idempotency-Key: <sessionId>:<kind>` is the backstop for
+ *      both residual windows: a successful HTTP call whose response we never
+ *      saw, and the concurrent-first-insert race above. Resend will not create
+ *      a second message for the same key, so the customer gets exactly one
+ *      mail either way.
  *
  * Ordering on every send path: write the claim first, then call `sendEmail`.
  * A failure after the write is logged and ignored — the webhook status and
