@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
+  defaultListNamespaceIds,
   KV_BINDING,
   parseCount,
   parseOrdersKvBinding,
@@ -267,4 +268,25 @@ test("the documented command is wired in package.json with the resolve hook", ()
   const pkg = JSON.parse(readFileSync("package.json", "utf8"));
   assert.match(pkg.scripts["orders:kv:remove"], /--import \.\/scripts\/register\.mjs/);
   assert.equal(KV_BINDING, "ORDERS");
+});
+
+test("the existence probe calls the real wrangler subcommand shape", () => {
+  // wrangler 4.141 rejects `--json` on `kv namespace list` ("Unknown
+  // argument"), so the probe must pass no flags and read the JSON array the
+  // command always logs.
+  const calls = [];
+  const ids = defaultListNamespaceIds((cmd, args) => {
+    calls.push([cmd, ...args]);
+    return { status: 0, stdout: JSON.stringify([{ id: PROD_ID }, { id: PREVIEW_ID }]), stderr: "" };
+  });
+  assert.deepEqual(ids, [PROD_ID, PREVIEW_ID]);
+  assert.deepEqual(calls[0], ["npx", "wrangler", "kv", "namespace", "list"]);
+  assert.ok(!calls[0].includes("--json"), "wrangler rejects --json here");
+
+  // A probe whose output shape we do not recognise must read as unknown, never
+  // as an empty account: an empty result strips the binding.
+  for (const stdout of ['{"result":[]}', '[{"title":"ORDERS"}]', "not json"]) {
+    assert.throws(() => defaultListNamespaceIds(() => ({ status: 0, stdout, stderr: "" })), /parse|array|id/);
+  }
+  assert.deepEqual(defaultListNamespaceIds(() => ({ status: 0, stdout: "[]", stderr: "" })), []);
 });

@@ -202,7 +202,7 @@ export function runRemove(argv, options = {}) {
   // exactly what the operator needs told plainly. Deleting the survivor on a
   // gate that no longer covers the missing one is the one shape where we would
   // lose data silently, so this refuses and names the state instead.
-    const gone = ids.filter((id) => !present.has(id));
+  const gone = ids.filter((id) => !present.has(id));
   if (gone.length > 0 && remaining.length > 0) {
     return {
       exitCode: 1,
@@ -214,6 +214,9 @@ export function runRemove(argv, options = {}) {
     };
   }
 
+  // The probe is account-scoped: absence means "absent from the account this
+  // wrangler session is authenticated to". Run it on the deploy account, or
+  // this branch would strip the binding while the namespaces survive elsewhere.
   if (alreadyDeleted) {
     return finishRewrite({
       tomlPath,
@@ -302,9 +305,15 @@ function finishRewrite({ tomlPath, writeFile, toml, summary, removed = [] }) {
  * Ids of every KV namespace on the account. Account-wide by nature, so it has
  * no --remote to pass; it is a "does this id still exist" probe, not a data
  * read.
+ *
+ * `wrangler kv namespace list` takes no flags at all (wrangler 4.141 rejects
+ * `--json` with "Unknown argument") and always logs a JSON array of namespace
+ * objects, so there is no alternate shape to accept. Anything that is not that
+ * array throws: an unparsable or reshaped probe must read as "unknown", never
+ * as "empty", because the caller strips the binding on an empty result.
  */
-function defaultListNamespaceIds(spawn) {
-  const result = spawn("npx", ["wrangler", "kv", "namespace", "list", "--json"], {
+export function defaultListNamespaceIds(spawn) {
+  const result = spawn("npx", ["wrangler", "kv", "namespace", "list"], {
     encoding: "utf8",
   });
   if ((result.status ?? 1) !== 0) {
@@ -316,8 +325,14 @@ function defaultListNamespaceIds(spawn) {
   } catch {
     throw new Error("could not parse `wrangler kv namespace list` output");
   }
-  const list = Array.isArray(parsed) ? parsed : parsed.result ?? parsed.namespaces ?? [];
-  return list.map((entry) => (typeof entry === "string" ? entry : entry?.id)).filter(Boolean);
+  if (!Array.isArray(parsed)) {
+    throw new Error("`wrangler kv namespace list` did not return a JSON array");
+  }
+  const ids = parsed.map((entry) => (typeof entry === "string" ? entry : entry?.id));
+  if (ids.some((id) => !id)) {
+    throw new Error("`wrangler kv namespace list` returned an entry without an id");
+  }
+  return ids;
 }
 
 function defaultListKvKeys(spawn) {
