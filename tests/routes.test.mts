@@ -1,12 +1,13 @@
 import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { afterEach, beforeEach, test } from "node:test";
+import { memoryOrdersStore } from "./fake-orders-store.mts";
 
-/* The five route handlers, called the way Next calls them: a Request in, a
+/* The route handlers, called the way Next calls them: a Request in, a
    Response out. They own the status codes and the guard order, which is the
    part no test touched until now.
 
-   readWorkerBindings is the one seam. ORDERS and MASTERS are Worker bindings
+   readWorkerBindings is the one seam. ORDERS_DB and MASTERS are Worker bindings
    and have no env fallback by design, so a route that reads them can only be
    driven from outside by substituting the module — which is what the hook below
    does. The handlers themselves are the real source, imported once. */
@@ -14,10 +15,11 @@ import { afterEach, beforeEach, test } from "node:test";
 const FAKE = "buzz-test:fake-worker-bindings";
 
 type Fake = {
-  ORDERS?: unknown;
+  ORDERS_DB?: unknown;
   MASTERS?: unknown;
   webhookSecret?: string;
   printAssetSecret?: string;
+  reconcileSecret?: string;
   prodigiKeyConfigured: boolean;
 };
 
@@ -151,44 +153,39 @@ async function body(response: Response): Promise<Record<string, unknown>> {
 }
 
 const memoryKv = (initial: Record<string, string> = {}) => {
-  const store = new Map(Object.entries(initial));
-  return {
-    async get(key: string) {
-      return store.has(key) ? store.get(key)! : null;
-    },
-    async put(key: string, value: string) {
-      store.set(key, value);
-    },
-    /** Test-only: what the KV put, so a test can assert on a written token. */
-    store,
-  };
+  return memoryOrdersStore({ kv: initial });
 };
 
 /**
- * A download token written straight into a fake KV (#111).
+ * A download token written straight into a fake store (#111).
  *
  * The download route no longer accepts a session id, so every test that drives
- * it needs a real `dl:<token>` / `dls:<sessionId>` pair. Minting through
- * `ensureDownloadToken` rather than hand-writing JSON means the fixture cannot
- * drift from the shape the fulfillment path writes.
+ * it needs a real token row. Minting through `ensureDownloadToken` rather than
+ * hand-writing JSON means the fixture cannot drift from the shape the
+ * fulfillment path writes.
  */
 async function seedToken(
-  kv: ReturnType<typeof memoryKv>,
+  store: ReturnType<typeof memoryKv>,
   sessionId: string,
   overrides: Record<string, unknown> = {},
 ) {
   const { ensureDownloadToken } = await import("../src/lib/download-token.ts");
   const record = await ensureDownloadToken({
-    kv,
+    store,
     sessionId,
     limits: { ttlSeconds: 30 * 86_400, maxDownloads: 5 },
   });
-  assert.ok(record, "the fake KV should be able to mint a token");
-  for (const [key, value] of Object.entries(overrides)) {
-    const index = await kv.get(`dls:${sessionId}`);
-    const next = { ...JSON.parse(index!), [key]: value };
-    await kv.put(`dls:${sessionId}`, JSON.stringify(next));
-    await kv.put(`dl:${record.token}`, JSON.stringify(next));
+  assert.ok(record, "the fake store should be able to mint a token");
+  if (Object.keys(overrides).length > 0) {
+    const next = { ...record, ...overrides };
+    // The token string is the key the record is stored under, so the override
+    // lands on the record body and the index keeps the real token.
+    const tokenRecord = { ...next };
+    delete (tokenRecord as Record<string, unknown>).token;
+    await store.putDownloadToken(
+      tokenRecord as typeof record,
+      { ...(tokenRecord as typeof record), token: record.token },
+    );
   }
   return record.token;
 }
@@ -416,7 +413,7 @@ test("download: a session id on its own no longer grants a download (#111)", asy
   });
   const kv = memoryKv({ cs_test_abcdefgh: record });
   const restore = withBindings({
-    ORDERS: kv,
+    ORDERS_DB: kv,
     MASTERS: bucket(),
     prodigiKeyConfigured: false,
   });
@@ -454,7 +451,7 @@ test("download: a malformed token is refused before the KV is read at all", asyn
     },
     async put() {},
   };
-  const restore = withBindings({ ORDERS: kv, prodigiKeyConfigured: false });
+  const restore = withBindings({ ORDERS_DB: kv, prodigiKeyConfigured: false });
   try {
     const bad = await download.GET(
       new Request(`${SITE}/api/download?token=not-a-token`),
@@ -472,7 +469,7 @@ test("download: a malformed token is refused before the KV is read at all", asyn
 test("download: a token for an order the webhook has not stored yet is 202", async () => {
   const kv = memoryKv();
   const token = await seedToken(kv, "cs_test_abcdefgh");
-  const restore = withBindings({ ORDERS: kv, prodigiKeyConfigured: false });
+  const restore = withBindings({ ORDERS_DB: kv, prodigiKeyConfigured: false });
   try {
     const notYet = await download.GET(
       new Request(`${SITE}/api/download?token=${token}`),
@@ -492,26 +489,29 @@ test("download: no ORDERS binding is a 503 before the store is read", async () =
       new Request(`${SITE}/api/download?token=${"a".repeat(32)}`),
     );
     assert.equal(response.status, 503);
-    assert.equal((await body(response)).error, "orders-kv-unavailable");
+    assert.equal((await body(response)).error, "orders-store-unavailable");
   } finally {
     restore();
   }
 });
 
-test("download: a KV that throws is a 503, and a foreign record is corrupt", async () => {
+test("download: a store that throws is a 503, and a foreign record is corrupt", async () => {
   const throwing = {
-    async get() {
-      throw new Error("kv down");
+    ...memoryOrdersStore(),
+    async spendDownloadToken() {
+      throw new Error("store down");
     },
-    async put() {},
+    async getOrder() {
+      throw new Error("store down");
+    },
   };
-  const restore = withBindings({ ORDERS: throwing, prodigiKeyConfigured: false });
+  const restore = withBindings({ ORDERS_DB: throwing, prodigiKeyConfigured: false });
   try {
     const down = await download.GET(
       new Request(`${SITE}/api/download?token=${"b".repeat(32)}`),
     );
     assert.equal(down.status, 503);
-    assert.equal((await body(down)).error, "orders-kv-unavailable");
+    assert.equal((await body(down)).error, "orders-store-unavailable");
     // A private asset route: unlike the webhook's 503, this one is no-store.
     assert.equal(down.headers.get("Cache-Control"), "private, no-store");
   } finally {
@@ -543,7 +543,7 @@ test("download: a KV that throws is a 503, and a foreign record is corrupt", asy
     }),
   });
   const token = await seedToken(other, "cs_test_abcdefgh");
-  const restore2 = withBindings({ ORDERS: other, prodigiKeyConfigured: false });
+  const restore2 = withBindings({ ORDERS_DB: other, prodigiKeyConfigured: false });
   try {
     const corrupt = await download.GET(
       new Request(`${SITE}/api/download?token=${token}`),
@@ -555,28 +555,25 @@ test("download: a KV that throws is a 503, and a foreign record is corrupt", asy
   }
 });
 
-test("download: a KV that throws only on the order read is still a 503", async () => {
+test("download: a store that throws only on the order read is still a 503", async () => {
   // The token read succeeds and the download is already spent by the time the
   // order record is fetched, so this window is real: an outage between the two
   // reads must read as unavailable, not as a paid customer who gets nothing.
   const kv = memoryKv();
   const token = await seedToken(kv, "cs_test_abcdefgh");
   const flaky = {
-    async get(key: string) {
-      if (key.startsWith("dl")) return kv.get(key);
-      throw new Error("kv down");
-    },
-    async put(key: string, value: string, options?: { expirationTtl?: number }) {
-      return kv.put(key, value, options);
+    ...kv,
+    async getOrder() {
+      throw new Error("store down");
     },
   };
-  const restore = withBindings({ ORDERS: flaky, prodigiKeyConfigured: false });
+  const restore = withBindings({ ORDERS_DB: flaky, prodigiKeyConfigured: false });
   try {
     const down = await download.GET(
       new Request(`${SITE}/api/download?token=${token}`),
     );
     assert.equal(down.status, 503);
-    assert.equal((await body(down)).error, "orders-kv-unavailable");
+    assert.equal((await body(down)).error, "orders-store-unavailable");
     assert.equal(down.headers.get("Referrer-Policy"), "no-referrer");
   } finally {
     restore();
@@ -716,7 +713,7 @@ test("webhook: an unhandled event is acknowledged without touching the store", a
       touched++;
     },
   };
-  const restore = withBindings({ webhookSecret: secret, ORDERS: kv, prodigiKeyConfigured: false });
+  const restore = withBindings({ webhookSecret: secret, ORDERS_DB: kv, prodigiKeyConfigured: false });
   try {
     const response = await stripe.POST(
       new Request(`${SITE}/api/webhooks/stripe`, {
@@ -769,7 +766,7 @@ test("webhook: a handled event with no ORDERS binding is a 500, not a silent 200
     // A missing binding is 503 "unconfigured", the same shape as the missing
     // webhook secret, so a deploy misconfig is diagnosable one way.
     assert.equal(response.status, 503);
-    assert.equal((await body(response)).error, "orders-kv-unavailable");
+    assert.equal((await body(response)).error, "orders-store-unavailable");
     // The webhook is the one orders-kv 503 that sends no Cache-Control: the
     // string and status are single-sourced, the headers are not, and pinning
     // the difference here is what stops a shared response builder from
@@ -838,7 +835,7 @@ test("webhook: shipping comes from collected_information when Stripe sends both"
   }) as typeof fetch;
   const restore = withBindings({
     webhookSecret: secret,
-    ORDERS: memoryKv(),
+    ORDERS_DB: memoryKv(),
     prodigiKeyConfigured: true,
   });
   try {
@@ -933,6 +930,46 @@ test("checkout: a Stripe rejection is a 502 that names Stripe's own code", async
       "Stripe's error code must not reach the response body",
     );
   } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+    if (saved.STRIPE_SECRET_KEY === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved.STRIPE_SECRET_KEY;
+  }
+});
+
+test("checkout: a transport failure with no Stripe code still logs one", async () => {
+  // The log line is the only diagnosis a 502 leaves behind, so a throw that is
+  // not a Stripe error object — a fetch that never got a response — must still
+  // produce a line that says what happened, not `undefined`.
+  const saved = { ...process.env };
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = (async () => {
+    throw "socket hang up";
+  }) as typeof fetch;
+  const logged: unknown[][] = [];
+  const realError = console.error;
+  console.error = (...args: unknown[]) => {
+    logged.push(args);
+  };
+  const restore = withBindings({ prodigiKeyConfigured: false });
+  try {
+    const response = await checkout.POST(
+      jsonRequest(`${SITE}/api/checkout`, { photoSlug: "dawn", format: "digital" }),
+    );
+    assert.equal(response.status, 502);
+    assert.deepEqual(await body(response), {
+      error: "Could not create Checkout Session",
+      code: "checkout-unavailable",
+    });
+    // The error is logged whole, so the SDK's code survives for the causes that
+    // have one and the message survives for the ones that do not.
+    assert.ok(
+      logged.some((args) => args[0] === "stripe.checkout.sessions.create" && args.length === 2),
+      `expected the raw error in the log, got ${JSON.stringify(logged)}`,
+    );
+  } finally {
+    console.error = realError;
     globalThis.fetch = originalFetch;
     restore();
     if (saved.STRIPE_SECRET_KEY === undefined) delete process.env.STRIPE_SECRET_KEY;
@@ -1046,7 +1083,7 @@ test("download: a paid digital order streams the master as an attachment", async
   const orders = memoryKv({ cs_test_abcdefgh: record });
   const token = await seedToken(orders, "cs_test_abcdefgh");
   const restore = withBindings({
-    ORDERS: orders,
+    ORDERS_DB: orders,
     MASTERS: bucket(),
     prodigiKeyConfigured: false,
   });
@@ -1101,7 +1138,7 @@ test("download: a master that is not a JPEG is served with its own content type"
   const orders = memoryKv({ cs_test_pngmaster: record });
   const token = await seedToken(orders, "cs_test_pngmaster");
   const restore = withBindings({
-    ORDERS: orders,
+    ORDERS_DB: orders,
     MASTERS: {
       async get() {
         return {
@@ -1126,7 +1163,7 @@ test("download: a master that is not a JPEG is served with its own content type"
 
 test("download: a token-shaped string that is not stored is 404 and uncacheable", async () => {
   const restore = withBindings({
-    ORDERS: memoryKv(),
+    ORDERS_DB: memoryKv(),
     prodigiKeyConfigured: false,
   });
   try {
@@ -1172,7 +1209,7 @@ test("download: a revoked order cannot download, even with a live token (#111)",
   const orders = memoryKv({ cs_test_abcdefgh: paid });
   const token = await seedToken(orders, "cs_test_abcdefgh");
   const restore = withBindings({
-    ORDERS: orders,
+    ORDERS_DB: orders,
     MASTERS: bucket(),
     prodigiKeyConfigured: false,
   });
@@ -1186,14 +1223,11 @@ test("download: a revoked order cannot download, even with a live token (#111)",
       200,
       "the token works while the order is paid",
     );
-    await orders.put(
-      "cs_test_abcdefgh",
-      JSON.stringify({
+    await orders.putOrder({
         ...JSON.parse(paid),
         status: "refunded",
         masterKey: null,
-      }),
-    );
+      });
     const revoked = await download.GET(
       new Request(`${SITE}/api/download?token=${token}`),
     );
@@ -1231,7 +1265,7 @@ test("download: a token is spent by the downloads it grants (#111)", async () =>
   });
   const token = await seedToken(orders, "cs_test_abcdefgh", { remaining: 2 });
   const restore = withBindings({
-    ORDERS: orders,
+    ORDERS_DB: orders,
     MASTERS: bucket(),
     prodigiKeyConfigured: false,
   });
@@ -1245,7 +1279,7 @@ test("download: a token is spent by the downloads it grants (#111)", async () =>
     assert.equal((await body(spent)).error, "download-limit-reached");
     // The index is rewritten with the new count, so the success page cannot
     // offer a token whose balance is already gone.
-    const index = JSON.parse((await orders.get(`dls:cs_test_abcdefgh`))!);
+    const index = JSON.parse((await orders.findDownloadToken(`cs_test_abcdefgh`))!);
     assert.equal(index.remaining, 0);
     assert.equal(index.token, token, "the index keeps naming the token");
   } finally {
@@ -1281,7 +1315,7 @@ test("download: an expired token is 410 even with downloads left (#111)", async 
     expiresAt: Math.floor(Date.now() / 1000) - 1,
   });
   const restore = withBindings({
-    ORDERS: orders,
+    ORDERS_DB: orders,
     MASTERS: bucket(),
     prodigiKeyConfigured: false,
   });
@@ -1335,7 +1369,7 @@ test("download: a physical order is 403 and a missing master is a 404", async ()
   const printOrders = memoryKv({ cs_test_abcdefgh: record() });
   const printToken = await seedToken(printOrders, "cs_test_abcdefgh");
   const restore = withBindings({
-    ORDERS: printOrders,
+    ORDERS_DB: printOrders,
     MASTERS: bucket(),
     prodigiKeyConfigured: false,
   });
@@ -1374,7 +1408,7 @@ test("download: a physical order is 403 and a missing master is a 404", async ()
   const digitalOrders = memoryKv({ cs_test_abcdefgh: digital });
   const digitalToken = await seedToken(digitalOrders, "cs_test_abcdefgh");
   const restore2 = withBindings({
-    ORDERS: digitalOrders,
+    ORDERS_DB: digitalOrders,
     MASTERS: { async get() { return null; } },
     prodigiKeyConfigured: false,
   });
@@ -1778,7 +1812,7 @@ test("checkout: an unconfigured quote, a Stripe failure and a session with no UR
 test("print-asset and download: a request with no query string is a 400", async () => {
   const restore = withBindings({
     printAssetSecret: "route-test-print-asset-secret-32-chars",
-    ORDERS: memoryKv(),
+    ORDERS_DB: memoryKv(),
     prodigiKeyConfigured: false,
   });
   try {
@@ -1916,7 +1950,7 @@ test("webhook: a digital event with no shipping and no customer details still fi
   const { masterKeyForSlug } = await import("../src/lib/master-key.ts");
   const restore = withBindings({
     webhookSecret: secret,
-    ORDERS: kv,
+    ORDERS_DB: kv,
     prodigiKeyConfigured: false,
   });
   try {
@@ -1930,7 +1964,7 @@ test("webhook: a digital event with no shipping and no customer details still fi
     assert.equal(response.status, 200);
     const parsed = await body(response);
     assert.equal(parsed.status, "paid");
-    const stored = JSON.parse((await kv.get("cs_test_abcdefgh"))!) as {
+    const stored = JSON.parse((await kv.getOrder("cs_test_abcdefgh"))!) as {
       masterKey: string;
       recipient: unknown;
     };
@@ -1993,7 +2027,7 @@ test("webhook: the legacy shipping_details field is used when collected_informat
   }) as typeof fetch;
   const restore = withBindings({
     webhookSecret: secret,
-    ORDERS: memoryKv(),
+    ORDERS_DB: memoryKv(),
     prodigiKeyConfigured: true,
   });
   try {
@@ -2032,7 +2066,7 @@ test("webhook: a session with no id is stored under the empty key, not lost", as
   const kv = memoryKv();
   const restore = withBindings({
     webhookSecret: secret,
-    ORDERS: kv,
+    ORDERS_DB: kv,
     prodigiKeyConfigured: false,
   });
   try {
@@ -2050,7 +2084,7 @@ test("webhook: a session with no id is stored under the empty key, not lost", as
       received: true,
       ignored: "invalid-session-id",
     });
-    assert.equal(await kv.get(""), null);
+    assert.equal(await kv.getOrder(""), null);
   } finally {
     restore();
   }
@@ -2138,7 +2172,7 @@ test("webhook: a customer phone is carried into the stored record", async () => 
   const kv = memoryKv();
   const restore = withBindings({
     webhookSecret: secret,
-    ORDERS: kv,
+    ORDERS_DB: kv,
     prodigiKeyConfigured: false,
   });
   try {
@@ -2179,7 +2213,7 @@ test("webhook: a session with no currency, amount or metadata is paid-unfulfille
   const kv = memoryKv();
   const restore = withBindings({
     webhookSecret: secret,
-    ORDERS: kv,
+    ORDERS_DB: kv,
     prodigiKeyConfigured: false,
   });
   try {
@@ -2201,7 +2235,7 @@ test("webhook: a session with no currency, amount or metadata is paid-unfulfille
     // Stripe always sends both on checkout.session.completed, so this is not
     // reachable in production today; it is pinned so that it becomes a
     // deliberate change if the defaults ever move.
-    const stored = JSON.parse((await kv.get("cs_test_abcdefgh"))!) as {
+    const stored = JSON.parse((await kv.getOrder("cs_test_abcdefgh"))!) as {
       currency: string;
       amountTotal: number;
       reason: string;
@@ -2237,7 +2271,7 @@ test("webhook: a session with no payment_status at all is unpaid, not fulfilled"
   const kv = memoryKv();
   const restore = withBindings({
     webhookSecret: secret,
-    ORDERS: kv,
+    ORDERS_DB: kv,
     prodigiKeyConfigured: false,
   });
   try {
@@ -2252,7 +2286,7 @@ test("webhook: a session with no payment_status at all is unpaid, not fulfilled"
     assert.deepEqual(await body(response), { received: true, ignored: "unpaid" });
     // Nothing is written for an ignored session — a retry must not find a
     // half-built record.
-    assert.equal(await kv.get("cs_test_nopaymentstatus"), null);
+    assert.equal(await kv.getOrder("cs_test_nopaymentstatus"), null);
   } finally {
     restore();
   }
@@ -2294,7 +2328,7 @@ test("webhook: a store that throws mid-fulfilment is a 500, not a lost order", a
   };
   const restore = withBindings({
     webhookSecret: secret,
-    ORDERS: brokenKv,
+    ORDERS_DB: brokenKv,
     prodigiKeyConfigured: false,
   });
   try {
@@ -2306,7 +2340,7 @@ test("webhook: a store that throws mid-fulfilment is a 500, not a lost order", a
       }),
     );
     // A KV that throws is NOT the same as a KV that is absent, and the old
-    // bare catch reported both as "orders-kv-unavailable" — so a real
+    // bare catch reported both as "orders-store-unavailable" — so a real
     // fulfillment bug pointed the log at the binding. Distinct error now.
     assert.equal(response.status, 500);
     assert.deepEqual(await body(response), { error: "fulfillment-failed" });
@@ -2410,14 +2444,14 @@ test("webhook: a full refund revokes the order", async () => {
         },
       },
       secret,
-      { webhookSecret: secret, ORDERS: kv, prodigiKeyConfigured: false },
+      { webhookSecret: secret, ORDERS_DB: kv, prodigiKeyConfigured: false },
     );
     assert.equal(response.status, 200);
     const parsed = await body(response);
     assert.equal(parsed.revoked, true);
     assert.equal(parsed.status, "refunded");
     // Read back through get, which is the only contract OrdersKv has.
-    const record = JSON.parse((await kv.get(REFUND_SESSION))!) as Record<string, unknown>;
+    const record = JSON.parse((await kv.getOrder(REFUND_SESSION))!) as Record<string, unknown>;
     assert.equal(record.status, "refunded");
     assert.equal(record.masterKey, null);
     assert.equal(record.photoSlug, "dawn", "the refund stays auditable");
@@ -2458,11 +2492,11 @@ test("webhook: a partial refund is logged and revokes nothing", async () => {
         },
       },
       secret,
-      { webhookSecret: secret, ORDERS: kv, prodigiKeyConfigured: false },
+      { webhookSecret: secret, ORDERS_DB: kv, prodigiKeyConfigured: false },
     );
     assert.equal(response.status, 200);
     assert.deepEqual(await body(response), { received: true, ignored: "partial-refund" });
-    const record = JSON.parse((await kv.get(REFUND_SESSION))!) as Record<string, unknown>;
+    const record = JSON.parse((await kv.getOrder(REFUND_SESSION))!) as Record<string, unknown>;
     assert.equal(record.status, "paid", "a partial refund must not revoke the download");
   } finally {
     console.error = originalError;
@@ -2506,13 +2540,13 @@ test("webhook: a Stripe lookup failure is a 500, not a silent 200", async () => 
         },
       },
       secret,
-      { webhookSecret: secret, ORDERS: kv, prodigiKeyConfigured: false },
+      { webhookSecret: secret, ORDERS_DB: kv, prodigiKeyConfigured: false },
     );
     // The whole mechanism fails silently if this is a 200: the refund is real,
     // the buyer keeps the master file, and every log line looks healthy.
     assert.equal(response.status, 500);
     assert.deepEqual(await body(response), { error: "revocation-lookup-failed" });
-    const record = JSON.parse((await kv.get(REFUND_SESSION))!) as Record<string, unknown>;
+    const record = JSON.parse((await kv.getOrder(REFUND_SESSION))!) as Record<string, unknown>;
     assert.equal(record.status, "paid", "nothing is written when the lookup failed");
   } finally {
     console.error = originalError;
@@ -2550,7 +2584,7 @@ test("webhook: a KV failure during revocation is a 500 with its own error", asyn
       {
         webhookSecret: secret,
         prodigiKeyConfigured: false,
-        ORDERS: {
+        ORDERS_DB: {
           async get() {
             throw new Error("kv offline");
           },
@@ -2610,12 +2644,12 @@ test("webhook: a dispute resolves through the charge hop and revokes", async () 
         },
       },
       secret,
-      { webhookSecret: secret, ORDERS: kv, prodigiKeyConfigured: false },
+      { webhookSecret: secret, ORDERS_DB: kv, prodigiKeyConfigured: false },
     );
     assert.equal(response.status, 200);
     const parsed = await body(response);
     assert.equal(parsed.status, "disputed");
-    const record = JSON.parse((await kv.get(REFUND_SESSION))!) as Record<string, unknown>;
+    const record = JSON.parse((await kv.getOrder(REFUND_SESSION))!) as Record<string, unknown>;
     assert.equal(record.status, "disputed");
     assert.ok(seen.some((line) => line.includes("/charges/ch_3AbcDefGh")));
   } finally {
@@ -2660,11 +2694,11 @@ test("webhook: a dispute whose charge lookup fails transiently is a 500, not a s
         },
       },
       secret,
-      { webhookSecret: secret, ORDERS: kv, prodigiKeyConfigured: false },
+      { webhookSecret: secret, ORDERS_DB: kv, prodigiKeyConfigured: false },
     );
     assert.equal(response.status, 500);
     assert.deepEqual(await body(response), { error: "revocation-lookup-failed" });
-    const record = JSON.parse((await kv.get(REFUND_SESSION))!) as Record<string, unknown>;
+    const record = JSON.parse((await kv.getOrder(REFUND_SESSION))!) as Record<string, unknown>;
     assert.equal(record.status, "paid", "nothing is written when the lookup failed");
   } finally {
     console.error = originalError;
@@ -2703,7 +2737,7 @@ test("webhook: a dispute for an unknown charge is acknowledged, not retried fore
         data: { object: { id: "dp_2", object: "dispute", charge: "ch_unknown1" } },
       },
       secret,
-      { webhookSecret: secret, ORDERS: memoryKv(), prodigiKeyConfigured: false },
+      { webhookSecret: secret, ORDERS_DB: memoryKv(), prodigiKeyConfigured: false },
     );
     assert.equal(response.status, 200);
     assert.equal((await body(response)).ignored, "unknown-payment-intent");
@@ -2730,7 +2764,7 @@ test("webhook: a refund for a session with no ORDERS binding is still 503", asyn
     { webhookSecret: secret, prodigiKeyConfigured: false },
   );
   assert.equal(response.status, 503);
-  assert.equal((await body(response)).error, "orders-kv-unavailable");
+  assert.equal((await body(response)).error, "orders-store-unavailable");
 });
 
 test("webhook: a refund event with no amounts is not treated as a partial refund", async () => {
@@ -2753,7 +2787,7 @@ test("webhook: a refund event with no amounts is not treated as a partial refund
         data: { object: { id: "ch_1", payment_intent: REFUND_INTENT } },
       },
       secret,
-      { webhookSecret: secret, ORDERS: kv, prodigiKeyConfigured: false },
+      { webhookSecret: secret, ORDERS_DB: kv, prodigiKeyConfigured: false },
     );
     assert.equal(response.status, 200);
     assert.equal((await body(response)).revoked, true);
@@ -2789,7 +2823,7 @@ test("webhook: a partial refund with no payment intent is still only logged", as
       secret,
       {
         webhookSecret: secret,
-        ORDERS: memoryKv(),
+        ORDERS_DB: memoryKv(),
         prodigiKeyConfigured: false,
       },
     );

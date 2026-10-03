@@ -1,9 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import {
-  fulfillCheckoutSession,
-  type OrdersKv,
-} from "../src/lib/fulfillment.ts";
+import { fulfillCheckoutSession } from "../src/lib/fulfillment.ts";
+import type { OrdersStore } from "../src/lib/orders-store.ts";
+import { memoryOrdersStore } from "./fake-orders-store.mts";
 import {
   parseRecipient,
   type StripeShippingDetails,
@@ -31,16 +30,9 @@ const SHIPPING: StripeShippingDetails = {
   },
 };
 
-function memoryKv(): OrdersKv {
-  const store = new Map<string, string>();
-  return {
-    async get(key) {
-      return store.has(key) ? store.get(key)! : null;
-    },
-    async put(key, value) {
-      store.set(key, value);
-    },
-  };
+/** An empty in-memory OrdersStore: every case here starts from no record. */
+function emptyStore(): OrdersStore {
+  return memoryOrdersStore();
 }
 
 function physicalInput(overrides: Record<string, unknown> = {}) {
@@ -95,7 +87,7 @@ test("a framed physical order keeps the frame finish all the way to Prodigi", as
         shippingEur: "4.99",
         sku: "GLOBAL-FAP-12X16",
       } }),
-    kv: memoryKv(),
+    store: emptyStore(),
     async createOrder(input) {
       seen = input as unknown as Record<string, unknown>;
       return {
@@ -128,7 +120,7 @@ test("a physical order whose shipping quote is missing is bad-metadata, not a mi
         merchandiseEur: "15",
       },
     }),
-    kv: memoryKv(),
+    store: emptyStore(),
     async createOrder() {
       throw new Error("Prodigi must not be called without a shipping quote");
     },
@@ -167,7 +159,7 @@ test("the real Prodigi client is what runs when no order factory is injected", a
   try {
     const result = await fulfillCheckoutSession({
       ...physicalInput(),
-      kv: memoryKv(),
+      store: emptyStore(),
     });
     assert.equal(result.httpStatus, 200);
     assert.equal(result.body.status, "paid");

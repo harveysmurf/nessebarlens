@@ -1,14 +1,20 @@
 /**
- * The effects half of checkout fulfillment for ORDERS KV.
+ * The effects half of checkout fulfillment for the orders store (#116).
  *
  * `order-decision.ts` owns every rule about what a paid session *means* — what
  * a stored record says, whether an order may have its file, which status a
  * customer is shown. This module owns the four things that reach outside the
- * process: reading and writing ORDERS, calling Prodigi, and answering Stripe.
+ * process: reading and writing the orders store, calling Prodigi, and answering
+ * Stripe.
  *
  * It decides nothing on its own. Every branch here is a decision that
  * order-decision already made, or a Prodigi result being written back onto a
  * record the interpreter produced.
+ *
+ * Writes use the store's optimistic lock on retries: `transitionOrder` runs
+ * *before* Prodigi so two concurrent redeliveries of the same paid-unfulfilled
+ * session place one Prodigi order, not two. The loser sees `false` from the
+ * row count and answers 200 `{ duplicate: true }` without calling Prodigi.
  */
 
 import {
@@ -32,22 +38,7 @@ import {
 } from "./download-token";
 import type { FrameFinish, PrintSize } from "./pricing";
 import type { PhysicalFormat } from "./sku-map";
-
-/**
- * The ORDERS binding, as much of it as this code uses.
- *
- * `put`'s options argument is `KVNamespacePutOptions` narrowed to the one field
- * download tokens use (`expirationTtl`, #111). It is optional and ignored by the
- * two-argument implementations (the dev seed, and any fake in a test), which is
- * why every call site must tolerate its absence: a token whose KV TTL did not
- * apply is still bounded by `expiresAt` on the read path.
- */
-export type OrdersKvPutOptions = { expirationTtl?: number };
-
-export type OrdersKv = {
-  get(key: string): Promise<string | null>;
-  put(key: string, value: string, options?: OrdersKvPutOptions): Promise<void>;
-};
+import type { OrdersStore } from "./orders-store";
 
 function reportUnfulfilled(record: OrderRecord, detail?: string): void {
   console.error(
@@ -62,13 +53,28 @@ function reportUnfulfilled(record: OrderRecord, detail?: string): void {
   );
 }
 
-async function storeOrder(
-  kv: OrdersKv,
+async function storeNewOrder(
+  store: OrdersStore,
   record: OrderRecord,
   detail?: string,
 ): Promise<void> {
-  await kv.put(record.sessionId, JSON.stringify(record));
+  await store.putOrder(record);
   if (isUnfulfilledOutcome(record)) reportUnfulfilled(record, detail);
+}
+
+async function storeTransition(
+  store: OrdersStore,
+  fromAttempts: number,
+  record: OrderRecord,
+  detail?: string,
+): Promise<boolean> {
+  const ok = await store.transitionOrder({
+    sessionId: record.sessionId,
+    fromAttempts,
+    record,
+  });
+  if (ok && isUnfulfilledOutcome(record)) reportUnfulfilled(record, detail);
+  return ok;
 }
 
 /**
@@ -82,17 +88,17 @@ async function storeOrder(
  * like a working download on the success page.
  *
  * Failures are swallowed on purpose. The order is already stored and paid, and
- * a KV error while writing a convenience record must not turn a fulfilled
+ * a store error while writing a convenience record must not turn a fulfilled
  * order into a 5xx that makes Stripe redeliver it.
  */
 async function issueTokenIfDigital(
   record: OrderRecord,
-  kv: OrdersKv,
+  store: OrdersStore,
   limits?: DownloadTokenLimits,
 ): Promise<void> {
   if (record.format !== "digital" || record.status !== "paid") return;
   const minted = await ensureDownloadToken({
-    kv,
+    store,
     sessionId: record.sessionId,
     limits: limits ?? {
       ttlSeconds: DOWNLOAD_TOKEN_TTL_SECONDS,
@@ -110,7 +116,7 @@ async function issueTokenIfDigital(
 
 export async function fulfillCheckoutSession(
   input: FulfillmentInput & {
-    kv: OrdersKv;
+    store: OrdersStore;
     createOrder?: CreateProdigiOrder;
     /**
      * Download-token policy (#111), passed in rather than read from the env:
@@ -128,7 +134,7 @@ export async function fulfillCheckoutSession(
     };
   }
 
-  const existingRaw = await input.kv.get(decision.record.sessionId);
+  const existingRaw = await input.store.getOrder(decision.record.sessionId);
   // A record left behind by a retryable failure is not a duplicate: Stripe is
   // redelivering precisely so we can try again, and the stored order is where
   // the paid-but-unfulfilled state is visible to a human. Everything else that
@@ -153,11 +159,50 @@ export async function fulfillCheckoutSession(
     // failure is the only moment that can repair a paid digital order that has
     // a record but no token. `ensureDownloadToken` is idempotent, so this is a
     // read in the ordinary case.
-    if (retryRecord) await issueTokenIfDigital(retryRecord, input.kv, input.downloadLimits);
+    if (retryRecord) {
+      await issueTokenIfDigital(retryRecord, input.store, input.downloadLimits);
+    }
     return { httpStatus: 200, body: { received: true, duplicate: true } };
   }
 
   let record = isRetry ? retryRecord : decision.record;
+  // The attempts value the claim must pass is the one just read. The lock is
+  // only as good as that read: two racers both see `n`, one UPDATE matches,
+  // the other matches zero rows — which is enough because the claim runs
+  // before Prodigi below.
+  let fromAttempts = isRetry ? retryRecord.attempts : null;
+
+  if (isRetry && fromAttempts !== null) {
+    // Claim the retry before any Prodigi call. A lost claim means another
+    // worker already owns this redelivery — answer duplicate and do not place
+    // a second print. Raw transitionOrder here (not storeTransition) so the
+    // claim itself does not re-emit order.unfulfilled; the post-Prodigi write
+    // is the one that reports an outcome.
+    const claimed = await input.store.transitionOrder({
+      sessionId: record.sessionId,
+      fromAttempts,
+      record: {
+        ...record,
+        updatedAt: input.now || record.updatedAt,
+      },
+    });
+    if (!claimed) {
+      console.error(
+        JSON.stringify({
+          event: "order.fulfill-claim-lost",
+          sessionId: record.sessionId,
+          fromAttempts,
+        }),
+      );
+      return { httpStatus: 200, body: { received: true, duplicate: true } };
+    }
+    fromAttempts = fromAttempts + 1;
+    record = {
+      ...record,
+      attempts: fromAttempts,
+      updatedAt: input.now || record.updatedAt,
+    };
+  }
 
   if (
     record.status === "paid-unfulfilled" &&
@@ -194,7 +239,11 @@ export async function fulfillCheckoutSession(
         prodigiStage: null,
         assetUrl: null,
       };
-      await storeOrder(input.kv, record, result.message);
+      if (fromAttempts !== null) {
+        await storeTransition(input.store, fromAttempts, record, result.message);
+      } else {
+        await storeNewOrder(input.store, record, result.message);
+      }
       return {
         httpStatus: 500,
         body: { error: result.reason, message: result.message },
@@ -239,8 +288,12 @@ export async function fulfillCheckoutSession(
     }
   }
 
-  await storeOrder(input.kv, record);
-  await issueTokenIfDigital(record, input.kv, input.downloadLimits);
+  if (fromAttempts !== null) {
+    await storeTransition(input.store, fromAttempts, record);
+  } else {
+    await storeNewOrder(input.store, record);
+  }
+  await issueTokenIfDigital(record, input.store, input.downloadLimits);
   return {
     httpStatus: 200,
     body: {

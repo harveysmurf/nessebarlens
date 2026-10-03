@@ -5,6 +5,11 @@
 # Pages config where the ASSETS binding name is reserved.
 # run_worker_first=true: Pages always invokes the worker first; OpenNext must
 # fetch static files via env.ASSETS itself.
+#
+# Do NOT add [triggers] crons here. OpenNext's generated .open-next/worker.js
+# exports only `default { fetch }` plus the DO classes, so a cron trigger
+# would be silently ignored. The reconciler is a Next route invoked by
+# GitHub Actions — see DEVELOPMENT.md §5 and .github/workflows/reconcile.yml.
 
 name = "nessebar-lens"
 main = ".open-next/worker.js"
@@ -16,10 +21,22 @@ directory = ".open-next/assets"
 binding = "ASSETS"
 run_worker_first = true
 
+# Migration only (#116). The application reads ORDERS_DB (D1), not this KV
+# namespace. Keep the binding until `npm run migrate:orders` has run against
+# production — deleting it earlier loses the source data the migration reads
+# through the wrangler CLI.
 [[kv_namespaces]]
 binding = "ORDERS"
 id = "c6f34450a61c4c69b3f840e845a7b0d3"
 preview_id = "849af920ace64914904b2799bd0fc073"
+
+[[d1_databases]]
+binding = "ORDERS_DB"
+database_name = "nessebar-lens-orders"
+# PLACEHOLDER — the operator must run `npx wrangler d1 create nessebar-lens-orders`
+# and paste the real id here before this Worker can deploy. See DEVELOPMENT.md §5.
+database_id = "00000000-0000-0000-0000-000000000000"
+migrations_dir = "migrations"
 
 [[r2_buckets]]
 binding = "WEB"

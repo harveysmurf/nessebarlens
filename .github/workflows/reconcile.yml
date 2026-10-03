@@ -1,0 +1,56 @@
+name: Reconcile orders
+
+# Invokes POST /api/internal/reconcile every 15 minutes. workflow_dispatch is
+# not a convenience: it is how an operator forces a run after rotating a
+# Prodigi key (or after any other deploy-time fix that should drain the
+# paid-unfulfilled backlog without waiting for the next tick).
+
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: reconcile-orders
+  # Two runs must never overlap — the route is safe under concurrency thanks to
+  # D1 claims, but overlapping cron ticks still waste Stripe quota and muddy
+  # the summary logs. cancel-in-progress: false so a long run is not killed.
+  cancel-in-progress: false
+
+jobs:
+  reconcile:
+    name: Reconcile
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    # production Environment holds SITE_URL + RECONCILE_SECRET (same pattern
+    # as prod.yml). A repository-level secret would also work; match prod.
+    environment: production
+    env:
+      SITE_URL: ${{ secrets.SITE_URL }}
+      RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
+    steps:
+      - name: Call reconcile
+        # Secrets pass through env: and are never interpolated into the run
+        # block — the zizmor template-injection gate (Medium+) requires it.
+        # See scripts/zizmor-gate.mjs and ci.yml's workflow-audit job.
+        env:
+          SITE_URL: ${{ env.SITE_URL }}
+          RECONCILE_SECRET: ${{ env.RECONCILE_SECRET }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SITE_URL:-}" ]; then
+            echo "SITE_URL is empty — check the production Environment secret" >&2
+            exit 1
+          fi
+          if [ -z "${RECONCILE_SECRET:-}" ]; then
+            echo "RECONCILE_SECRET is empty — check the production Environment secret" >&2
+            exit 1
+          fi
+          base="${SITE_URL%/}"
+          curl -fsS -X POST \
+            -H "x-reconcile-secret: ${RECONCILE_SECRET}" \
+            -H "content-type: application/json" \
+            "${base}/api/internal/reconcile"

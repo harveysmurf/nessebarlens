@@ -132,6 +132,19 @@ export type OrderRecord = {
   /** HMAC /api/print-asset or public placeholder — never a MASTERS key/URL. */
   assetUrl: string | null;
   updatedAt: string;
+  /**
+   * When the row was first written. Distinct from `updatedAt` so a stuck-order
+   * alert (#116) can age from the payment, not from the latest retry claim.
+   * Indexed as `created_at` in D1; the column is never a second source of truth.
+   */
+  createdAt: string;
+  /**
+   * Optimistic-lock generation for D1 conditional writes (#116). Starts at 1
+   * on `putOrder`; every `transitionOrder` bumps it. Callers pass the value
+   * they just read as `fromAttempts` — two racers that both read `n` produce
+   * one matching UPDATE and one zero-row loser.
+   */
+  attempts: number;
 };
 
 export type StripeShippingDetails = {
@@ -275,6 +288,19 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
   if (!isNullableString(row.reason)) return null;
   if (!isNullableString(row.masterKey)) return null;
   if (typeof row.updatedAt !== "string") return null;
+  // Pre-D1 fixtures and KV-era records may omit these; default rather than
+  // reject so a migration or an old test seed still parses. New writes always
+  // set both, and the D1 columns are the lock the store actually compares.
+  const createdAt =
+    typeof row.createdAt === "string" && row.createdAt.length > 0
+      ? row.createdAt
+      : row.updatedAt;
+  const attempts =
+    typeof row.attempts === "number" &&
+    Number.isInteger(row.attempts) &&
+    row.attempts >= 1
+      ? row.attempts
+      : 1;
   if (!isNullableString(row.prodigiOrderId)) {
     return null;
   }
@@ -350,6 +376,8 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
     prodigiStage: row.prodigiStage,
     assetUrl: row.assetUrl,
     updatedAt: row.updatedAt,
+    createdAt,
+    attempts,
   };
 }
 
@@ -471,6 +499,8 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     amountTotal: isInt(input.amountTotal) ? input.amountTotal : 0,
     currency: "eur",
     updatedAt: input.now,
+    createdAt: input.now,
+    attempts: 1,
     masterKey: null,
     recipient: null,
     prodigiOrderId: null,

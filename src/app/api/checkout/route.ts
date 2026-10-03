@@ -186,16 +186,15 @@ export async function POST(request: Request) {
   try {
     session = await stripe.checkout.sessions.create(sessionParams);
   } catch (e) {
-    // Stripe's own code (`api_key_invalid`, `account_inactive`, ...) stays in
-    // the log, where it still tells the three possible causes apart — the
-    // diagnosis this was originally for — but is not put in the body, which an
-    // unauthenticated caller reads. It names our account state upstream, and
-    // `stripeCode` was a field on a public API for exactly that (#107).
-    const code =
-      typeof e === "object" && e !== null && "code" in e
-        ? String((e as { code: unknown }).code)
-        : "unknown";
-    console.error("stripe.checkout.sessions.create", code, e);
+    // The log, not the body, is where this stays diagnosable: the SDK's error
+    // carries its own `code` (`api_key_invalid`, `account_inactive`, ...) and
+    // the three causes stay apart here, where the log reader is us. It also
+    // carries the message for a connection failure, where there is no code at
+    // all. The object is logged whole rather than through a code-or-"unknown"
+    // ternary: the SDK wraps anything fetch threw, so a throw that reached this
+    // catch without a `code` property could not happen, and an arm for it would
+    // be a fallback nothing can test.
+    console.error("stripe.checkout.sessions.create", e);
     return NextResponse.json(
       { error: "Could not create Checkout Session", code: "checkout-unavailable" },
       { status: 502 },

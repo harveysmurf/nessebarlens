@@ -5,7 +5,6 @@ import test from "node:test";
 import Stripe from "stripe";
 import {
   fulfillCheckoutSession,
-  type OrdersKv,
 } from "../src/lib/fulfillment.ts";
 import {
   decideFulfillment,
@@ -26,6 +25,7 @@ import {
   downloadLinkForSession,
   readDownloadToken,
 } from "../src/lib/download-token.ts";
+import { memoryOrdersStore } from "./fake-orders-store.mts";
 
 const NOW = "2026-09-27T12:00:00.000Z";
 const SESSION = "cs_test_abcdefgh";
@@ -44,19 +44,8 @@ const SHIPPING: StripeShippingDetails = {
   },
 };
 
-function memoryKv(initial?: Record<string, string>): OrdersKv & { puts: string[] } {
-  const store = new Map(Object.entries(initial ?? {}));
-  const puts: string[] = [];
-  return {
-    puts,
-    async get(key) {
-      return store.has(key) ? store.get(key)! : null;
-    },
-    async put(key, value) {
-      puts.push(key);
-      store.set(key, value);
-    },
-  };
+function memoryKv(initial?: Record<string, string>) {
+  return memoryOrdersStore({ store: initial });
 }
 
 function paidInput(overrides: Record<string, unknown> = {}) {
@@ -238,17 +227,17 @@ test("digital payment with a matching total is paid and does not call Prodigi", 
     called += 1;
     return { ok: true, orderId: "x", stage: null, assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" };
   };
-  const kv = memoryKv();
+  const store = memoryOrdersStore();
   const result = await fulfillCheckoutSession({
     ...paidInput(),
-    kv,
+    store,
     createOrder: create,
   });
   assert.equal(result.httpStatus, 200);
   assert.equal(result.body.status, "paid");
   assert.equal(result.body.reason, null);
   assert.equal(called, 0);
-  const stored = parseOrderRecord((await kv.get(SESSION))!);
+  const stored = parseOrderRecord((await store.getOrder(SESSION))!);
   assert.ok(stored);
   assert.equal(stored.status, "paid");
   assert.equal(stored.masterKey, getPhoto("dawn")?.imageKey);
@@ -258,7 +247,7 @@ test("digital payment with a matching total is paid and does not call Prodigi", 
 });
 
 test("physical payment creates a Prodigi sandbox order and stores the id", async () => {
-  const kv = memoryKv();
+  const store = memoryOrdersStore();
   const result = await fulfillCheckoutSession({
     ...paidInput({
       amountTotal: 15 * 100 + 499,
@@ -267,13 +256,13 @@ test("physical payment creates a Prodigi sandbox order and stores the id", async
       customerEmail: "buyer@example.com",
       metadata: physicalMeta(),
     }),
-    kv,
+    store,
     createOrder: okCreate,
   });
   assert.equal(result.httpStatus, 200);
   assert.equal(result.body.status, "paid");
   assert.equal(result.body.prodigiOrderId, "ord_sandbox_1");
-  const stored = parseOrderRecord((await kv.get(SESSION))!);
+  const stored = parseOrderRecord((await store.getOrder(SESSION))!);
   assert.ok(stored);
   assert.equal(stored.status, "paid");
   assert.equal(stored.masterKey, null);
@@ -290,7 +279,7 @@ test("physical payment creates a Prodigi sandbox order and stores the id", async
 
 test("missing shipping is a permanent stop without calling Prodigi", async () => {
   let called = 0;
-  const kv = memoryKv();
+  const store = memoryOrdersStore();
   const result = await fulfillCheckoutSession({
     ...paidInput({
       amountTotal: 1999,
@@ -298,7 +287,7 @@ test("missing shipping is a permanent stop without calling Prodigi", async () =>
       shippingDetails: null,
       metadata: physicalMeta(),
     }),
-    kv,
+    store,
     createOrder: async () => {
       called += 1;
       return { ok: true, orderId: "x", stage: null, assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" };
@@ -310,7 +299,7 @@ test("missing shipping is a permanent stop without calling Prodigi", async () =>
 });
 
 test("a Prodigi 400 is terminal and stores its own reason", async () => {
-  const kv = memoryKv();
+  const store = memoryOrdersStore();
   const result = await fulfillCheckoutSession({
     ...paidInput({
       amountTotal: 1999,
@@ -318,7 +307,7 @@ test("a Prodigi 400 is terminal and stores its own reason", async () => {
       shippingDetails: SHIPPING,
       metadata: physicalMeta(),
     }),
-    kv,
+    store,
     createOrder: async () => ({
       ok: false,
       kind: "client",
@@ -330,7 +319,7 @@ test("a Prodigi 400 is terminal and stores its own reason", async () => {
   assert.equal(result.httpStatus, 200);
   assert.equal(result.body.status, "paid-unfulfilled");
   assert.equal(result.body.reason, "prodigi-validation-error");
-  const stored = parseOrderRecord((await kv.get(SESSION))!);
+  const stored = parseOrderRecord((await store.getOrder(SESSION))!);
   assert.equal(stored?.reason, "prodigi-validation-error");
   assert.equal(stored?.prodigiOrderId, null);
 });
@@ -352,7 +341,7 @@ test("a retryable Prodigi failure writes the paid order, answers 500, and retrie
     // redelivery after the deploy places the order.
     "prodigi-unconfigured",
   ] as const) {
-    const kv = memoryKv();
+    const store = memoryOrdersStore();
     let fail = true;
     const createOrder: CreateProdigiOrder = async () =>
       fail
@@ -372,11 +361,11 @@ test("a retryable Prodigi failure writes the paid order, answers 500, and retrie
         shippingDetails: SHIPPING,
         metadata: physicalMeta(),
       }),
-      kv,
+      store,
       createOrder,
     });
     assert.equal(first.httpStatus, 500, reason);
-    const stuck = parseOrderRecord((await kv.get(SESSION))!);
+    const stuck = parseOrderRecord((await store.getOrder(SESSION))!);
     assert.equal(stuck?.status, "paid-unfulfilled", reason);
     assert.equal(stuck?.reason, reason, reason);
     assert.equal(stuck?.terminal, false, reason);
@@ -392,12 +381,12 @@ test("a retryable Prodigi failure writes the paid order, answers 500, and retrie
         shippingDetails: SHIPPING,
         metadata: physicalMeta(),
       }),
-      kv,
+      store,
       createOrder,
     });
     assert.equal(retry.httpStatus, 200, reason);
     assert.equal(retry.body.duplicate, undefined, reason);
-    const fixed = parseOrderRecord((await kv.get(SESSION))!);
+    const fixed = parseOrderRecord((await store.getOrder(SESSION))!);
     assert.equal(fixed?.status, "paid", reason);
     assert.equal(fixed?.prodigiOrderId, "ord_fixed", reason);
     assert.equal(fixed?.terminal, true, reason);
@@ -411,7 +400,7 @@ test("a retryable Prodigi failure writes the paid order, answers 500, and retrie
         shippingDetails: SHIPPING,
         metadata: physicalMeta(),
       }),
-      kv,
+      store,
       createOrder,
     });
     assert.equal(again.body.duplicate, true, reason);
@@ -419,7 +408,7 @@ test("a retryable Prodigi failure writes the paid order, answers 500, and retrie
 });
 
 test("a terminal Prodigi 400 is not retried on redelivery", async () => {
-  const kv = memoryKv();
+  const store = memoryOrdersStore();
   let calls = 0;
   const createOrder: CreateProdigiOrder = async () => {
     calls += 1;
@@ -438,7 +427,7 @@ test("a terminal Prodigi 400 is not retried on redelivery", async () => {
       shippingDetails: SHIPPING,
       metadata: physicalMeta(),
     }),
-    kv,
+    store,
     createOrder,
   });
   assert.equal(first.httpStatus, 200);
@@ -449,7 +438,7 @@ test("a terminal Prodigi 400 is not retried on redelivery", async () => {
       shippingDetails: SHIPPING,
       metadata: physicalMeta(),
     }),
-    kv,
+    store,
     createOrder,
   });
   assert.equal(second.body.duplicate, true);
@@ -462,7 +451,7 @@ test("a retry that ends in a validation error stores terminal:true (#106)", asyn
   // failed order was stored as "still retryable". The flag has to be derived
   // from the reason, or a reconciler/operator view that trusts `terminal`
   // (#116) misreports it.
-  const kv = memoryKv();
+  const store = memoryOrdersStore();
   let fail = true;
   let calls = 0;
   const createOrder: CreateProdigiOrder = async () => {
@@ -490,12 +479,12 @@ test("a retry that ends in a validation error stores terminal:true (#106)", asyn
       shippingDetails: SHIPPING,
       metadata: physicalMeta(),
     }),
-    kv,
+    store,
     createOrder,
   });
   assert.equal(first.httpStatus, 500);
   assert.equal(
-    parseOrderRecord((await kv.get(SESSION))!)?.terminal,
+    parseOrderRecord((await store.getOrder(SESSION))!)?.terminal,
     false,
     "the retryable failure is not terminal",
   );
@@ -509,12 +498,12 @@ test("a retry that ends in a validation error stores terminal:true (#106)", asyn
       shippingDetails: SHIPPING,
       metadata: physicalMeta(),
     }),
-    kv,
+    store,
     createOrder,
   });
   assert.equal(retry.httpStatus, 200);
   assert.equal(calls, 2, "the retry really did call Prodigi");
-  const stored = parseOrderRecord((await kv.get(SESSION))!);
+  const stored = parseOrderRecord((await store.getOrder(SESSION))!);
   assert.equal(stored?.reason, "prodigi-validation-error");
   assert.equal(
     stored?.terminal,
@@ -533,7 +522,7 @@ test("a retry that ends in a validation error stores terminal:true (#106)", asyn
       shippingDetails: SHIPPING,
       metadata: physicalMeta(),
     }),
-    kv,
+    store,
     createOrder,
   });
   assert.equal(again.body.duplicate, true);
@@ -541,7 +530,7 @@ test("a retry that ends in a validation error stores terminal:true (#106)", asyn
 });
 
 test("Prodigi server error returns 500 and records the paid order for a human", async () => {
-  const kv = memoryKv();
+  const store = memoryOrdersStore();
   const result = await fulfillCheckoutSession({
     ...paidInput({
       amountTotal: 1999,
@@ -549,7 +538,7 @@ test("Prodigi server error returns 500 and records the paid order for a human", 
       shippingDetails: SHIPPING,
       metadata: physicalMeta(),
     }),
-    kv,
+    store,
     createOrder: async () => ({
       ok: false,
       kind: "server",
@@ -559,7 +548,7 @@ test("Prodigi server error returns 500 and records the paid order for a human", 
     }),
   });
   assert.equal(result.httpStatus, 500);
-  const stored = parseOrderRecord((await kv.get(SESSION))!);
+  const stored = parseOrderRecord((await store.getOrder(SESSION))!);
   assert.equal(stored?.reason, "prodigi-unavailable");
   assert.equal(stored?.terminal, false);
 });
@@ -641,7 +630,7 @@ test("bad metadata, unknown photo, and unpaid sessions do not become downloads",
 });
 
 test("a second delivery does not overwrite the first ORDERS record or call Prodigi again", async () => {
-  const kv = memoryKv();
+  const store = memoryOrdersStore();
   let calls = 0;
   const create: CreateProdigiOrder = async () => {
     calls += 1;
@@ -654,10 +643,10 @@ test("a second delivery does not overwrite the first ORDERS record or call Prodi
       shippingDetails: SHIPPING,
       metadata: physicalMeta(),
     }),
-    kv,
+    store,
     createOrder: create,
   });
-  const first = await kv.get(SESSION);
+  const first = await store.getOrder(SESSION);
   const again = await fulfillCheckoutSession({
     ...paidInput({
       amountTotal: 1,
@@ -665,13 +654,13 @@ test("a second delivery does not overwrite the first ORDERS record or call Prodi
       shippingDetails: SHIPPING,
       metadata: physicalMeta(),
     }),
-    kv,
+    store,
     createOrder: create,
   });
   assert.equal(again.body.duplicate, true);
-  assert.equal(kv.puts.length, 1);
+  assert.equal(store.orderPuts.length, 1);
   assert.equal(calls, 1);
-  assert.equal(await kv.get(SESSION), first);
+  assert.equal(await store.getOrder(SESSION), first);
 });
 
 test("download waits until ORDERS has a paid digital session, then streams MASTERS", async () => {
@@ -711,10 +700,10 @@ test("download waits until ORDERS has a paid digital session, then streams MASTE
       shippingDetails: SHIPPING,
       metadata: physicalMeta({ format: "canvas", sku: "GLOBAL-CAN-12X16" }),
     }),
-    kv: physicalKv,
+    store: physicalKv,
     createOrder: okCreate,
   });
-  const physical = parseOrderRecord((await physicalKv.get(SESSION))!);
+  const physical = parseOrderRecord((await physicalKv.getOrder(SESSION))!);
   assert.ok(physical);
   assert.equal(physical.format, "canvas");
   assert.equal(physical.status, "paid");
@@ -1136,12 +1125,12 @@ test("the webhook ignores anything that is not a paid, well-formed session", asy
   }
   // The ignore decision is what the route answers with: 200 + received, so
   // Stripe stops retrying, and nothing is written.
-  const kv = memoryKv();
-  const ignored = await fulfillCheckoutSession({ ...paidInput({ sessionId: "nope" }), kv });
+  const store = memoryOrdersStore();
+  const ignored = await fulfillCheckoutSession({ ...paidInput({ sessionId: "nope" }), store });
   assert.deepEqual(ignored, { httpStatus: 200, body: { received: true, ignored: "invalid-session-id" } });
-  const unpaid = await fulfillCheckoutSession({ ...paidInput({ paymentStatus: "unpaid" }), kv });
+  const unpaid = await fulfillCheckoutSession({ ...paidInput({ paymentStatus: "unpaid" }), store });
   assert.deepEqual(unpaid, { httpStatus: 200, body: { received: true, ignored: "unpaid" } });
-  assert.deepEqual(kv.puts, [], "an ignored session must not write ORDERS");
+  assert.deepEqual(store.orderPuts, [], "an ignored session must not write ORDERS");
 });
 
 test("a non-framed format carrying a frame is bad metadata, not a silent drop", () => {
@@ -1180,7 +1169,7 @@ test("a physical order without shipping stops as missing-shipping, before Prodig
   assert.equal(record.status, "paid-unfulfilled");
 
   let created = 0;
-  const kv = memoryKv();
+  const store = memoryOrdersStore();
   const result = await fulfillCheckoutSession({
     ...paidInput({
       amountTotal: 1999,
@@ -1188,7 +1177,7 @@ test("a physical order without shipping stops as missing-shipping, before Prodig
       shippingDetails: null,
       metadata: physicalMeta(),
     }),
-    kv,
+    store,
     createOrder: async (input) => {
       created++;
       return okCreate(input);
@@ -1196,7 +1185,7 @@ test("a physical order without shipping stops as missing-shipping, before Prodig
   });
   assert.equal(created, 0, "Prodigi must not be called for an unfulfillable order");
   assert.equal(result.httpStatus, 200);
-  const stored = parseOrderRecord((await kv.get(SESSION))!);
+  const stored = parseOrderRecord((await store.getOrder(SESSION))!);
   assert.equal(stored?.reason, "missing-shipping");
 });
 
@@ -1281,7 +1270,7 @@ test("a physical order with shipping but no Prodigi key waits, retryably, for th
   assert.equal(record.recipient?.city, "Nessebar");
 
   let created = 0;
-  const kv = memoryKv();
+  const store = memoryOrdersStore();
   // Stands in for the real client, which returns this exact failure without
   // contacting Prodigi (pinned in prodigi-order.test.mts).
   const unconfiguredCreate: CreateProdigiOrder = async () => {
@@ -1301,13 +1290,13 @@ test("a physical order with shipping but no Prodigi key waits, retryably, for th
       shippingDetails: SHIPPING,
       metadata: physicalMeta(),
     }),
-    kv,
+    store,
     createOrder: unconfiguredCreate,
   });
   assert.equal(created, 1);
   // Not a duplicate and not a success: 5xx, so Stripe keeps redelivering.
   assert.equal(first.httpStatus, 500);
-  const stored = parseOrderRecord((await kv.get(SESSION))!);
+  const stored = parseOrderRecord((await store.getOrder(SESSION))!);
   assert.equal(stored?.reason, "prodigi-unconfigured");
   assert.equal(stored?.terminal, false);
   assert.equal(stored?.recipient?.city, "Nessebar");
@@ -1322,12 +1311,12 @@ test("a physical order with shipping but no Prodigi key waits, retryably, for th
       shippingDetails: SHIPPING,
       metadata: physicalMeta(),
     }),
-    kv,
+    store,
     createOrder: okCreate,
   });
   assert.equal(second.httpStatus, 200);
   assert.equal(second.body.duplicate, undefined);
-  const placed = parseOrderRecord((await kv.get(SESSION))!);
+  const placed = parseOrderRecord((await store.getOrder(SESSION))!);
   assert.equal(placed?.status, "paid");
   assert.equal(placed?.prodigiOrderId, "ord_sandbox_1");
   assert.equal(placed?.terminal, true);
@@ -1373,24 +1362,24 @@ test("parseRecipient truncates each field at its own cap", () => {
 // ---- download tokens (#111) ----
 
 test("a paid digital order is issued exactly one download token", async () => {
-  const kv = memoryKv();
-  await fulfillCheckoutSession({ ...paidInput(), kv, createOrder: okCreate });
-  const link = await downloadLinkForSession(kv, SESSION);
+  const store = memoryOrdersStore();
+  await fulfillCheckoutSession({ ...paidInput(), store, createOrder: okCreate });
+  const link = await downloadLinkForSession(store, SESSION);
   assert.match(link!, /^\/api\/download\?token=[0-9a-f]{32}$/);
-  const record = await readDownloadToken(kv, SESSION);
+  const record = await readDownloadToken(store, SESSION);
   assert.equal(record?.remaining, 5);
   assert.equal(record?.sessionId, SESSION);
 });
 
 test("the configured limits are the ones the token is issued under", async () => {
-  const kv = memoryKv();
+  const store = memoryOrdersStore();
   await fulfillCheckoutSession({
     ...paidInput(),
-    kv,
+    store,
     createOrder: okCreate,
     downloadLimits: { ttlSeconds: 3600, maxDownloads: 1 },
   });
-  const record = await readDownloadToken(kv, SESSION);
+  const record = await readDownloadToken(store, SESSION);
   assert.equal(record?.remaining, 1);
 });
 
@@ -1406,7 +1395,7 @@ test("a print is issued no token, and neither is an unfulfilled digital order", 
       customerEmail: "buyer@example.com",
       metadata: physicalMeta(),
     }),
-    kv: printed,
+    store: printed,
     createOrder: okCreate,
   });
   assert.equal(await readDownloadToken(printed, SESSION), null);
@@ -1414,7 +1403,7 @@ test("a print is issued no token, and neither is an unfulfilled digital order", 
   const badMetadata = memoryKv();
   await fulfillCheckoutSession({
     ...paidInput({ metadata: { ...paidInput().metadata, photoSlug: "" } }),
-    kv: badMetadata,
+    store: badMetadata,
     createOrder: okCreate,
   });
   assert.equal(await readDownloadToken(badMetadata, SESSION), null);
@@ -1424,37 +1413,34 @@ test("a redelivery repairs a paid digital order that has a record but no token",
   // The failure this covers: the order was stored, the token write failed, and
   // Stripe redelivers. Answering "duplicate, already handled" without minting
   // would leave a paid customer with no way to their file, permanently.
-  const kv = memoryKv();
-  await fulfillCheckoutSession({ ...paidInput(), kv, createOrder: okCreate });
-  await kv.put("dls:" + SESSION, "corrupt");
-  assert.equal(await readDownloadToken(kv, SESSION), null);
+  const store = memoryOrdersStore();
+  await fulfillCheckoutSession({ ...paidInput(), store, createOrder: okCreate });
+  store.indexes.set(SESSION, "corrupt");
+  assert.equal(await readDownloadToken(store, SESSION), null);
 
-  const again = await fulfillCheckoutSession({ ...paidInput(), kv, createOrder: okCreate });
+  const again = await fulfillCheckoutSession({ ...paidInput(), store, createOrder: okCreate });
   assert.equal(again.body.duplicate, true);
-  assert.ok(await readDownloadToken(kv, SESSION), "the redelivery minted a token");
+  assert.ok(await readDownloadToken(store, SESSION), "the redelivery minted a token");
 });
 
 test("a token write failure does not fail an already-paid order", async () => {
   // The money is taken and the order is stored; losing a convenience record
   // must not answer 5xx, or Stripe redelivers a fulfilled order forever.
-  const store = new Map<string, string>();
-  const kv: OrdersKv = {
-    async get(key) {
-      return store.get(key) ?? null;
-    },
-    async put(key, value) {
-      if (key.startsWith("dl")) throw new Error("kv write failed");
-      store.set(key, value);
+  const base = memoryOrdersStore();
+  const store = {
+    ...base,
+    async putDownloadToken() {
+      throw new Error("store write failed");
     },
   };
   const errors: unknown[] = [];
   const realError = console.error;
   console.error = (...args: unknown[]) => void errors.push(args[0]);
   try {
-    const result = await fulfillCheckoutSession({ ...paidInput(), kv, createOrder: okCreate });
+    const result = await fulfillCheckoutSession({ ...paidInput(), store, createOrder: okCreate });
     assert.equal(result.httpStatus, 200);
     assert.equal(result.body.status, "paid");
-    assert.ok(parseOrderRecord((await kv.get(SESSION))!));
+    assert.ok(parseOrderRecord((await store.getOrder(SESSION))!));
     assert.match(
       JSON.stringify(errors),
       /order\.download-token-failed/,

@@ -2,58 +2,68 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   isMastersBucket,
-  isOrdersKv,
+  isOrdersDatabase,
+  isOrdersStore,
   readCloudflareEnv,
   readWorkerBindings,
 } from "../src/lib/worker-bindings.ts";
+import { memoryOrdersStore } from "./fake-orders-store.mts";
 
-const get = async () => null;
-const put = async () => {};
+const prepare = () => ({ bind() { return this; }, first: async () => null, run: async () => ({ meta: { changes: 0 }, results: [] }), all: async () => ({ results: [] }) });
+const batch = async () => [];
 
-test("ORDERS needs both get and put, MASTERS only get", () => {
-  assert.equal(isOrdersKv({ get, put }), true);
-  assert.equal(isOrdersKv({ get }), false, "get-only KV would throw on first write");
-  assert.equal(isOrdersKv({ put }), false);
-  assert.equal(isMastersBucket({ get }), true);
-  assert.equal(isMastersBucket({ put }), false);
+test("ORDERS_DB D1 needs prepare and batch; store needs the port methods", () => {
+  assert.equal(isOrdersDatabase({ prepare, batch }), true);
+  assert.equal(isOrdersDatabase({ prepare }), false, "prepare-only would throw on putDownloadToken");
+  assert.equal(isOrdersDatabase({ batch }), false);
+  assert.equal(isOrdersStore(memoryOrdersStore()), true);
+  assert.equal(isOrdersStore({ getOrder: async () => null }), false);
+  assert.equal(isMastersBucket({ get: async () => null }), true);
+  assert.equal(isMastersBucket({ put: async () => {} }), false);
 });
 
 test("binding guards reject non-objects and wrong-typed members", () => {
-  for (const bad of [null, undefined, 0, "", "ORDERS", true, Symbol("kv"), [get, put]]) {
-    assert.equal(isOrdersKv(bad), false, String(bad));
+  for (const bad of [null, undefined, 0, "", "ORDERS", true, Symbol("db"), [prepare, batch]]) {
+    assert.equal(isOrdersDatabase(bad), false, String(bad));
+    assert.equal(isOrdersStore(bad), false, String(bad));
     assert.equal(isMastersBucket(bad), false, String(bad));
   }
-  for (const bad of [{ get: "get", put }, { get: {}, put }, { get, put: null }]) {
-    assert.equal(isOrdersKv(bad), false, JSON.stringify(Object.keys(bad)));
+  for (const bad of [
+    { prepare: "prepare", batch },
+    { prepare: {}, batch },
+    { prepare, batch: null },
+  ]) {
+    assert.equal(isOrdersDatabase(bad), false, JSON.stringify(Object.keys(bad)));
   }
   assert.equal(isMastersBucket({ get: "get" }), false);
 });
 
 test("guards read the shape, never call the methods", () => {
   let calls = 0;
-  const spy = async () => {
+  const spy = () => {
     calls++;
-    return null;
+    return prepare();
   };
-  assert.equal(isOrdersKv({ get: spy, put: spy }), true);
-  assert.equal(isMastersBucket({ get: spy }), true);
+  const batchSpy = async () => {
+    calls++;
+    return [];
+  };
+  assert.equal(isOrdersDatabase({ prepare: spy, batch: batchSpy }), true);
+  assert.equal(isMastersBucket({ get: async () => { calls++; return null; } }), true);
   assert.equal(calls, 0);
 });
 
 test("readWorkerBindings never returns a binding that fails its own guard", async () => {
   const bindings = await readWorkerBindings();
-  if (bindings.ORDERS !== undefined) assert.equal(isOrdersKv(bindings.ORDERS), true);
+  if (bindings.ORDERS_DB !== undefined) {
+    assert.equal(isOrdersStore(bindings.ORDERS_DB), true);
+  }
   if (bindings.MASTERS !== undefined) assert.equal(isMastersBucket(bindings.MASTERS), true);
-  // No local Cloudflare context: KV bindings must be absent, never faked.
-  assert.equal(bindings.ORDERS, undefined);
+  assert.equal(bindings.ORDERS_DB, undefined);
   assert.equal(bindings.MASTERS, undefined);
 });
 
 const SECRET = "test-print-asset-hmac-secret-32b-min!!";
-
-/* The Cloudflare env path could not be driven before: outside a Worker
-   getCloudflareContext always throws, so every test saw the catch branch and
-   the success branch — the one production runs — was never executed. */
 
 test("bindings come from the Cloudflare env when it is available", async () => {
   const saved = {
@@ -61,46 +71,69 @@ test("bindings come from the Cloudflare env when it is available", async () => {
     print: process.env.PRINT_ASSET_HMAC_SECRET,
     base: process.env.PRODIGI_API_BASE,
     key: process.env.PRODIGI_SANDBOX_API_KEY,
+    reconcile: process.env.RECONCILE_SECRET,
   };
   try {
     delete process.env.STRIPE_WEBHOOK_SECRET;
     delete process.env.PRINT_ASSET_HMAC_SECRET;
     delete process.env.PRODIGI_API_BASE;
     delete process.env.PRODIGI_SANDBOX_API_KEY;
-    const orders = { get: async () => null, put: async () => {} };
+    delete process.env.RECONCILE_SECRET;
+    const orders = memoryOrdersStore();
     const masters = { get: async () => null };
     const bindings = await readWorkerBindings({
       readEnv: async () => ({
-        ORDERS: orders,
+        ORDERS_DB: orders,
         MASTERS: masters,
         STRIPE_WEBHOOK_SECRET: "whsec_from_bindings",
         PRINT_ASSET_HMAC_SECRET: SECRET,
+        RECONCILE_SECRET: "reconcile-secret-value",
         PRODIGI_API_BASE: "https://api.sandbox.prodigi.com",
         PRODIGI_SANDBOX_API_KEY: "sandbox-key",
       }),
     });
-    assert.equal(bindings.ORDERS, orders);
+    assert.equal(bindings.ORDERS_DB, orders);
     assert.equal(bindings.MASTERS, masters);
     assert.equal(bindings.webhookSecret, "whsec_from_bindings");
     assert.equal(bindings.printAssetSecret, SECRET);
+    assert.equal(bindings.reconcileSecret, "reconcile-secret-value");
     assert.equal(bindings.prodigiKeyConfigured, true);
   } finally {
     for (const [key, value] of Object.entries(saved)) {
-      if (value === undefined) delete process.env[key];
-      else process.env[key] = value;
+      const envKey =
+        key === "webhook"
+          ? "STRIPE_WEBHOOK_SECRET"
+          : key === "print"
+            ? "PRINT_ASSET_HMAC_SECRET"
+            : key === "base"
+              ? "PRODIGI_API_BASE"
+              : key === "key"
+                ? "PRODIGI_SANDBOX_API_KEY"
+                : "RECONCILE_SECRET";
+      if (value === undefined) delete process.env[envKey];
+      else process.env[envKey] = value;
     }
   }
+});
+
+test("a raw D1 binding is wrapped as an OrdersStore", async () => {
+  const db = { prepare, batch };
+  const bindings = await readWorkerBindings({
+    readEnv: async () => ({ ORDERS_DB: db }),
+  });
+  assert.ok(bindings.ORDERS_DB);
+  assert.equal(isOrdersStore(bindings.ORDERS_DB), true);
+  assert.notEqual(bindings.ORDERS_DB, db);
 });
 
 test("a binding that fails its shape guard is dropped, not passed through", async () => {
   const bindings = await readWorkerBindings({
     readEnv: async () => ({
-      // Looks like KV, cannot be written to.
-      ORDERS: { get: async () => null },
+      ORDERS_DB: { prepare: async () => null },
       MASTERS: { get: async () => null, extra: true },
     }),
   });
-  assert.equal(bindings.ORDERS, undefined);
+  assert.equal(bindings.ORDERS_DB, undefined);
   assert.ok(bindings.MASTERS, "an R2 bucket only needs get()");
 });
 
@@ -114,7 +147,7 @@ test("a context that throws falls back to process.env, never to a fake binding",
       },
     });
     assert.equal(bindings.webhookSecret, "whsec_from_process");
-    assert.equal(bindings.ORDERS, undefined);
+    assert.equal(bindings.ORDERS_DB, undefined);
     assert.equal(bindings.MASTERS, undefined);
   } finally {
     if (saved === undefined) delete process.env.STRIPE_WEBHOOK_SECRET;
@@ -154,15 +187,11 @@ test("a short print-asset secret in bindings falls back, a long one wins", async
 });
 
 test("a Worker context with no env at all reads as empty, not as a crash", async () => {
-  // getCloudflareContext resolves before any binding is declared in a fresh
-  // worker, so env can be absent. An empty object is the right answer: every
-  // binding then fails its shape guard and the request is refused, rather than
-  // a TypeError escaping the webhook.
   const env = await readCloudflareEnv(async () => ({
     getCloudflareContext: async () => ({}) as unknown as { env: Record<string, unknown> },
   }));
   assert.deepEqual(env, {});
   const bindings = await readWorkerBindings({ readEnv: async () => env });
-  assert.equal(bindings.ORDERS, undefined);
+  assert.equal(bindings.ORDERS_DB, undefined);
   assert.equal(bindings.MASTERS, undefined);
 });

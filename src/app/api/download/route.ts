@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import { resolveDownload } from "@/lib/order-decision";
 import { readOrderRecord } from "@/lib/order-corrupt";
 import {
-  ORDERS_KV_UNAVAILABLE_ERROR,
-  ORDERS_KV_UNAVAILABLE_STATUS,
-} from "@/lib/orders-kv";
+  ORDERS_STORE_UNAVAILABLE_ERROR,
+  ORDERS_STORE_UNAVAILABLE_STATUS,
+} from "@/lib/orders-store";
 import {
   NO_REFERRER_HEADERS,
   NO_STORE_HEADERS,
@@ -36,15 +36,15 @@ export async function GET(request: Request) {
   const token = params.get("token") ?? "";
 
   const bindings = await readWorkerBindings();
-  if (!bindings.ORDERS) {
+  if (!bindings.ORDERS_DB) {
     return NextResponse.json(
-      { error: ORDERS_KV_UNAVAILABLE_ERROR },
-      { status: ORDERS_KV_UNAVAILABLE_STATUS, headers: PRIVATE_HEADERS },
+      { error: ORDERS_STORE_UNAVAILABLE_ERROR },
+      { status: ORDERS_STORE_UNAVAILABLE_STATUS, headers: PRIVATE_HEADERS },
     );
   }
 
   const redeemed = await redeemDownloadToken({
-    kv: bindings.ORDERS,
+    store: bindings.ORDERS_DB,
     token,
   });
   if (!redeemed.ok) {
@@ -57,11 +57,11 @@ export async function GET(request: Request) {
   const sessionId = redeemed.record.sessionId;
   let raw: string | null;
   try {
-    raw = await bindings.ORDERS.get(sessionId);
+    raw = await bindings.ORDERS_DB.getOrder(sessionId);
   } catch {
     return NextResponse.json(
-      { error: ORDERS_KV_UNAVAILABLE_ERROR },
-      { status: ORDERS_KV_UNAVAILABLE_STATUS, headers: PRIVATE_HEADERS },
+      { error: ORDERS_STORE_UNAVAILABLE_ERROR },
+      { status: ORDERS_STORE_UNAVAILABLE_STATUS, headers: PRIVATE_HEADERS },
     );
   }
 

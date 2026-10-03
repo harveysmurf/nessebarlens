@@ -13,12 +13,12 @@ import test from "node:test";
 
    resolveCheckoutPageState is the single place that now reads it. It is tested
    here as the unit it is, with readWorkerBindings substituted the same way
-   routes.test.mts does, because ORDERS is a Worker binding with no env
+   routes.test.mts does, because ORDERS_DB is a Worker binding with no env
    fallback and these states are otherwise unreachable from a test. */
 
 const FAKE = "buzz-test:checkout-page-bindings";
 
-type Fake = { ORDERS?: unknown };
+type Fake = { ORDERS_DB?: unknown; MASTERS?: unknown };
 
 const globals = globalThis as { __buzzBindings?: Fake };
 
@@ -47,6 +47,7 @@ const { resolveCheckoutPageState, resolveCheckoutDownloadLink } = await import(
 );
 const { ensureDownloadToken } = await import("../src/lib/download-token.ts");
 const { orderViewState } = await import("../src/lib/order-decision.ts");
+const { memoryOrdersStore } = await import("./fake-orders-store.mts");
 type OrderRecord = import("../src/lib/order-decision.ts").OrderRecord;
 const orderStatus = await import("../src/app/api/order-status/route.ts");
 
@@ -71,17 +72,9 @@ const RECIPIENT = {
   phone: null,
 };
 
-const memoryKv = (initial: Record<string, string> = {}) => {
-  const store = new Map(Object.entries(initial));
-  return {
-    async get(key: string) {
-      return store.has(key) ? store.get(key)! : null;
-    },
-    async put(key: string, value: string) {
-      store.set(key, value);
-    },
-  };
-};
+/** An in-memory OrdersStore seeded with raw order JSON keyed by session id. */
+const memoryStore = (orders: Record<string, string> = {}) =>
+  memoryOrdersStore({ orders });
 
 const DEFAULTS = {
   v: 1,
@@ -140,14 +133,14 @@ function record(over: Record<string, unknown> = {}) {
  * the file is ready, and the token is the only thing that now grants it. A KV
  * with just the record resolves to "digital-no-token", which is its own branch.
  */
-async function downloadableKv(over: Record<string, unknown> = {}) {
-  const kv = memoryKv({ [SESSION]: record(over) });
+async function downloadableStore(over: Record<string, unknown> = {}) {
+  const store = memoryStore({ [SESSION]: record(over) });
   await ensureDownloadToken({
-    kv,
+    store,
     sessionId: SESSION,
     limits: { ttlSeconds: 30 * 86_400, maxDownloads: 5 },
   });
-  return kv;
+  return store;
 }
 
 async function withBindings<T>(next: Fake, run: () => Promise<T>): Promise<T> {
@@ -222,14 +215,18 @@ test("orderViewState maps each digital status to its own case", () => {
 
 test("a missing or malformed session_id never reaches the store", async () => {
   let touched = 0;
-  const kv = {
-    async get() {
+  // A full port, not a stub: worker-bindings drops a binding that fails the
+  // shape guard, so a get/put-shaped fake would be discarded and this test
+  // would pass without ever calling resolveCheckoutPageState's store path.
+  const store = memoryStore();
+  const counted = {
+    ...store,
+    async getOrder(sessionId: string) {
       touched++;
-      return null;
+      return store.getOrder(sessionId);
     },
-    async put() {},
   };
-  await withBindings({ ORDERS: kv }, async () => {
+  await withBindings({ ORDERS_DB: counted }, async () => {
     assert.equal(await resolveCheckoutPageState(undefined), "missing-session");
     assert.equal(await resolveCheckoutPageState(""), "missing-session");
     assert.equal(await resolveCheckoutPageState("not-a-session"), "invalid-session");
@@ -239,7 +236,7 @@ test("a missing or malformed session_id never reaches the store", async () => {
 });
 
 test("a digital order with a stored record and a token is ready", async () => {
-  await withBindings({ ORDERS: await downloadableKv() }, async () => {
+  await withBindings({ ORDERS_DB: await downloadableStore() }, async () => {
     assert.equal(await resolveCheckoutPageState(SESSION), "digital-ready");
   });
 });
@@ -247,17 +244,21 @@ test("a digital order with a stored record and a token is ready", async () => {
 test("a paid order with no token is digital-no-token, and mints nothing (#111)", async () => {
   // The page holds the session id in its URL, so minting a token on demand here
   // would hand back exactly the bearer credential tokens replaced.
-  const kv = memoryKv({ [SESSION]: record() });
-  await withBindings({ ORDERS: kv }, async () => {
+  const store = memoryStore({ [SESSION]: record() });
+  await withBindings({ ORDERS_DB: store }, async () => {
     assert.equal(await resolveCheckoutPageState(SESSION), "digital-no-token");
-    assert.equal(await kv.get(`dls:${SESSION}`), null, "no token was written");
+    assert.equal(
+      await store.findDownloadToken(SESSION),
+      null,
+      "no token was written",
+    );
     assert.equal(await resolveCheckoutDownloadLink(SESSION), null);
   });
 });
 
 test("the download link carries the stored token, not the session id", async () => {
-  const kv = await downloadableKv();
-  await withBindings({ ORDERS: kv }, async () => {
+  const store = await downloadableStore();
+  await withBindings({ ORDERS_DB: store }, async () => {
     const link = await resolveCheckoutDownloadLink(SESSION);
     assert.match(link!, /^\/api\/download\?token=[0-9a-f]{32}$/);
     assert.doesNotMatch(link!, /session_id/);
@@ -268,7 +269,7 @@ test("the download link carries the stored token, not the session id", async () 
 
 test("a physical order never resolves to a downloadable state", async () => {
   await withBindings(
-    { ORDERS: memoryKv({ [SESSION]: record({ format: "canvas" }) }) },
+    { ORDERS_DB: memoryStore({ [SESSION]: record({ format: "canvas" }) }) },
     async () => {
       assert.equal(await resolveCheckoutPageState(SESSION), "physical");
     },
@@ -277,7 +278,7 @@ test("a physical order never resolves to a downloadable state", async () => {
 
 test("no record yet is processing, not an error", async () => {
   // The ordinary first seconds after payment: Stripe has not called the webhook.
-  await withBindings({ ORDERS: memoryKv() }, async () => {
+  await withBindings({ ORDERS_DB: memoryStore() }, async () => {
     assert.equal(await resolveCheckoutPageState(SESSION), "processing");
   });
 });
@@ -291,11 +292,11 @@ test("a degraded store degrades to processing rather than throwing", async () =>
   });
   await withBindings(
     {
-      ORDERS: {
-        async get() {
-          throw new Error("kv down");
+      ORDERS_DB: {
+        ...memoryStore(),
+        async getOrder(): Promise<string | null> {
+          throw new Error("store down");
         },
-        async put() {},
       },
     },
     async () => {
@@ -305,13 +306,13 @@ test("a degraded store degrades to processing rather than throwing", async () =>
 });
 
 test("an unparseable or foreign record is unavailable, not pending", async () => {
-  await withBindings({ ORDERS: memoryKv({ [SESSION]: "not json" }) }, async () => {
+  await withBindings({ ORDERS_DB: memoryStore({ [SESSION]: "not json" }) }, async () => {
     assert.equal(await resolveCheckoutPageState(SESSION), "unavailable");
   });
   // A record stored under this key naming a different session is not this
   // buyer's order, whatever else it says.
   await withBindings(
-    { ORDERS: memoryKv({ [SESSION]: record({ sessionId: "cs_test_other" }) }) },
+    { ORDERS_DB: memoryStore({ [SESSION]: record({ sessionId: "cs_test_other" }) }) },
     async () => {
       assert.equal(await resolveCheckoutPageState(SESSION), "unavailable");
     },
@@ -322,14 +323,18 @@ test("an unparseable or foreign record is unavailable, not pending", async () =>
 
 test("order-status: an unvalidated session id is a 400 before the store", async () => {
   let touched = 0;
-  const kv = {
-    async get() {
+  // A full port, not a stub: worker-bindings drops a binding that fails the
+  // shape guard, so a get/put-shaped fake would be discarded and this test
+  // would pass without ever calling resolveCheckoutPageState's store path.
+  const store = memoryStore();
+  const counted = {
+    ...store,
+    async getOrder(sessionId: string) {
       touched++;
-      return null;
+      return store.getOrder(sessionId);
     },
-    async put() {},
   };
-  await withBindings({ ORDERS: kv }, async () => {
+  await withBindings({ ORDERS_DB: counted }, async () => {
     for (const url of [
       `${SITE}/api/order-status?session_id=nope`,
       // No param at all: the null side of the `?? ""` fallback, which a URL
@@ -352,7 +357,7 @@ test("order-status: reports the same state the page renders", async () => {
     ["refunded", { format: "digital", status: "refunded" }, "revoked"],
   ];
   for (const [label, over, expected] of cases) {
-    await withBindings({ ORDERS: memoryKv({ [SESSION]: record(over) }) }, async () => {
+    await withBindings({ ORDERS_DB: memoryStore({ [SESSION]: record(over) }) }, async () => {
       const res = await orderStatus.GET(
         new Request(`${SITE}/api/order-status?session_id=${SESSION}`),
       );
@@ -367,7 +372,7 @@ test("order-status: reports the same state the page renders", async () => {
 test("order-status: no record is a 200 pending, not a 404", async () => {
   // It is the first seconds after payment, not a missing resource, and the
   // poller treats a non-200 as "stop asking".
-  await withBindings({ ORDERS: memoryKv() }, async () => {
+  await withBindings({ ORDERS_DB: memoryStore() }, async () => {
     const res = await orderStatus.GET(
       new Request(`${SITE}/api/order-status?session_id=${SESSION}`),
     );
@@ -382,15 +387,15 @@ test("order-status: a broken store is a 503 the poller retries", async () => {
       new Request(`${SITE}/api/order-status?session_id=${SESSION}`),
     );
     assert.equal(res.status, 503);
-    assert.equal((await res.json() as { error: string }).error, "orders-kv-unavailable");
+    assert.equal((await res.json() as { error: string }).error, "orders-store-unavailable");
   });
   await withBindings(
     {
-      ORDERS: {
-        async get() {
-          throw new Error("kv down");
+      ORDERS_DB: {
+        ...memoryStore(),
+        async getOrder(): Promise<string | null> {
+          throw new Error("store down");
         },
-        async put() {},
       },
     },
     async () => {
@@ -403,7 +408,7 @@ test("order-status: a broken store is a 503 the poller retries", async () => {
 });
 
 test("order-status: a corrupt record is a 500, not a state the page would trust", async () => {
-  await withBindings({ ORDERS: memoryKv({ [SESSION]: "not json" }) }, async () => {
+  await withBindings({ ORDERS_DB: memoryStore({ [SESSION]: "not json" }) }, async () => {
     const res = await orderStatus.GET(
       new Request(`${SITE}/api/order-status?session_id=${SESSION}`),
     );
@@ -422,7 +427,7 @@ test("order-status never reads the masters bucket", async () => {
       return null;
     },
   };
-  await withBindings({ ORDERS: memoryKv({ [SESSION]: record() }), MASTERS: masters }, async () => {
+  await withBindings({ ORDERS_DB: memoryStore({ [SESSION]: record() }), MASTERS: masters }, async () => {
     await orderStatus.GET(new Request(`${SITE}/api/order-status?session_id=${SESSION}`));
   });
   assert.equal(mastersTouched, 0);

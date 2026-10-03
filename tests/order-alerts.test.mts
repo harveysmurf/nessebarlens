@@ -11,6 +11,7 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
+import { memoryOrdersStore } from "./fake-orders-store.mts";
 import {
   fulfillCheckoutSession,
   type OrdersKv,
@@ -73,6 +74,11 @@ function paidInput(overrides: Record<string, unknown> = {}) {
     customerPhone: null as string | null,
     prodigiKeyConfigured: false,
     now: NOW,
+    // The port, not a binding: every case here starts from an empty store, and
+    // a case that needs one with a record seeds it through the `store` override
+    // below. A get/put-shaped fake would fail the bindings shape guard and be
+    // dropped, so the alert these tests read would never be produced.
+    store: memoryOrdersStore(),
     ...overrides,
   };
 }

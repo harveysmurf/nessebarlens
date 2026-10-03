@@ -15,6 +15,17 @@ const root = path.join(import.meta.dirname, "..");
 const workflowDir = path.join(root, ".github", "workflows");
 const setupAction = "./.github/actions/setup";
 
+/**
+ * Workflows that never run code from this repository, so there is nothing for
+ * the shared action to set up. An entry here is a claim that the workflow runs
+ * no `npm`/`node`/build step and reads no repo file except through the ones the
+ * guard already checks; a workflow that grows a `run:` step needing Node has to
+ * come off this list and call the action instead. Kept as an explicit list, not
+ * a heuristic, so the exemption is a reviewable decision rather than something
+ * a new file can acquire by accident.
+ */
+const noRepoCode: readonly string[] = ["reconcile.yml"];
+
 const workflows = fs
   .readdirSync(workflowDir)
   .filter((name) => name.endsWith(".yml"))
@@ -43,6 +54,7 @@ test("no workflow inlines setup-node or bare npm ci, and checks out exactly once
 
     // A reusable-workflow caller job has `uses:` and no steps of its own; it
     // runs no actions in this repo, so it has no checkout to pin.
+    if (noRepoCode.includes(name)) continue;
     const jobsText = text.slice(text.search(/^jobs:[ \t]*$/m));
     for (const block of jobsText.split(/\n {2}(?=[a-z][\w-]*:\n)/).slice(1)) {
       if (/^\s*uses:\s*\.\/\.github\/workflows\//m.test(block)) continue;
@@ -69,6 +81,7 @@ test("no workflow inlines setup-node or bare npm ci, and checks out exactly once
 
 test("every workflow uses the shared setup composite action", () => {
   for (const { name, text } of workflows) {
+    if (noRepoCode.includes(name)) continue;
     assert.match(
       text,
       /uses:\s*\.\/\.github\/actions\/setup\b/,

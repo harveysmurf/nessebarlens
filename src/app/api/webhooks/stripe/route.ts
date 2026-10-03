@@ -7,14 +7,15 @@ import {
   revokeOrderByPaymentIntent,
 } from "@/lib/order-revocation";
 import {
-  ORDERS_KV_UNAVAILABLE_ERROR,
-  ORDERS_KV_UNAVAILABLE_STATUS,
-} from "@/lib/orders-kv";
+  ORDERS_STORE_UNAVAILABLE_ERROR,
+  ORDERS_STORE_UNAVAILABLE_STATUS,
+} from "@/lib/orders-store";
 import {
   readStripeEvent,
   type StripeCheckoutSession,
 } from "@/lib/stripe-event";
 import { readWorkerBindings } from "@/lib/worker-bindings";
+import type { OrdersStore } from "@/lib/orders-store";
 
 export const dynamic = "force-dynamic";
 // OpenNext runs this inside the Worker via nodejs_compat. Not a separate Node server.
@@ -92,11 +93,11 @@ export async function POST(request: Request) {
     return NextResponse.json({ received: true, ignored: event.type });
   }
 
-  if (!bindings.ORDERS) {
-    console.error("stripe webhook unconfigured: ORDERS KV binding missing");
+  if (!bindings.ORDERS_DB) {
+    console.error("stripe webhook unconfigured: ORDERS_DB binding missing");
     return NextResponse.json(
-      { error: ORDERS_KV_UNAVAILABLE_ERROR },
-      { status: ORDERS_KV_UNAVAILABLE_STATUS },
+      { error: ORDERS_STORE_UNAVAILABLE_ERROR },
+      { status: ORDERS_STORE_UNAVAILABLE_STATUS },
     );
   }
 
@@ -109,10 +110,10 @@ export async function POST(request: Request) {
       // settles after the block has already exited, so without this the catch
       // below never sees a rejected lookup and the error escapes as an
       // unhandled rejection instead of becoming a 500.
-      return await handleRevocation(event.type, event.data.object, bindings.ORDERS);
+      return await handleRevocation(event.type, event.data.object, bindings.ORDERS_DB);
     }
   } catch (e) {
-    // Lookup threw. Same reasoning as the KV catch below: a revoked buyer must
+    // Lookup threw. Same reasoning as the store catch below: a revoked buyer must
     // not keep the master file because Stripe was briefly unreachable, so this
     // is a redelivery, not a drop.
     console.error("stripe webhook revocation lookup failed", e);
@@ -128,7 +129,7 @@ export async function POST(request: Request) {
 
   try {
     const result = await fulfillCheckoutSession({
-      kv: bindings.ORDERS,
+      store: bindings.ORDERS_DB,
       sessionId: session.id ?? "",
       paymentStatus: session.payment_status ?? null,
       currency: session.currency ?? null,
@@ -148,9 +149,9 @@ export async function POST(request: Request) {
     });
     return NextResponse.json(result.body, { status: result.httpStatus });
   } catch (e) {
-    // The bare catch must not answer "orders-kv-unavailable" for *any* throw.
+    // The bare catch must not answer "orders-store-unavailable" for *any* throw.
     // That is the one thing this handler must not do: a bug in fulfillment, a
-    // bad PRODIGI_API_BASE, or a KV write failure all presented as a missing
+    // bad PRODIGI_API_BASE, or a store write failure all presented as a missing
     // binding, so the log pointed at the wrong subsystem entirely. Log the real
     // error and keep 5xx so Stripe redelivers rather than dropping paid money.
     console.error("stripe webhook fulfillment failed", e);
@@ -164,7 +165,7 @@ export async function POST(request: Request) {
 async function handleRevocation(
   type: string,
   object: unknown,
-  kv: NonNullable<Awaited<ReturnType<typeof readWorkerBindings>>["ORDERS"]>,
+  store: OrdersStore,
 ) {
   // Both branches resolve to a payment intent; the dispute needs one extra hop
   // because its object names a Charge, not a PaymentIntent.
@@ -193,16 +194,16 @@ async function handleRevocation(
 
   try {
     const result = await revokeOrderByPaymentIntent({
-      kv,
+      store,
       status: type === "charge.refunded" ? "refunded" : "disputed",
       paymentIntent,
       now: new Date().toISOString(),
     });
     return NextResponse.json(result.body, { status: result.httpStatus });
   } catch (e) {
-    // KV get/put threw. Same reasoning as the fulfillment catch: a revoked
-    // buyer must not keep the master file because our storage was briefly
-    // unavailable, so this is a redelivery, not a drop.
+    // Store get/transition threw. Same reasoning as the fulfillment catch: a
+    // revoked buyer must not keep the master file because our storage was
+    // briefly unavailable, so this is a redelivery, not a drop.
     console.error("stripe webhook revocation failed", e);
     return NextResponse.json({ error: "revocation-failed" }, { status: 500 });
   }
