@@ -116,6 +116,8 @@ Environment variables (names only — values live in the `.env.local` symlink):
 | `PRODIGI_SANDBOX_API_KEY` | Prodigi key used when `PRODIGI_API_BASE` is sandbox |
 | `PRODIGI_API_KEY` | Prodigi key used when `PRODIGI_API_BASE` is live |
 | `PRINT_ASSET_HMAC_SECRET` | ≥32-char HMAC secret for `/api/print-asset` (Prodigi). **Required for physical checkout, not optional** — `/api/checkout` calls `canSignMasterAsset()` and answers **503** rather than take the money for a print it cannot fulfill, and `/api/print-asset` answers 503 `print-asset-unavailable` when unset. A short or whitespace-only value is treated as unset. |
+| `PRODIGI_WEBHOOK_TOKEN` | Bearer token Prodigi must send on `POST /api/webhooks/prodigi` (`Authorization: Bearer …`). Prodigi v4 signs nothing, so this is the only callback auth. **Unset ⇒ 503** `prodigi-webhook-unconfigured`; mismatch ⇒ 401. Generate with `openssl rand -hex 32` and configure the same value as the shared secret Prodigi is told to send (or that a reverse-proxy injects). |
+| `RESEND_API_KEY` | Resend API key for customer email (order confirmation, print shipped, unfulfilled apology). **Unset ⇒ emails are skipped** with a structured `email.skipped` log line — never a throw on a paid webhook path. The sending domain (`nessebarlens.com`) must have Resend's **DNS TXT domain verification** before production mail will deliver; until then sandbox/`onboarding@resend.dev` testing is fine locally. |
 | `NEXT_PUBLIC_SITE_URL` | Canonical public origin (used by `src/lib/stripe.ts`). **Required for any production build** — `next.config.ts` fails the build without it, because `NEXT_PUBLIC_*` is inlined at build time and a silent `http://localhost:3000` fallback would ship a checkout that redirects to localhost. `next dev` and `npm test` do not need it. |
 | `NEXT_PUBLIC_WEB_IMAGES_BASE` | Base URL for gallery `<img>` srcset |
 | `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` | Opt-in gate for the R2 derivative ladder. Unset = placeholders. Only `true`/`1` enable it — a configured base alone does **not**. |
@@ -370,11 +372,14 @@ a host serving a reverted build is a support incident, not a deploy.
 - `preview_id` on a KV binding is a **KV namespace** preview id (`wrangler dev`),
   not a Pages preview-deployment concept. `scripts/remove-orders-kv.mjs` read and
   deleted both ids from the (now removed) `ORDERS` block.
-- Runtime secrets (Stripe/Prodigi/RECONCILE_SECRET) live as **Worker secrets**, scoped per version.
+- Runtime secrets (Stripe/Prodigi/RECONCILE_SECRET/PRODIGI_WEBHOOK_TOKEN/RESEND_API_KEY)
+  live as **Worker secrets**, scoped per version.
   Sync with `scripts/sync-worker-secrets.sh`; rotate with `wrangler secret put`.
   `NEXT_PUBLIC_*` bake at build from GitHub Environment secrets and are
   deliberately not in the secret map — a `NEXT_PUBLIC_*` entry there would be a
   value that looks live and never changes.
+  Resend also needs a **DNS TXT** record on the sending domain (see Resend → Domains);
+  the API key alone is not enough for production delivery.
 
 ### D1 orders database
 
@@ -387,7 +392,11 @@ npx wrangler d1 migrations apply nessebar-lens-orders --local
 npx wrangler d1 migrations apply nessebar-lens-orders --remote
 ```
 
-**The migration has run.** On 2026-10-03, against main `e6227b2`:
+`migrations/0002_prodigi_callbacks.sql` adds the CloudEvent dedupe table for
+`#117`. Apply it the same way (local + remote) before deploying a build that
+handles `POST /api/webhooks/prodigi`.
+
+**The initial migration has run.** On 2026-10-03, against main `e6227b2`:
 
 ```
 tally {"inserted":5,"skippedExisting":0,"corrupt":0,"tokensMigrated":0}
@@ -598,7 +607,10 @@ re-dispatching.
 GitHub Environments:
 
 - **`staging`** — sandbox Stripe + `PRODIGI_API_BASE=https://api.sandbox.prodigi.com` +
-  `PRODIGI_SANDBOX_API_KEY` + `SITE_URL=https://dev.nessebar-lens.pages.dev`.
+  `PRODIGI_SANDBOX_API_KEY` + `SITE_URL=https://dev.nessebar-lens.pages.dev` +
+  `PRODIGI_WEBHOOK_TOKEN` (shared with whatever injects the bearer on sandbox
+  callbacks) + `RESEND_API_KEY` (Resend test/sandbox key is fine; domain
+  verification still required before real inboxes accept mail).
   The `e2e-hosted-checkout` job also reads its keys from here, so it needs
   `environment: staging` — the repository has only `PRINT_ASSET_HMAC_SECRET`, and
   without the environment line every guard would resolve to nothing. Its one
@@ -608,8 +620,9 @@ GitHub Environments:
   withholds them.
 - **`production`** — required reviewer `harveysmurf`. Live Stripe
   (`sk_live_*` + live webhook secret) + `PRODIGI_API_BASE=https://api.prodigi.com` +
-  `PRODIGI_API_KEY` (live org key). Host is never inferred from which key is set.
-  Preview/staging stays sandbox.
+  `PRODIGI_API_KEY` (live org key) + `PRODIGI_WEBHOOK_TOKEN` + `RESEND_API_KEY`
+  (live Resend key; sending domain DNS TXT verified). Host is never inferred
+  from which key is set. Preview/staging stays sandbox.
 
 Secrets live in those Environments (never in git). Local `.env.local` remains the
 Debian-host symlink to `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.

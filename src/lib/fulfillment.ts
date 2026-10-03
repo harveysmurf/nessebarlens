@@ -1,11 +1,11 @@
 /**
- * The effects half of checkout fulfillment for the orders store (#116).
+ * The effects half of checkout fulfillment for the orders store (#116 / #117).
  *
  * `order-decision.ts` owns every rule about what a paid session *means* — what
  * a stored record says, whether an order may have its file, which status a
- * customer is shown. This module owns the four things that reach outside the
- * process: reading and writing the orders store, calling Prodigi, and answering
- * Stripe.
+ * customer is shown. This module owns the things that reach outside the
+ * process: reading and writing the orders store, calling Prodigi, sending
+ * customer email, and answering Stripe.
  *
  * It decides nothing on its own. Every branch here is a decision that
  * order-decision already made, or a Prodigi result being written back onto a
@@ -15,6 +15,13 @@
  * *before* Prodigi so two concurrent redeliveries of the same paid-unfulfilled
  * session place one Prodigi order, not two. The loser sees `false` from the
  * row count and answers 200 `{ duplicate: true }` without calling Prodigi.
+ *
+ * Customer email (#117): confirmation and unfulfilled are keyed off OUR
+ * terminal write, never a Prodigi callback. The kind is appended to
+ * `emailsSent` in the same put/transition that persists the outcome, and
+ * `sendEmail` runs only after that write succeeds. An email failure is
+ * logged and ignored — it must never change the webhook's HTTP status or
+ * the stored order.
  */
 
 import {
@@ -39,6 +46,9 @@ import {
 import type { FrameFinish } from "./pricing";
 import { isFrameFinishValue, isPrintSize } from "./sku-map";
 import type { OrdersStore } from "./orders-store";
+import { emailCopyFor } from "./email-copy";
+import type { EmailKind, SendEmail } from "./email";
+import { siteUrl } from "./config";
 
 function reportUnfulfilled(record: OrderRecord, detail?: string): void {
   console.error(
@@ -75,6 +85,89 @@ async function storeTransition(
   });
   if (ok && isUnfulfilledOutcome(record)) reportUnfulfilled(record, detail);
   return ok;
+}
+
+/**
+ * The address we may mail for this write. Prefers the Stripe customer email
+ * (digital orders store no recipient); falls back to the shipping recipient.
+ */
+function emailForOrder(
+  record: OrderRecord,
+  customerEmail: string | null,
+): string | null {
+  const fromStripe =
+    typeof customerEmail === "string" ? customerEmail.trim() : "";
+  if (fromStripe.includes("@")) return fromStripe.slice(0, 254);
+  const fromRecipient = record.recipient?.email;
+  if (typeof fromRecipient === "string" && fromRecipient.includes("@")) {
+    return fromRecipient.trim().slice(0, 254);
+  }
+  return null;
+}
+
+/**
+ * Which customer email this terminal write should claim, if any.
+ * Confirmation for a successful paid write; unfulfilled only for our own
+ * terminal failure — never for a retryable Prodigi miss.
+ */
+function emailKindForWrite(record: OrderRecord): EmailKind | null {
+  if (record.status === "paid" && record.terminal) {
+    return "order-confirmation";
+  }
+  if (isUnfulfilledOutcome(record) && record.terminal) {
+    return "order-unfulfilled";
+  }
+  return null;
+}
+
+function withEmailClaim(
+  record: OrderRecord,
+  kind: EmailKind,
+): OrderRecord {
+  if (record.emailsSent.includes(kind)) return record;
+  return { ...record, emailsSent: [...record.emailsSent, kind] };
+}
+
+async function sendClaimedEmail(input: {
+  sendEmail: SendEmail | undefined;
+  record: OrderRecord;
+  kind: EmailKind;
+  to: string;
+}): Promise<void> {
+  if (!input.sendEmail) return;
+  const copy = emailCopyFor({
+    kind: input.kind,
+    sessionId: input.record.sessionId,
+    siteUrl: siteUrl(),
+  });
+  try {
+    const sent = await input.sendEmail({
+      to: input.to,
+      kind: input.kind,
+      subject: copy.subject,
+      text: copy.text,
+      sessionId: input.record.sessionId,
+    });
+    if (!sent.ok) {
+      console.error(
+        JSON.stringify({
+          event: "email.failed",
+          kind: input.kind,
+          sessionId: input.record.sessionId,
+          message: sent.message,
+        }),
+      );
+    }
+  } catch (e) {
+    console.error(
+      JSON.stringify({
+        event: "email.failed",
+        kind: input.kind,
+        sessionId: input.record.sessionId,
+        message: e instanceof Error ? e.message : "email-threw",
+      }),
+    );
+  }
 }
 
 /**
@@ -124,6 +217,13 @@ export async function fulfillCheckoutSession(
      * place that reads it. Defaults keep every existing caller and test working.
      */
     downloadLimits?: DownloadTokenLimits;
+    /**
+     * Customer email (#117). Optional like `createOrder`: unset means the
+     * caller (or the route) has already decided not to send — typically
+     * because RESEND_API_KEY is missing. A failure inside sendEmail never
+     * changes the HTTP status or the stored order.
+     */
+    sendEmail?: SendEmail;
   },
 ): Promise<{ httpStatus: 200 | 500; body: Record<string, unknown> }> {
   const decision = decideFulfillment(input);
@@ -272,6 +372,9 @@ export async function fulfillCheckoutSession(
           prodigiStage: null,
           assetUrl: null,
         };
+        // Retryable failures stay terminal:false — no apology email yet; a
+        // redelivery or the reconciler may still land the order. Claim/send
+        // only runs on the terminal write paths below.
         if (fromAttempts !== null) {
           await storeTransition(input.store, fromAttempts, record, result.message);
         } else {
@@ -322,11 +425,56 @@ export async function fulfillCheckoutSession(
     }
   }
 
+  // Claim the email kind on the record *before* the write so a redelivery
+  // that races us sees emailsSent already populated and does not send twice.
+  // sendEmail runs only after the write succeeds.
+  const kind = emailKindForWrite(record);
+  const to = kind ? emailForOrder(record, input.customerEmail) : null;
+  const wantsEmail =
+    kind !== null &&
+    to !== null &&
+    !record.emailsSent.includes(kind);
+  // Claim only when a sender is wired. An unset RESEND_API_KEY must not
+  // burn the kind on the record — otherwise fixing the key later can never
+  // mail a customer whose order already carries emailsSent.
+  if (wantsEmail && kind && !input.sendEmail) {
+    console.error(
+      JSON.stringify({
+        event: "email.skipped",
+        reason: "resend-unconfigured",
+        kind,
+        sessionId: record.sessionId,
+      }),
+    );
+  }
+  const shouldEmail = wantsEmail && input.sendEmail !== undefined;
+  if (shouldEmail && kind) {
+    record = withEmailClaim(record, kind);
+  }
+
   if (fromAttempts !== null) {
-    await storeTransition(input.store, fromAttempts, record);
+    const ok = await storeTransition(input.store, fromAttempts, record);
+    if (!ok) {
+      // Lost the lock: another worker owns this write. Do not send mail —
+      // the winner's record carries the claim (or will).
+      return {
+        httpStatus: 200,
+        body: { received: true, duplicate: true },
+      };
+    }
   } else {
     await storeNewOrder(input.store, record);
   }
+
+  if (shouldEmail && kind && to) {
+    await sendClaimedEmail({
+      sendEmail: input.sendEmail,
+      record,
+      kind,
+      to,
+    });
+  }
+
   await issueTokenIfDigital(record, input.store, input.downloadLimits);
   return {
     httpStatus: 200,

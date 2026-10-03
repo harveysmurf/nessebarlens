@@ -248,6 +248,34 @@ test("digital payment with a matching total is paid and does not call Prodigi", 
   assert.equal(stored.format, "digital");
 });
 
+test("a paid digital order with an email sends confirmation once (#117)", async () => {
+  const store = memoryOrdersStore();
+  const sent: string[] = [];
+  const result = await fulfillCheckoutSession({
+    ...paidInput({ customerEmail: "buyer@example.com" }),
+    store,
+    sendEmail: async (mail) => {
+      sent.push(`${mail.kind}:${mail.to}`);
+      return { ok: true, message: "sent" };
+    },
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.deepEqual(sent, ["order-confirmation:buyer@example.com"]);
+  const record = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  assert.ok(record.emailsSent.includes("order-confirmation"));
+
+  const again = await fulfillCheckoutSession({
+    ...paidInput({ customerEmail: "buyer@example.com" }),
+    store,
+    sendEmail: async (mail) => {
+      sent.push(`${mail.kind}:${mail.to}`);
+      return { ok: true, message: "sent" };
+    },
+  });
+  assert.equal(again.body.duplicate, true);
+  assert.equal(sent.length, 1, "redelivery must not re-send confirmation");
+});
+
 test("physical payment creates a Prodigi sandbox order and stores the id", async () => {
   const store = memoryOrdersStore();
   const result = await fulfillCheckoutSession({

@@ -20,6 +20,8 @@ type Fake = {
   webhookSecret?: string;
   printAssetSecret?: string;
   reconcileSecret?: string;
+  prodigiWebhookToken?: string;
+  resendApiKey?: string;
   prodigiKeyConfigured: boolean;
 };
 
@@ -130,6 +132,7 @@ const printAsset = await import("../src/app/api/print-asset/route.ts");
 const download = await import("../src/app/api/download/route.ts");
 const checkout = await import("../src/app/api/checkout/route.ts");
 const stripe = await import("../src/app/api/webhooks/stripe/route.ts");
+const prodigiWebhook = await import("../src/app/api/webhooks/prodigi/route.ts");
 
 /** Sets the bindings for one test and returns a restore function. */
 function withBindings(next: Fake) {
@@ -642,6 +645,57 @@ test("checkout: an unset site url is a 503 before Stripe or Prodigi is called", 
     globalThis.fetch = savedFetch;
     if (savedSite === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
     else process.env.NEXT_PUBLIC_SITE_URL = savedSite;
+  }
+});
+
+test("prodigi webhook: 503 unset token, 401 missing/wrong bearer (#117)", async () => {
+  const store = memoryKv();
+  const event = JSON.stringify({
+    specversion: "1.0",
+    id: "evt_route_auth",
+    subject: "ord_abc",
+    data: {},
+  });
+
+  const unset = withBindings({ ORDERS_DB: store, prodigiKeyConfigured: false });
+  try {
+    const response = await prodigiWebhook.POST(
+      new Request(`${SITE}/api/webhooks/prodigi`, {
+        method: "POST",
+        body: event,
+      }),
+    );
+    assert.equal(response.status, 503);
+    assert.equal((await body(response)).error, "prodigi-webhook-unconfigured");
+  } finally {
+    unset();
+  }
+
+  const token = "prodigi-route-test-token-32chars!!";
+  const withToken = withBindings({
+    ORDERS_DB: store,
+    prodigiWebhookToken: token,
+    prodigiKeyConfigured: false,
+  });
+  try {
+    const missing = await prodigiWebhook.POST(
+      new Request(`${SITE}/api/webhooks/prodigi`, {
+        method: "POST",
+        body: event,
+      }),
+    );
+    assert.equal(missing.status, 401);
+
+    const wrong = await prodigiWebhook.POST(
+      new Request(`${SITE}/api/webhooks/prodigi`, {
+        method: "POST",
+        headers: { Authorization: "Bearer wrong-token-not-matching-len!!" },
+        body: event,
+      }),
+    );
+    assert.equal(wrong.status, 401);
+  } finally {
+    withToken();
   }
 });
 
