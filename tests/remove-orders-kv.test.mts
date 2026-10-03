@@ -4,8 +4,8 @@ import test from "node:test";
 import {
   defaultListNamespaceIds,
   findUnmigratedOrderKeys,
+  findUnmigratedTokens,
   KV_BINDING,
-  parseCount,
   parseD1Sessions,
   parseOrdersKvBinding,
   removeOrdersKvBinding,
@@ -51,16 +51,18 @@ const placeholderValue = (sessionId) => JSON.stringify({ sessionId, status: "ope
 const TOKEN_KEY = `dl:${"a".repeat(32)}`;
 
 /**
- * The steady state: `n` order records migrated into D1, plus state that is not
- * an order at all (two placeholders in the preview namespace, a download token
- * in production). The value a key returns is derived from the key, so a test
- * only has to say which sessions D1 has.
+ * The steady state: `n` order records and one download grant migrated into D1,
+ * plus state that is not an order at all (two placeholders in the preview
+ * namespace). The value a key returns is derived from the key, so a test only
+ * has to say which sessions and tokens D1 has.
  */
-const gate = (n, { prod = sessions(n) } = {}) => ({
+const TOKEN = "a".repeat(32);
+const gate = (n, { prod = sessions(n), d1Tokens = [TOKEN] } = {}) => ({
   listKvKeys: (_spawn, id) => (id === PROD_ID ? [...prod, TOKEN_KEY] : [...placeholders]),
   getKvValue: (_spawn, _id, key) =>
     placeholders.includes(key) ? placeholderValue(key) : orderValue(key),
   listD1Sessions: () => sessions(n),
+  listD1Tokens: () => d1Tokens,
 });
 const PROD_ID = "c6f34450a61c4c69b3f840e845a7b0d3";
 const PREVIEW_ID = "849af920ace64914904b2799bd0fc073";
@@ -92,14 +94,6 @@ test("removing the block takes its comment and leaves everything else byte-ident
   const edited = removeOrdersKvBinding(real);
   assert.equal(edited.removed, true);
   assert.equal(edited.text, real.replace(/# Migration only \(#116\)[\s\S]*?849af920ace64914904b2799bd0fc073"\n\n/, ""));
-});
-
-test("counts are read from wrangler's result shape and never guessed", () => {
-  assert.equal(parseCount('[{"results":[{"n":5}],"success":true}]'), 5);
-  assert.equal(parseCount('[{"results":[{"count":0}]}]'), 0);
-  assert.equal(parseCount("[]"), null);
-  assert.equal(parseCount("not json"), null);
-  assert.equal(parseCount('[{"results":[{"n":"5"}]}]'), null);
 });
 
 test("an order in KV with no D1 row refuses, names it, and deletes nothing", () => {
@@ -135,6 +129,7 @@ test("pre-payment placeholders and download tokens are not unmigrated orders", (
       return placeholderValue(key);
     },
     listD1Sessions: () => [],
+    listD1Tokens: () => [TOKEN],
     deleteNamespace: (_spawn, id) => deletes.push(id),
   });
   assert.equal(result.exitCode, 0);
@@ -144,6 +139,53 @@ test("pre-payment placeholders and download tokens are not unmigrated orders", (
     "a download token is never an order, so its value is never fetched",
   );
   assert.match(result.stdout, /"d1Orders":0,"kvKeys":5,"unmigratedOrders":0/);
+});
+
+test("a download token with no D1 row refuses: the delete takes the whole namespace", () => {
+  // The gate guards orders, but the deletion drops every key in the namespace.
+  // A dl: grant that never reached download_tokens would be lost silently —
+  // the same hole as the order check, one table over.
+  const deletes = [];
+  const writes = [];
+  const result = runRemove(["--yes"], {
+    readFileSync: () => TOML,
+    writeFileSync: (p, data) => writes.push([p, data]),
+    listNamespaceIds: () => ALL_IDS,
+    ...gate(5, { d1Tokens: [] }),
+    deleteNamespace: (_spawn, id) => deletes.push(id),
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /1 KV download token\(s\) have no row in D1 download_tokens/);
+  assert.match(result.stderr, new RegExp(TOKEN));
+  assert.deepEqual(deletes, []);
+  assert.deepEqual(writes, []);
+});
+
+test("an unreadable download_tokens result is a failed gate, not an empty set", () => {
+  const deletes = [];
+  const result = runRemove(["--yes"], {
+    readFileSync: () => TOML,
+    writeFileSync: () => assert.fail("must not rewrite the config"),
+    listNamespaceIds: () => ALL_IDS,
+    listKvKeys: () => assert.fail("must not read KV once the token side is unknown"),
+    getKvValue: () => assert.fail("must not fetch values once the token side is unknown"),
+    listD1Sessions: () => [],
+    listD1Tokens: () => null,
+    deleteNamespace: (_spawn, id) => deletes.push(id),
+  });
+  assert.equal(result.exitCode, 1);
+  assert.match(result.stderr, /unknown set of tokens/);
+  assert.deepEqual(deletes, []);
+});
+
+test("findUnmigratedTokens watches dl: grants and ignores everything else", () => {
+  const key = `dl:${TOKEN}`;
+  assert.deepEqual(findUnmigratedTokens({ keys: [key, "dl:not-a-token", `dls:cs_test_0`], d1Tokens: [] }), [
+    TOKEN,
+  ]);
+  assert.deepEqual(findUnmigratedTokens({ keys: [key], d1Tokens: [TOKEN] }), []);
+  // Order keys are the order leg's business, never this one's.
+  assert.deepEqual(findUnmigratedTokens({ keys: sessions(2), d1Tokens: [] }), []);
 });
 
 test("an order in the preview namespace alone still refuses", () => {
@@ -157,6 +199,7 @@ test("an order in the preview namespace alone still refuses", () => {
     listKvKeys: (_spawn, id) => (id === PROD_ID ? [] : ["cs_test_ghostsession"]),
     getKvValue: () => orderValue("cs_test_ghostsession"),
     listD1Sessions: () => [],
+    listD1Tokens: () => [],
     deleteNamespace: (_spawn, id) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
@@ -207,6 +250,7 @@ test("an unreadable D1 result is a failed gate, not an empty set", () => {
     listKvKeys: () => assert.fail("must not read KV once the D1 side is unknown"),
     getKvValue: () => assert.fail("must not fetch values once the D1 side is unknown"),
     listD1Sessions: () => null,
+    listD1Tokens: () => [],
     deleteNamespace: (_spawn, id) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
@@ -289,6 +333,7 @@ test("delete succeeded but the rewrite died: a re-run finishes the rewrite", () 
     listKvKeys: () => assert.fail("must not read KV against a deleted namespace"),
     getKvValue: () => assert.fail("must not fetch a value on a restart"),
     listD1Sessions: () => assert.fail("must not read D1 on a restart"),
+    listD1Tokens: () => assert.fail("must not read D1 on a restart"),
     deleteNamespace: (_spawn, id) => assert.fail("must not delete again: " + id),
   });
   assert.equal(result.exitCode, 0);

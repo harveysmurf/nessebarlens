@@ -9,15 +9,18 @@
  * claim. So coverage is measured live in this process, immediately before
  * anything is touched, and an unmigrated order refuses:
  *
- *   every KV key that holds a completed order  ==  a row in D1
+ *   every completed order in KV   -> a row in D1 orders
+ *   every download grant in KV    -> a row in D1 download_tokens
  *
  * The invariant is "no unmigrated completed order remains in KV", and the
  * discriminator is the key/value grammar the migrator already owns
  * (classifyKvKey + looksLikeOrderRecord), not a key count. A KV key only
  * matters if its value is an OrderRecord; `cs_test_` placeholders are
- * pre-payment session state, `dl:`/`dls:` keys are download tokens, and neither
- * is an order D1 still needs. Counting keys instead would compare two sets that
- * differ by construction and never match.
+ * pre-payment session state, and neither is an order D1 still needs. Counting
+ * keys instead would compare two sets that differ by construction and never
+ * match. Download grants get their own leg for the same reason: the deletion
+ * takes the whole namespace, so a gate that watched only orders would drop an
+ * unmigrated `dl:` token on the way out.
  *
  * Nothing is deleted and wrangler.toml is not rewritten unless every
  * completed-order key is already in D1 AND the operator passed `--yes`, so a
@@ -48,6 +51,7 @@ import { fileURLToPath } from "node:url";
 // asked, so it asks it with the same predicates: a gate that recognises a
 // different set of keys than the migrator would either refuse forever or, worse,
 // wave through an order the migrator would have carried over.
+import { isDownloadToken } from "../src/lib/download-token.ts";
 import { classifyKvKey, looksLikeOrderRecord } from "./migrate-orders-kv-to-d1.mjs";
 
 export const DATABASE_NAME = "nessebar-lens-orders";
@@ -128,27 +132,6 @@ export function removeOrdersKvBinding(text) {
 }
 
 /**
- * Pull the scalar out of a `select count(*) as n …` result, tolerating both
- * wrangler result shapes (bare array, or array with metadata) and refusing to
- * guess: an unparseable count is a failed gate, not a zero.
- */
-export function parseCount(stdout) {
-  let parsed;
-  try {
-    parsed = JSON.parse(stdout || "null");
-  } catch {
-    return null;
-  }
-  const entry = Array.isArray(parsed) ? parsed[0] : parsed;
-  const row = Array.isArray(entry?.results) ? entry.results[0] : null;
-  const value = row?.n ?? row?.count;
-  if (typeof value === "number" && Number.isInteger(value) && value >= 0) {
-    return value;
-  }
-  return null;
-}
-
-/**
  * KV keys whose value is a completed order record that D1 has no row for.
  *
  * Keys are classified with the migrator's grammar: `dl:`/`dls:` download state
@@ -172,12 +155,12 @@ export function findUnmigratedOrderKeys({ keys, readValue, d1Sessions }) {
 }
 
 /**
- * Session ids currently in D1. An unreadable result returns null, never []:
- * an empty D1 side would make every KV order record look unmigrated (safe) but
- * an absent check would be a check that was never run (not safe), so the caller
+ * One column of a `select …` D1 result. An unreadable result returns null, never
+ * []: an empty D1 side would make every KV record look unmigrated (safe) but an
+ * absent check would be a check that was never run (not safe), so the caller
  * treats null as a failed gate.
  */
-export function parseD1Sessions(stdout) {
+export function parseD1Column(stdout, column) {
   let parsed;
   try {
     parsed = JSON.parse(stdout || "null");
@@ -186,17 +169,41 @@ export function parseD1Sessions(stdout) {
   }
   const entries = Array.isArray(parsed) ? parsed : null;
   if (!entries) return null;
-  const sessions = [];
+  const values = [];
   for (const entry of entries) {
     const rows = Array.isArray(entry?.results) ? entry.results : null;
     if (!rows) return null;
     for (const row of rows) {
-      const id = row?.session_id ?? row?.sessionId;
-      if (typeof id !== "string" || !id) return null;
-      sessions.push(id);
+      const value = row?.[column];
+      if (typeof value !== "string" || !value) return null;
+      values.push(value);
     }
   }
-  return sessions;
+  return values;
+}
+
+export const parseD1Sessions = (stdout) => parseD1Column(stdout, "session_id");
+export const parseD1Tokens = (stdout) => parseD1Column(stdout, "token");
+
+/**
+ * KV download tokens with no row in D1's download_tokens.
+ *
+ * The removal deletes the whole namespace, not just the order keys, so a gate
+ * that watched only orders would drop an unmigrated download grant on the way
+ * out — the same class of hole, one table over. `dl:` keys carry the grant;
+ * the `dls:` keys beside them are reverse indexes the migrator derives from
+ * those, so they are covered by the token check rather than separately.
+ */
+export function findUnmigratedTokens({ keys, d1Tokens }) {
+  const migrated = new Set(d1Tokens);
+  const unmigrated = [];
+  for (const key of keys) {
+    const kind = classifyKvKey(key);
+    if (kind.kind !== "token") continue;
+    if (!isDownloadToken(kind.token)) continue;
+    if (!migrated.has(kind.token)) unmigrated.push(kind.token);
+  }
+  return unmigrated;
 }
 
 export function runRemove(argv, options = {}) {
@@ -206,6 +213,7 @@ export function runRemove(argv, options = {}) {
   const listKvKeys = options.listKvKeys ?? defaultListKvKeys;
   const getKvValue = options.getKvValue ?? defaultGetKvValue;
   const listD1Sessions = options.listD1Sessions ?? defaultListD1Sessions;
+  const listD1Tokens = options.listD1Tokens ?? defaultListD1Tokens;
   const deleteNamespace = options.deleteNamespace ?? defaultDeleteNamespace;
   const listNamespaceIds = options.listNamespaceIds ?? defaultListNamespaceIds;
   const tomlPath = options.tomlPath ?? WRANGLER_TOML;
@@ -222,7 +230,7 @@ export function runRemove(argv, options = {}) {
       stdout:
         "Usage: node scripts/remove-orders-kv.mjs [--yes]\n" +
         "\n" +
-        "Checks that every completed order in KV ORDERS exists in D1, and refuses to delete unless it does.\n",
+        "Checks that every completed order and download grant in KV ORDERS exists in D1,\n        and refuses to delete unless it does.\n",
       stderr: "",
     };
   }
@@ -302,8 +310,18 @@ export function runRemove(argv, options = {}) {
         "could not read the migrated orders from D1: refusing to delete on an unknown set of sessions",
     };
   }
+  const d1Tokens = listD1Tokens(spawn);
+  if (d1Tokens === null) {
+    return {
+      exitCode: 1,
+      stdout: "",
+      stderr:
+        "could not read the migrated download tokens from D1: refusing to delete on an unknown set of tokens",
+    };
+  }
 
   const unmigrated = [];
+  const unmigratedTokens = [];
   let checked = 0;
   try {
     for (const id of remaining) {
@@ -316,6 +334,9 @@ export function runRemove(argv, options = {}) {
           d1Sessions,
         }),
       );
+      // The token leg reads key names only, so it is settled per namespace
+      // here rather than per key inside the order check above.
+      unmigratedTokens.push(...findUnmigratedTokens({ keys: kvKeys, d1Tokens }));
     }
   } catch (e) {
     return { exitCode: 1, stdout: "", stderr: e instanceof Error ? e.message : String(e) };
@@ -325,6 +346,7 @@ export function runRemove(argv, options = {}) {
     d1Orders: d1Sessions.length,
     kvKeys: checked,
     unmigratedOrders: unmigrated.length,
+    unmigratedTokens: unmigratedTokens.length,
   })}\n`;
   if (unmigrated.length > 0) {
     return {
@@ -333,6 +355,15 @@ export function runRemove(argv, options = {}) {
       stderr:
         `gate failed: ${unmigrated.length} KV key(s) hold a completed order with no row in D1: ` +
         `${unmigrated.join(", ")}. Run npm run migrate:orders first, then re-check. Nothing was deleted.`,
+    };
+  }
+  if (unmigratedTokens.length > 0) {
+    return {
+      exitCode: 1,
+      stdout: summary,
+      stderr:
+        `gate failed: ${unmigratedTokens.length} KV download token(s) have no row in D1 download_tokens: ` +
+        `${unmigratedTokens.join(", ")}. Run npm run migrate:orders first, then re-check. Nothing was deleted.`,
     };
   }
   if (!parsed.confirmed) {
@@ -426,6 +457,17 @@ export function defaultListNamespaceIds(spawn) {
  * `wrangler kv key list` has no pagination flag, so one call is the whole
  * namespace; the cursor loop the migration script uses is not available here.
  */
+/**
+ * One page of keys for a namespace, by id.
+ *
+ * `wrangler kv key list` has no `--cursor` flag in any released version, so
+ * this returns the single page wrangler gives (1000 keys) and does not
+ * paginate — the migrator's cursor loop in migrate-orders-kv-to-d1.mjs is dead
+ * code on the same CLI. Both paths therefore cap at the page limit: a gate run
+ * against a namespace holding more than one page of keys would not see the
+ * overflow. Live namespaces hold single-digit keys; re-check before running
+ * this on a namespace at the page limit.
+ */
 function defaultListKvKeys(spawn, namespaceId) {
   const result = spawn(
     "npx",
@@ -498,6 +540,27 @@ function defaultListD1Sessions(spawn) {
     throw new Error(result.stderr || "d1 read failed");
   }
   return parseD1Sessions(result.stdout);
+}
+
+function defaultListD1Tokens(spawn) {
+  const result = spawn(
+    "npx",
+    [
+      "wrangler",
+      "d1",
+      "execute",
+      DATABASE_NAME,
+      "--remote",
+      "--json",
+      "--command",
+      "select token from download_tokens",
+    ],
+    { encoding: "utf8" },
+  );
+  if ((result.status ?? 1) !== 0) {
+    throw new Error(result.stderr || "d1 read failed");
+  }
+  return parseD1Tokens(result.stdout);
 }
 
 function defaultDeleteNamespace(spawn, id) {
