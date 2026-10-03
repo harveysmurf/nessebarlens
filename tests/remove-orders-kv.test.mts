@@ -267,6 +267,30 @@ test("a write-off does not wave through the other orders", () => {
   assert.deepEqual(deletes, []);
 });
 
+test("an id present in both namespaces is written off once, not twice", () => {
+  // Both namespaces are checked against the same D1 set, so a shared key would
+  // otherwise be reported — and waived — twice, printing a duplicate disposition.
+  const deletes = [];
+  const result = runRemove(["--yes", "--write-off", "cs_test_stagingrec", "test-mode staging record"], {
+    readFileSync: () => TOML,
+    // Reaches the delete and the rewrite by design; the assertion that matters
+    // here is the single disposition line, not the rewrite.
+    writeFileSync: () => {},
+    listNamespaceIds: () => ALL_IDS,
+    listKvKeys: () => ["cs_test_stagingrec"],
+    getKvValue: () => orderValue("cs_test_stagingrec"),
+    listD1Sessions: () => [],
+    listD1Tokens: () => [],
+    deleteNamespace: (_spawn, id) => deletes.push(id),
+  });
+  assert.equal(result.exitCode, 0);
+  const disposition = result.stdout.split("cs_test_stagingrec: test-mode staging record").length - 1;
+  assert.equal(disposition, 1);
+  assert.match(result.stdout, /"unmigratedOrders":0/);
+  assert.match(result.stdout, /"writtenOff":\["cs_test_stagingrec"\]/);
+  assert.deepEqual(deletes, [PROD_ID, PREVIEW_ID]);
+});
+
 test("a clean check without --yes refuses and deletes nothing", () => {
   const deletes = [];
   const writes = [];

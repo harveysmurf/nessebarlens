@@ -348,23 +348,28 @@ export function runRemove(argv, options = {}) {
     };
   }
 
-  const unmigrated = [];
-  const unmigratedTokens = [];
+  // A key can exist in both the production and preview namespaces, and both are
+  // checked against the same D1 set, so a shared id would otherwise be reported
+  // and written off twice. Membership is what matters, so key on it.
+  const unmigrated = new Set();
+  const unmigratedTokens = new Set();
   let checked = 0;
   try {
     for (const id of remaining) {
       const kvKeys = listKvKeys(spawn, id);
       checked += kvKeys.length;
-      unmigrated.push(
-        ...findUnmigratedOrderKeys({
-          keys: kvKeys,
-          readValue: (key) => getKvValue(spawn, id, key),
-          d1Sessions,
-        }),
-      );
+      for (const sessionId of findUnmigratedOrderKeys({
+        keys: kvKeys,
+        readValue: (key) => getKvValue(spawn, id, key),
+        d1Sessions,
+      })) {
+        unmigrated.add(sessionId);
+      }
       // The token leg reads key names only, so it is settled per namespace
       // here rather than per key inside the order check above.
-      unmigratedTokens.push(...findUnmigratedTokens({ keys: kvKeys, d1Tokens }));
+      for (const token of findUnmigratedTokens({ keys: kvKeys, d1Tokens })) {
+        unmigratedTokens.add(token);
+      }
     }
   } catch (e) {
     return { exitCode: 1, stdout: "", stderr: e instanceof Error ? e.message : String(e) };
@@ -377,7 +382,7 @@ export function runRemove(argv, options = {}) {
   // runbook must not read as a clean gate.
   const waived = [];
   const unwaived = [];
-  for (const sessionId of unmigrated) {
+  for (const sessionId of [...unmigrated]) {
     const waiver = parsed.writeOffs.find((w) => w.sessionId === sessionId);
     if (waiver) waived.push(waiver);
     else unwaived.push(sessionId);
@@ -399,7 +404,7 @@ export function runRemove(argv, options = {}) {
     d1Orders: d1Sessions.length,
     kvKeys: checked,
     unmigratedOrders: unwaived.length,
-    unmigratedTokens: unmigratedTokens.length,
+    unmigratedTokens: unmigratedTokens.size,
     writtenOff: waived.map((w) => w.sessionId),
   })}\n`;
   if (waived.length > 0) {
@@ -416,13 +421,13 @@ export function runRemove(argv, options = {}) {
         `--write-off <session_id> <reason> for a record deliberately dropped. Nothing was deleted.`,
     };
   }
-  if (unmigratedTokens.length > 0) {
+  if (unmigratedTokens.size > 0) {
     return {
       exitCode: 1,
       stdout: summary,
       stderr:
-        `gate failed: ${unmigratedTokens.length} KV download token(s) have no row in D1 download_tokens: ` +
-        `${unmigratedTokens.join(", ")}. Run npm run migrate:orders first, then re-check. Nothing was deleted.`,
+        `gate failed: ${unmigratedTokens.size} KV download token(s) have no row in D1 download_tokens: ` +
+        `${[...unmigratedTokens].join(", ")}. Run npm run migrate:orders first, then re-check. Nothing was deleted.`,
     };
   }
   if (!parsed.confirmed) {
