@@ -12,10 +12,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
-import {
-  fulfillCheckoutSession,
-  type OrdersKv,
-} from "../src/lib/fulfillment.ts";
+import { fulfillCheckoutSession } from "../src/lib/fulfillment.ts";
 import {
   AWAITING_PRODIGI_REASON,
   isUnfulfilledOutcome,
@@ -40,21 +37,6 @@ const SHIPPING: StripeShippingDetails = {
     country: "BG",
   },
 };
-
-function memoryKv(): OrdersKv & { puts: string[] } {
-  const store = new Map<string, string>();
-  const puts: string[] = [];
-  return {
-    puts,
-    async get(key) {
-      return store.has(key) ? store.get(key)! : null;
-    },
-    async put(key, value) {
-      puts.push(key);
-      store.set(key, value);
-    },
-  };
-}
 
 function paidInput(overrides: Record<string, unknown> = {}) {
   return {
@@ -158,9 +140,8 @@ test("every terminal pre-Prodigi stop logs one structured alert", async () => {
     ];
 
   for (const { reason, input } of cases) {
-    const kv = memoryKv();
     const events = await captureUnfulfilled(async () => {
-      const result = await fulfillCheckoutSession({ ...input, kv });
+      const result = await fulfillCheckoutSession(input);
       assert.equal(result.body.reason, reason, reason);
     });
     const alerts = events.filter((e) => typeof e !== "string");
@@ -203,7 +184,6 @@ test("both Prodigi failure kinds log, and the retryable one keeps its detail", a
     // failure: paid, unshipped, and only visible in a log.
     [unconfigured, "prodigi-unconfigured", 500, false],
   ] as const) {
-    const kv = memoryKv();
     const events = await captureUnfulfilled(async () => {
       const result = await fulfillCheckoutSession({
         ...paidInput({
@@ -212,7 +192,6 @@ test("both Prodigi failure kinds log, and the retryable one keeps its detail", a
           shippingDetails: SHIPPING,
           metadata: physicalMeta(),
         }),
-        kv,
         createOrder: create,
       });
       assert.equal(result.httpStatus, httpStatus, reason);
@@ -227,7 +206,6 @@ test("both Prodigi failure kinds log, and the retryable one keeps its detail", a
 });
 
 test("the Prodigi 503 alert carries the upstream message as detail", async () => {
-  const kv = memoryKv();
   const events = await captureUnfulfilled(async () => {
     await fulfillCheckoutSession({
       ...paidInput({
@@ -236,7 +214,6 @@ test("the Prodigi 503 alert carries the upstream message as detail", async () =>
         shippingDetails: SHIPPING,
         metadata: physicalMeta(),
       }),
-      kv,
       createOrder: async () => ({
         ok: false,
         kind: "server",
@@ -251,7 +228,6 @@ test("the Prodigi 503 alert carries the upstream message as detail", async () =>
 });
 
 test("a fulfilled order logs nothing", async () => {
-  const kv = memoryKv();
   const events = await captureUnfulfilled(async () => {
     const result = await fulfillCheckoutSession({
       ...paidInput({
@@ -260,7 +236,6 @@ test("a fulfilled order logs nothing", async () => {
         shippingDetails: SHIPPING,
         metadata: physicalMeta(),
       }),
-      kv,
       createOrder: async () => ({
         ok: true,
         orderId: "ord_1",
@@ -274,12 +249,17 @@ test("a fulfilled order logs nothing", async () => {
 });
 
 test("an ignored session never reaches the store and never alerts", async () => {
-  const kv = memoryKv();
+  const store = memoryOrdersStore();
   const events = await captureUnfulfilled(async () => {
-    await fulfillCheckoutSession({ ...paidInput({ paymentStatus: "unpaid" }), kv });
+    await fulfillCheckoutSession({
+      ...paidInput({ paymentStatus: "unpaid" }),
+      store,
+    });
   });
   assert.deepEqual(events, []);
-  assert.deepEqual(kv.puts, []);
+  // Asserted on the store the function actually writes to: a KV-shaped fake
+  // here reads nothing and makes the invariant vacuously true.
+  assert.deepEqual(store.orderPuts, []);
 });
 
 test("the internal awaiting-prodigi marker is not an alert", () => {
