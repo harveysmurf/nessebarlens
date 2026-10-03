@@ -20,7 +20,7 @@
  * prevent. The fixtures in the test are captured verbatim from real runs.
  */
 
-const FILE_NAME = /\.[cm]?[jt]sx?$/;
+import { FILE_NAME } from "./js-file-name.mjs";
 
 /** "file:///a/b/src/lib/x.ts" and "/a/b/src/lib/x.ts" both become "src/lib/x.ts". */
 function repoRelative(name) {

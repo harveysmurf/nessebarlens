@@ -127,7 +127,7 @@ Environment variables (names only — values live in the `.env.local` symlink):
 
 `npm test` runs `node --test tests/*.test.mts` — the **whole suite** — on
 **node 24**, with types stripped by node itself and one resolve hook
-(`tests/register.mjs` → `tests/resolve-hooks.mjs`) for extensionless relative
+(`tests/register.mjs` → `scripts/register.mjs` → `scripts/resolve-hooks.mjs`) for extensionless relative
 imports. Tests are **Node-native, no test runner framework**.
 
 `npm run coverage` enforces the floors in `scripts/coverage.mjs` (lines 99.95%,
@@ -373,16 +373,41 @@ npx wrangler d1 migrations apply nessebar-lens-orders --local
 npx wrangler d1 migrations apply nessebar-lens-orders --remote
 ```
 
-The deployed database holds only the schema (`orders`, `download_tokens`) and no
-rows: `migrations/` was applied before any order existed. `npm run migrate:orders`
-is what moves real orders out of KV, and until it has run the site has no order
-history in D1 — the reconciler therefore finds nothing to recover and is a no-op.
+**The migration has run.** On 2026-10-03, against main `e6227b2`:
 
-One-shot KV → D1 migration (keep the KV binding until this has succeeded):
+```
+tally {"inserted":5,"skippedExisting":0,"corrupt":0,"tokensMigrated":0}
+wrangler kv key list --binding ORDERS --remote   -> 5 keys
+select count(*) from orders                       -> 5
+select count(*) from download_tokens              -> 0
+```
+
+`corrupt: 0` — `parseOrderRecord` accepted every real KV record, so there is no
+schema drift between the KV-era payloads and the D1 columns. `tokensMigrated: 0`
+is consistent: no download token had been minted under KV yet. **D1 is now the
+authoritative order history and the reconciler has something to recover.**
+
+KV still holds the same 5 keys and the `ORDERS` binding is still in
+`wrangler.toml` — deliberately, as the rollback path until the removal lands.
+See #178 for the gated removal.
+
+One-shot KV → D1 migration, idempotent, re-runnable (keep the KV binding until
+this has succeeded):
 
 ```bash
 npm run migrate:orders            # INSERT … ON CONFLICT DO NOTHING
 npm run migrate:orders -- --overwrite
+```
+
+**Node ≥ 22 is required** (wrangler refuses to run on v20) and the script needs
+the resolve hook — `scripts/register.mjs` → `scripts/resolve-hooks.mjs`, which
+`package.json` already passes via `--import`. The script imports `src/lib/*.ts`,
+whose own imports are extensionless, so without the hook node raises
+`ERR_MODULE_NOT_FOUND` and nothing runs (#177). If you invoke the script
+directly rather than through npm, pass the same flag:
+
+```bash
+node --import ./scripts/register.mjs scripts/migrate-orders-kv-to-d1.mjs --help
 ```
 
 **Every read of a production KV namespace needs `--remote`, explicitly.**

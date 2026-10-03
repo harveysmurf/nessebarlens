@@ -1,5 +1,6 @@
 import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { FILE_NAME } from "./js-file-name.mjs";
 
 /** Extensions to try, in order, for an extensionless specifier. */
 const RESOLVE_EXTENSIONS = [".ts", ".tsx", ".js", ".mjs"];
@@ -28,7 +29,7 @@ export async function resolve(specifier, context, nextResolve) {
   if (specifier.startsWith("next/") && !/\.[cm]?js$/.test(specifier)) {
     return nextResolve(`${specifier}.js`, context);
   }
-  if (specifier.startsWith(".") && !/\.[cm]?[jt]sx?$/.test(specifier)) {
+  if (specifier.startsWith(".") && !FILE_NAME.test(specifier)) {
     return withExtension(
       new URL(specifier, context.parentURL ?? import.meta.url),
       context,
@@ -40,7 +41,7 @@ export async function resolve(specifier, context, nextResolve) {
 
 /** Resolves url, or the first of url + each source extension that exists. */
 async function withExtension(url, context, nextResolve) {
-  if (/\.[cm]?[jt]sx?$/.test(url.href)) return nextResolve(url.href, context);
+  if (FILE_NAME.test(url.href)) return nextResolve(url.href, context);
   for (const ext of RESOLVE_EXTENSIONS) {
     const candidate = new URL(url.href + ext);
     if (existsSync(fileURLToPath(candidate))) {

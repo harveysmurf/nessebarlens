@@ -1,4 +1,6 @@
 import assert from "node:assert/strict";
+import { spawnSync } from "node:child_process";
+import path from "node:path";
 import test from "node:test";
 import {
   classifyKvKey,
@@ -130,4 +132,22 @@ test("a successful run still exits 0 and reports its tally", () => {
   assert.equal(result.exitCode, 0);
   assert.equal(result.tally.inserted, 1);
   assert.equal(result.tally.corrupt, 0);
+});
+
+test("the documented invocation runs on a clean checkout (#177)", () => {
+  // The bug: scripts/migrate-orders-kv-to-d1.mjs imports ../src/lib/*.ts, whose
+  // own imports are extensionless. Under plain `node` there is no resolve hook,
+  // so `npm run migrate:orders` died with ERR_MODULE_NOT_FOUND before doing any
+  // work — the command DEVELOPMENT.md documents did not run. --help returns
+  // before any wrangler call, so this asserts the wiring and nothing else.
+  const result = spawnSync("npm", ["run", "--silent", "migrate:orders", "--", "--help"], {
+    cwd: path.join(import.meta.dirname, ".."),
+    encoding: "utf8",
+  });
+  assert.equal(
+    result.status,
+    0,
+    `migrate:orders --help failed:\n${result.stderr ?? ""}`,
+  );
+  assert.equal(result.stderr.includes("ERR_MODULE_NOT_FOUND"), false);
 });
