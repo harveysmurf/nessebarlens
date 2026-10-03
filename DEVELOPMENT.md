@@ -22,7 +22,8 @@ Stack:
 - **TypeScript 5**, **ESLint 9** (next/core-web-vitals), **node:test** for tests.
 - Bindings: D1 `ORDERS_DB` (orders + download tokens), R2 `WEB` (public
   derivatives), R2 `MASTERS` (private masters). Stripe for payments. The KV
-  `ORDERS` binding remains in `wrangler.toml` for the one-shot migration only.
+  `ORDERS` binding is a one-shot migration leftover and is removed by
+  `npm run orders:kv:remove` behind a live D1-vs-KV parity gate.
 
 ---
 
@@ -342,9 +343,11 @@ a host serving a reverted build is a support incident, not a deploy.
   a Pages config where `ASSETS` is reserved.
 - R2 S3 access keys are unused; Workers use bucket bindings only (`WEB`,
   `MASTERS`). `ORDERS_DB` D1 + WEB/MASTERS R2 are attached on the Worker.
-- The KV `ORDERS` binding stays in `wrangler.toml` for the one-shot
-  `npm run migrate:orders` only — the application no longer reads it. Do not
-  delete the namespace before the migration has run, or the source data is gone.
+- The KV `ORDERS` binding is a one-shot migration leftover: the application no
+  longer reads it. `npm run migrate:orders` reads it through the wrangler CLI,
+  and `npm run orders:kv:remove` deletes it once a live parity check confirms
+  D1 holds every key. Deleting the namespace by hand before that check is how
+  the source data is lost.
 - `[[d1_databases]]` binding `ORDERS_DB`, database `nessebar-lens-orders`,
   `migrations_dir = "migrations"`. The `database_id` is committed; the database
   exists and `migrations/` is applied. Re-create only if the account is reset —
@@ -354,8 +357,8 @@ a host serving a reverted build is a support incident, not a deploy.
   so a cron trigger would be silently ignored. The reconciler is a Next route
   invoked by GitHub Actions (`.github/workflows/reconcile.yml`).
 - The `preview_id` on the ORDERS KV binding is a **KV namespace** preview id
-  (`wrangler dev`), not a Pages preview-deployment concept. It stays while the
-  KV namespace exists for migration.
+  (`wrangler dev`), not a Pages preview-deployment concept.
+  `scripts/remove-orders-kv.mjs` deletes both ids from that block.
 - Runtime secrets (Stripe/Prodigi/RECONCILE_SECRET) live as **Worker secrets**, scoped per version.
   Sync with `scripts/sync-worker-secrets.sh`; rotate with `wrangler secret put`.
   `NEXT_PUBLIC_*` bake at build from GitHub Environment secrets and are
@@ -389,7 +392,8 @@ authoritative order history and the reconciler has something to recover.**
 
 KV still holds the same 5 keys and the `ORDERS` binding is still in
 `wrangler.toml` — deliberately, as the rollback path until the removal lands.
-See #178 for the gated removal.
+`npm run orders:kv:remove` takes it away, but only behind a parity gate it
+measures live (see below).
 
 One-shot KV → D1 migration, idempotent, re-runnable (keep the KV binding until
 this has succeeded):
@@ -424,6 +428,38 @@ wrangler kv key list --binding ORDERS --prefix "" --remote   # -> cs_test_… (r
 Treat a missing `--remote` on any `wrangler kv …` read as a bug, not a
 style nit. This bit `scripts/migrate-orders-kv-to-d1.mjs` and the fix is
 `fix/175-migrate-reads-remote` (#176).
+
+### Removing the ORDERS KV namespace
+
+D1 is the authoritative order history, so the KV namespace is now removable.
+`scripts/remove-orders-kv.mjs` does it, and the deletion sits behind a gate that
+runs *in the same process, immediately before anything is touched*:
+
+```bash
+npm run orders:kv:remove           # measures parity, refuses
+npm run orders:kv:remove -- --yes  # removes only if the gate passes
+```
+
+The gate compares, live:
+
+```
+select count(*) as n from orders            (wrangler d1 execute --remote)
+wrangler kv key list --binding ORDERS --remote   -> key count
+```
+
+Both sides count the same logical set (one per checkout-session key), so
+equality is the right test. On mismatch it exits 1 printing both numbers and
+**nothing is deleted**; a D1 count it cannot parse is a failed gate, not zero;
+and `--yes` is required even when parity holds, so a bare invocation is a no-op.
+A parity check written as a comment would be a check against a claim that may
+have gone stale — a namespace can receive new orders between the migration and
+the deletion.
+
+On success it deletes the production and preview namespaces, then rewrites
+`wrangler.toml` to drop the `[[kv_namespaces]]` block. Order matters: the
+config is rewritten *last*, so a failed delete leaves the ids on record. If the
+script finds no `ORDERS` binding it exits 1 rather than reporting success,
+because that state means an earlier run died mid-way.
 
 Operator view (CLI, not an admin route — this Worker serves customers):
 
