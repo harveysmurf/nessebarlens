@@ -48,8 +48,8 @@ export async function readCloudflareEnv(
  * MASTERS is the private nessebar-lens-masters binding. It may be absent
  * until R2 is enabled. Never fall back to an S3 URL.
  *
- * The KV `ORDERS` binding remains in wrangler.toml for the one-shot migration
- * script only — nothing here reads it.
+ * The KV `ORDERS` binding is gone (#178): orders live in `ORDERS_DB` and the
+ * namespace was deleted once the migration was gated.
  */
 export async function readWorkerBindings(
   options: { readEnv?: EnvContextReader } = {},

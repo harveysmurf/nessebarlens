@@ -98,7 +98,7 @@ const PHONE_MAX = 32;
 const EMAIL_MAX = 254;
 
 /**
- * The bound on a stored `size`/`frame` metadata string read back off ORDERS.
+ * The bound on a stored `size`/`frame` metadata string read back off the orders store.
  * Distinct from the recipient caps above: this is a defensive bound on data
  * already narrowed to a PrintSize/FrameFinish, not a shipping-field limit.
  */
@@ -238,7 +238,7 @@ export function decideFulfillment(
 }
 
 /**
- * The single place an order is written to ORDERS, so no path can store a
+ * The single place an order is written to the orders store, so no path can store a
  * paid-but-unfulfilled order without saying so.
  *
  * Every unfulfilled outcome (bad metadata, unknown photo, amount mismatch,

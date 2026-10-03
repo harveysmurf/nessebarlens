@@ -22,8 +22,9 @@ Stack:
 - **TypeScript 5**, **ESLint 9** (next/core-web-vitals), **node:test** for tests.
 - Bindings: D1 `ORDERS_DB` (orders + download tokens), R2 `WEB` (public
   derivatives), R2 `MASTERS` (private masters). Stripe for payments. The KV
-  `ORDERS` binding is a one-shot migration leftover and is removed by
-  `npm run orders:kv:remove` behind a live D1-vs-KV parity gate.
+  `ORDERS` binding is gone: the namespace was deleted by `npm run orders:kv:remove`
+  on 2026-10-03, behind a live check that no completed order was left
+  unmigrated in KV. D1 is the only order store.
 
 ---
 
@@ -150,8 +151,8 @@ imports.
 `scripts/smoke.sh <base-url>` is the only test that runs against a **deployed**
 build. `preview.yml` runs it against the uploaded Worker Version, and a
 failure fails the PR check. It asserts the pages render, the print route 404s an
-unknown slug, request bodies are validated, and the HMAC/KV guards are live in
-the preview env (a 503 from `/api/download` means ORDERS is not bound).
+unknown slug, request bodies are validated, and the HMAC/store guards are live in
+the preview env (a 503 from `/api/download` means `ORDERS_DB` is not bound).
 
 Run it locally against a build:
 
@@ -236,7 +237,7 @@ key whose absence could turn a spec into a green skip.
 live key is refused rather than warned about.
 
 The success page's three states are **seeded** rather than reached through the
-webhook: ORDERS is a KV namespace, and the one a dev server gets from
+webhook: the D1 a dev server gets from
 `initOpenNextCloudflareForDev` is genuinely empty, so a dev server can only ever
 render "processing". `playwright.config.ts` sets `ORDERS_DEV_SEED` to
 `e2e/fixtures/orders-seed.json`, which `src/lib/orders-dev-seed.ts` serves
@@ -328,8 +329,8 @@ after the new Worker is verified serving.
 
 1. **Verify the Worker serves before anything customer-visible moves.**
    `npx wrangler deploy`, then confirm `https://<subdomain>.workers.dev` answers
-   and `/api/download` is not 503 (that 503 means ORDERS KV is not bound).
-2. **Attach the bindings.** `wrangler.toml` declares ORDERS KV and WEB/MASTERS R2;
+   and `/api/download` is not 503 (that 503 means `ORDERS_DB` D1 is not bound).
+2. **Attach the bindings.** `wrangler.toml` declares ORDERS_DB D1 and WEB/MASTERS R2;
    confirm all three are bound on the deployed Worker, not only in config.
 3. **Flip the Stripe webhook endpoint** to the Worker URL, in the Stripe Dashboard.
    Do this *before* DNS: it is the step that can take money, and doing it while
@@ -352,11 +353,12 @@ a host serving a reverted build is a support incident, not a deploy.
   a Pages config where `ASSETS` is reserved.
 - R2 S3 access keys are unused; Workers use bucket bindings only (`WEB`,
   `MASTERS`). `ORDERS_DB` D1 + WEB/MASTERS R2 are attached on the Worker.
-- The KV `ORDERS` binding is a one-shot migration leftover: the application no
-  longer reads it. `npm run migrate:orders` reads it through the wrangler CLI,
-  and `npm run orders:kv:remove` deletes it once a live parity check confirms
-  D1 holds every key. Deleting the namespace by hand before that check is how
-  the source data is lost.
+- The KV `ORDERS` binding **no longer exists**. It was a one-shot migration
+  leftover: `npm run migrate:orders` read it through the wrangler CLI, and
+  `npm run orders:kv:remove -- --yes` deleted the namespace on 2026-10-03 once a
+  live check confirmed D1 held every completed order. Deleting the namespace by
+  hand before that check is how the source data is lost; the gate is what made
+  the removal safe, so never hand-delete it.
 - `[[d1_databases]]` binding `ORDERS_DB`, database `nessebar-lens-orders`,
   `migrations_dir = "migrations"`. The `database_id` is committed; the database
   exists and `migrations/` is applied. Re-create only if the account is reset —
@@ -365,9 +367,9 @@ a host serving a reverted build is a support incident, not a deploy.
   `.open-next/worker.js` exports only `default { fetch }` plus the DO classes,
   so a cron trigger would be silently ignored. The reconciler is a Next route
   invoked by GitHub Actions (`.github/workflows/reconcile.yml`).
-- The `preview_id` on the ORDERS KV binding is a **KV namespace** preview id
-  (`wrangler dev`), not a Pages preview-deployment concept.
-  `scripts/remove-orders-kv.mjs` deletes both ids from that block.
+- `preview_id` on a KV binding is a **KV namespace** preview id (`wrangler dev`),
+  not a Pages preview-deployment concept. `scripts/remove-orders-kv.mjs` read and
+  deleted both ids from the (now removed) `ORDERS` block.
 - Runtime secrets (Stripe/Prodigi/RECONCILE_SECRET) live as **Worker secrets**, scoped per version.
   Sync with `scripts/sync-worker-secrets.sh`; rotate with `wrangler secret put`.
   `NEXT_PUBLIC_*` bake at build from GitHub Environment secrets and are
@@ -399,13 +401,12 @@ schema drift between the KV-era payloads and the D1 columns. `tokensMigrated: 0`
 is consistent: no download token had been minted under KV yet. **D1 is now the
 authoritative order history and the reconciler has something to recover.**
 
-KV still holds the same 5 keys and the `ORDERS` binding is still in
-`wrangler.toml` — deliberately, as the rollback path until the removal lands.
-`npm run orders:kv:remove` takes it away, but only behind a parity gate it
-measures live (see below).
+KV held the same 5 keys and the `ORDERS` binding stayed in `wrangler.toml` as
+the rollback path until the removal landed. It landed on 2026-10-03 (see
+"Removing the ORDERS KV namespace" below); the KV namespace no longer exists.
 
-One-shot KV → D1 migration, idempotent, re-runnable (keep the KV binding until
-this has succeeded):
+One-shot KV → D1 migration, idempotent, re-runnable (the KV namespace is gone;
+this only runs against an account whose namespace still exists):
 
 ```bash
 npm run migrate:orders            # INSERT … ON CONFLICT DO NOTHING
@@ -440,29 +441,35 @@ style nit. This bit `scripts/migrate-orders-kv-to-d1.mjs` and the fix is
 
 ### Removing the ORDERS KV namespace
 
-D1 is the authoritative order history, so the KV namespace is now removable.
-`scripts/remove-orders-kv.mjs` does it, and the deletion sits behind a gate that
-runs *in the same process, immediately before anything is touched*:
+**Done on 2026-10-03** (`#178`): both namespaces are deleted and the
+`[[kv_namespaces]]` block is gone from `wrangler.toml`. D1 is the authoritative
+order history. `scripts/remove-orders-kv.mjs` did it, behind a gate that runs
+*in the same process, immediately before anything is touched*:
 
 ```bash
-npm run orders:kv:remove           # measures parity, refuses
+npm run orders:kv:remove           # checks coverage, refuses
 npm run orders:kv:remove -- --yes  # removes only if the gate passes
 ```
 
-The gate compares, live:
+The invariant is "no unmigrated completed order remains in KV". The gate
+measures, live:
 
 ```
-select count(*) as n from orders            (wrangler d1 execute --remote)
-wrangler kv key list --binding ORDERS --remote   -> key count
+select session_id from orders              (wrangler d1 execute --remote)
+wrangler kv key list --namespace-id <id> --remote   -> key names
+wrangler kv key get <cs_…> --namespace-id <id> --remote -> value
 ```
 
-Both sides count the same logical set (one per checkout-session key), so
-equality is the right test. On mismatch it exits 1 printing both numbers and
-**nothing is deleted**; a D1 count it cannot parse is a failed gate, not zero;
-and `--yes` is required even when parity holds, so a bare invocation is a no-op.
-A parity check written as a comment would be a check against a claim that may
-have gone stale — a namespace can receive new orders between the migration and
-the deletion.
+A KV key matters only if the migrator's own grammar says it is an order —
+`classifyKvKey` for the key, `looksLikeOrderRecord` for the value — so
+`cs_test_` pre-payment placeholders and `dl:`/`dls:` download-token keys are not
+orders and are not fetched. Every order-valued key must have a D1 row; the first
+that does not exits 1 naming the session ids and **nothing is deleted**. Both the
+production and preview namespaces are checked. A D1 result it cannot parse is a
+failed gate, not an empty set, and `--yes` is required even when the check is
+clean, so a bare invocation is a no-op. A check written as a comment would be a
+check against a claim that may have gone stale — a namespace can receive new
+orders between the migration and the deletion.
 
 On success it deletes the production and preview namespaces, then rewrites
 `wrangler.toml` to drop the `[[kv_namespaces]]` block. Order matters: the
