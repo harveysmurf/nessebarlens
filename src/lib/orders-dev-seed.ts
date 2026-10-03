@@ -74,7 +74,7 @@ export function devOrdersSeed(env: ConfigEnv = {}): OrdersStore | undefined {
   if (isProduction(env)) {
     throw new Error(
       "refusing to use ORDERS_DEV_SEED: NODE_ENV is production. A seeded " +
-        "ORDERS store would serve fabricated orders to real customers.",
+        "orders store would serve fabricated orders to real customers.",
     );
   }
   return seededOrdersStore(path);

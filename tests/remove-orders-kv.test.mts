@@ -89,11 +89,21 @@ test("removing the block takes its comment and leaves everything else byte-ident
   assert.ok(text.includes('name = "nessebar-lens"'));
   assert.ok(text.includes("[[d1_databases]]"));
   assert.ok(text.includes('binding = "WEB"'));
-  // The real file must survive the rewrite with only the block gone.
+  // The real file must survive the rewrite with only the block gone. As of the
+  // 2026-10-03 removal (#178) the block is already gone from wrangler.toml, so
+  // the honest assertion now is idempotence: nothing left to remove, and the
+  // file is returned byte-identical rather than mangled.
   const real = readFileSync("wrangler.toml", "utf8");
   const edited = removeOrdersKvBinding(real);
-  assert.equal(edited.removed, true);
-  assert.equal(edited.text, real.replace(/# Migration only \(#116\)[\s\S]*?849af920ace64914904b2799bd0fc073"\n\n/, ""));
+  if (edited.removed) {
+    assert.equal(
+      edited.text,
+      real.replace(/# Migration only \(#116\)[\s\S]*?849af920ace64914904b2799bd0fc073"\n\n/, ""),
+    );
+  } else {
+    assert.equal(edited.text, real);
+    assert.ok(!real.includes('binding = "ORDERS"'), "the real config still declares the removed binding");
+  }
 });
 
 test("an order in KV with no D1 row refuses, names it, and deletes nothing", () => {

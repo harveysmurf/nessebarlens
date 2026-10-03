@@ -21,15 +21,6 @@ directory = ".open-next/assets"
 binding = "ASSETS"
 run_worker_first = true
 
-# Migration only (#116). The application reads ORDERS_DB (D1), not this KV
-# namespace. Keep the binding until `npm run migrate:orders` has run against
-# production — deleting it earlier loses the source data the migration reads
-# through the wrangler CLI.
-[[kv_namespaces]]
-binding = "ORDERS"
-id = "c6f34450a61c4c69b3f840e845a7b0d3"
-preview_id = "849af920ace64914904b2799bd0fc073"
-
 [[d1_databases]]
 binding = "ORDERS_DB"
 database_name = "nessebar-lens-orders"
