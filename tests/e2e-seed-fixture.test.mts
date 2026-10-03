@@ -379,3 +379,14 @@ test("a record written without a createdAt gets updatedAt, and a missing token r
 
   assert.equal(await store.getDownloadToken("5".repeat(32)), null);
 });
+
+test("the seed store implements claimProdigiCallback, so the callback route is drivable in dev", async () => {
+  // The seed store is the ORDERS_DB a dev server uses, so a callback arriving
+  // in dev must behave like production: claimed once, a repeat is a duplicate.
+  // If this were missing, the callback route would 503 in dev and the
+  // "callback reaches the handler" path would be untestable end to end.
+  const store = seededOrdersStore(SEED_PATH);
+  assert.equal(await store.claimProdigiCallback("evt_seed_1"), true);
+  assert.equal(await store.claimProdigiCallback("evt_seed_1"), false);
+  assert.equal(await store.claimProdigiCallback("evt_seed_2"), true);
+});

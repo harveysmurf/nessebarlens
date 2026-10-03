@@ -6,6 +6,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createResendSender,
+  isEmailKind,
   RESEND_EMAILS_URL,
   RESEND_FROM_ADDRESS,
   RESEND_TIMEOUT_MS,
@@ -104,10 +105,81 @@ test("Resend timeout is classified via the shared abort idiom", async () => {
   }
 });
 
+test("a thrown non-Error from fetch is reported, not propagated", async () => {
+  // A `fetch` polyfill or a proxy that rejects with a bare value is not ours
+  // to assume about. The message must still be a string the caller logs.
+  const send = createResendSender({
+    apiKey: "re_test_key",
+    fetchImpl: async () => {
+      throw "socket hang up";
+    },
+  });
+  const result = await send({
+    to: "buyer@example.com",
+    kind: "order-confirmation",
+    subject: "Hi",
+    text: "Body",
+    sessionId: SESSION,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.message, "resend-network-error");
+});
+
+test("an Error thrown by fetch keeps its message", async () => {
+  const send = createResendSender({
+    apiKey: "re_test_key",
+    fetchImpl: async () => {
+      throw new Error("ECONNREFUSED");
+    },
+  });
+  const result = await send({
+    to: "buyer@example.com",
+    kind: "order-confirmation",
+    subject: "Hi",
+    text: "Body",
+    sessionId: SESSION,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.message, "ECONNREFUSED");
+});
+
+test("a non-2xx with an unreadable body still names the status", async () => {
+  const send = createResendSender({
+    apiKey: "re_test_key",
+    fetchImpl: async () =>
+      new Response(
+        new ReadableStream({
+          start(controller) {
+            controller.error(new Error("stream broke"));
+          },
+        }),
+        { status: 502 },
+      ),
+  });
+  const result = await send({
+    to: "buyer@example.com",
+    kind: "print-shipped",
+    subject: "Shipped",
+    text: "Gone",
+    sessionId: SESSION,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.message, "Resend HTTP 502");
+});
+
 test("sendEmailFromApiKey is undefined when the key is unset", () => {
   assert.equal(sendEmailFromApiKey(undefined), undefined);
   assert.equal(sendEmailFromApiKey(""), undefined);
   assert.ok(sendEmailFromApiKey("re_live"));
+});
+
+test("isEmailKind accepts exactly the three kinds", () => {
+  for (const kind of ["order-confirmation", "print-shipped", "order-unfulfilled"]) {
+    assert.equal(isEmailKind(kind), true, kind);
+  }
+  for (const other of ["", "shipped", "ORDER-CONFIRMATION", null, 7, {}]) {
+    assert.equal(isEmailKind(other), false, String(other));
+  }
 });
 
 test("confirmation copy links the success page, never a token or Prodigi id", () => {
@@ -134,6 +206,35 @@ test("shipped copy includes the tracking number", () => {
   assert.match(copy.text, /1Z999/);
   assert.match(copy.text, /DHL/);
   assert.match(copy.text, /https:\/\/track\.example\/1Z999/);
+});
+
+test("unfulfilled copy names the session as a reference and no internal id", () => {
+  const copy = emailCopyFor({
+    kind: "order-unfulfilled",
+    sessionId: SESSION,
+    siteUrl: "https://nessebarlens.com",
+  });
+  assert.equal(copy.subject, "We could not complete your Nessebar Lens order");
+  assert.match(copy.text, /Reference: cs_test_abcdefgh/);
+  assert.equal(copy.text.includes("ord_"), false);
+  assert.equal(copy.text.includes("assetUrl"), false);
+});
+
+test("shipped copy with no tracking details says so instead of empty lines", () => {
+  // Prodigi can mark a shipment Shipped before a carrier posts tracking. An
+  // empty "Tracking number:" line reads as a bug to the customer, so the copy
+  // has to have a third shape rather than a conditional field.
+  const copy = emailCopyFor({
+    kind: "print-shipped",
+    sessionId: SESSION,
+    siteUrl: "https://nessebarlens.com",
+    trackingNumber: "   ",
+    carrier: "",
+    trackingUrl: undefined,
+  });
+  assert.match(copy.text, /Your carrier will provide tracking details separately\./);
+  assert.equal(/Tracking number:/.test(copy.text), false);
+  assert.equal(/Carrier:/.test(copy.text), false);
 });
 
 test("parseOrderRecord accepts a pre-#117 record with no shipments/emailsSent", () => {

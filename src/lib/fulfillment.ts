@@ -106,25 +106,26 @@ function emailForOrder(
 }
 
 /**
- * Which customer email this terminal write should claim, if any.
- * Confirmation for a successful paid write; unfulfilled only for our own
- * terminal failure — never for a retryable Prodigi miss.
+ * Which customer email this write should claim.
+ *
+ * Invariant, not a guess: every write that reaches the claim below is either a
+ * `paid` order (the customer bought something, confirm it) or one of our own
+ * terminal unfulfilled outcomes (we owe them money, apologise). Both retryable
+ * shapes — `awaiting-prodigi` and a non-terminal `prodigi-*` reason — return
+ * earlier, before this point, because a redelivery may still place the order
+ * and mailing the customer now would be wrong. That is why there is no `null`
+ * and no separate terminal check: a third case here would mean the invariant
+ * broke, and the cost of it is an unearned apology email, not a silent no-op.
  */
-function emailKindForWrite(record: OrderRecord): EmailKind | null {
-  if (record.status === "paid" && record.terminal) {
-    return "order-confirmation";
-  }
-  if (isUnfulfilledOutcome(record) && record.terminal) {
-    return "order-unfulfilled";
-  }
-  return null;
+function emailKindForWrite(record: OrderRecord): EmailKind {
+  return record.status === "paid" ? "order-confirmation" : "order-unfulfilled";
 }
 
+/** Only called once the caller has checked the kind is not already claimed. */
 function withEmailClaim(
   record: OrderRecord,
   kind: EmailKind,
 ): OrderRecord {
-  if (record.emailsSent.includes(kind)) return record;
   return { ...record, emailsSent: [...record.emailsSent, kind] };
 }
 
@@ -429,15 +430,12 @@ export async function fulfillCheckoutSession(
   // that races us sees emailsSent already populated and does not send twice.
   // sendEmail runs only after the write succeeds.
   const kind = emailKindForWrite(record);
-  const to = kind ? emailForOrder(record, input.customerEmail) : null;
-  const wantsEmail =
-    kind !== null &&
-    to !== null &&
-    !record.emailsSent.includes(kind);
+  const to = emailForOrder(record, input.customerEmail);
+  const wantsEmail = to !== null && !record.emailsSent.includes(kind);
   // Claim only when a sender is wired. An unset RESEND_API_KEY must not
   // burn the kind on the record — otherwise fixing the key later can never
   // mail a customer whose order already carries emailsSent.
-  if (wantsEmail && kind && !input.sendEmail) {
+  if (wantsEmail && !input.sendEmail) {
     console.error(
       JSON.stringify({
         event: "email.skipped",
@@ -448,7 +446,7 @@ export async function fulfillCheckoutSession(
     );
   }
   const shouldEmail = wantsEmail && input.sendEmail !== undefined;
-  if (shouldEmail && kind) {
+  if (shouldEmail) {
     record = withEmailClaim(record, kind);
   }
 
@@ -466,7 +464,7 @@ export async function fulfillCheckoutSession(
     await storeNewOrder(input.store, record);
   }
 
-  if (shouldEmail && kind && to) {
+  if (shouldEmail && to) {
     await sendClaimedEmail({
       sendEmail: input.sendEmail,
       record,

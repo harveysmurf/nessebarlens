@@ -5,11 +5,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  fetchProdigiOrder,
   handleProdigiCallback,
   parseProdigiCloudEvent,
   shipmentsFromProdigiOrder,
   type FetchProdigiOrder,
 } from "../src/lib/prodigi-callback.ts";
+import { PRODIGI_ORDER_TIMEOUT_MS } from "../src/lib/prodigi-config.ts";
 import { parseOrderRecord, type OrderRecord } from "../src/lib/order-decision.ts";
 import { buildProdigiOrderBody, type OrderRecipient } from "../src/lib/prodigi-order.ts";
 import type { SendEmail } from "../src/lib/email.ts";
@@ -352,5 +354,497 @@ test("order creation body includes same-origin callbackUrl", () => {
   assert.equal(
     new URL(body.callbackUrl).origin,
     "https://nessebarlens.com",
+  );
+});
+
+/* --- the live GET -------------------------------------------------------
+   Every test above injects `fetchOrder`, which means the real one was never
+   executed: the mapping from Prodigi's JSON onto the fields we persist, and
+   every failure it has to report, were untested. Those failures are the ones
+   that decide whether Prodigi gets a 5xx and retries or a 200 and gives up, so
+   they are pinned here against a stubbed global fetch. */
+
+type LiveCase = {
+  response?: Response;
+  throws?: unknown;
+  env?: Record<string, string>;
+  orderId?: string;
+};
+
+async function liveFetch(input: LiveCase) {
+  const savedFetch = globalThis.fetch;
+  const savedEnv = { ...process.env };
+  const calls: string[] = [];
+  globalThis.fetch = (async (url: string) => {
+    calls.push(String(url));
+    if (input.throws !== undefined) throw input.throws;
+    return input.response as Response;
+  }) as typeof fetch;
+  if (input.env) {
+    for (const [k, v] of Object.entries(input.env)) process.env[k] = v;
+  }
+  try {
+    const result = await fetchProdigiOrder(input.orderId ?? PRODIGI_ID);
+    return { result, calls };
+  } finally {
+    globalThis.fetch = savedFetch;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in savedEnv)) delete process.env[key];
+    }
+    for (const [k, v] of Object.entries(savedEnv)) process.env[k] = v;
+  }
+}
+
+const LIVE_ENV = {
+  PRODIGI_API_BASE: "https://api.sandbox.prodigi.com",
+  PRODIGI_SANDBOX_API_KEY: "sandbox-key-for-callback-tests",
+};
+
+function json(body: unknown, status = 200): Response {
+  return new Response(JSON.stringify(body), { status });
+}
+
+test("live fetch maps a Prodigi order onto the fields we persist", async () => {
+  const { result, calls } = await liveFetch({
+    env: LIVE_ENV,
+    response: json({
+      outcome: "SUCCESS",
+      order: {
+        id: PRODIGI_ID,
+        merchantReference: SESSION,
+        status: {
+          stage: "Complete",
+          issues: [{ errorCode: "ASSET_NOT_FOUND" }],
+        },
+        shipments: [
+          {
+            status: "Shipped",
+            carrier: { name: "DHL", service: "Express" },
+            tracking: { number: "1Z999", url: "https://track.example/1Z999" },
+          },
+        ],
+      },
+    }),
+  });
+  assert.deepEqual(calls, [
+    `https://api.sandbox.prodigi.com/v4.0/orders/${PRODIGI_ID}`,
+  ]);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.value.orderId, PRODIGI_ID);
+  assert.equal(result.value.merchantReference, SESSION);
+  assert.equal(result.value.stage, "Complete");
+  assert.equal(result.value.shipments.length, 1);
+  assert.equal(result.value.shipments[0]!.trackingNumber, "1Z999");
+  // `issues` and every other status detail are diagnostic. We persist stage and
+  // shipments only, so an added Prodigi field cannot leak into the record.
+  assert.equal(JSON.stringify(result.value).includes("ASSET_NOT_FOUND"), false);
+});
+
+test("live fetch refuses an unsafe order id before any network call", async () => {
+  // The id reaches us from an unauthenticated-ish JSON field and lands in a
+  // URL. isSafeProdigiOrderId is the only thing between the two.
+  const { result, calls } = await liveFetch({
+    env: LIVE_ENV,
+    orderId: "../../v4.0/orders/other-secret",
+    response: json({ order: { id: PRODIGI_ID } }),
+  });
+  assert.equal(result.ok, false);
+  assert.equal(calls.length, 0, "no request may be made for an unsafe id");
+  if (result.ok) return;
+  assert.equal(result.message, "unsafe Prodigi order id");
+});
+
+test("live fetch reports an unconfigured deployment, not a network failure", async () => {
+  const savedEnv = { ...process.env };
+  const savedFetch = globalThis.fetch;
+  let called = 0;
+  globalThis.fetch = (async () => {
+    called += 1;
+    return json({});
+  }) as typeof fetch;
+  try {
+    delete process.env.PRODIGI_API_BASE;
+    delete process.env.PRODIGI_SANDBOX_API_KEY;
+    delete process.env.PRODIGI_LIVE_API_KEY;
+    const result = await fetchProdigiOrder(PRODIGI_ID);
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.match(result.message, /PRODIGI_API_BASE/);
+    assert.equal(called, 0);
+  } finally {
+    globalThis.fetch = savedFetch;
+    for (const key of Object.keys(process.env)) {
+      if (!(key in savedEnv)) delete process.env[key];
+    }
+    for (const [k, v] of Object.entries(savedEnv)) process.env[k] = v;
+  }
+});
+
+test("live fetch reports a timeout as retryable and keeps the status null", async () => {
+  // A timeout must not be confused with Prodigi saying 4xx: the caller
+  // answers 5xx for both, but the log is how a human tells them apart.
+  const savedTimeout = AbortSignal.timeout;
+  AbortSignal.timeout = ((ms: number) => {
+    assert.equal(ms, PRODIGI_ORDER_TIMEOUT_MS);
+    const ctrl = new AbortController();
+    ctrl.abort();
+    return ctrl.signal;
+  }) as typeof AbortSignal.timeout;
+  try {
+    const { result } = await liveFetch({
+      env: LIVE_ENV,
+      throws: Object.assign(new Error("aborted"), { name: "TimeoutError" }),
+    });
+    assert.equal(result.ok, false);
+    if (result.ok) return;
+    assert.match(result.message, /timed out/);
+    assert.equal(result.status, null);
+  } finally {
+    AbortSignal.timeout = savedTimeout;
+  }
+});
+
+test("live fetch reports a non-Error network throw as a network error", async () => {
+  const { result } = await liveFetch({
+    env: LIVE_ENV,
+    throws: "ECONNRESET",
+  });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.equal(result.message, "network-error");
+});
+
+test("live fetch reports an HTTP failure with Prodigi's status so a 404 is distinguishable", async () => {
+  const { result } = await liveFetch({
+    env: LIVE_ENV,
+    response: new Response(JSON.stringify({ message: "Not found" }), {
+      status: 404,
+    }),
+  });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.match(result.message, /Prodigi fetch HTTP 404/);
+  assert.equal(result.status, 404);
+});
+
+test("live fetch rejects a 200 whose body is not JSON, or has no usable order", async () => {
+  const notJson = await liveFetch({
+    env: LIVE_ENV,
+    response: new Response("<html>gateway</html>", { status: 200 }),
+  });
+  assert.equal(notJson.result.ok, false);
+  if (!notJson.result.ok) {
+    assert.equal(notJson.result.message, "Prodigi fetch invalid JSON");
+  }
+
+  const noOrder = await liveFetch({ env: LIVE_ENV, response: json({ outcome: "SUCCESS" }) });
+  assert.equal(noOrder.result.ok, false);
+  if (!noOrder.result.ok) {
+    assert.equal(noOrder.result.message, "Prodigi fetch missing order");
+  }
+
+  const noId = await liveFetch({
+    env: LIVE_ENV,
+    response: json({ order: { merchantReference: SESSION } }),
+  });
+  assert.equal(noId.result.ok, false);
+  if (!noId.result.ok) {
+    assert.equal(noId.result.message, "Prodigi fetch missing order id");
+  }
+});
+
+test("live fetch tolerates an order with no status, no reference and no shipments", async () => {
+  // Prodigi's own docs are inconsistent about which fields are always
+  // present. Missing ones must degrade to null/[], never throw — a throw here
+  // would be a 500 in the route and an unbounded Prodigi retry loop.
+  const { result } = await liveFetch({
+    env: LIVE_ENV,
+    response: json({ order: { id: PRODIGI_ID } }),
+  });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.value.stage, null);
+  assert.equal(result.value.merchantReference, null);
+  assert.deepEqual(result.value.shipments, []);
+});
+
+/* --- handler branches -------------------------------------------------- */
+
+test("a subject that is not one of our order ids is dropped before any store read", async () => {
+  const store = memoryOrdersStore();
+  let read = false;
+  const spy = {
+    ...store,
+    async getOrder(id: string) {
+      read = true;
+      return store.getOrder(id);
+    },
+  };
+  const result = await handleProdigiCallback({
+    rawBody: cloudEvent(),
+    store: spy,
+    now: NOW,
+    fetchOrder: async (orderId) => ({
+      ok: true,
+      value: {
+        orderId,
+        // A Prodigi order that is not ours: the reference is not one of ours,
+        // so there is no record to write and nothing to claim.
+        merchantReference: "not-a-checkout-session",
+        stage: "Complete",
+        shipments: [],
+      },
+    }),
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.equal(result.body.ignored, "unknown-order");
+  assert.equal(read, false, "an unknown reference must not reach the store");
+  assert.equal(store.prodigiCallbacks.size, 0, "nothing to claim, nothing claimed");
+});
+
+test("a fetched order whose id is not the event subject is dropped", async () => {
+  // Guards against a replayed or reshaped callback: the body names order A,
+  // the fetch returns order B. Acting on that would move A's record to B's state.
+  const store = memoryOrdersStore();
+  await store.putOrder(paidPhysical());
+  const result = await handleProdigiCallback({
+    rawBody: cloudEvent(),
+    store,
+    now: NOW,
+    fetchOrder: async () => ({
+      ok: true,
+      value: {
+        orderId: "ord_someone_else_zzz",
+        merchantReference: SESSION,
+        stage: "Complete",
+        shipments: [],
+      },
+    }),
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.equal(result.body.ignored, "unknown-order");
+  const record = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  assert.equal(record.prodigiStage, "InProgress", "nothing may be written");
+});
+
+test("a stage change with no shipped shipment writes the stage and sends no mail", async () => {
+  const store = memoryOrdersStore();
+  await store.putOrder(paidPhysical());
+  const sent: string[] = [];
+  const result = await handleProdigiCallback({
+    rawBody: cloudEvent({ id: "evt_stage_only" }),
+    store,
+    sendEmail: async (mail) => {
+      sent.push(mail.kind);
+      return { ok: true, message: "sent" };
+    },
+    fetchOrder: fetchOk("Complete", [{ status: "Processing", carrier: { name: "DHL" } }]),
+    now: NOW,
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.equal(result.body.stage, "Complete");
+  assert.equal(result.body.shipped, false);
+  assert.deepEqual(sent, []);
+  const record = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  assert.deepEqual(record.emailsSent, [], "no mail is claimed without a shipment");
+  assert.equal(record.shipments.length, 1);
+});
+
+test("a Resend failure is logged and does not change the 200 or re-claim the mail", async () => {
+  const store = memoryOrdersStore();
+  await store.putOrder(paidPhysical());
+  const lines: string[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => lines.push(String(args[0]));
+  try {
+    const result = await handleProdigiCallback({
+      rawBody: cloudEvent({ id: "evt_send_fails" }),
+      store,
+      sendEmail: async () => ({ ok: false, message: "Resend HTTP 429" }),
+      fetchOrder: fetchOk("Complete", [
+        { status: "Shipped", tracking: { number: "1Z999" } },
+      ]),
+      now: NOW,
+    });
+    assert.equal(result.httpStatus, 200, "a mail provider hiccup is not a webhook failure");
+    assert.ok(lines.some((l) => l.includes("email.failed")));
+    assert.ok(lines.some((l) => l.includes("Resend HTTP 429")));
+  } finally {
+    console.error = original;
+  }
+  const record = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  assert.ok(
+    record.emailsSent.includes("print-shipped"),
+    "the claim stands: a retry must not mail a second time",
+  );
+});
+
+test("a sendEmail that throws is contained, not propagated to the webhook", async () => {
+  const store = memoryOrdersStore();
+  await store.putOrder(paidPhysical());
+  const lines: string[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => lines.push(String(args[0]));
+  try {
+    const result = await handleProdigiCallback({
+      rawBody: cloudEvent({ id: "evt_send_throws" }),
+      store,
+      sendEmail: async () => {
+        throw new Error("resend exploded");
+      },
+      fetchOrder: fetchOk("Complete", [
+        { status: "Shipped", tracking: { number: "1Z999" } },
+      ]),
+      now: NOW,
+    });
+    assert.equal(result.httpStatus, 200);
+    assert.ok(lines.some((l) => l.includes("resend exploded")));
+  } finally {
+    console.error = original;
+  }
+});
+
+test("a sendEmail that throws a non-Error is still logged as a failure", async () => {
+  const store = memoryOrdersStore();
+  await store.putOrder(paidPhysical());
+  const lines: string[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => lines.push(String(args[0]));
+  try {
+    await handleProdigiCallback({
+      rawBody: cloudEvent({ id: "evt_send_throws_bare" }),
+      store,
+      sendEmail: async () => {
+        throw "just a string";
+      },
+      fetchOrder: fetchOk("Complete", [
+        { status: "Shipped", tracking: { number: "1Z999" } },
+      ]),
+      now: NOW,
+    });
+    assert.ok(lines.some((l) => l.includes("email-threw")));
+  } finally {
+    console.error = original;
+  }
+});
+
+test("a shipped callback with no sendEmail claims nothing and says why", async () => {
+  // Unset RESEND_API_KEY must not burn the claim: fixing the key has to be
+  // enough for this order to still get its mail on the next callback.
+  const store = memoryOrdersStore();
+  await store.putOrder(paidPhysical());
+  const lines: string[] = [];
+  const original = console.error;
+  console.error = (...args: unknown[]) => lines.push(String(args[0]));
+  try {
+    const result = await handleProdigiCallback({
+      rawBody: cloudEvent({ id: "evt_no_resend" }),
+      store,
+      fetchOrder: fetchOk("Complete", [
+        { status: "Shipped", tracking: { number: "1Z999" } },
+      ]),
+      now: NOW,
+    });
+    assert.equal(result.httpStatus, 200);
+    assert.ok(lines.some((l) => l.includes("resend-unconfigured")));
+  } finally {
+    console.error = original;
+  }
+  const record = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  assert.deepEqual(record.emailsSent, []);
+  assert.equal(record.prodigiStage, "Complete", "the stage still persists");
+});
+
+test("a shipped callback for a record with no usable address writes stage, sends nothing", async () => {
+  const store = memoryOrdersStore();
+  await store.putOrder(paidPhysical({ recipient: { ...RECIPIENT, email: "not-an-email" } }));
+  const sent: string[] = [];
+  const result = await handleProdigiCallback({
+    rawBody: cloudEvent({ id: "evt_bad_address" }),
+    store,
+    sendEmail: async (mail) => {
+      sent.push(mail.kind);
+      return { ok: true, message: "sent" };
+    },
+    fetchOrder: fetchOk("Complete", [
+      { status: "Shipped", tracking: { number: "1Z999" } },
+    ]),
+    now: NOW,
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.deepEqual(sent, []);
+  const record = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  assert.deepEqual(record.emailsSent, []);
+  assert.equal(record.prodigiStage, "Complete");
+});
+
+test("a non-object CloudEvent body is rejected without a 500", async () => {
+  const store = memoryOrdersStore();
+  for (const raw of ["null", "42", '"a string"']) {
+    const result = await handleProdigiCallback({
+      rawBody: raw,
+      store,
+      now: NOW,
+      fetchOrder: fetchOk("Complete"),
+    });
+    assert.equal(result.httpStatus, 400, raw);
+    assert.equal(result.body.error, "invalid-cloudevent", raw);
+  }
+});
+
+test("a physical order with no address on the recipient still takes the stage write", async () => {
+  // Prodigi can accept a print order without an email. The stage write is ours
+  // to make; the mail is simply not deliverable, so no claim is taken.
+  const store = memoryOrdersStore();
+  await store.putOrder(paidPhysical({ recipient: { ...RECIPIENT, email: null } }));
+  const result = await handleProdigiCallback({
+    rawBody: cloudEvent({ id: "evt_no_recipient" }),
+    store,
+    sendEmail: async () => ({ ok: true, message: "sent" }),
+    fetchOrder: fetchOk("Complete", [
+      { status: "Shipped", tracking: { number: "1Z999" } },
+    ]),
+    now: NOW,
+  });
+  assert.equal(result.httpStatus, 200);
+  const record = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  assert.equal(record.prodigiStage, "Complete");
+  assert.deepEqual(record.emailsSent, []);
+});
+
+test("the shipped copy is built with the shipment's tracking details", async () => {
+  // Pins that the values come from the *fetched* shipment, and that the site
+  // origin used for copy is the caller's when supplied.
+  const store = memoryOrdersStore();
+  await store.putOrder(paidPhysical());
+  const mails: Array<{ subject: string; text: string }> = [];
+  await handleProdigiCallback({
+    rawBody: cloudEvent({ id: "evt_copy" }),
+    store,
+    sendEmail: async (mail) => {
+      mails.push({ subject: mail.subject, text: mail.text });
+      return { ok: true, message: "sent" };
+    },
+    fetchOrder: fetchOk("Complete", [
+      { status: "Processing", tracking: { number: "WRONG-1" } },
+      {
+        status: "Shipped",
+        carrier: { name: "DHL" },
+        tracking: { number: "1Z999ABC", url: "https://track.example/1Z999ABC" },
+      },
+    ]),
+    siteUrl: "https://staging.nessebarlens.com",
+    now: NOW,
+  });
+  assert.equal(mails.length, 1);
+  assert.equal(mails[0]!.subject, "Your Nessebar Lens print has shipped");
+  assert.match(mails[0]!.text, /DHL/);
+  assert.match(mails[0]!.text, /1Z999ABC/);
+  assert.match(mails[0]!.text, /https:\/\/track\.example\/1Z999ABC/);
+  assert.equal(
+    mails[0]!.text.includes("WRONG-1"),
+    false,
+    "the first Shipped entry wins, not the first shipment",
   );
 });

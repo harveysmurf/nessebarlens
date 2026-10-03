@@ -168,10 +168,14 @@ export function buildProdigiOrderBody(input: {
   // origin, and inventing a PRODIGI_CALLBACK_URL would only be useful to
   // *disable* callbacks — which we do not want. Prodigi posts CloudEvents
   // here; auth is the bearer token on the route, not a secret path segment.
+  //
+  // No origin check: the url is built from siteUrl() two lines up, so its
+  // origin is siteUrl()'s by construction and a comparison could never fail.
+  // (It could only have caught a future edit that built the url from something
+  // else — and that edit would then be missing this line.) The parse below is
+  // the check that has teeth: it throws for a siteUrl() that is not a URL.
   const callbackUrl = `${siteUrl()}/api/webhooks/prodigi`;
-  if (new URL(callbackUrl).origin !== new URL(siteUrl()).origin) {
-    throw new Error("callback url must be on the site origin");
-  }
+  new URL(callbackUrl);
 
   const body: ProdigiOrderRequest = {
     merchantReference: input.sessionId,
