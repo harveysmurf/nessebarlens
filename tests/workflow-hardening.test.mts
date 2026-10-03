@@ -120,3 +120,27 @@ test("every workflow declares permissions, so the default token is not write-all
     );
   }
 });
+
+test("a job that writes to the GitHub API declares the permission to do it", () => {
+  // The preview comment step posts and updates an issue comment. If the
+  // workflow-level default were ever raised instead of overridden, or the
+  // job-level `pull-requests: write` were dropped as redundant, the step
+  // fails with a permission error that reads like a flake — so the pairing is
+  // pinned from both sides: writes present, and the scope declared for them.
+  const writers = workflows.filter((workflow) =>
+    /github\.rest\.issues\.(createComment|updateComment)/.test(workflow.text),
+  );
+  assert.ok(writers.length > 0, "no workflow writes an issue comment any more");
+
+  for (const { name, text } of writers) {
+    const jobsText = text.slice(text.search(/^jobs:[ \t]*$/m));
+    for (const block of jobsText.split(/\n {2}(?=[a-z][\w-]*:\n)/).slice(1)) {
+      if (!/github\.rest\.issues\.(createComment|updateComment)/.test(block)) continue;
+      assert.match(
+        block,
+        /^ {6}pull-requests:[ \t]*write[ \t]*$/m,
+        `${name}: a job comments on the pull request but does not declare pull-requests: write`,
+      );
+    }
+  }
+});

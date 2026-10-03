@@ -5,11 +5,14 @@ on:
     types: [opened, synchronize, reopened, closed]
     branches: [main]
 
-# Default to the least privilege every job here needs: read the
-# repository and nothing else. No job in this workflow calls the
-# GitHub API, writes a comment, or pushes anything, so the default
-# token (write-all inside a repo) was strictly more than the work
-# required. A job needing more declares it on the job.
+# The default for the one job here that needs nothing: read the repository,
+# write nothing. The default in-repo token is write-all, which is more than
+# any job in this workflow asked for except one.
+#
+# `deploy` is that exception — its last step comments the preview URL on the
+# pull request, so it raises `pull-requests: write` on the job below. That
+# override is load-bearing: drop it and the comment step stops working with no
+# other signal.
 permissions:
   contents: read
 
