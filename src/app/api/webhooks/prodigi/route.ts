@@ -2,12 +2,15 @@
  * POST /api/webhooks/prodigi — Prodigi CloudEvent callbacks (#117).
  *
  * Mirrors the Stripe webhook route: force-dynamic, nodejs runtime, raw body,
- * auth before any effect. Prodigi signs nothing, so authentication is our
- * bearer token alone (`Authorization: Bearer <PRODIGI_WEBHOOK_TOKEN>`).
+ * auth before any effect. Prodigi signs nothing and the v4 callback reference
+ * offers no auth header, so authentication is our shared token passed as the
+ * `?token=` query param on the registered callback URL. An
+ * `Authorization: Bearer` header is still accepted so a hand-rolled curl or a
+ * future Prodigi auth feature keeps working, but the URL is the primary path.
  *
  * 503 when the token is unset — "unconfigured is a deploy-time fact",
  * distinct from 401 bad auth, same reasoning the Stripe route documents for
- * a missing STRIPE_WEBHOOK_SECRET. 401 on mismatch or absence of the header.
+ * a missing STRIPE_WEBHOOK_SECRET. 401 on mismatch or absence of the token.
  */
 
 import { NextResponse } from "next/server";
@@ -27,10 +30,14 @@ export const runtime = "nodejs";
 const BEARER_PREFIX = "Bearer ";
 
 /**
- * Extract the bearer token from an Authorization header. Timing-safe compare
- * happens against the configured token; this only peels the scheme.
+ * Pull the token out of the request: the query param Prodigi is configured to
+ * send first, falling back to a bearer header. Timing-safe compare happens
+ * against the configured token; this only locates the candidate.
  */
-function bearerToken(header: string | null): string {
+function providedToken(request: Request): string {
+  const fromQuery = new URL(request.url).searchParams.get("token") ?? "";
+  if (fromQuery) return fromQuery;
+  const header = request.headers.get("authorization");
   if (!header || !header.startsWith(BEARER_PREFIX)) return "";
   return header.slice(BEARER_PREFIX.length);
 }
@@ -52,7 +59,7 @@ export async function POST(request: Request) {
     );
   }
 
-  const provided = bearerToken(request.headers.get("authorization"));
+  const provided = providedToken(request);
   if (!timingSafeEqualString(bindings.prodigiWebhookToken, provided)) {
     return NextResponse.json({ error: "unauthorized" }, { status: 401 });
   }

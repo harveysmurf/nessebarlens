@@ -820,6 +820,49 @@ test("prodigi webhook: 503 unset token, 401 missing/wrong bearer (#117)", async 
   }
 });
 
+test("prodigi webhook: the ?token= query param authenticates, header still works (#185)", async () => {
+  // Prodigi v4 sends no auth header, so the token lives in the callback URL.
+  const token = "prodigi-route-test-token-32chars!!";
+  const event = JSON.stringify({
+    specversion: "1.0",
+    id: "evt_route_query_token",
+    subject: "ord_abc",
+    data: {},
+  });
+  const withToken = withBindings({
+    prodigiWebhookToken: token,
+    prodigiKeyConfigured: false,
+  });
+  const call = (url: string, headers?: Record<string, string>) =>
+    prodigiWebhook.POST(
+      new Request(url, { method: "POST", headers, body: event }),
+    );
+  try {
+    // Correct token in the query param: passes auth and reaches the binding
+    // check (no ORDERS_DB configured here), i.e. not a 401.
+    const viaQuery = await call(`${SITE}/api/webhooks/prodigi?token=${token}`);
+    assert.equal(viaQuery.status, 503);
+    assert.equal((await body(viaQuery)).error, "orders-store-unavailable");
+
+    // Back-compat: the bearer header still authenticates.
+    const viaHeader = await call(`${SITE}/api/webhooks/prodigi`, {
+      Authorization: `Bearer ${token}`,
+    });
+    assert.equal(viaHeader.status, 503);
+
+    // A wrong token in the URL is still a 401, and the query param wins when
+    // both are present.
+    const wrongQuery = await call(`${SITE}/api/webhooks/prodigi?token=wrong-token-not-matching-len!!`);
+    assert.equal(wrongQuery.status, 401);
+    const mismatched = await call(`${SITE}/api/webhooks/prodigi?token=wrong-token-not-matching-len!!`, {
+      Authorization: `Bearer ${token}`,
+    });
+    assert.equal(mismatched.status, 401, "query param must not be bypassed by a good header");
+  } finally {
+    withToken();
+  }
+});
+
 test("webhook: no signature, no secret, bad signature — in that order", async () => {
   const saved = { ...process.env };
   delete process.env.STRIPE_WEBHOOK_SECRET;
