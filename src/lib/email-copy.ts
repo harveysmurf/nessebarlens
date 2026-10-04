@@ -14,6 +14,7 @@
  */
 
 import type { EmailKind } from "./email";
+import { orderReference } from "./order-reference";
 
 export type EmailCopyInput = {
   kind: EmailKind;
@@ -64,6 +65,8 @@ function confirmationCopy(sessionId: string, siteOrigin: string): EmailCopy {
       "If you bought a digital copy, the download link is on that page once it is ready.",
       "If you bought a print, we will email you again when it ships.",
       "",
+      `Reference: ${orderReference(sessionId)}`,
+      "",
       "— Nessebar Lens",
     ].join("\n"),
   };
@@ -85,7 +88,7 @@ function shippedCopy(input: EmailCopyInput): EmailCopy {
   if (!carrier && !trackingNumber && !trackingUrl) {
     lines.push("Your carrier will provide tracking details separately.");
   }
-  lines.push("", "— Nessebar Lens");
+  lines.push("", `Reference: ${orderReference(input.sessionId)}`, "", "— Nessebar Lens");
   return {
     subject: "Your Nessebar Lens print has shipped",
     text: lines.join("\n"),
@@ -96,9 +99,9 @@ function unfulfilledCopy(sessionId: string): EmailCopy {
   return {
     subject: "We could not complete your Nessebar Lens order",
     text: [
-      "We took payment for your order, but we could not complete fulfilment.",
+      "We received your payment, but we could not complete your order automatically, so it has not gone into production yet. We will contact you by email about it.",
       "",
-      `Reference: ${sessionId}`,
+      `Reference: ${orderReference(sessionId)}`,
       "",
       "Please reply to this email (or contact us via the site) and we will make it right — a refund or a fresh attempt, whichever you prefer.",
       "",

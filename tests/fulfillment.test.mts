@@ -223,6 +223,24 @@ test("parseRecipient requires a complete address", () => {
   );
 });
 
+test("parseRecipient rejects an empty postcode: Prodigi refuses one (sandbox: MustNotBeEmptyOrWhitespace)", () => {
+  // Stripe's BG form lets the buyer leave the postcode blank. Prodigi's Create
+  // Order requires recipient.address.postalOrZipCode and rejects "" and a
+  // missing value alike, so inventing or blanking it would only move the
+  // failure to Prodigi after payment. The order must stay paid-unfulfilled and
+  // be surfaced to the customer instead.
+  for (const postal_code of ["", "   ", null, undefined]) {
+    assert.equal(
+      parseRecipient(
+        { name: "x", address: { line1: "1 Harbor St", city: "Nessebar", country: "BG", postal_code } },
+        null,
+        null,
+      ),
+      null,
+    );
+  }
+});
+
 test("digital payment with a matching total is paid and does not call Prodigi", async () => {
   let called = 0;
   const create: CreateProdigiOrder = async () => {
@@ -1828,7 +1846,7 @@ test("a terminal unfulfilled order mails once, naming the kind not the session",
   assert.equal(first.httpStatus, 200);
   assert.equal(mails.length, 1);
   assert.equal(mails[0]!.kind, "order-unfulfilled");
-  assert.match(mails[0]!.text, new RegExp(SESSION));
+  assert.match(mails[0]!.text, new RegExp(`Reference: ${SESSION.slice(-8).toUpperCase()}`));
 
   const again = await fulfillCheckoutSession({
     ...input,

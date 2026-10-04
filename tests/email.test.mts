@@ -13,6 +13,7 @@ import {
   sendEmailFromApiKey,
 } from "../src/lib/email.ts";
 import { emailCopyFor } from "../src/lib/email-copy.ts";
+import { orderReference } from "../src/lib/order-reference.ts";
 import { parseOrderRecord } from "../src/lib/order-decision.ts";
 
 const SESSION = "cs_test_abcdefgh";
@@ -215,7 +216,8 @@ test("unfulfilled copy names the session as a reference and no internal id", () 
     siteUrl: "https://nessebarlens.com",
   });
   assert.equal(copy.subject, "We could not complete your Nessebar Lens order");
-  assert.match(copy.text, /Reference: cs_test_abcdefgh/);
+  assert.match(copy.text, /Reference: ABCDEFGH\b/);
+  assert.equal(copy.text.includes("cs_test_"), false, "the raw session id is not the reference");
   assert.equal(copy.text.includes("ord_"), false);
   assert.equal(copy.text.includes("assetUrl"), false);
 });
@@ -293,4 +295,23 @@ test("parseOrderRecord defaults hostile shipments/emailsSent rather than rejecti
   assert.ok(parsed, "hostile shipments/emailsSent must not reject a paid order");
   assert.deepEqual(parsed.shipments, []);
   assert.deepEqual(parsed.emailsSent, []);
+});
+
+test("every email prints the same short reference the success page prints", () => {
+  const ref = orderReference(SESSION);
+  assert.equal(ref, "ABCDEFGH");
+  assert.equal(orderReference("cs_test_a1Zh499zOjUOk1s1"), "OJUOK1S1");
+  for (const kind of ["order-confirmation", "print-shipped", "order-unfulfilled"] as const) {
+    const copy = emailCopyFor({ kind, sessionId: SESSION, siteUrl: "https://nessebarlens.com" });
+    assert.match(copy.text, new RegExp(`Order reference: ${ref}\\b|Reference: ${ref}\\b`), kind);
+  }
+});
+
+test("unfulfilled copy does not contradict the success page", () => {
+  const copy = emailCopyFor({
+    kind: "order-unfulfilled",
+    sessionId: SESSION,
+    siteUrl: "https://nessebarlens.com",
+  });
+  assert.doesNotMatch(copy.text, /being produced/i);
 });

@@ -155,13 +155,47 @@ async function withBindings<T>(next: Fake, run: () => Promise<T>): Promise<T> {
 
 // ---- orderViewState: the closed set the page and the route share. ----
 
-test("a physical order is physical, whatever its status", async () => {
+test("a physical order is only 'physical' (being produced) while it is paid", async () => {
   const { parseOrderRecord } = await import("../src/lib/order-decision.ts");
-  // Checked for every status, because the page showed a download link to these
-  // buyers and a status-dependent answer here would put it back for some of them.
-  for (const status of ["paid", "paid-unfulfilled", "refunded", "disputed"]) {
+  const order = parseOrderRecord(record({ format: "giclee", status: "paid" }))!;
+  assert.equal(orderViewState(order), "physical");
+});
+
+test("a physical order still being handed to Prodigi is physical, not failed", async () => {
+  const { parseOrderRecord } = await import("../src/lib/order-decision.ts");
+  const order = parseOrderRecord(
+    record({ format: "giclee", status: "paid-unfulfilled", reason: "awaiting-prodigi" }),
+  )!;
+  assert.equal(orderViewState(order), "physical");
+});
+
+test("a physical order we failed to fulfil is never reported as being produced", async () => {
+  const { parseOrderRecord } = await import("../src/lib/order-decision.ts");
+  // Staging regression: Stripe accepted a BG address with an empty postcode,
+  // Prodigi requires one, so the order was paid-unfulfilled / missing-shipping
+  // while the page said "Your print is being produced".
+  for (const terminal of [true, false]) {
+    const order = parseOrderRecord(
+      record({
+        format: "giclee",
+        status: "paid-unfulfilled",
+        reason: "missing-shipping",
+        terminal,
+        recipient: null,
+        prodigiOrderId: null,
+        prodigiStage: null,
+        assetUrl: null,
+      }),
+    )!;
+    assert.equal(orderViewState(order), "physical-unfulfilled", `terminal ${terminal}`);
+  }
+});
+
+test("a refunded or disputed physical order is revoked, never 'physical'", async () => {
+  const { parseOrderRecord } = await import("../src/lib/order-decision.ts");
+  for (const status of ["refunded", "disputed"]) {
     const order = parseOrderRecord(record({ format: "giclee", status }))!;
-    assert.equal(orderViewState(order), "physical", `status ${status}`);
+    assert.equal(orderViewState(order), "revoked", `status ${status}`);
   }
 });
 
@@ -355,6 +389,11 @@ test("order-status: reports the same state the page renders", async () => {
   const cases: Array<[string, Record<string, unknown>, string]> = [
     ["digital", { format: "digital" }, "digital-ready"],
     ["canvas", { format: "canvas" }, "physical"],
+    [
+      "canvas unfulfilled",
+      { format: "canvas", status: "paid-unfulfilled", reason: "missing-shipping", recipient: null, prodigiOrderId: null, prodigiStage: null, assetUrl: null },
+      "physical-unfulfilled",
+    ],
     ["refunded", { format: "digital", status: "refunded" }, "revoked"],
   ];
   for (const [label, over, expected] of cases) {
@@ -479,6 +518,7 @@ test("every page state has a branch, so none falls through to a bare thank-you",
     "missing-session",
     "invalid-session",
     "physical",
+    "physical-unfulfilled",
     "digital-ready",
     "digital-no-token",
     "revoked",
@@ -518,7 +558,8 @@ test("the unavailable branch tells the truth and does not poll", () => {
 test("the page prints a short reference, never the raw session id", () => {
   // The full id identifies the order and was, until #111, also the bearer
   // credential for the download route. It reaches no markup at all now.
-  assert.match(PAGE, /sessionId\.slice\(-8\)\.toUpperCase\(\)/);
+  assert.match(PAGE, /orderReference\(sessionId\)/);
+  assert.doesNotMatch(PAGE, /slice\(-8\)/, "one shared implementation, not a local copy");
   assert.doesNotMatch(
     PAGE,
     /encodeURIComponent\(sessionId\)/,
@@ -551,4 +592,30 @@ test("the poller stops on a terminal state instead of polling forever", () => {
   assert.match(POLLER, /typeof state === "string"/);
   // And it gives up rather than running until the tab closes.
   assert.match(POLLER, /deadline/);
+});
+
+test("the physical-unfulfilled branch promises email contact, not production", () => {
+  const start = PAGE.indexOf('state === "physical-unfulfilled"');
+  assert.ok(start > 0, 'no branch for "physical-unfulfilled"');
+  const branch = PAGE.slice(start, PAGE.indexOf('state === "digital-ready"', start));
+  assert.match(branch, /payment (was|has been) received/i);
+  assert.match(branch, /email/i);
+  assert.doesNotMatch(branch, /produced|ship from|do not need to do anything/i);
+  assert.match(branch, /reference=\{reference\}/);
+  // Nothing changes on its own, so no poller.
+  assert.doesNotMatch(branch, /sessionId=\{sessionId\}/);
+});
+
+test("only the paid physical branch says the print is being produced", () => {
+  assert.equal(PAGE.split("being produced").length - 1, 1);
+  const at = PAGE.indexOf("being produced");
+  assert.ok(at > PAGE.indexOf('state === "physical" ?'));
+  assert.ok(at < PAGE.indexOf('state === "physical-unfulfilled"'));
+});
+
+test("the revoked branch does not talk about a download for a refunded print", () => {
+  const start = PAGE.indexOf('state === "revoked"');
+  const branch = PAGE.slice(start, PAGE.indexOf('state === "unavailable"', start));
+  assert.doesNotMatch(branch, /download/i);
+  assert.match(branch, /refunded|dispute/i);
 });
