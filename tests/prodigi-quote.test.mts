@@ -288,6 +288,35 @@ test("quotePhysical returns a failure on non-OK HTTP and missing quote fields", 
   }
 });
 
+test("an Error thrown by fetch keeps its message; a non-Error gets a fixed label", async () => {
+  // Both arms of the catch's message ternary. Only the non-Error arm was
+  // exercised (routes.test.mts throws a string), so the Error arm was never
+  // run by any test, and whether V8's merged report flagged it depended on how
+  // the per-file coverage happened to merge: branches read 99.92% on one run
+  // and 99.84% on the next with identical sources.
+  const originalFetch = globalThis.fetch;
+  process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
+  process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
+  try {
+    globalThis.fetch = (async () => {
+      throw new TypeError("fetch failed");
+    }) as typeof fetch;
+    const failed = await quotePhysical({ format: "canvas", size: "70x100" });
+    assert.equal(failed.ok === false && failed.reason, "prodigi-unavailable");
+    assert.equal(failed.ok === false && failed.message, "fetch failed");
+
+    globalThis.fetch = (async () => {
+      throw "socket exploded";
+    }) as typeof fetch;
+    const odd = await quotePhysical({ format: "canvas", size: "70x100" });
+    assert.equal(odd.ok === false && odd.message, "network-error");
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.PRODIGI_SANDBOX_API_KEY;
+    delete process.env.PRODIGI_API_BASE;
+  }
+});
+
 test("a bad Prodigi host reads as unconfigured, not as a bad gateway", async () => {
   // A misconfigured PRODIGI_API_BASE is our fault, not Prodigi's: the quote
   // result carries kind "unconfigured" and reason "prodigi-unconfigured", so the
