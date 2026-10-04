@@ -180,7 +180,18 @@ export type ProdigiFailureReason =
    * deployment config, and a redeploy inside Stripe's redelivery window
    * (~3 days) is enough to place the order.
    */
-  | "prodigi-unconfigured";
+  | "prodigi-unconfigured"
+  /**
+   * Prodigi already holds an order for this idempotency key, and it was built by
+   * a *different* deployment: its asset URL or callback URL is on another
+   * origin than ours (#193). Environments share one Prodigi namespace, so the
+   * first POST defines the order forever and we would otherwise record a signed
+   * URL and a callback Prodigi never received. Non-retryable by construction —
+   * retrying re-sends the same key and gets the same foreign order back — so
+   * the customer is refunded by a human instead of waiting out a redelivery
+   * that cannot succeed.
+   */
+  | "prodigi-order-foreign";
 
 /**
  * How a failed Prodigi call is retried. The value is the failure's own shape,

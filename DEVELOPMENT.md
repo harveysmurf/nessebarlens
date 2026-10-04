@@ -610,6 +610,48 @@ Operator view (CLI, not an admin route — this Worker serves customers):
 npm run orders -- --status paid-unfulfilled --limit 50
 ```
 
+### Prodigi sandbox isolation (#193)
+
+Prodigi's idempotency namespace is per **API key**, and staging, local dev and
+production were all using the same sandbox key while sharing the Stripe test-mode
+event stream. Two consequences, both live:
+
+- The first deployment to POST an order for a session defines that order's asset
+  URL and `callbackUrl` forever. Everyone else gets `{"outcome":"AlreadyExists",
+  "order":{"id":"..."}}` and adopts it.
+- The Stripe webhook in one environment receives deliveries created in another,
+  because Stripe test mode has one event stream.
+
+Code now handles `AlreadyExists` explicitly (`src/lib/prodigi-order.ts`): the
+existing order is read back from `GET /v4.0/orders/{id}`, its own stage and asset
+URL are recorded, and an order whose asset or callback is on a different origin
+fails `prodigi-order-foreign` rather than claiming a URL Prodigi does not hold.
+The idempotency key is namespaced `host:sessionId` off production — production
+keeps the bare session id so existing orders are not re-keyed into a second
+print.
+
+The remaining fix is in the Stripe dashboard, not the repo:
+
+1. **One Stripe webhook endpoint per environment.** Create a separate endpoint
+   for `https://staging.nessebarlens.com/api/webhooks/stripe` and stop the
+   production endpoint from receiving `checkout.session.completed` events whose
+   session was created by staging. The session's `success_url` (and the
+   `NEXT_PUBLIC_SITE_URL` of the creating deployment) identifies the origin.
+2. **The handler rejects foreign sessions.** A follow-up should compare the
+   session's own origin metadata against `siteUrl()` and answer 200 without
+   writing an order when they differ — the same rule `isForeignOrder` applies
+   on the Prodigi side.
+3. **After both**, delete the adopted sandbox order
+   (`POST /v4.0/orders/ord_1177041/actions/cancel`) and re-run the staging
+   purchase; `GET /v4.0/orders/<id>` must then show a `callbackUrl` on the
+   staging origin.
+
+Until (1) lands, every staging purchase races production for the same Prodigi
+order, and the operator alert (`order-ops-alert`, #195) is what tells you it
+happened.
+
+---
+
 ### Reconciler
 
 `POST /api/internal/reconcile`, guarded by `x-reconcile-secret` /
