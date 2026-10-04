@@ -76,8 +76,18 @@ export type ProdigiOrderRequest = {
 export type ProdigiOrderOk = {
   orderId: string;
   stage: string | null;
-  /** URL handed to Prodigi (HMAC print-asset or placeholder). */
+  /**
+   * The URL Prodigi actually holds — the HMAC print-asset or placeholder we
+   * sent, or, on an adopted order (#193), the one read back from Prodigi. Never
+   * the locally-built value when the order was not ours to build.
+   */
   assetUrl: string;
+  /**
+   * True when Prodigi answered `AlreadyExists` and this order adopted the one
+   * already there (#193). Carried so the record and the log can say the order
+   * was reused, not created.
+   */
+  reusedExisting?: boolean;
 };
 
 export type ProdigiOrderResult = ProdigiResult<ProdigiOrderOk>;
@@ -104,6 +114,34 @@ export function placeholderAssetUrl(photoSlug: string): string {
   // for an unsafe slug, and this must keep returning a URL for whatever the
   // catalog handed us rather than throwing mid-order.
   return `${siteUrl()}/placeholders/${photoSlug}.jpg?v=${PLACEHOLDER_VERSION}`;
+}
+
+/**
+ * Hosts where the Prodigi idempotency key stays the bare session id (#193).
+ *
+ * Existing production orders must keep their key: re-keying production would
+ * make every in-flight retry place a *second* print for a payment, which is the
+ * exact harm the idempotency key exists to prevent. Staging, local dev and any
+ * future host get a namespaced key so a shared Prodigi sandbox namespace cannot
+ * collide them with production.
+ */
+const PRODUCTION_HOSTS = new Set(["nessebarlens.com", "www.nessebarlens.com"]);
+
+/**
+ * The idempotency key for a session: bare on production, `host:session`
+ * everywhere else.
+ *
+ * `merchantReference` stays the bare session id on purpose — it is the value a
+ * human reads in the Prodigi dashboard and in `npm run orders`, and namespacing
+ * it would put a hostname in front of every order reference.
+ */
+export function prodigiIdempotencyKey(
+  sessionId: string,
+  origin: string = siteUrl(),
+): string {
+  const host = new URL(origin).host;
+  if (PRODUCTION_HOSTS.has(host)) return sessionId;
+  return `${host}:${sessionId}`;
 }
 
 export function assertNoMasterLeak(value: unknown): void {
@@ -196,7 +234,10 @@ export function buildProdigiOrderBody(input: {
 
   const body: ProdigiOrderRequest = {
     merchantReference: input.sessionId,
-    idempotencyKey: input.sessionId,
+    // Namespaced off production (#193): staging and local share Prodigi's
+    // sandbox namespace with us, and an unprefixed key let the first deployment
+    // to POST define the order — asset URL and callback URL — for everyone.
+    idempotencyKey: prodigiIdempotencyKey(input.sessionId),
     shippingMethod: PRODIGI_SHIPPING_METHOD,
     ...(callbackUrl ? { callbackUrl } : {}),
     recipient,
@@ -214,6 +255,16 @@ export function buildProdigiOrderBody(input: {
   return body;
 }
 
+/** The origin of a URL, or null when it is absent or unparseable. Log-only. */
+function originOf(value: string | null): string | null {
+  if (value === null) return null;
+  try {
+    return new URL(value).origin;
+  } catch {
+    return null;
+  }
+}
+
 function failure(
   kind: ProdigiFailureKind,
   reason: ProdigiFailureReason,
@@ -221,6 +272,141 @@ function failure(
   status: number | null,
 ): ProdigiOrderResult {
   return { ok: false, kind, reason, message, status };
+}
+
+/** What `GET /v4.0/orders/{id}` can tell us about an order we did not build. */
+export type ExistingProdigiOrder = {
+  id: string;
+  stage: string | null;
+  callbackUrl: string | null;
+  assetUrl: string | null;
+};
+
+/**
+ * Read back an order Prodigi already holds (#193).
+ *
+ * `AlreadyExists` carries only an `id` — no `status`, no `items` — so a caller
+ * that only looks at the POST response cannot know what it adopted. That is the
+ * bug: the record claimed our signed asset URL and a non-null stage for an order
+ * whose callbackUrl was null and whose asset was a production placeholder.
+ */
+async function fetchProdigiOrder(input: {
+  base: string;
+  key: string;
+  orderId: string;
+  signal: AbortSignal;
+}): Promise<
+  | { ok: true; order: ExistingProdigiOrder }
+  | { ok: false; result: ProdigiOrderResult }
+> {
+  let res: Response;
+  try {
+    res = await fetch(prodigiUrl(input.base, `v4.0/orders/${input.orderId}`), {
+      headers: { "X-API-Key": input.key },
+      signal: input.signal,
+    });
+  } catch (e) {
+    if (isProdigiTimeout(e, input.signal)) {
+      return {
+        ok: false,
+        result: failure(
+          "timeout",
+          "prodigi-timeout",
+          `Prodigi order lookup timed out after ${PRODIGI_ORDER_TIMEOUT_MS}ms`,
+          null,
+        ),
+      };
+    }
+    return {
+      ok: false,
+      result: failure(
+        "server",
+        "prodigi-unavailable",
+        e instanceof Error ? e.message : "network-error",
+        null,
+      ),
+    };
+  }
+
+  const raw = await res.text().catch(() => "");
+  if (!res.ok) {
+    const { kind, reason } = classifyProdigiStatus(res.status);
+    return {
+      ok: false,
+      result: failure(
+        kind,
+        reason,
+        `Prodigi order lookup HTTP ${res.status}${detailSuffix(raw)}`,
+        res.status,
+      ),
+    };
+  }
+
+  let data: {
+    id?: string;
+    callbackUrl?: string | null;
+    status?: { stage?: string | null };
+    items?: Array<{ assets?: Array<{ url?: string | null }> | null } | null>;
+  };
+  try {
+    data = JSON.parse(raw) as typeof data;
+  } catch {
+    data = {};
+  }
+
+  const assetUrl =
+    data.items?.[0]?.assets?.[0]?.url ?? null;
+  return {
+    ok: true,
+    order: {
+      id: typeof data.id === "string" ? data.id : input.orderId,
+      stage:
+        typeof data.status?.stage === "string" ? data.status.stage : null,
+      callbackUrl:
+        typeof data.callbackUrl === "string" && data.callbackUrl
+          ? data.callbackUrl
+          : null,
+      assetUrl: typeof assetUrl === "string" && assetUrl ? assetUrl : null,
+    },
+  };
+}
+
+/**
+ * Is an adopted order ours, or another deployment's?
+ *
+ * Our own build always sends an asset URL on the site origin and, whenever
+ * `PRODIGI_WEBHOOK_TOKEN` is set, a callback URL on the same origin. So a
+ * foreign order shows up as an asset on another origin, a callback on another
+ * origin, or — the shape #193 actually found — no callback at all on an account
+ * whose key is set, which can only be an order built before we sent one.
+ *
+ * The token check is what keeps this from crying wolf: with no token configured
+ * we send no callback, so a missing callback proves nothing and we accept the
+ * order.
+ */
+export function isForeignOrder(input: {
+  existing: ExistingProdigiOrder;
+  localAssetUrl: string;
+  localCallbackUrl: string | undefined;
+  origin: string;
+}): boolean {
+  const origin = new URL(input.origin).origin;
+  const foreignUrl = (value: string | null) => {
+    if (value === null) return false;
+    try {
+      return new URL(value).origin !== origin;
+    } catch {
+      // Unparseable is not ours to trust: Prodigi echoing something that is not
+      // a URL is a contract change, and claiming success on it is the bug.
+      return true;
+    }
+  };
+  if (foreignUrl(input.existing.assetUrl)) return true;
+  if (foreignUrl(input.existing.callbackUrl)) return true;
+  if (input.localCallbackUrl && input.existing.callbackUrl === null) return true;
+  // We signed an asset URL; the order we adopted has none we can see, so the
+  // record would claim a URL Prodigi does not hold.
+  return input.existing.assetUrl === null;
 }
 
 export const createProdigiOrder: CreateProdigiOrder = async (input) => {
@@ -384,6 +570,69 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
       "Prodigi order missing id",
       res.status,
     );
+  }
+
+  // Prodigi answered "this key already has an order" (#193). The order in hand
+  // is not one we built, so nothing in the POST response — including our own
+  // assetUrl — may be reported as what Prodigi holds. Read the real order.
+  if (data.outcome === "AlreadyExists") {
+    const looked = await fetchProdigiOrder({
+      base: config.base,
+      key: config.key,
+      orderId,
+      signal,
+    });
+    if (!looked.ok) return looked.result;
+    const existing = looked.order;
+    const localCallbackUrl = body.callbackUrl;
+    if (
+      isForeignOrder({
+        existing,
+        localAssetUrl: assetUrl,
+        localCallbackUrl,
+        origin: siteUrl(),
+      })
+    ) {
+      // Structured, because this is the fact that needs a human: another
+      // deployment holds the print for this payment. The detail names the
+      // origins, the asset URL is not logged in full because it carries a
+      // signature.
+      console.error(
+        JSON.stringify({
+          event: "prodigi.order.foreign",
+          sessionId: input.sessionId,
+          orderId: existing.id,
+          siteOrigin: new URL(siteUrl()).origin,
+          assetOrigin: originOf(existing.assetUrl),
+          callbackOrigin: originOf(existing.callbackUrl),
+        }),
+      );
+      return failure(
+        "client",
+        "prodigi-order-foreign",
+        `Prodigi already holds order ${existing.id} for this idempotency key, built on another origin`,
+        res.status,
+      );
+    }
+    console.warn(
+      JSON.stringify({
+        event: "prodigi.order.reused",
+        sessionId: input.sessionId,
+        orderId: existing.id,
+        stage: existing.stage,
+      }),
+    );
+    return {
+      ok: true,
+      value: {
+        orderId: existing.id,
+        stage: existing.stage,
+        // Prodigi's asset URL, not ours: on an adopted order the two can differ
+        // and the record must describe what Prodigi will actually print.
+        assetUrl: existing.assetUrl ?? assetUrl,
+        reusedExisting: true,
+      },
+    };
   }
 
   return {
