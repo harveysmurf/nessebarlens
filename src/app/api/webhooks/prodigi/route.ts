@@ -10,7 +10,7 @@
  *
  * 503 when the token is unset — "unconfigured is a deploy-time fact",
  * distinct from 401 bad auth, same reasoning the Stripe route documents for
- * a missing STRIPE_WEBHOOK_SECRET. 401 on mismatch or absence of the header.
+ * a missing STRIPE_WEBHOOK_SECRET. 401 on mismatch or absence of the token.
  */
 
 import { NextResponse } from "next/server";
