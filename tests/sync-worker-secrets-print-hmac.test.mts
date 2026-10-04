@@ -253,9 +253,15 @@ test("production ships NEXT_PUBLIC_WEB_IMAGES_BASE too", () => {
 test("an unset NEXT_PUBLIC_SITE_URL is dropped and loudly named, not shipped blank", () => {
   // A blank binding would read as present-but-wrong and hide the real cause
   // behind a URL that resolves nowhere.
+  // Explicitly blank, not merely absent: the helper spreads process.env, and a
+  // CI runner in the `staging` Environment already has NEXT_PUBLIC_SITE_URL set.
+  // Relying on absence made this test pass or fail with the runner's config,
+  // which is the opposite of what it is here to pin.
   const { status, secrets } = runAndReadSecrets("production", {
     RESEND_API_KEY: "re_test_key",
     PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+    NEXT_PUBLIC_SITE_URL: "",
+    NEXT_PUBLIC_WEB_IMAGES_BASE: "   ",
   });
   assert.equal(status, 0);
   assert.ok(
