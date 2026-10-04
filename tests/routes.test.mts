@@ -1015,6 +1015,40 @@ test("webhook: a session created by another environment is acknowledged and drop
   }
 });
 
+test("webhook: a foreign session with no id is still dropped (#193)", async () => {
+  const secret = "whsec_test_route_secret";
+  const event = JSON.stringify({
+    id: "evt_foreign_noid",
+    object: "event",
+    type: "checkout.session.completed",
+    data: {
+      object: {
+        payment_status: "paid",
+        success_url: "https://staging.nessebarlens.com.evil.test/checkout/success",
+      },
+    },
+  });
+  const signature = await sign(event, secret);
+  const kv = { async get() { return null; }, async put() {} };
+  const restore = withBindings({ webhookSecret: secret, ORDERS_DB: kv, prodigiKeyConfigured: false });
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    const response = await stripe.POST(
+      new Request(`${SITE}/api/webhooks/stripe`, {
+        method: "POST",
+        headers: { "stripe-signature": signature },
+        body: event,
+      }),
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await body(response), { received: true, ignored: "foreign-session" });
+  } finally {
+    console.warn = warn;
+    restore();
+  }
+});
+
 test("webhook: a handled event with no ORDERS binding is a 500, not a silent 200", async () => {
   const secret = "whsec_test_route_secret";
   const event = JSON.stringify({

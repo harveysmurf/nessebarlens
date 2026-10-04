@@ -94,6 +94,7 @@ test("reconcile is a no-op on an empty store", async () => {
     stuck: 0,
     checked: 0,
     missed: 0,
+    foreign: 0,
   });
 });
 
@@ -365,4 +366,107 @@ test("the reconciler prefers Stripe's collected shipping over the legacy field",
   assert.equal(stored.recipient?.name, "Collected");
   assert.equal(stored.recipient?.line1, "9 New Rd");
   assert.equal(stored.recipient?.city, "Sofia");
+});
+
+
+// --- #193: the reconciler refuses sessions another environment created --------
+//
+// Stripe lists every environment's sessions on the one account, so without this
+// the reconciler would adopt and fulfil a payment that belongs to another
+// deployment. It must use the webhook's classifier and answer the same way.
+
+const SITE_FOR_ORIGIN = "https://nessebarlens.com";
+
+async function withSite<T>(run: () => Promise<T>): Promise<T> {
+  const saved = process.env.NEXT_PUBLIC_SITE_URL;
+  process.env.NEXT_PUBLIC_SITE_URL = SITE_FOR_ORIGIN;
+  const warn = console.warn;
+  console.warn = () => {};
+  try {
+    return await run();
+  } finally {
+    console.warn = warn;
+    if (saved === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = saved;
+  }
+}
+
+test("a foreign-origin session is skipped: no store write, no Prodigi call", async () => {
+  await withSite(async () => {
+    const foreignMissed = session("cs_test_foreignmissed0000001", {
+      success_url: "https://staging.nessebarlens.com/checkout/success?session_id=x",
+    });
+    const foreignRetry = session("cs_test_foreignretry00000001", {
+      success_url: "https://nessebarlens.com.evil.test/checkout/success",
+    });
+    const store = memoryOrdersStore();
+    await store.putOrder(
+      retryable("cs_test_foreignretry00000001", "2026-10-02T23:00:00.000Z"),
+    );
+    const before = await store.getOrder("cs_test_foreignretry00000001");
+    let prodigiCalls = 0;
+    const stripe: ReconcileStripe = {
+      retrieveCheckoutSession: async () => foreignRetry,
+      listPaidCheckoutSessions: async () => [foreignMissed],
+    };
+    const summary = await reconcileOrders({
+      store,
+      stripe,
+      prodigiKeyConfigured: true,
+      createOrder: async () => {
+        prodigiCalls += 1;
+        throw new Error("Prodigi must not be called for a foreign session");
+      },
+      nowMs: NOW,
+    });
+    assert.equal(prodigiCalls, 0);
+    assert.equal(summary.foreign, 2);
+    assert.equal(summary.retried, 0);
+    assert.equal(summary.missed, 0);
+    assert.equal(summary.recovered, 0);
+    assert.equal(await store.getOrder("cs_test_foreignmissed0000001"), null);
+    assert.deepEqual(await store.getOrder("cs_test_foreignretry00000001"), before);
+  });
+});
+
+test("an own-origin session, www or apex, is fulfilled; unknown is treated like the webhook treats it", async () => {
+  await withSite(async () => {
+    const sessions = [
+      session("cs_test_ours000000000000001", {
+        success_url: "https://nessebarlens.com/checkout/success?session_id=x",
+      }),
+      // Deliberate: www and the apex are one deployment.
+      session("cs_test_wwwours0000000000001", {
+        success_url: "https://www.nessebarlens.com/checkout/success?session_id=x",
+      }),
+      // No readable success_url is "unknown" and is accepted, not dropped.
+      session("cs_test_unknown00000000000001", { success_url: null }),
+      session("cs_test_garbage00000000000001", { success_url: "not a url" }),
+    ];
+    const store = memoryOrdersStore();
+    let prodigiCalls = 0;
+    const summary = await reconcileOrders({
+      store,
+      stripe: {
+        retrieveCheckoutSession: async () => null,
+        listPaidCheckoutSessions: async () => sessions,
+      },
+      prodigiKeyConfigured: true,
+      createOrder: async () => {
+        prodigiCalls += 1;
+        return {
+          ok: true,
+          value: {
+            orderId: `ord_${prodigiCalls}`,
+            stage: "InProgress",
+            assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+          },
+        };
+      },
+      nowMs: NOW,
+    });
+    assert.equal(summary.foreign, 0);
+    assert.equal(summary.recovered, 4);
+    for (const s of sessions) assert.ok(await store.getOrder(s.id), s.id);
+  });
 });

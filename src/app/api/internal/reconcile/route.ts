@@ -119,6 +119,7 @@ function toReconcileSession(session: {
   shipping_details?: ReconcileSession["shipping_details"];
   collected_information?: ReconcileSession["collected_information"];
   customer_details?: ReconcileSession["customer_details"];
+  success_url?: string | null;
 }): ReconcileSession {
   return {
     id: session.id,
@@ -129,5 +130,6 @@ function toReconcileSession(session: {
     shipping_details: session.shipping_details ?? null,
     collected_information: session.collected_information ?? null,
     customer_details: session.customer_details ?? null,
+    success_url: session.success_url ?? null,
   };
 }

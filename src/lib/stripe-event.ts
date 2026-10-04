@@ -110,7 +110,7 @@ export function sessionOriginCheck(
   const successUrl = (session.success_url ?? "").trim();
   if (!successUrl) return "unknown";
   try {
-    return new URL(successUrl).origin === new URL(origin).origin
+    return canonicalOrigin(successUrl) === canonicalOrigin(origin)
       ? "ours"
       : "foreign";
   } catch {
@@ -119,6 +119,20 @@ export function sessionOriginCheck(
     // session, so it is unknown rather than a rejection.
     return "unknown";
   }
+}
+
+/**
+ * Scheme + host + port with one leading `www.` removed, compared as parsed
+ * origins (never prefix or substring, so `staging.x.com.evil.com` and
+ * `x.com.evil.com` stay foreign). www and the apex are one deployment: the
+ * Worker serves both from the same NEXT_PUBLIC_SITE_URL, so a session whose
+ * success_url names the other spelling is still ours and must not be dropped.
+ * Subdomains such as `staging.` are deliberately NOT folded.
+ */
+function canonicalOrigin(value: string): string {
+  const url = new URL(value);
+  const host = url.host.replace(/^www\./, "");
+  return `${url.protocol}//${host}`;
 }
 
 function parseStripeEvent(payload: string): Stripe.Event {

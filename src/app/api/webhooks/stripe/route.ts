@@ -135,7 +135,7 @@ export async function POST(request: Request) {
       JSON.stringify({
         event: "stripe.webhook.foreign-session",
         sessionId: session.id ?? null,
-        sessionOrigin: session.success_url ?? null,
+        sessionOrigin: session.success_url,
         siteOrigin: siteUrl(),
       }),
     );

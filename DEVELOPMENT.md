@@ -637,10 +637,12 @@ The remaining fix is in the Stripe dashboard, not the repo:
    production endpoint from receiving `checkout.session.completed` events whose
    session was created by staging. The session's `success_url` (and the
    `NEXT_PUBLIC_SITE_URL` of the creating deployment) identifies the origin.
-2. **The handler rejects foreign sessions.** A follow-up should compare the
-   session's own origin metadata against `siteUrl()` and answer 200 without
-   writing an order when they differ — the same rule `isForeignOrder` applies
-   on the Prodigi side.
+2. **The handler and the reconciler reject foreign sessions.** Both compare the
+   session's `success_url` origin with `siteUrl()` through `sessionOriginCheck`
+   (parsed origins, so look-alike hosts are foreign; `www.` and the apex count
+   as one site; an unreadable `success_url` is accepted). A foreign session is
+   answered 200 (reconciler: counted in `foreign`) with no store write and no
+   Prodigi call.
 3. **After both**, delete the adopted sandbox order
    (`POST /v4.0/orders/ord_1177041/actions/cancel`) and re-run the staging
    purchase; `GET /v4.0/orders/<id>` must then show a `callbackUrl` on the

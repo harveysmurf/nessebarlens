@@ -25,7 +25,9 @@
  * in wrangler.toml would be silently ignored for this Worker.
  */
 
+import { siteUrl } from "./config";
 import { fulfillCheckoutSession } from "./fulfillment";
+import { sessionOriginCheck } from "./stripe-event";
 import type { OrdersStore } from "./orders-store";
 import type { CreateProdigiOrder } from "./prodigi-order";
 import type { DownloadTokenLimits } from "./download-token";
@@ -66,6 +68,8 @@ export type ReconcileSession = {
     email?: string | null;
     phone?: string | null;
   } | null;
+  /** The origin record (#193); see sessionOriginCheck. */
+  success_url?: string | null;
 };
 
 export type ReconcileSummary = {
@@ -75,6 +79,8 @@ export type ReconcileSummary = {
   stuck: number;
   checked: number;
   missed: number;
+  /** Sessions skipped because another environment created them (#193). */
+  foreign: number;
 };
 
 export type ReconcileInput = {
@@ -103,6 +109,7 @@ export async function reconcileOrders(
     stuck: 0,
     checked: 0,
     missed: 0,
+    foreign: 0,
   };
 
   const retryable = await input.store.listOrders({
@@ -131,6 +138,7 @@ export async function reconcileOrders(
 
     const session = await input.stripe.retrieveCheckoutSession(order.sessionId);
     if (!session) continue;
+    if (isForeign(session, summary)) continue;
 
     const result = await fulfillFromSession(input, session);
     if (result.body.duplicate === true) {
@@ -146,6 +154,7 @@ export async function reconcileOrders(
     limit: batch,
   });
   for (const session of paidSessions) {
+    if (isForeign(session, summary)) continue;
     const existing = await input.store.getOrder(session.id);
     if (existing !== null) continue;
     summary.missed += 1;
@@ -154,6 +163,29 @@ export async function reconcileOrders(
   }
 
   return summary;
+}
+
+/**
+ * Same classifier as the webhook (#193): the Stripe account lists every
+ * environment's sessions, so the reconciler must refuse the ones it did not
+ * create, or it would adopt and fulfil another deployment's payment. `unknown`
+ * is accepted, exactly as in the webhook.
+ */
+function isForeign(
+  session: ReconcileSession,
+  summary: ReconcileSummary,
+): boolean {
+  if (sessionOriginCheck(session, siteUrl()) !== "foreign") return false;
+  summary.foreign += 1;
+  console.warn(
+    JSON.stringify({
+      event: "reconcile.foreign-session",
+      sessionId: session.id,
+      sessionOrigin: session.success_url,
+      siteOrigin: siteUrl(),
+    }),
+  );
+  return true;
 }
 
 async function fulfillFromSession(

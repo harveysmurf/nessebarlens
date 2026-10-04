@@ -448,4 +448,126 @@ test("sessionOriginCheck reads success_url, and refuses to guess", () => {
   );
   // Unparseable is unknown, not a rejection.
   assert.equal(sessionOriginCheck({ success_url: "not a url" }, ours), "unknown");
+  // An unparseable configured origin cannot classify anything either.
+  assert.equal(
+    sessionOriginCheck({ success_url: "https://nessebarlens.com/x" }, "nope"),
+    "unknown",
+  );
+});
+
+test("sessionOriginCheck: www and the apex are one deployment, nothing else folds", () => {
+  const success = (host: string) => ({
+    success_url: `https://${host}/checkout/success?session_id=cs_1`,
+  });
+  // A checkout started on www while the site url is the apex (or vice versa)
+  // is still our session; dropping it would lose a paid print.
+  assert.equal(sessionOriginCheck(success("www.nessebarlens.com"), "https://nessebarlens.com"), "ours");
+  assert.equal(sessionOriginCheck(success("nessebarlens.com"), "https://www.nessebarlens.com"), "ours");
+  // Look-alikes and other subdomains stay foreign; comparison is on parsed hosts.
+  for (const host of [
+    "staging.nessebarlens.com",
+    "www.staging.nessebarlens.com",
+    "nessebarlens.com.evil.com",
+    "www.nessebarlens.com.evil.com",
+    "staging.nessebarlens.com.evil.com",
+    "evilnessebarlens.com",
+    "nessebarlens.com@evil.com",
+  ]) {
+    assert.equal(
+      sessionOriginCheck(success(host), "https://nessebarlens.com"),
+      "foreign",
+      host,
+    );
+  }
+  // The scheme and port are part of the origin.
+  assert.equal(
+    sessionOriginCheck({ success_url: "http://nessebarlens.com/x" }, "https://nessebarlens.com"),
+    "foreign",
+  );
+  assert.equal(
+    sessionOriginCheck({ success_url: "https://nessebarlens.com:8443/x" }, "https://nessebarlens.com"),
+    "foreign",
+  );
+});
+
+test("a failed lookup that times out or cannot connect is retryable", async () => {
+  await withEnv("https://nessebarlens.com", async () => {
+    for (const [error, reason] of [
+      [Object.assign(new Error("slow"), { name: "TimeoutError" }), "prodigi-timeout"],
+      [new Error("socket hang up"), "prodigi-unavailable"],
+      // A runtime that rejects with a non-Error still maps to unavailable.
+      ["connection reset", "prodigi-unavailable"],
+    ] as const) {
+      const stub = stubProdigi({
+        post: () => json({ outcome: "AlreadyExists", order: { id: "ord_1" } }),
+        get: () => {
+          throw error;
+        },
+      });
+      try {
+        const result = await silently(() => createProdigiOrder(INPUT));
+        assert.ok(!result.ok);
+        assert.ok(!result.ok && result.reason === reason);
+      } finally {
+        stub.restore();
+      }
+    }
+  });
+});
+
+test("an unreadable or sparse lookup body is never adopted as ours", async () => {
+  await withEnv("https://nessebarlens.com", async () => {
+    const bodies: Array<() => Response> = [
+      () => new Response("<html>not json</html>", { status: 200 }),
+      // The body itself cannot be read.
+      () =>
+        ({
+          ok: true,
+          status: 200,
+          text: async () => {
+            throw new Error("body stream reset");
+          },
+        }) as unknown as Response,
+      // No id, no status, no assets, callback that is not a URL.
+      () => json({ callbackUrl: "::nope::" }),
+      () => json({ id: 7, status: { stage: 3 }, items: [null], callbackUrl: "" }),
+      () => json({ items: [{ assets: [{ url: "not a url" }] }] }),
+    ];
+    for (const get of bodies) {
+      const stub = stubProdigi({
+        post: () => json({ outcome: "AlreadyExists", order: { id: "ord_1" } }),
+        get,
+      });
+      try {
+        const result = await silently(() => createProdigiOrder(INPUT));
+        assert.ok(!result.ok && result.reason === "prodigi-order-foreign");
+      } finally {
+        stub.restore();
+      }
+    }
+  });
+});
+
+test("an adopted order with our asset but no stage is adopted with a null stage", async () => {
+  await withEnv("https://nessebarlens.com", async () => {
+    const stub = stubProdigi({
+      post: () => json({ outcome: "AlreadyExists", order: { id: "ord_5" } }),
+      get: () =>
+        json({
+          callbackUrl: `https://nessebarlens.com/api/webhooks/prodigi?token=${TOKEN}`,
+          items: [
+            { assets: [{ url: "https://nessebarlens.com/api/print-asset?slug=dawn&sig=z" }] },
+          ],
+        }),
+    });
+    try {
+      const result = await silently(() => createProdigiOrder(INPUT));
+      assert.ok(result.ok);
+      // Falls back to the id Prodigi gave on the POST when the body omits it.
+      assert.equal(result.value.orderId, "ord_5");
+      assert.equal(result.value.stage, null);
+    } finally {
+      stub.restore();
+    }
+  });
 });
