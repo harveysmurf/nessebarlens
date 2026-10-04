@@ -126,9 +126,10 @@ jobs:
           # production deploy on main from the Workers migration onwards
           # (run 37154161818), leaving production serving a pre-migration
           # build. --tag/--message are the Workers version identity and are
-          # what preview.yml already uses. The head sha stays in --message so
-          # a deployed version can still be traced back to its commit, which
-          # is the only reason SAFE_MESSAGE exists above.
+          # what preview.yml already uses. The head sha travels in --tag, so a
+          # deployed version can still be traced back to its commit.
+          # SAFE_MESSAGE is the human-readable commit message and only carries
+          # the sha as its fallback.
           npx opennextjs-cloudflare deploy \
             --secrets-file=prod-secrets.json \
             --tag="prod-$COMMIT_SHA" \

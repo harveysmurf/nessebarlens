@@ -59,7 +59,7 @@ const DISPUTE_PAYMENT_METHOD = "pm_card_createDispute";
 /** Enough to exercise the amount arithmetic, small enough to be obviously fake. */
 const AMOUNT_EUR = 3000;
 
-/** A dispute is raised asynchronously; poll rather than sleep a fixed guess. */
+/** Unmeasured — loosen this first if the run reports no dispute in the window. */
 const DISPUTE_POLL_ATTEMPTS = 10;
 const DISPUTE_POLL_INTERVAL_MS = 1000;
 
