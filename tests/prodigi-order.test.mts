@@ -64,10 +64,8 @@ test("Prodigi order body uses SKU + placeholder and never leaks masters", () => 
   });
   assert.equal(body.idempotencyKey, "cs_test_abcdefgh");
   assert.equal(body.merchantReference, "cs_test_abcdefgh");
-  assert.equal(
-    body.callbackUrl,
-    "https://nessebarlens.com/api/webhooks/prodigi",
-  );
+  // No token passed: no callbackUrl rather than one the route would 401.
+  assert.equal(body.callbackUrl, undefined);
   // The value the customer was quoted with, read from the one constant —
   // not re-spelled here, because a test that repeats the literal asserts
   // nothing about whether quote and order agree.
@@ -84,6 +82,31 @@ test("Prodigi order body uses SKU + placeholder and never leaks masters", () => 
 
   for (const photo of PHOTOS) {
     assert.equal(JSON.stringify(body).includes(photo.imageKey), false);
+  }
+});
+
+test("the callback URL carries the webhook token, URL-encoded", () => {
+  process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
+  const body = buildProdigiOrderBody({
+    ...ORDER_INPUT,
+    webhookToken: "  tok/en+with&odd=chars  ",
+  });
+  assert.equal(
+    body.callbackUrl,
+    "https://nessebarlens.com/api/webhooks/prodigi?token=tok%2Fen%2Bwith%26odd%3Dchars",
+  );
+  // What the route will read back is the original token, trimmed.
+  assert.equal(
+    new URL(body.callbackUrl!).searchParams.get("token"),
+    "tok/en+with&odd=chars",
+  );
+});
+
+test("a blank webhook token omits the callback URL instead of sending a 401 one", () => {
+  process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
+  for (const webhookToken of [undefined, "", "   "]) {
+    const body = buildProdigiOrderBody({ ...ORDER_INPUT, webhookToken });
+    assert.equal("callbackUrl" in body, false, JSON.stringify(webhookToken));
   }
 });
 
@@ -237,6 +260,51 @@ test("createProdigiOrder posts the signed asset URL to the sandbox orders URL", 
       assert.equal(result.ok && result.value.assetUrl, sent.items[0].assets[0].url);
     } finally {
       stub.restore();
+    }
+  });
+});
+
+test("createProdigiOrder reads PRODIGI_WEBHOOK_TOKEN into the posted callbackUrl, and never logs it", async () => {
+  await withProdigiEnv(async () => {
+    process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
+    const savedToken = process.env.PRODIGI_WEBHOOK_TOKEN;
+    process.env.PRODIGI_WEBHOOK_TOKEN = "s3cret-callback-token-0123456789abcdef";
+    const logged: string[] = [];
+    const realWarn = console.warn;
+    const realError = console.error;
+    const realLog = console.log;
+    console.warn = console.error = console.log = (...args: unknown[]) => {
+      logged.push(args.map(String).join(" "));
+    };
+    const stub = stubFetch(() => json({ order: { id: "ord_cb" } }));
+    try {
+      const result = await createProdigiOrder(ORDER_INPUT);
+      assert.equal(result.ok, true);
+      const sent = JSON.parse(stub.calls[0]!.init.body as string);
+      assert.equal(
+        sent.callbackUrl,
+        "https://nessebarlens.com/api/webhooks/prodigi?token=s3cret-callback-token-0123456789abcdef",
+      );
+
+      // Unset: the order still goes out, without a callback, and the warning
+      // names the variable, not a value.
+      delete process.env.PRODIGI_WEBHOOK_TOKEN;
+      const second = await createProdigiOrder(ORDER_INPUT);
+      assert.equal(second.ok, true);
+      const sentNoToken = JSON.parse(stub.calls[1]!.init.body as string);
+      assert.equal("callbackUrl" in sentNoToken, false);
+      assert.equal(
+        logged.some((line) => line.includes("s3cret-callback-token")),
+        false,
+      );
+      assert.equal(logged.some((l) => l.includes("PRODIGI_WEBHOOK_TOKEN")), true);
+    } finally {
+      stub.restore();
+      console.warn = realWarn;
+      console.error = realError;
+      console.log = realLog;
+      if (savedToken === undefined) delete process.env.PRODIGI_WEBHOOK_TOKEN;
+      else process.env.PRODIGI_WEBHOOK_TOKEN = savedToken;
     }
   });
 });
