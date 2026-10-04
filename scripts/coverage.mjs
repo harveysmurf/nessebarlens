@@ -28,7 +28,8 @@
  */
 
 import { spawnSync } from "node:child_process";
-import { readdirSync } from "node:fs";
+import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
+import os from "node:os";
 import path from "node:path";
 import process from "node:process";
 import { isGatedFile, mean, parseCoverage, testRunExitCode } from "./coverage-report.mjs";
@@ -45,11 +46,35 @@ const testFiles = readdirSync(path.join(ROOT, "tests"))
   .sort()
   .map((name) => `tests/${name}`);
 
+// A second reporter writes lcov to a file, next to the usual stdout report. The
+// table's last column lists uncovered lines only; lcov's BRDA records are the
+// only place a never-taken branch on an otherwise executed line shows up.
+const lcovDir = mkdtempSync(path.join(os.tmpdir(), "coverage-"));
+const lcovFile = path.join(lcovDir, "lcov.info");
+
 const result = spawnSync(
   process.execPath,
-  ["--experimental-test-coverage", "--import", "./tests/register.mjs", "--test", ...testFiles],
+  [
+    "--experimental-test-coverage",
+    "--test-reporter=spec",
+    "--test-reporter-destination=stdout",
+    "--test-reporter=lcov",
+    `--test-reporter-destination=${lcovFile}`,
+    "--import",
+    "./tests/register.mjs",
+    "--test",
+    ...testFiles,
+  ],
   { cwd: ROOT, encoding: "utf8", maxBuffer: 64 * 1024 * 1024 },
 );
+
+let lcov = "";
+try {
+  lcov = readFileSync(lcovFile, "utf8");
+} catch {
+  // Best effort: the gate itself does not depend on it.
+}
+rmSync(lcovDir, { recursive: true, force: true });
 
 const output = `${result.stdout ?? ""}${result.stderr ?? ""}`;
 // A failing test still emits a full coverage report, so the floors below can be
@@ -121,6 +146,33 @@ if (failures.length > 0) {
       console.error(`  ${row.lines.toFixed(2).padStart(6)}%  ${row.file}  ${row.uncovered}`);
     }
   }
+  const gaps = branchGaps(lcov).filter((gap) => isGatedFile(gap.file));
+  if (gaps.length > 0) {
+    console.error("branches never taken, by file (line:branch-index):");
+    for (const { file, taken, total, lines } of gaps) {
+      console.error(`  ${file}  ${total - taken}/${total} untaken  at ${lines.join(", ")}`);
+    }
+  }
   process.exit(1);
 }
 console.log("\ncoverage floors met");
+
+/** Files with branches that never ran, from lcov BRDA records. */
+function branchGaps(text) {
+  const gaps = [];
+  let current = null;
+  for (const line of text.split("\n")) {
+    if (line.startsWith("SF:")) {
+      current = { file: path.relative(ROOT, line.slice(3)), taken: 0, total: 0, lines: [] };
+    } else if (line.startsWith("BRDA:") && current) {
+      const [lineNo, , branch, count] = line.slice(5).split(",");
+      current.total += 1;
+      if (count === "-" || Number(count) === 0) current.lines.push(`${lineNo}:${branch}`);
+      else current.taken += 1;
+    } else if (line === "end_of_record" && current) {
+      if (current.taken < current.total) gaps.push(current);
+      current = null;
+    }
+  }
+  return gaps.sort((a, b) => a.taken / a.total - b.taken / b.total);
+}
