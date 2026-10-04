@@ -153,6 +153,33 @@ else
   export PRODIGI_WEBHOOK_TOKEN="$WEBHOOK_TOKEN"
 fi
 
+# Bearer for the reconcile cron (#133). Same shape as the webhook token, and the
+# same omission it had: reconcile.yml guards RECONCILE_SECRET in *its own* env
+# before calling, and the route guards it in the Worker env before answering --
+# but nothing shipped it, so every 15-minute tick got 503 reconcile-unconfigured
+# and the cron had been red since the Workers migration.
+RECONCILE="${RECONCILE_SECRET:-}"
+RECONCILE="${RECONCILE#"${RECONCILE%%[![:space:]]*}"}"
+RECONCILE="${RECONCILE%"${RECONCILE##*[![:space:]]}"}"
+if [[ -z "$RECONCILE" ]]; then
+  if [[ "$TARGET" == "production" ]]; then
+    echo "production requires RECONCILE_SECRET" >&2
+    echo "without it /api/internal/reconcile answers 503 and reconcile.yml fails every tick" >&2
+    exit 1
+  fi
+  echo "warning: RECONCILE_SECRET unset — /api/internal/reconcile will 503 on this preview" >&2
+elif [[ ${#RECONCILE} -lt 32 ]]; then
+  # Same bar as the other two: a token short enough to guess is worse than none,
+  # because it looks configured.
+  if [[ "$TARGET" == "production" ]]; then
+    echo "production requires RECONCILE_SECRET with at least 32 characters (got ${#RECONCILE})" >&2
+    exit 1
+  fi
+  echo "warning: RECONCILE_SECRET under 32 characters — weak bearer on this preview" >&2
+else
+  export RECONCILE_SECRET="$RECONCILE"
+fi
+
 # Secrets go through a 0600 file rather than stdin so the values never appear in
 # the process list, and the file is removed on every exit path. In version-only
 # mode the caller needs the file to survive the exit, so it names the path via
@@ -222,6 +249,12 @@ if resend_key:
 webhook_token = os.environ.get("PRODIGI_WEBHOOK_TOKEN", "").strip()
 if len(webhook_token) >= 32:
     secrets["PRODIGI_WEBHOOK_TOKEN"] = webhook_token
+# Reconcile bearer (#133). Re-checked here for the same reason as the two
+# above: bash judged the length, Python must not disagree about whether a value
+# survived, or the guard is decoration.
+reconcile_secret = os.environ.get("RECONCILE_SECRET", "").strip()
+if len(reconcile_secret) >= 32:
+    secrets["RECONCILE_SECRET"] = reconcile_secret
 
 with open(out_path, "w") as fh:
     json.dump(secrets, fh)

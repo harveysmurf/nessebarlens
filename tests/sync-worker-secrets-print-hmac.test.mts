@@ -59,9 +59,13 @@ function run(
       ...(secret === undefined
         ? {}
         : { PRINT_ASSET_HMAC_SECRET: secret }),
+      // A complete production environment is the baseline; a test that wants one
+      // of these absent overrides it with "". That keeps each new required
+      // secret from breaking every existing case.
       ...(extra ?? {
         RESEND_API_KEY: "re_test_key",
         PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+        RECONCILE_SECRET: "r".repeat(32),
       }),
     },
   });
@@ -88,6 +92,9 @@ function runAndReadSecrets(
       PRINT_ASSET_HMAC_SECRET: valid,
       PRODIGI_API_BASE: "https://api.sandbox.prodigi.com",
       PRODIGI_SANDBOX_API_KEY: "sandbox-key",
+      RESEND_API_KEY: "re_test_key",
+      PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+      RECONCILE_SECRET: "r".repeat(32),
       SYNC_SCOPE: "version-only",
       SECRETS_OUT: out,
       ...(extra ?? {}),
@@ -275,4 +282,76 @@ test("preview ships the same two, so a preview host can take a sandbox order", (
   const { status, secrets } = runAndReadSecrets("preview", SITE_ENV);
   assert.equal(status, 0);
   assert.equal(secrets.NEXT_PUBLIC_SITE_URL, "https://nessebarlens.com");
+});
+
+/**
+ * RECONCILE_SECRET was the same bug a second time, and it stayed hidden for
+ * longer. The route guards it in the Worker env and returns 503; reconcile.yml
+ * guards it in the *cron's* env before calling. Both guards passed, the secret
+ * sat unused in the GitHub production Environment, and nothing ever shipped it
+ * — so every 15-minute tick answered 503 and the cron had been red since the
+ * Workers migration (failing at least from 2026-10-03T16:18Z, before today's
+ * cutover).
+ *
+ * Two guards on two sides of an HTTP call is exactly the arrangement that hides
+ * this: neither side can see the other's environment.
+ */
+const RECONCILE_ENV = { RECONCILE_SECRET: "r".repeat(32) };
+
+test("production ships RECONCILE_SECRET to the Worker", () => {
+  const { status, secrets } = runAndReadSecrets("production", {
+    RESEND_API_KEY: "re_test_key",
+    PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+    ...RECONCILE_ENV,
+  });
+  assert.equal(status, 0);
+  assert.equal(
+    secrets.RECONCILE_SECRET,
+    "r".repeat(32),
+    "without it /api/internal/reconcile answers 503 and the cron fails every tick",
+  );
+});
+
+test("production refuses to deploy without RECONCILE_SECRET", () => {
+  const result = run("production", valid, undefined, {
+    RESEND_API_KEY: "re_test_key",
+    PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+    RECONCILE_SECRET: "",
+  });
+  assert.equal(result.status, 1, "a deploy that cannot reconcile must not go green");
+  assert.match(result.stderr, /RECONCILE_SECRET/);
+});
+
+test("production refuses a RECONCILE_SECRET short enough to guess", () => {
+  const result = run("production", valid, undefined, {
+    RESEND_API_KEY: "re_test_key",
+    PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+    RECONCILE_SECRET: "r".repeat(31),
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /at least 32 characters/);
+});
+
+test("preview warns about RECONCILE_SECRET rather than failing", () => {
+  const result = run("preview", valid, undefined, {
+    RESEND_API_KEY: "re_test_key",
+    PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+    RECONCILE_SECRET: "",
+  });
+  assert.equal(result.status, 0);
+  assert.match(result.stderr, /warning: RECONCILE_SECRET/);
+});
+
+test("both deploy workflows pass RECONCILE_SECRET to the sync script", () => {
+  // The guard above is only reachable if the value reaches the script at all,
+  // so the wiring is asserted too — otherwise the new guard hard-fails every
+  // deploy with an error that names a secret nobody passed.
+  for (const wf of ["prod.yml", "preview.yml"]) {
+    const text = fs.readFileSync(path.join(root, ".github", "workflows", wf), "utf8");
+    assert.match(
+      text,
+      /RECONCILE_SECRET: \$\{\{ secrets\.RECONCILE_SECRET \}\}/,
+      `${wf} must pass RECONCILE_SECRET`,
+    );
+  }
 });
