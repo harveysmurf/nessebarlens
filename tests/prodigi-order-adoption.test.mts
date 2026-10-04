@@ -20,6 +20,7 @@ import {
   prodigiIdempotencyKey,
 } from "../src/lib/prodigi-order.ts";
 import { prodigiWebhookToken } from "../src/lib/config.ts";
+import { sessionOriginCheck } from "../src/lib/stripe-event.ts";
 import type { OrderRecipient } from "../src/lib/prodigi-order.ts";
 
 const SANDBOX = "https://api.sandbox.prodigi.com";
@@ -397,4 +398,54 @@ test("a failed lookup keeps the failure retryable rather than claiming success",
       stub.restore();
     }
   });
+});
+
+test("sessionOriginCheck reads success_url, and refuses to guess", () => {
+  const ours = "https://nessebarlens.com";
+  assert.equal(
+    sessionOriginCheck(
+      { success_url: "https://nessebarlens.com/checkout/success?session_id=cs_1" },
+      ours,
+    ),
+    "ours",
+  );
+  // Port and case differ, but the origin is the deployment's.
+  assert.equal(
+    sessionOriginCheck(
+      { success_url: "https://nessebarlens.com:443/checkout/success?x=1" },
+      ours,
+    ),
+    "ours",
+  );
+  assert.equal(
+    sessionOriginCheck(
+      { success_url: "https://staging.nessebarlens.com/checkout/success" },
+      ours,
+    ),
+    "foreign",
+  );
+  // A look-alike host is foreign, not ours: this is the check that decides
+  // whether we may write an order at all.
+  assert.equal(
+    sessionOriginCheck(
+      { success_url: "https://nessebarlens.com.evil.test/checkout/success" },
+      ours,
+    ),
+    "foreign",
+  );
+  // No success_url is not evidence of a foreign session. Refusing here would
+  // drop a customer's paid print, so it is accepted.
+  assert.equal(sessionOriginCheck({}, ours), "unknown");
+  assert.equal(sessionOriginCheck({ success_url: "   " }, ours), "unknown");
+  assert.equal(sessionOriginCheck({ success_url: null }, ours), "unknown");
+  // Stripe's own placeholder template still parses.
+  assert.equal(
+    sessionOriginCheck(
+      { success_url: "https://nessebarlens.com/c?session_id={CHECKOUT_SESSION_ID}" },
+      ours,
+    ),
+    "ours",
+  );
+  // Unparseable is unknown, not a rejection.
+  assert.equal(sessionOriginCheck({ success_url: "not a url" }, ours), "unknown");
 });

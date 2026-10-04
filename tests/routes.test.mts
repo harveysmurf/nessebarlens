@@ -963,6 +963,58 @@ test("webhook: an unhandled event is acknowledged without touching the store", a
   }
 });
 
+test("webhook: a session created by another environment is acknowledged and dropped (#193)", async () => {
+  // Stripe test mode delivers every session to every endpoint, so the staging
+  // handler also receives production checkouts and vice versa. Writing that
+  // order locally is what let two builds fight over one Prodigi order, so this
+  // deployment must answer 200 having stored nothing.
+  const secret = "whsec_test_route_secret";
+  const event = JSON.stringify({
+    id: "evt_foreign",
+    object: "event",
+    type: "checkout.session.completed",
+    data: {
+      object: {
+        id: "cs_test_abcdefgh",
+        payment_status: "paid",
+        // success_url is the origin record: our checkout route builds it from
+        // siteUrl(), so it is present on every session.
+        success_url:
+          "https://staging.nessebarlens.com/checkout/success?session_id=cs_test_abcdefgh",
+      },
+    },
+  });
+  const signature = await sign(event, secret);
+  let touched = 0;
+  const kv = {
+    async get() {
+      touched++;
+      return null;
+    },
+    async put() {
+      touched++;
+    },
+  };
+  const restore = withBindings({ webhookSecret: secret, ORDERS_DB: kv, prodigiKeyConfigured: false });
+  try {
+    const response = await stripe.POST(
+      new Request(`${SITE}/api/webhooks/stripe`, {
+        method: "POST",
+        headers: { "stripe-signature": signature },
+        body: event,
+      }),
+    );
+    assert.equal(response.status, 200);
+    assert.deepEqual(await body(response), {
+      received: true,
+      ignored: "foreign-session",
+    });
+    assert.equal(touched, 0, "a foreign session must not be stored here");
+  } finally {
+    restore();
+  }
+});
+
 test("webhook: a handled event with no ORDERS binding is a 500, not a silent 200", async () => {
   const secret = "whsec_test_route_secret";
   const event = JSON.stringify({

@@ -83,7 +83,43 @@ export type StripeCheckoutSession = {
     email?: string | null;
     phone?: string | null;
   } | null;
+  success_url?: string | null;
 };
+
+/**
+ * Did this Checkout Session belong to this deployment? (#193)
+ *
+ * Stripe test mode has one event stream and one set of webhook endpoints per
+ * account, so *every* endpoint receives *every* session — a staging purchase is
+ * delivered to the production handler and vice versa. Splitting the endpoints
+ * per environment does not change that; only the handler can.
+ *
+ * `success_url` is the origin record, and deliberately not new metadata: we set
+ * it from `siteUrl()` at session creation, so it is present on every session
+ * ever created, including the ones already paid for.
+ *
+ * Three-valued on purpose. `unknown` — no readable `success_url` — is *not*
+ * foreign, and is accepted: refusing an unreadable session would drop a
+ * customer's paid print, and this check refines the Prodigi-side one rather
+ * than replacing it.
+ */
+export function sessionOriginCheck(
+  session: { success_url?: string | null },
+  origin: string,
+): "ours" | "foreign" | "unknown" {
+  const successUrl = (session.success_url ?? "").trim();
+  if (!successUrl) return "unknown";
+  try {
+    return new URL(successUrl).origin === new URL(origin).origin
+      ? "ours"
+      : "foreign";
+  } catch {
+    // Stripe wrote this value from our own siteUrl(); the `{CHECKOUT_SESSION_ID}`
+    // placeholder still parses. Unparseable is not evidence of a foreign
+    // session, so it is unknown rather than a rejection.
+    return "unknown";
+  }
+}
 
 function parseStripeEvent(payload: string): Stripe.Event {
   const parsed = JSON.parse(payload) as Stripe.Event;

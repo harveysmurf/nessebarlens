@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { fulfillCheckoutSession } from "@/lib/fulfillment";
-import { getConfig } from "@/lib/config";
+import { getConfig, siteUrl } from "@/lib/config";
 import { sendEmailFromApiKey } from "@/lib/email";
 import {
   defaultStripeLookup,
@@ -13,6 +13,7 @@ import {
 } from "@/lib/orders-store";
 import {
   readStripeEvent,
+  sessionOriginCheck,
   type StripeCheckoutSession,
 } from "@/lib/stripe-event";
 import { readWorkerBindings } from "@/lib/worker-bindings";
@@ -122,6 +123,27 @@ export async function POST(request: Request) {
   }
 
   const session = event.data.object as StripeCheckoutSession;
+
+  // Stripe test mode delivers every session to every endpoint, so this handler
+  // also sees purchases made by another environment (#193). Answering 200
+  // without writing an order is the whole point: the other deployment owns that
+  // payment, and writing it here is what let two builds fight over one Prodigi
+  // order. 200, not 4xx — the event is delivered correctly, just not ours.
+  const origin = sessionOriginCheck(session, siteUrl());
+  if (origin === "foreign") {
+    console.warn(
+      JSON.stringify({
+        event: "stripe.webhook.foreign-session",
+        sessionId: session.id ?? null,
+        sessionOrigin: session.success_url ?? null,
+        siteOrigin: siteUrl(),
+      }),
+    );
+    return NextResponse.json({
+      received: true,
+      ignored: "foreign-session",
+    });
+  }
 
   const shippingDetails =
     session.collected_information?.shipping_details ??
