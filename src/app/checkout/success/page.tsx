@@ -5,17 +5,7 @@ import {
   resolveCheckoutPageState,
 } from "./order-state";
 import { getConfig } from "@/lib/config";
-
-/**
- * A short reference the customer can quote in support, derived from the session
- * id already in their URL. The full id is printed nowhere: it identified the
- * order and, until #111, doubled as the bearer credential for the download
- * route. It no longer grants a download, but a URL that looks like a secret is
- * one a customer pastes into a public thread.
- */
-function orderReference(sessionId: string): string {
-  return sessionId.slice(-8).toUpperCase();
-}
+import { orderReference } from "@/lib/order-reference";
 
 export default async function CheckoutSuccessPage({
   searchParams,
@@ -60,6 +50,17 @@ export default async function CheckoutSuccessPage({
           <p className="text-xs text-stone-600 leading-relaxed font-light">
             Your print is being produced and will ship from our partner studio.
             You do not need to do anything else.
+          </p>
+        </OrderCard>
+      ) : state === "physical-unfulfilled" ? (
+        // Paid, but never sent to production (e.g. an address Prodigi cannot
+        // accept). No poller: nothing changes until someone acts, and we must
+        // not claim the print is being made.
+        <OrderCard reference={reference}>
+          <p className="text-xs text-stone-600 leading-relaxed font-light">
+            Your payment was received, but we could not send your order to
+            production automatically. We will contact you by email about your
+            order.
           </p>
         </OrderCard>
       ) : state === "digital-ready" && downloadHref ? (
@@ -111,8 +112,8 @@ export default async function CheckoutSuccessPage({
       ) : state === "revoked" ? (
         <OrderCard reference={reference}>
           <p className="text-xs text-stone-600 leading-relaxed font-light">
-            This order was refunded or is under dispute, so the download is no
-            longer available.
+            This order was refunded or is under dispute, so there is nothing
+            further to send you.
           </p>
         </OrderCard>
       ) : state === "unavailable" ? (

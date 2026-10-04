@@ -529,14 +529,19 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
  * both from one resolver is what keeps the page from offering something
  * resolveDownload will refuse.
  *
- * The cases are ordered to match resolveDownload's own checks, deliberately:
- * a physical order is reported as physical before any status question, so the
- * page cannot say "your download is processing" about an order that has no
- * download to process.
+ * Physical orders never reach a digital state, so the page cannot say "your
+ * download is processing" about an order that has no download to process. They
+ * do get a status question, though: only a paid print is "being produced", and
+ * a refunded or unfulfilled one must not say so.
  */
 export type OrderViewState =
-  /** A physical order: being produced, no file to hand over. */
+  /** A paid physical order that went to production: no file to hand over. */
   | "physical"
+  /**
+   * A physical order we took payment for but did not send to production (for
+   * example missing-shipping). Must never read as "being produced".
+   */
+  | "physical-unfulfilled"
   /** A digital order whose file is ready to download now. */
   | "digital-ready"
   /** A digital order still being fulfilled — the webhook has not finished. */
@@ -547,8 +552,19 @@ export type OrderViewState =
   | "revoked";
 
 export function orderViewState(order: OrderRecord): OrderViewState {
-  if (order.kind !== "digital") return "physical";
   if (isRevoked(order.status)) return "revoked";
+  if (order.kind !== "digital") {
+    // paid-unfulfilled + AWAITING_PRODIGI_REASON is the ordinary in-flight
+    // state between the webhook accepting the order and Prodigi answering; it
+    // becomes "paid", or a failure reason, within seconds. Every other
+    // unfulfilled reason is a real failure.
+    const inFlight =
+      order.status === "paid-unfulfilled" &&
+      order.reason === AWAITING_PRODIGI_REASON;
+    return order.status === "paid" || inFlight
+      ? "physical"
+      : "physical-unfulfilled";
+  }
   if (order.status === "paid" && order.masterKey) return "digital-ready";
   if (!order.terminal) return "digital-pending";
   return "digital-unavailable";
