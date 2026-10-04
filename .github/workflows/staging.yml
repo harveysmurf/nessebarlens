@@ -65,6 +65,7 @@ jobs:
           PRINT_ASSET_HMAC_SECRET: ${{ secrets.PRINT_ASSET_HMAC_SECRET }}
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           PRODIGI_WEBHOOK_TOKEN: ${{ secrets.PRODIGI_WEBHOOK_TOKEN }}
+          RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
           # Explicit host, never inferred from which Prodigi key is set.
           PRODIGI_API_BASE: https://api.sandbox.prodigi.com
           PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
