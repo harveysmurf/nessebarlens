@@ -294,7 +294,7 @@ Canonical path is **GitHub Actions** (§6). Manual deploys are for break-glass o
 ### Preview (PR / feature branch)
 
 ```bash
-SITE_URL=https://dev.nessebar-lens.pages.dev npx opennextjs-cloudflare build
+SITE_URL=https://staging.nessebarlens.com npx opennextjs-cloudflare build
 SYNC_SCOPE=version-only SECRETS_OUT=preview-secrets.json \
   bash scripts/sync-worker-secrets.sh preview
 npx opennextjs-cloudflare upload \
@@ -318,6 +318,89 @@ a preview that synced secrets separately would write the sandbox Stripe key over
 the live one and take production down until the next deploy. Attaching the
 secrets to the version being uploaded is what keeps a preview isolated from the
 deployed site.
+
+### Staging (always-on, every push to `main`)
+
+Staging is a **second Worker**, `nessebar-lens-staging`, at
+`https://staging.nessebarlens.com`, with its own D1 (`nessebar-lens-orders-staging`).
+It is distinct from a preview: a preview is a per-PR *version* of the production
+Worker and shares its D1; staging shares no mutable state with production, so a
+purchase can be rehearsed end to end against sandbox Stripe and Prodigi. It is
+declared as `[env.staging]` in `wrangler.toml` (bindings are not inherited by a
+wrangler environment, so `ORDERS_DB`, `WEB` and `MASTERS` are redeclared there;
+the two R2 buckets are the production ones because the code only reads them).
+
+`.github/workflows/staging.yml` runs on push to `main` and `workflow_dispatch`:
+build → `wrangler d1 migrations apply … --env staging --remote` → secrets file
+via `scripts/sync-worker-secrets.sh staging` → `opennextjs-cloudflare deploy
+--env staging --secrets-file` → `scripts/smoke.sh https://staging.nessebarlens.com`.
+The `staging` target of the script keeps the `sk_test_` check and, unlike
+`preview`, **fails** rather than warns when `RESEND_API_KEY`,
+`PRODIGI_WEBHOOK_TOKEN` or `PRINT_ASSET_HMAC_SECRET` is missing. Deploys queue and
+are never cancelled, so a run cannot stop between migration and deploy.
+
+Manual equivalent (break-glass; needs the staging secrets in your shell):
+
+```bash
+SITE_URL=https://staging.nessebarlens.com npx opennextjs-cloudflare build
+npx wrangler d1 migrations apply nessebar-lens-orders-staging --remote --env staging
+SYNC_SCOPE=version-only SECRETS_OUT=staging-secrets.json \
+  bash scripts/sync-worker-secrets.sh staging
+npx opennextjs-cloudflare deploy --env staging --secrets-file=staging-secrets.json
+rm -f staging-secrets.json
+```
+
+`--env staging` must be on **every** wrangler call that touches staging: without
+it wrangler resolves the top-level config, which is production (`nessebar-lens`
+and `nessebar-lens-orders`). That includes `d1 execute` and `d1 migrations`.
+
+New migration? Nothing extra: the workflow applies it to staging before the
+deploy, which is also the rehearsal for applying it to production by hand.
+
+#### Manual end-to-end purchase on staging
+
+Use this before cutting a release that touches checkout, fulfillment, email or
+the webhooks.
+
+1. **Buy.** Open `https://staging.nessebarlens.com`, pick a physical print, and
+   check out with Stripe test card `4242 4242 4242 4242`, any future expiry, any
+   CVC, any postcode, and a real-looking shipping address. Note the
+   `cs_test_…` session id in the success-page URL.
+2. **Stripe webhook.** In the Stripe **test-mode** dashboard, Developers →
+   Webhooks → the staging endpoint (`https://staging.nessebarlens.com/api/webhooks/stripe`,
+   events `checkout.session.completed`, `checkout.session.async_payment_succeeded`,
+   `charge.refunded`, `charge.dispute.created`). The delivery for your session
+   must show `200`. A `400` is a signing-secret mismatch (`STRIPE_WEBHOOK_SECRET`
+   in the `staging` Environment is that endpoint's `whsec_…`); a `503` means a
+   binding is missing. Resend from the dashboard after fixing.
+3. **Order in D1.**
+   ```bash
+   npx wrangler d1 execute nessebar-lens-orders-staging --remote --env staging \
+     --command "select session_id, status, terminal, reason, attempts, updated_at from orders order by created_at desc limit 5"
+   ```
+   Expect `status = 'fulfilled'` (or `paid-unfulfilled` with a `reason` naming
+   what failed). The full record, including the Prodigi order id, is the `record`
+   JSON column.
+4. **Prodigi sandbox order.** Find the order id from step 3 in the Prodigi
+   sandbox dashboard (`dashboard.prodigi.com`, sandbox toggle). The order's
+   asset URL must be a signed `/api/print-asset?…` on `staging.nessebarlens.com`,
+   never the placeholder.
+5. **Prodigi callbacks.** The order was created with
+   `callbackUrl=https://staging.nessebarlens.com/api/webhooks/prodigi?token=…`,
+   built from `PRODIGI_WEBHOOK_TOKEN`. Advance the sandbox order's stage from the
+   dashboard and confirm `select count(*) from prodigi_callbacks` grows and the
+   order's status follows. To probe the route by hand:
+   `curl -i -X POST 'https://staging.nessebarlens.com/api/webhooks/prodigi?token=wrong'`
+   must answer `401`; `503 prodigi-webhook-unconfigured` means the token binding
+   is missing from the deployed version. Never paste the real token into an
+   issue or a log.
+6. **Email.** The buyer address receives the order confirmation through Resend.
+   Check the Resend dashboard → Emails for the send and its delivery state. With
+   an unverified sending domain Resend only delivers to the account owner's own
+   address, so use that as the buyer email.
+
+If step 3 shows no row at all, the webhook never arrived or hit the wrong
+Worker: check step 2 first, then `npx wrangler tail nessebar-lens-staging`.
 
 ### Production (main only)
 
@@ -413,7 +496,9 @@ a host serving a reverted build is a support incident, not a deploy.
 
 ### D1 orders database
 
-Already created and applied — these are only for a fresh account:
+Production is already created and applied; staging is created and migrated too
+(id in `wrangler.toml` under `[env.staging]`; `staging.yml` keeps it migrated).
+These are only for a fresh account:
 
 ```bash
 npx wrangler d1 create nessebar-lens-orders
@@ -421,6 +506,9 @@ npx wrangler d1 create nessebar-lens-orders
 npx wrangler d1 migrations apply nessebar-lens-orders --local
 npx wrangler d1 migrations apply nessebar-lens-orders --remote
 ```
+
+Staging takes the same migrations with `--remote --env staging` and the staging
+database name (`nessebar-lens-orders-staging`).
 
 `migrations/0002_prodigi_callbacks.sql` adds the CloudEvent dedupe table for
 `#117`. Apply it the same way (local + remote) before deploying a build that
@@ -549,6 +637,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 |----------|---------|--------------|
 | `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a `workflow-audit` job (**install zizmor** → **gate on workflow script injection**, scoped to `template-injection` at Medium confidence and up — the other 40 findings are reported, not gated); plus two pull-request-only browser jobs — **required** `e2e-smoke` (no secrets: `npm ci` → **install chromium** → **e2e smoke flow (seeded)**: `npm run test:e2e -- --grep-invert @hosted` → **upload the failure trace** on failure) and **best-effort** `e2e-hosted-checkout` (`continue-on-error`; staging Environment → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **e2e hosted checkout** (`npm run test:e2e -- --grep @hosted`, headed under Xvfb) → **upload the trace** every run) |
 | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → **Worker Version upload** (secrets attached via `--secrets-file`) → **smoke test** the version URL (`scripts/smoke.sh`) → PR comment; `versions delete` on close |
+| `.github/workflows/staging.yml` | push to `main` + `workflow_dispatch` | staging Environment → build → **D1 migrations (`--env staging`)** → `opennextjs-cloudflare deploy --env staging --secrets-file` (the `staging` target of `sync-worker-secrets.sh`: `sk_test_` enforced, Resend key / Prodigi token / print HMAC required) → **smoke test** `https://staging.nessebarlens.com` |
 | `.github/workflows/prod.yml` | push to `main` + `workflow_dispatch` | production Environment → checks (`ci.yml`) → build → `opennextjs-cloudflare deploy --secrets-file` (guards run first in `version-only` mode) |
 
 ### The workflow audit job
@@ -636,8 +725,8 @@ re-dispatching.
 
 GitHub Environments:
 
-- **`staging`** — sandbox Stripe + `PRODIGI_API_BASE=https://api.sandbox.prodigi.com` +
-  `PRODIGI_SANDBOX_API_KEY` + `SITE_URL=https://dev.nessebar-lens.pages.dev` +
+- **`staging`** — read by both `preview.yml` and `staging.yml`: sandbox Stripe + `PRODIGI_API_BASE=https://api.sandbox.prodigi.com` +
+  `PRODIGI_SANDBOX_API_KEY` + `SITE_URL=https://staging.nessebarlens.com` +
   `PRODIGI_WEBHOOK_TOKEN` (shared with whatever injects the bearer on sandbox
   callbacks) + `RESEND_API_KEY` (Resend test/sandbox key is fine; domain
   verification still required before real inboxes accept mail).

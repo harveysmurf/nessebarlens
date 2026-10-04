@@ -1,0 +1,88 @@
+name: Staging
+
+# Always-on rehearsal environment: every push to main is deployed to
+# https://staging.nessebarlens.com (Worker `nessebar-lens-staging`, D1
+# `nessebar-lens-orders-staging`) with sandbox Stripe/Prodigi keys. Unlike
+# preview.yml, which uploads per-PR *versions* of the production Worker and
+# shares its D1, this is a separate Worker with its own data, so a full
+# purchase can be rehearsed without touching a real order.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One deploy at a time, and never cancelled part-way: a cancelled run could
+# stop between the D1 migration and the deploy and leave the schema ahead of
+# the code. A newer push simply queues behind the current one.
+concurrency:
+  group: staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    name: Deploy staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      SITE_URL: ${{ secrets.SITE_URL }}
+      NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+      NEXT_PUBLIC_WEB_IMAGES_BASE: ${{ secrets.NEXT_PUBLIC_WEB_IMAGES_BASE }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: $/.github/actions/setup
+
+      - name: Build (OpenNext)
+        run: npx opennextjs-cloudflare build
+
+      # Before the deploy, so the new code never runs against an older schema.
+      # Migrations are additive and idempotent (wrangler records each applied
+      # file in d1_migrations), so a re-run is a no-op. `--env staging` is what
+      # points this at the staging D1 declared under [env.staging]; without it
+      # wrangler would resolve the top-level binding, which is production.
+      - name: Apply D1 migrations (staging)
+        run: npx wrangler d1 migrations apply nessebar-lens-orders-staging --remote --env staging
+
+      # The `staging` target of the script keeps the sk_test_ check and makes
+      # RESEND_API_KEY, PRODIGI_WEBHOOK_TOKEN and PRINT_ASSET_HMAC_SECRET hard
+      # requirements: staging exists to rehearse the whole purchase, so a
+      # missing email key or callback token is a failed deploy, not a warning.
+      # Version-only mode writes the file and applies nothing; `deploy` below
+      # ships it on the version that serves (same mechanism as prod.yml).
+      - name: Deploy staging (OpenNext)
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          PRINT_ASSET_HMAC_SECRET: ${{ secrets.PRINT_ASSET_HMAC_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          PRODIGI_WEBHOOK_TOKEN: ${{ secrets.PRODIGI_WEBHOOK_TOKEN }}
+          # Explicit host, never inferred from which Prodigi key is set.
+          PRODIGI_API_BASE: https://api.sandbox.prodigi.com
+          PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
+          PRODIGI_API_KEY: ${{ secrets.PRODIGI_API_KEY }}
+        run: |
+          set -euo pipefail
+          SYNC_SCOPE=version-only SECRETS_OUT=staging-secrets.json \
+            bash scripts/sync-worker-secrets.sh staging
+
+          # --tag/--message carry only the sha: opennextjs-cloudflare re-parses
+          # passthrough args in a second shell (see preview.yml / prod.yml), so
+          # keep them free of spaces and metacharacters.
+          npx opennextjs-cloudflare deploy \
+            --env staging \
+            --secrets-file=staging-secrets.json \
+            --tag="staging-$COMMIT_SHA" \
+            --message="staging-$COMMIT_SHA"
+          rm -f staging-secrets.json
+
+      - name: Smoke test staging
+        run: bash scripts/smoke.sh https://staging.nessebarlens.com

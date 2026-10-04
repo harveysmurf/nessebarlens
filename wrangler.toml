@@ -34,3 +34,37 @@ bucket_name = "nessebar-lens-web"
 [[r2_buckets]]
 binding = "MASTERS"
 bucket_name = "nessebar-lens-masters"
+
+# Staging: a second, always-on Worker on its own hostname and its own D1, so a
+# full purchase can be rehearsed with sandbox keys without touching production
+# orders. Deploy with `--env staging` (opennextjs-cloudflare forwards it to
+# wrangler) -- see DEVELOPMENT.md §Staging and .github/workflows/staging.yml.
+#
+# Wrangler does NOT inherit bindings into an environment, so every binding the
+# code reads is redeclared here. Omit one and the staging Worker deploys green
+# and answers 503 at runtime. ASSETS and [assets] are inherited (not bindings
+# in the sense above); the compatibility settings and `main` are too.
+#
+# Secrets are not here either: the workflow ships them with --secrets-file.
+[env.staging]
+name = "nessebar-lens-staging"
+routes = [{ pattern = "staging.nessebarlens.com", custom_domain = true }]
+
+[[env.staging.d1_databases]]
+binding = "ORDERS_DB"
+database_name = "nessebar-lens-orders-staging"
+database_id = "81efdc1d-087f-4b2c-981a-5902a4508fc6"
+migrations_dir = "migrations"
+
+# Both buckets are the PRODUCTION buckets, deliberately: the code only READS
+# them (MastersBucket is `get()` alone, and nothing reads env.WEB at all), so
+# staging needs the real photos to render and to sign print assets, and shares
+# no mutable state with production through them. If anything ever writes to
+# either bucket, give staging its own pair before that lands.
+[[env.staging.r2_buckets]]
+binding = "WEB"
+bucket_name = "nessebar-lens-web"
+
+[[env.staging.r2_buckets]]
+binding = "MASTERS"
+bucket_name = "nessebar-lens-masters"

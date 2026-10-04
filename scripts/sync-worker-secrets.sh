@@ -2,7 +2,7 @@
 # Push Stripe/Prodigi (+ optional NEXT_PUBLIC_*) into a Cloudflare Worker via
 # `wrangler secret bulk`.
 #
-# Usage: sync-worker-secrets.sh <preview|production>
+# Usage: sync-worker-secrets.sh <preview|staging|production>
 # Requires env: CLOUDFLARE_API_TOKEN, CLOUDFLARE_ACCOUNT_ID, STRIPE_*,
 # PRODIGI_API_BASE, and the Prodigi key that matches the base (sandbox key for
 # sandbox host, live key for live host).
@@ -12,9 +12,19 @@
 set -euo pipefail
 
 TARGET="${1:-}"
-if [[ "$TARGET" != "preview" && "$TARGET" != "production" ]]; then
-  echo "usage: $0 <preview|production>" >&2
+if [[ "$TARGET" != "preview" && "$TARGET" != "staging" && "$TARGET" != "production" ]]; then
+  echo "usage: $0 <preview|staging|production>" >&2
   exit 1
+fi
+
+# staging is the always-on rehearsal Worker: sandbox keys like a preview (the
+# sk_test_ check below), but it exists to exercise the whole purchase path, so
+# the three secrets a preview may legitimately lack are as mandatory as in
+# production. A staging deploy that silently drops the email key or the Prodigi
+# callback token would rehearse a flow production does not have.
+STRICT=0
+if [[ "$TARGET" == "production" || "$TARGET" == "staging" ]]; then
+  STRICT=1
 fi
 
 # Wrangler reads CLOUDFLARE_API_TOKEN / CLOUDFLARE_ACCOUNT_ID itself; the CF_*
@@ -95,8 +105,8 @@ PRINT_SECRET="${PRINT_ASSET_HMAC_SECRET:-}"
 PRINT_SECRET="${PRINT_SECRET#"${PRINT_SECRET%%[![:space:]]*}"}"
 PRINT_SECRET="${PRINT_SECRET%"${PRINT_SECRET##*[![:space:]]}"}"
 if [[ ${#PRINT_SECRET} -lt 32 ]]; then
-  if [[ "$TARGET" == "production" ]]; then
-    echo "production requires PRINT_ASSET_HMAC_SECRET with at least 32 characters (got ${#PRINT_SECRET})" >&2
+  if [[ "$STRICT" == "1" ]]; then
+    echo "$TARGET requires PRINT_ASSET_HMAC_SECRET with at least 32 characters (got ${#PRINT_SECRET})" >&2
     echo "without it /api/checkout answers 503 for physical formats" >&2
     exit 1
   fi
@@ -108,14 +118,14 @@ fi
 # Transactional email (#117). RESEND_API_KEY rides on the deploying version, so
 # a key missing here is not "email is off": the order flow still succeeds and
 # the customer gets no confirmation at all. Same shape as the print HMAC --
-# hard error in production, warning in preview, because a preview build
+# hard error in production and staging, warning in preview, because a preview build
 # legitimately runs without sending mail.
 RESEND_KEY="${RESEND_API_KEY:-}"
 RESEND_KEY="${RESEND_KEY#"${RESEND_KEY%%[![:space:]]*}"}"
 RESEND_KEY="${RESEND_KEY%"${RESEND_KEY##*[![:space:]]}"}"
 if [[ -z "$RESEND_KEY" ]]; then
-  if [[ "$TARGET" == "production" ]]; then
-    echo "production requires RESEND_API_KEY" >&2
+  if [[ "$STRICT" == "1" ]]; then
+    echo "$TARGET requires RESEND_API_KEY" >&2
     echo "without it orders succeed and no confirmation email is sent" >&2
     exit 1
   fi
@@ -134,8 +144,8 @@ WEBHOOK_TOKEN="${PRODIGI_WEBHOOK_TOKEN:-}"
 WEBHOOK_TOKEN="${WEBHOOK_TOKEN#"${WEBHOOK_TOKEN%%[![:space:]]*}"}"
 WEBHOOK_TOKEN="${WEBHOOK_TOKEN%"${WEBHOOK_TOKEN##*[![:space:]]}"}"
 if [[ -z "$WEBHOOK_TOKEN" ]]; then
-  if [[ "$TARGET" == "production" ]]; then
-    echo "production requires PRODIGI_WEBHOOK_TOKEN" >&2
+  if [[ "$STRICT" == "1" ]]; then
+    echo "$TARGET requires PRODIGI_WEBHOOK_TOKEN" >&2
     echo "without it /api/webhooks/prodigi answers 503 for every callback" >&2
     exit 1
   fi
@@ -144,8 +154,8 @@ else
   # 32 hex chars minimum, same bar as the print HMAC: a token short enough to
   # guess is worse than no token, because it looks configured.
   if [[ ${#WEBHOOK_TOKEN} -lt 32 ]]; then
-    if [[ "$TARGET" == "production" ]]; then
-      echo "production requires PRODIGI_WEBHOOK_TOKEN with at least 32 characters (got ${#WEBHOOK_TOKEN})" >&2
+    if [[ "$STRICT" == "1" ]]; then
+      echo "$TARGET requires PRODIGI_WEBHOOK_TOKEN with at least 32 characters (got ${#WEBHOOK_TOKEN})" >&2
       exit 1
     fi
     echo "warning: PRODIGI_WEBHOOK_TOKEN under 32 characters — weak bearer token on this preview" >&2
