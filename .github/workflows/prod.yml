@@ -53,8 +53,6 @@ jobs:
       - name: Build (OpenNext)
         run: npx opennextjs-cloudflare build
 
-
-
       # The secrets go on the version this step deploys, via --secrets-file.
       # The order here is deliberate and is the reverse of the Pages workflow:
       #
@@ -121,9 +119,18 @@ jobs:
           SAFE_MESSAGE="${SAFE_MESSAGE:0:72}"
           [ -n "$SAFE_MESSAGE" ] || SAFE_MESSAGE="deploy-$COMMIT_SHA"
 
+          # No --commit-hash/--commit-dirty/--commit-message here: those are
+          # Pages deploy flags. `wrangler deploy` rejects them outright --
+          # "Unknown arguments: commit-dirty, commitDirty, commit-hash,
+          # commitHash, commit-message, commitMessage" -- which failed every
+          # production deploy on main from the Workers migration onwards
+          # (run 37154161818), leaving production serving a pre-migration
+          # build. --tag/--message are the Workers version identity and are
+          # what preview.yml already uses. The head sha stays in --message so
+          # a deployed version can still be traced back to its commit, which
+          # is the only reason SAFE_MESSAGE exists above.
           npx opennextjs-cloudflare deploy \
             --secrets-file=prod-secrets.json \
-            --commit-dirty=true \
-            --commit-hash="$COMMIT_SHA" \
-            --commit-message="$SAFE_MESSAGE"
+            --tag="prod-$COMMIT_SHA" \
+            --message="$SAFE_MESSAGE"
           rm -f prod-secrets.json
