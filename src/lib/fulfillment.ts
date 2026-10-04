@@ -47,7 +47,7 @@ import type { FrameFinish } from "./pricing";
 import { isFrameFinishValue, isPrintSize } from "./sku-map";
 import type { OrdersStore } from "./orders-store";
 import { emailCopyFor } from "./email-copy";
-import type { EmailKind, SendEmail } from "./email";
+import { OPS_ALERT_TO, type EmailKind, type SendEmail } from "./email";
 import { siteUrl } from "./config";
 
 function reportUnfulfilled(record: OrderRecord, detail?: string): void {
@@ -134,12 +134,15 @@ async function sendClaimedEmail(input: {
   record: OrderRecord;
   kind: EmailKind;
   to: string;
+  /** Extra line for the operator alert; ignored by customer kinds. */
+  opsDetail?: string;
 }): Promise<void> {
   if (!input.sendEmail) return;
   const copy = emailCopyFor({
     kind: input.kind,
     sessionId: input.record.sessionId,
     siteUrl: siteUrl(),
+    ...(input.opsDetail === undefined ? {} : { opsDetail: input.opsDetail }),
   });
   try {
     const sent = await input.sendEmail({
@@ -450,6 +453,21 @@ export async function fulfillCheckoutSession(
     record = withEmailClaim(record, kind);
   }
 
+  // Operator alert (#195). Claimed on the same record and the same write as the
+  // customer email, so a redelivery that finds the kind claimed sends nothing.
+  // The early return above for a retryable Prodigi failure deliberately skips
+  // this: that path answers 5xx and a redelivery may still land the order, so
+  // paging an operator for a failure that resolves itself would train them to
+  // ignore the alert.
+  const opsKind: EmailKind = "order-ops-alert";
+  const wantsOpsAlert =
+    isUnfulfilledOutcome(record) &&
+    !record.emailsSent.includes(opsKind) &&
+    input.sendEmail !== undefined;
+  if (shouldEmail || wantsOpsAlert) {
+    record = wantsOpsAlert ? withEmailClaim(record, opsKind) : record;
+  }
+
   if (fromAttempts !== null) {
     const ok = await storeTransition(input.store, fromAttempts, record);
     if (!ok) {
@@ -470,6 +488,16 @@ export async function fulfillCheckoutSession(
       record,
       kind,
       to,
+    });
+  }
+
+  if (wantsOpsAlert) {
+    await sendClaimedEmail({
+      sendEmail: input.sendEmail,
+      record,
+      kind: opsKind,
+      to: OPS_ALERT_TO,
+      opsDetail: `reason=${record.reason} terminal=${String(record.terminal)} format=${record.format}`,
     });
   }
 

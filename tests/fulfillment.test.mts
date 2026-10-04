@@ -1475,6 +1475,10 @@ test("a physical order with shipping but no Prodigi key waits, retryably, for th
 test("parseRecipient truncates each field at its own cap", () => {
   const at = (n: number) => "x".repeat(n);
   const over = (n: number) => at(n) + "x";
+  // GB, not BG: #195 gives BG a postcode grammar (4 digits), so a nonsense
+  // postcode on a BG address is now rejected rather than truncated. This test
+  // is about the caps, so it uses a country with no grammar of our own — the
+  // BG rules are asserted in tests/postcode-required.test.mts.
 
   const recipient = parseRecipient(
     {
@@ -1485,7 +1489,7 @@ test("parseRecipient truncates each field at its own cap", () => {
         city: over(128),
         state: over(128),
         postal_code: over(32),
-        country: "BG",
+        country: "GB",
       },
     },
     `${over(254)}@example.com`,
@@ -1826,9 +1830,18 @@ test("a terminal unfulfilled order mails once, naming the kind not the session",
     },
   });
   assert.equal(first.httpStatus, 200);
-  assert.equal(mails.length, 1);
-  assert.equal(mails[0]!.kind, "order-unfulfilled");
-  assert.match(mails[0]!.text, new RegExp(SESSION));
+  // Two mails, one customer apology and one operator alert (#195) — each kind
+  // claimed once on the record, so neither repeats on a redelivery.
+  assert.equal(mails.length, 2);
+  assert.equal(
+    mails.filter((m) => m.kind === "order-unfulfilled").length,
+    1,
+  );
+  const alert = mails.find((m) => m.kind === "order-ops-alert")!;
+  assert.ok(alert, "an unfulfilled order alerts the operator");
+  assert.match(alert.text, new RegExp(SESSION));
+  const customer = mails.find((m) => m.kind === "order-unfulfilled")!;
+  assert.match(customer.text, new RegExp(SESSION));
 
   const again = await fulfillCheckoutSession({
     ...input,
@@ -1840,7 +1853,7 @@ test("a terminal unfulfilled order mails once, naming the kind not the session",
     },
   });
   assert.equal(again.httpStatus, 200);
-  assert.equal(mails.length, 1, "a terminal failure must not apologise twice");
+  assert.equal(mails.length, 2, "a terminal failure must not apologise twice");
 });
 
 test("a lost lock on an emailed write sends nothing (#117)", async () => {

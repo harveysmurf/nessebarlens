@@ -30,6 +30,7 @@ import type { OrdersStore } from "./orders-store";
 import type { CreateProdigiOrder } from "./prodigi-order";
 import type { DownloadTokenLimits } from "./download-token";
 import type { StripeShippingDetails } from "./order-decision";
+import { postcodeFromCustomFields, type StripeCustomField } from "./postcode";
 
 /** How many retryable orders one run will attempt. */
 export const RECONCILE_BATCH = 50;
@@ -66,6 +67,7 @@ export type ReconcileSession = {
     email?: string | null;
     phone?: string | null;
   } | null;
+  custom_fields?: StripeCustomField[] | null;
 };
 
 export type ReconcileSummary = {
@@ -172,6 +174,7 @@ async function fulfillFromSession(
     amountTotal: session.amount_total,
     metadata: session.metadata,
     shippingDetails,
+    customPostcode: postcodeFromCustomFields(session.custom_fields),
     customerEmail: session.customer_details?.email ?? null,
     customerPhone: session.customer_details?.phone ?? null,
     prodigiKeyConfigured: input.prodigiKeyConfigured,

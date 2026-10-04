@@ -34,6 +34,7 @@ import {
   type PhysicalFormat,
 } from "./sku-map";
 import { isEmailKind, type EmailKind } from "./email";
+import { isValidPostcode } from "./postcode";
 
 export type OrderStatus =
   | "paid"
@@ -255,6 +256,14 @@ export type FulfillmentInput = {
   amountTotal: number | null;
   metadata: Record<string, string> | null;
   shippingDetails: StripeShippingDetails | null;
+  /**
+   * The required-postcode Checkout custom field (#195), read off
+   * `session.custom_fields` by the webhook and the reconciler. A fallback for
+   * a Stripe address whose `postal_code` is blank — Stripe will not mark the
+   * postal code required, and a paid order with no postcode can never reach
+   * Prodigi. Optional so every existing caller and fixture is unchanged.
+   */
+  customPostcode?: string | null;
   customerEmail: string | null;
   customerPhone: string | null;
   prodigiKeyConfigured: boolean;
@@ -281,13 +290,18 @@ export function parseRecipient(
   shipping: StripeShippingDetails | null,
   email: string | null,
   phone: string | null,
+  customPostcode: string | null = null,
 ): OrderRecipient | null {
   if (!shipping?.name || !shipping.address) return null;
   const a = shipping.address;
   const name = shipping.name.trim();
   const line1 = (a.line1 ?? "").trim();
   const city = (a.city ?? "").trim();
-  const postcode = (a.postal_code ?? "").trim();
+  // Stripe's address wins; the required custom field is the fallback for a
+  // blank `postal_code` (#195). Whichever we take is format-checked below, so a
+  // typo fails here rather than as a Prodigi rejection after we have the money.
+  const postcode =
+    (a.postal_code ?? "").trim() || (customPostcode ?? "").trim();
   const countryCode = (a.country ?? "").trim().toUpperCase();
   if (
     !name ||
@@ -298,6 +312,7 @@ export function parseRecipient(
   ) {
     return null;
   }
+  if (!isValidPostcode(countryCode, postcode)) return null;
   return {
     name: name.slice(0, ADDRESS_LINE_MAX),
     line1: line1.slice(0, ADDRESS_LINE_MAX),
@@ -623,6 +638,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     input.shippingDetails,
     input.customerEmail,
     input.customerPhone,
+    input.customPostcode,
   );
 
   // Every field the three variants share. Status and reason are filled per

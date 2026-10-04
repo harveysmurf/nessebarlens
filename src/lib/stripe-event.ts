@@ -5,6 +5,7 @@ import {
   timingSafeEqualHex,
 } from "./crypto-hex";
 import type { StripeShippingDetails } from "./order-decision";
+import type { StripeCustomField } from "./postcode";
 
 const TOLERANCE_SECONDS = 300;
 
@@ -83,6 +84,7 @@ export type StripeCheckoutSession = {
     email?: string | null;
     phone?: string | null;
   } | null;
+  custom_fields?: StripeCustomField[] | null;
 };
 
 function parseStripeEvent(payload: string): Stripe.Event {

@@ -26,6 +26,11 @@ export type EmailCopyInput = {
   carrier?: string;
   /** Tracking URL for print-shipped; ignored by other kinds. */
   trackingUrl?: string;
+  /**
+   * One line about the stored outcome for the operator alert (#195): reason,
+   * terminal flag, format. Ignored by every other kind.
+   */
+  opsDetail?: string;
 };
 
 export type EmailCopy = {
@@ -45,6 +50,8 @@ export function emailCopyFor(input: EmailCopyInput): EmailCopy {
       return shippedCopy(input);
     case "order-unfulfilled":
       return unfulfilledCopy(input.sessionId);
+    case "order-ops-alert":
+      return opsAlertCopy(input);
   }
 }
 
@@ -104,5 +111,34 @@ function unfulfilledCopy(sessionId: string): EmailCopy {
       "",
       "— Nessebar Lens",
     ].join("\n"),
+  };
+}
+
+/**
+ * Operator alert copy (#195). Internal, so it may name the stored reason and
+ * the session id — that is exactly what the operator needs to run
+ * `npm run orders` and decide on a refund. Deliberately not a template on the
+ * customer record: an unfulfilled reason is not a customer-facing concept.
+ */
+function opsAlertCopy(input: EmailCopyInput): EmailCopy {
+  const lines = [
+    "A paid order was not fulfilled.",
+    "",
+    `Reference: ${input.sessionId}`,
+    "",
+    "The customer has been emailed an apology automatically. Decide whether to retry, refund, or ship manually.",
+  ];
+  if (input.opsDetail) {
+    lines.push("", input.opsDetail);
+  }
+  lines.push(
+    "",
+    "Inspect: npm run orders  (prodigiOrderId, recipient, shipments)",
+    "",
+    "-- Nessebar Lens",
+  );
+  return {
+    subject: "ACTION: paid order not fulfilled",
+    text: lines.join("\n"),
   };
 }

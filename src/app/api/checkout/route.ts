@@ -13,6 +13,7 @@ import { prodigiFailureFrom } from "@/lib/prodigi-config";
 import { canSignMasterAsset } from "@/lib/print-asset";
 import { getStripe } from "@/lib/stripe";
 import { isConfiguredSiteUrl, siteUrl } from "@/lib/config";
+import { postcodeCustomFields } from "@/lib/postcode";
 
 export async function POST(request: Request) {
   const body = await readJsonBody(request);
@@ -169,6 +170,10 @@ export async function POST(request: Request) {
     ],
     metadata,
   };
+
+  // Required postcode (#195). Stripe's own postal-code box is optional for BG,
+  // so without this a customer can pay and the order can never reach Prodigi.
+  sessionParams.custom_fields = postcodeCustomFields(isPhysical);
 
   if (isPhysical && destinationCountryCode) {
     // Lock Stripe address to the quoted destination so the fixed shipping

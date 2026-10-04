@@ -41,7 +41,14 @@ import {
 export type EmailKind =
   | "order-confirmation"
   | "print-shipped"
-  | "order-unfulfilled";
+  | "order-unfulfilled"
+  /**
+   * The operator alert (#195). Not customer-facing: it goes to a fixed ops
+   * address and says "we hold paid money and did not fulfil it". It exists
+   * because `order.unfulfilled` is a structured log line and nothing else — a
+   * paid-unfulfilled order was invisible until the customer replied.
+   */
+  | "order-ops-alert";
 
 export type SendEmail = (mail: {
   to: string;
@@ -149,11 +156,19 @@ export function sendEmailFromApiKey(
   return createResendSender({ apiKey, fetchImpl });
 }
 
-/** True when a value is one of the three EmailKind literals. */
+/**
+ * Where operator alerts go (#195). A constant, not an env var, for the same
+ * reason as `RESEND_FROM_ADDRESS`: it is who we are, not a credential. The
+ * sending domain is verified, so delivery does not depend on it.
+ */
+export const OPS_ALERT_TO = "ops@nessebarlens.com";
+
+/** True when a value is one of the EmailKind literals. */
 export function isEmailKind(value: unknown): value is EmailKind {
   return (
     value === "order-confirmation" ||
     value === "print-shipped" ||
-    value === "order-unfulfilled"
+    value === "order-unfulfilled" ||
+    value === "order-ops-alert"
   );
 }

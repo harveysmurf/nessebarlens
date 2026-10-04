@@ -16,6 +16,7 @@ import {
   type StripeCheckoutSession,
 } from "@/lib/stripe-event";
 import { readWorkerBindings } from "@/lib/worker-bindings";
+import { postcodeFromCustomFields } from "@/lib/postcode";
 import type { OrdersStore } from "@/lib/orders-store";
 
 export const dynamic = "force-dynamic";
@@ -137,6 +138,9 @@ export async function POST(request: Request) {
       amountTotal: session.amount_total ?? null,
       metadata: session.metadata ?? null,
       shippingDetails,
+      // #195: the required-postcode custom field, for a Stripe address whose
+      // own postal_code is blank.
+      customPostcode: postcodeFromCustomFields(session.custom_fields),
       customerEmail: session.customer_details?.email ?? null,
       customerPhone: session.customer_details?.phone ?? null,
       prodigiKeyConfigured: bindings.prodigiKeyConfigured,
