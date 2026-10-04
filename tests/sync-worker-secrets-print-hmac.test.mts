@@ -32,7 +32,7 @@ function shimDir(): string {
 }
 
 function run(
-  target: "preview" | "production",
+  target: "preview" | "staging" | "production",
   secret: string | undefined,
   drop?: "token" | "account",
   /** Override the #117 secrets; omitted means "both present and valid". */
@@ -75,7 +75,7 @@ function run(
 
 /** Same run, but hands back the prepared secrets file so their presence is asserted. */
 function runAndReadSecrets(
-  target: "preview" | "production",
+  target: "preview" | "staging" | "production",
   extra: Record<string, string> | undefined,
 ): { status: number | null; secrets: Record<string, string> } {
   const dir = shimDir();
@@ -284,6 +284,67 @@ test("preview ships the same two, so a preview host can take a sandbox order", (
   assert.equal(secrets.NEXT_PUBLIC_SITE_URL, "https://nessebarlens.com");
 });
 
+/* --- staging ---------------------------------------------------------------
+   A sandbox-keyed target that is as strict as production about the secrets a
+   preview may lack: the whole point of staging is to rehearse the full
+   purchase, email and callback included. */
+
+test("staging fails without each of the three secrets a preview may skip", () => {
+  const ok = { RESEND_API_KEY: "re_test_key", PRODIGI_WEBHOOK_TOKEN: "w".repeat(32) };
+  const missingHmac = run("staging", undefined);
+  assert.equal(missingHmac.status, 1);
+  assert.match(missingHmac.stderr, /staging requires PRINT_ASSET_HMAC_SECRET/);
+
+  const missingResend = run("staging", valid, undefined, { ...ok, RESEND_API_KEY: "" });
+  assert.equal(missingResend.status, 1);
+  assert.match(missingResend.stderr, /staging requires RESEND_API_KEY/);
+
+  const missingToken = run("staging", valid, undefined, { ...ok, PRODIGI_WEBHOOK_TOKEN: "" });
+  assert.equal(missingToken.status, 1);
+  assert.match(missingToken.stderr, /staging requires PRODIGI_WEBHOOK_TOKEN/);
+
+  const shortToken = run("staging", valid, undefined, { ...ok, PRODIGI_WEBHOOK_TOKEN: "w".repeat(31) });
+  assert.equal(shortToken.status, 1);
+  assert.match(shortToken.stderr, /at least 32 characters/);
+});
+
+test("staging syncs with all three present and ships them", () => {
+  const { status, secrets } = runAndReadSecrets("staging", {
+    PRINT_ASSET_HMAC_SECRET: valid,
+    RESEND_API_KEY: "re_test_key",
+    PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+  });
+  assert.equal(status, 0);
+  assert.equal(secrets.RESEND_API_KEY, "re_test_key");
+  assert.equal(secrets.PRODIGI_WEBHOOK_TOKEN, "w".repeat(32));
+  assert.equal(secrets.PRINT_ASSET_HMAC_SECRET, valid);
+});
+
+test("staging enforces a test-mode Stripe key", () => {
+  const dir = shimDir();
+  const result = spawnSync("bash", [script, "staging"], {
+    encoding: "utf8",
+    env: {
+      ...process.env,
+      PATH: `${dir}:${process.env.PATH}`,
+      CLOUDFLARE_API_TOKEN: "test-token",
+      CLOUDFLARE_ACCOUNT_ID: "test-account",
+      STRIPE_SECRET_KEY: "sk_live_oops",
+      STRIPE_WEBHOOK_SECRET: "whsec_test",
+      PRINT_ASSET_HMAC_SECRET: valid,
+      RESEND_API_KEY: "re_test_key",
+      PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+      PRODIGI_API_BASE: "https://api.sandbox.prodigi.com",
+      PRODIGI_SANDBOX_API_KEY: "sandbox-key",
+      SYNC_SCOPE: "version-only",
+      SECRETS_OUT: path.join(dir, "secrets.json"),
+    },
+  });
+  fs.rmSync(dir, { recursive: true, force: true });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /staging requires a sk_test_/);
+});
+
 /**
  * RECONCILE_SECRET was the same bug a second time, and it stayed hidden for
  * longer. The route guards it in the Worker env and returns 503; reconcile.yml
@@ -342,11 +403,11 @@ test("preview warns about RECONCILE_SECRET rather than failing", () => {
   assert.match(result.stderr, /warning: RECONCILE_SECRET/);
 });
 
-test("both deploy workflows pass RECONCILE_SECRET to the sync script", () => {
+test("all deploy workflows pass RECONCILE_SECRET to the sync script", () => {
   // The guard above is only reachable if the value reaches the script at all,
   // so the wiring is asserted too — otherwise the new guard hard-fails every
   // deploy with an error that names a secret nobody passed.
-  for (const wf of ["prod.yml", "preview.yml"]) {
+  for (const wf of ["prod.yml", "preview.yml", "staging.yml"]) {
     const text = fs.readFileSync(path.join(root, ".github", "workflows", wf), "utf8");
     assert.match(
       text,
@@ -354,4 +415,14 @@ test("both deploy workflows pass RECONCILE_SECRET to the sync script", () => {
       `${wf} must pass RECONCILE_SECRET`,
     );
   }
+});
+
+test("staging warns about RECONCILE_SECRET rather than failing: it has no reconcile cron", () => {
+  const result = run("staging", valid, undefined, {
+    RESEND_API_KEY: "re_test_key",
+    PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+    RECONCILE_SECRET: "",
+  });
+  assert.equal(result.status, 0);
+  assert.match(result.stderr, /warning: RECONCILE_SECRET/);
 });

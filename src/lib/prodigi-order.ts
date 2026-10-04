@@ -19,7 +19,7 @@ import {
   type ProdigiFailureReason,
   type ProdigiResult,
 } from "./prodigi-config";
-import { prodigiConfig } from "./config";
+import { prodigiConfig, prodigiWebhookToken } from "./config";
 import { PLACEHOLDER_VERSION } from "./placeholder-photo";
 import { signPrintAssetUrl } from "./print-asset";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
@@ -44,11 +44,12 @@ export type ProdigiOrderRequest = {
   shippingMethod: typeof PRODIGI_SHIPPING_METHOD;
   /**
    * Where Prodigi posts CloudEvents for this order (#117). Same origin as
-   * the site — derived from siteUrl(), never a second env var. Optional at
-   * the type level only so older fixtures without it still type-check; every
-   * live body includes it.
+   * the site — derived from siteUrl(), never a second env var — and carrying
+   * `?token=` because the route authenticates on it. Absent when
+   * PRODIGI_WEBHOOK_TOKEN is unset: a URL without the token would only ever
+   * be answered 401/503, so sending none is more honest than sending it.
    */
-  callbackUrl: string;
+  callbackUrl?: string;
   recipient: {
     name: string;
     email?: string;
@@ -131,6 +132,8 @@ export function buildProdigiOrderBody(input: {
   frame: FrameFinish | null;
   recipient: OrderRecipient;
   assetUrl?: string;
+  /** PRODIGI_WEBHOOK_TOKEN. Unset or blank ⇒ the body carries no callbackUrl. */
+  webhookToken?: string;
 }): ProdigiOrderRequest {
   const entry = resolveSku(input.format, input.size, input.frame);
   const assetUrl = input.assetUrl ?? placeholderAssetUrl(input.photoSlug);
@@ -165,23 +168,37 @@ export function buildProdigiOrderBody(input: {
   if (input.recipient.phone) recipient.phoneNumber = input.recipient.phone;
 
   // Same-origin callback as the asset URL: siteUrl() is the one public
-  // origin, and inventing a PRODIGI_CALLBACK_URL would only be useful to
-  // *disable* callbacks — which we do not want. Prodigi posts CloudEvents
-  // here; auth is the bearer token on the route, not a secret path segment.
+  // origin. Prodigi posts CloudEvents here and signs nothing, so the route
+  // authenticates on `?token=` in the registered URL (f24bf9f); a URL without
+  // it is rejected 401 and every callback is lost.
   //
-  // No origin check: the url is built from siteUrl() two lines up, so its
-  // origin is siteUrl()'s by construction and a comparison could never fail.
-  // (It could only have caught a future edit that built the url from something
-  // else — and that edit would then be missing this line.) The parse below is
-  // the check that has teeth: it throws for a siteUrl() that is not a URL.
-  const callbackUrl = `${siteUrl()}/api/webhooks/prodigi`;
-  new URL(callbackUrl);
+  // No token means no callbackUrl, not a failed order. The route answers 503
+  // when it is unconfigured too, so the callback could not be accepted either
+  // way, and refusing a paid order over a status feed would trade a customer's
+  // print for a notification. The reconciler still polls Prodigi for orders
+  // that never hear back, and the deploy scripts make the token a hard
+  // requirement in production. The token itself is never logged: only the
+  // fact that it was absent is.
+  //
+  // No origin check: the url is built from siteUrl() below, so its origin is
+  // siteUrl()'s by construction. The parse is the check that has teeth: it
+  // throws for a siteUrl() that is not a URL.
+  const token = input.webhookToken?.trim();
+  let callbackUrl: string | undefined;
+  if (token) {
+    callbackUrl = `${siteUrl()}/api/webhooks/prodigi?token=${encodeURIComponent(token)}`;
+    new URL(callbackUrl);
+  } else {
+    console.warn(
+      "prodigi order has no callbackUrl: PRODIGI_WEBHOOK_TOKEN is missing or empty",
+    );
+  }
 
   const body: ProdigiOrderRequest = {
     merchantReference: input.sessionId,
     idempotencyKey: input.sessionId,
     shippingMethod: PRODIGI_SHIPPING_METHOD,
-    callbackUrl,
+    ...(callbackUrl ? { callbackUrl } : {}),
     recipient,
     items: [
       {
@@ -245,7 +262,11 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
 
   let body: ProdigiOrderRequest;
   try {
-    body = buildProdigiOrderBody({ ...input, assetUrl });
+    body = buildProdigiOrderBody({
+      ...input,
+      assetUrl,
+      webhookToken: prodigiWebhookToken(),
+    });
   } catch (e) {
     return failure(
       "client",

@@ -349,10 +349,14 @@ test("order creation body includes same-origin callbackUrl", () => {
     size: "50x70",
     frame: null,
     recipient: RECIPIENT,
+    webhookToken: "tok",
   });
-  assert.equal(body.callbackUrl, "https://nessebarlens.com/api/webhooks/prodigi");
   assert.equal(
-    new URL(body.callbackUrl).origin,
+    body.callbackUrl,
+    "https://nessebarlens.com/api/webhooks/prodigi?token=tok",
+  );
+  assert.equal(
+    new URL(body.callbackUrl!).origin,
     "https://nessebarlens.com",
   );
 });

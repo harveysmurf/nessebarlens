@@ -217,6 +217,18 @@ export function printAssetSecret(
 }
 
 /**
+ * Bearer token Prodigi must present on /api/webhooks/prodigi, or undefined.
+ * Read here, not in prodigi-order.ts, for the same reason prodigiConfig is:
+ * the env read is stated once, in the allowlisted module. The order body
+ * embeds it in the callback URL so the route's `?token=` check can pass.
+ */
+export function prodigiWebhookToken(
+  env: ConfigEnv = process.env,
+): string | undefined {
+  return envString("PRODIGI_WEBHOOK_TOKEN", env);
+}
+
+/**
  * The deployment's own Prodigi configuration, for callers that must reach an
  * env read they are not allowed to make themselves.
  *
