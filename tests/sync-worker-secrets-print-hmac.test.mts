@@ -213,3 +213,66 @@ test("a padded Resend key is trimmed, not dropped", () => {
   assert.equal(status, 0);
   assert.equal(secrets.RESEND_API_KEY, "re_live_key");
 });
+
+/**
+ * The cutover deployed a Worker whose every secret was present and whose
+ * checkout still answered 503 "Checkout is not configured". The cause was here,
+ * not in the app: NEXT_PUBLIC_SITE_URL was deliberately excluded from the
+ * secrets map, on the reasoning that it "bakes at build". It does -- and
+ * `configuredSiteUrl()` also reads it from the runtime environment, which on a
+ * Worker is bindings only. So the site quoted prices, passed the secrets guard,
+ * passed the smoke test, and could not take a single payment.
+ *
+ * These are behavioural for the same reason as the print-HMAC ones above: the
+ * exclusion lived in a comment, and a source grep cannot tell "shipped" from
+ * "documented as intentionally absent".
+ */
+const SITE_ENV = {
+  NEXT_PUBLIC_SITE_URL: "https://nessebarlens.com",
+  NEXT_PUBLIC_WEB_IMAGES_BASE: "https://nessebarlens.com",
+};
+
+/** The #117 keys production also requires, so a run reaches the file at all. */
+const WITH_SITE_ENV = { ...SITE_ENV, RESEND_API_KEY: "re_test_key", PRODIGI_WEBHOOK_TOKEN: "w".repeat(32) };
+
+test("production ships NEXT_PUBLIC_SITE_URL to the Worker, not just to the build", () => {
+  const { status, secrets } = runAndReadSecrets("production", WITH_SITE_ENV);
+  assert.equal(status, 0);
+  assert.equal(
+    secrets.NEXT_PUBLIC_SITE_URL,
+    "https://nessebarlens.com",
+    "the runtime read in configuredSiteUrl() comes from this binding; without it /api/checkout is 503",
+  );
+});
+
+test("production ships NEXT_PUBLIC_WEB_IMAGES_BASE too", () => {
+  const { secrets } = runAndReadSecrets("production", WITH_SITE_ENV);
+  assert.equal(secrets.NEXT_PUBLIC_WEB_IMAGES_BASE, "https://nessebarlens.com");
+});
+
+test("an unset NEXT_PUBLIC_SITE_URL is dropped and loudly named, not shipped blank", () => {
+  // A blank binding would read as present-but-wrong and hide the real cause
+  // behind a URL that resolves nowhere.
+  // Explicitly blank, not merely absent: the helper spreads process.env, and a
+  // CI runner in the `staging` Environment already has NEXT_PUBLIC_SITE_URL set.
+  // Relying on absence made this test pass or fail with the runner's config,
+  // which is the opposite of what it is here to pin.
+  const { status, secrets } = runAndReadSecrets("production", {
+    RESEND_API_KEY: "re_test_key",
+    PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+    NEXT_PUBLIC_SITE_URL: "",
+    NEXT_PUBLIC_WEB_IMAGES_BASE: "   ",
+  });
+  assert.equal(status, 0);
+  assert.ok(
+    !("NEXT_PUBLIC_SITE_URL" in secrets),
+    "an empty value must not become a binding",
+  );
+  assert.equal(secrets.NEXT_PUBLIC_SITE_URL, undefined);
+});
+
+test("preview ships the same two, so a preview host can take a sandbox order", () => {
+  const { status, secrets } = runAndReadSecrets("preview", SITE_ENV);
+  assert.equal(status, 0);
+  assert.equal(secrets.NEXT_PUBLIC_SITE_URL, "https://nessebarlens.com");
+});

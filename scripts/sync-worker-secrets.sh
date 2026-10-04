@@ -180,14 +180,30 @@ sandbox_base = "https://api.sandbox.prodigi.com"
 # secret for that reason: it is not one, but the app reads it from the runtime
 # environment and the bulk command offers no plain-text channel, so it is the
 # only way to keep preview on sandbox and production on live without a rebuild.
-# NEXT_PUBLIC_* are deliberately not here: they bake at build from the GitHub
-# Environment secrets, and adding them here would be a value that looks live
-# and never changes.
+# NEXT_PUBLIC_* DO ride along, and the earlier reasoning that they must not was
+# wrong on Workers. They do bake at build -- but `configuredSiteUrl()` reads
+# NEXT_PUBLIC_SITE_URL from the *runtime* environment, and on a Worker
+# `process.env` is populated from bindings, not from the build-time bake. With
+# no [vars] in wrangler.toml and nothing here, the runtime read was undefined
+# and every POST /api/checkout answered 503 "Checkout is not configured" on a
+# site that quoted prices and looked healthy. Shipping both is deliberate: the
+# build bake fixes what the browser bundle inlines, the binding fixes what the
+# Worker reads. A stale build bake cannot strand the runtime, and a changed
+# value here takes effect on the next deploy without a rebuild.
 secrets = {
     "STRIPE_SECRET_KEY": os.environ["STRIPE_SECRET_KEY"],
     "STRIPE_WEBHOOK_SECRET": os.environ["STRIPE_WEBHOOK_SECRET"],
     "PRODIGI_API_BASE": base,
 }
+# Empty is not shipped: a blank binding would read as present-but-wrong and
+# hide the real problem behind a URL that resolves nowhere. The bash guard
+# already treats these as required in both scopes.
+for name in ("NEXT_PUBLIC_SITE_URL", "NEXT_PUBLIC_WEB_IMAGES_BASE"):
+    value = os.environ.get(name, "").strip()
+    if value:
+        secrets[name] = value
+    else:
+        print(f"WARNING: {name} is unset; the Worker will read it as missing at runtime")
 if base == sandbox_base:
     secrets["PRODIGI_SANDBOX_API_KEY"] = os.environ["PRODIGI_SANDBOX_API_KEY"]
 else:

@@ -24,7 +24,11 @@ import test from "node:test";
 const root = path.join(import.meta.dirname, "..");
 const config = fs.readFileSync(path.join(root, "playwright.config.ts"), "utf8");
 
-const webServerEnv = config.match(/webServer:\s*\{[\s\S]*?env:\s*\{([\s\S]*?)\n {4}\},/);
+// Indentation-tolerant because the block now sits inside the remote-mode
+// ternary. What this guards is the env block's existence and contents — that
+// every key a spec needs reaches the dev server — and the depth it is written
+// at is not part of that. The ternary that gates it is asserted separately.
+const webServerEnv = config.match(/webServer:[\s\S]*?env:\s*\{([\s\S]*?)\n\s{4,}\},/);
 assert.ok(webServerEnv, "playwright.config.ts must declare a webServer env block");
 
 test("the dev server gets the Prodigi sandbox host and key the quote route requires", () => {
@@ -178,6 +182,52 @@ test("the hosted job sets the skip reason and names the gate that causes it", ()
   const required = ci.match(/^ {2}e2e-smoke:\n((?:(?: {4}|\t).*\n|\n)*)/m);
   assert.ok(required);
   assert.doesNotMatch(required[1], /HOSTED_DIGITAL_SKIP_REASON/);
+});
+
+/**
+ * `E2E_BASE_URL` points the same specs at a deployed host instead of the dev
+ * server. It exists because the dev server answers from `next dev`, so it can
+ * never prove a Worker serves a route or a binding — and the suite had no way
+ * to check a deployment at all.
+ *
+ * The risk it introduces is a job quietly moving onto a deployed host, so these
+ * pin the boundaries: opt-in per invocation, no dev server in that mode, and
+ * the specs that only make sense against local seeds kept out of it.
+ */
+test("no workflow sets E2E_BASE_URL, so CI cannot drift onto a deployed host", () => {
+  const workflows = fs
+    .readdirSync(path.join(root, ".github", "workflows"))
+    .filter((f) => f.endsWith(".yml"))
+    .map((f) => fs.readFileSync(path.join(root, ".github", "workflows", f), "utf8"))
+    .join("\n");
+  assert.doesNotMatch(
+    workflows,
+    /E2E_BASE_URL/,
+    "a CI job driving a deployed host reintroduces the two-causes red run #143 ruled out",
+  );
+});
+
+test("a remote run starts no dev server, and the seeded states stay off it", () => {
+  assert.match(
+    config,
+    /webServer:\s*REMOTE_BASE_URL\s*\?\s*undefined\s*:/,
+    "the dev server must be conditional, or a remote run also boots a local one and the two disagree",
+  );
+  assert.match(
+    config,
+    /REMOTE_BASE_URL\s*\?\s*\{\s*testIgnore:\s*"\*\*\/success-states\.spec\.ts"\s*\}/,
+    "the success-page states assert ORDERS fixtures only the dev server is seeded with",
+  );
+});
+
+test("E2E_BASE_URL is rejected unless it is an http(s) URL", () => {
+  // A typo would otherwise become a baseURL that resolves nowhere, and the
+  // symptom is a spec timeout on the first goto, which reads as a broken deploy.
+  assert.match(config, /new URL\(raw\)/);
+  assert.match(config, /E2E_BASE_URL is not a URL/);
+  assert.match(config, /must be http\(s\)/);
+  // Normalised to the origin so page.goto("/") and an absolute assertion agree.
+  assert.match(config, /return parsed\.origin/);
 });
 
 test("the reason for the skip is written down where the next reader looks", () => {
