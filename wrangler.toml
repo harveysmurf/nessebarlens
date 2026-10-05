@@ -6,15 +6,41 @@
 # run_worker_first=true: Pages always invokes the worker first; OpenNext must
 # fetch static files via env.ASSETS itself.
 #
-# Do NOT add [triggers] crons here. OpenNext's generated .open-next/worker.js
-# exports only `default { fetch }` plus the DO classes, so a cron trigger
-# would be silently ignored. The reconciler is a Next route invoked by
-# GitHub Actions — see DEVELOPMENT.md §5 and .github/workflows/reconcile.yml.
-
+# `main` is the repo-root `worker.ts`, not OpenNext's generated
+# `.open-next/worker.js`, because that file exports only `default { fetch }`
+# plus the DO classes: a [triggers] crons entry would be accepted by wrangler
+# and then silently never fire. `worker.ts` wraps the generated entry -- same
+# `fetch`, same DO classes -- and adds the `scheduled` handler that drives the
+# reconciler. `opennextjs-cloudflare` reads `main` here and never rewrites it,
+# and `wrangler deploy` bundles whatever it names.
+#
+# The reconciler is a Next route (`src/app/api/internal/reconcile/route.ts`)
+# either way. `worker.ts`'s `scheduled()` builds the same request
+# `.github/workflows/reconcile.yml` used to make over HTTP -- same path, same
+# method, same `x-reconcile-secret` header -- and calls it in-process, so there
+# is one implementation with one auth check.
+#
+# Cloudflare Cron Triggers, not a GitHub schedule, because GitHub schedules are
+# best-effort: reconcile.yml asked for every 15 minutes and GitHub actually ran
+# it about 11 times in 42 hours (#201). A Cron Trigger is delivered by the
+# platform running the code, so the bound cannot be dropped the same way.
 name = "nessebar-lens"
-main = ".open-next/worker.js"
+main = "worker.ts"
 compatibility_date = "2025-09-01"
 compatibility_flags = ["nodejs_compat"]
+
+[triggers]
+# Declared per environment, not inherited: wrangler does not inherit top-level
+# keys into [env.*], and a staging deploy that silently loses its cron is the
+# exact bug #201 filed. `tests/workflow-hardening.test.mts` asserts both blocks.
+crons = ["*/15 * * * *"]
+
+[vars]
+# Read by worker.ts's `scheduled()` to address the reconcile route in-process.
+# NEXT_PUBLIC_* is normally inlined at build time and therefore not readable
+# from the Worker env; this is a runtime var for the same name. Each environment
+# overrides it with its own host (see below).
+NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com"
 
 [assets]
 directory = ".open-next/assets"
@@ -49,6 +75,15 @@ bucket_name = "nessebar-lens-masters"
 [env.staging]
 name = "nessebar-lens-staging"
 routes = [{ pattern = "staging.nessebarlens.com", custom_domain = true }]
+
+# Repeated, not inherited (see the note on the top-level [triggers]). Staging
+# having no reconciler at all is why the GitHub schedule's real behaviour could
+# not be rehearsed before it reached production.
+[env.staging.triggers]
+crons = ["*/15 * * * *"]
+
+[env.staging.vars]
+NEXT_PUBLIC_SITE_URL = "https://staging.nessebarlens.com"
 
 [[env.staging.d1_databases]]
 binding = "ORDERS_DB"

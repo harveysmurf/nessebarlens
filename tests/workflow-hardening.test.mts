@@ -161,7 +161,12 @@ const deploysOrScheduled = workflows.filter(({ name, text }) =>
   // pull_request where the PR is the notification.
   name !== "notify-failure.yml" &&
   name !== "preview.yml" &&
-  (/\n {2}deploy:/m.test(text) || /^ {2}schedule:\s*$/m.test(text)),
+  // `production:` is release.yml's production deploy job: since #200 merged
+  // staging.yml and prod.yml into one ordered pipeline, neither half is named
+  // `deploy:` any more, and the reconciler cron moved off GitHub (#201), so the
+  // only remaining match would be verify-stripe.yml and the `>= 2` guard below
+  // would read as stale detection when it is actually a changed workflow set.
+  (/\n {2}(deploy|production):/m.test(text) || /^ {2}schedule:\s*$/m.test(text)),
 );
 
 test("every workflow that deploys or runs on a schedule notifies on failure", () => {

@@ -420,12 +420,40 @@ test("all deploy workflows pass RECONCILE_SECRET to the sync script", () => {
   }
 });
 
-test("staging warns about RECONCILE_SECRET rather than failing: it has no reconcile cron", () => {
-  const result = run("staging", valid, undefined, {
+test("preview warns about RECONCILE_SECRET rather than failing: no cron reaches it", () => {
+  // A preview deploy has no cron of any kind pointed at it: the Cloudflare Cron
+  // Trigger is declared per environment in wrangler.toml and only production
+  // and staging carry one. So a preview without the secret costs nothing, and
+  // failing it would block PR previews for a secret they cannot use.
+  const result = run("preview", valid, undefined, {
     RESEND_API_KEY: "re_test_key",
     PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
     RECONCILE_SECRET: "",
   });
   assert.equal(result.status, 0);
   assert.match(result.stderr, /warning: RECONCILE_SECRET/);
+});
+
+test("staging refuses to deploy without RECONCILE_SECRET: its cron would 503 every tick", () => {
+  // Staging runs the same reconciler as production (wrangler.toml declares
+  // [env.staging.triggers] crons), so a staging deploy without the secret
+  // deploys a Worker whose only cron answers 503 fifteen minutes at a time --
+  // and staging is where that is rehearsable, not on production.
+  const result = run("staging", valid, undefined, {
+    RESEND_API_KEY: "re_test_key",
+    PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+    RECONCILE_SECRET: "",
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /staging requires RECONCILE_SECRET/);
+});
+
+test("staging refuses a RECONCILE_SECRET short enough to guess", () => {
+  const result = run("staging", valid, undefined, {
+    RESEND_API_KEY: "re_test_key",
+    PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+    RECONCILE_SECRET: "short",
+  });
+  assert.equal(result.status, 1);
+  assert.match(result.stderr, /at least 32 characters/);
 });
