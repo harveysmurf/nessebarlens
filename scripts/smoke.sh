@@ -1,10 +1,16 @@
 #!/usr/bin/env bash
-# Post-deploy smoke test for a Cloudflare Pages preview.
+# Post-deploy smoke test.
 # Asserts the deployed artifact actually boots and that runtime secrets/bindings
-# are wired. Runs against preview only — never prod.
+# are wired. Runs against a preview, against staging, and — since #200 — against
+# production, where a failure triggers the release pipeline's rollback.
 #
 # Usage: scripts/smoke.sh <base-url>
 #   e.g. scripts/smoke.sh https://fix-foo.nessebar-lens.pages.dev
+#
+# Against the apex domain the caller must also pass SMOKE_ALLOW_PRODUCTION=1.
+# The smoke reads only, so it is safe there, but "never pointed at prod by
+# accident" is worth one line of ceremony: a mistyped base URL in a preview job
+# is otherwise indistinguishable from a deliberate production check.
 #
 # Exits 0 when every check passes, 1 otherwise. Prints one line per check.
 set -uo pipefail
@@ -15,6 +21,11 @@ if [[ -z "$BASE" ]]; then
   exit 1
 fi
 BASE="${BASE%/}"
+
+if [[ "$BASE" == "https://nessebarlens.com" && "${SMOKE_ALLOW_PRODUCTION:-}" != "1" ]]; then
+  echo "smoke: refusing to smoke $BASE without SMOKE_ALLOW_PRODUCTION=1" >&2
+  exit 1
+fi
 
 # Pages can be cold and freshly-synced secrets take a moment to propagate, so
 # each check retries for ~60s before it is called a failure.

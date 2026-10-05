@@ -97,7 +97,7 @@ test("every workflow uses the shared setup composite action", () => {
   }
 });
 
-test("ci.yml has no push trigger -- prod.yml calls it and gates deploy on it", () => {
+test("ci.yml has no push trigger -- release.yml calls it and gates deploy on it", () => {
   const ci = workflows.find((w) => w.name === "ci.yml");
   assert.ok(ci, "ci.yml is gone");
 
@@ -109,37 +109,40 @@ test("ci.yml has no push trigger -- prod.yml calls it and gates deploy on it", (
   assert.doesNotMatch(
     onBlock,
     /^\s{2}push:/m,
-    "ci.yml triggers on push, so every main merge runs the suite twice: once from this trigger and once from prod.yml's checks job",
+    "ci.yml triggers on push, so every main merge runs the suite twice: once from this trigger and once from release.yml's checks job",
   );
 });
 
-test("prod.yml deploy needs a job that calls ci.yml", () => {
-  const prod = workflows.find((w) => w.name === "prod.yml");
-  assert.ok(prod, "prod.yml is gone");
+test("release.yml production deploy needs a job that calls ci.yml", () => {
+  // #200 merged staging.yml and prod.yml into release.yml. The invariant is
+  // unchanged -- production cannot deploy a commit whose suite never ran -- only
+  // the file and the job name moved.
+  const release = workflows.find((w) => w.name === "release.yml");
+  assert.ok(release, "release.yml is gone");
 
-  const jobsIdx = prod.text.search(/^jobs:\s*$/m);
-  assert.ok(jobsIdx >= 0, "prod.yml has no jobs: section");
-  const jobsText = prod.text.slice(jobsIdx);
+  const jobsIdx = release.text.search(/^jobs:\s*$/m);
+  assert.ok(jobsIdx >= 0, "release.yml has no jobs: section");
+  const jobsText = release.text.slice(jobsIdx);
 
   const jobBlocks = [
     ...jobsText.matchAll(/^ {2}([a-z][\w-]*):\n((?:(?: {4}|\t).*\n|\n)*)/gm),
   ];
-  assert.ok(jobBlocks.length > 0, "prod.yml has no jobs under jobs:");
+  assert.ok(jobBlocks.length > 0, "release.yml has no jobs under jobs:");
 
   const callers = jobBlocks
     .filter(([, , body]) =>
-      new RegExp(String.raw`uses:\s*"?'?${sameRepo("workflows/ci\.yml")}\b`).test(body),
+      new RegExp(String.raw`uses:\s*"?'?${sameRepo("workflows/ci\\.yml")}\b`).test(body),
     )
     .map(([, id]) => id);
   assert.ok(
     callers.length > 0,
-    "prod.yml has no job that calls the ci.yml reusable workflow",
+    "release.yml has no job that calls the ci.yml reusable workflow",
   );
 
-  const deploy = jobBlocks.find(([, id]) => id === "deploy");
-  assert.ok(deploy, "prod.yml has no deploy job");
+  const deploy = jobBlocks.find(([, id]) => id === "production");
+  assert.ok(deploy, "release.yml has no production job");
   const needsMatch = deploy[2].match(/^\s*needs:\s*(.+)$/m);
-  assert.ok(needsMatch, "prod.yml deploy job has no needs:");
+  assert.ok(needsMatch, "release.yml production job has no needs:");
   const needed = needsMatch[1].trim();
   const neededIds = needed.startsWith("[")
     ? needed
@@ -149,7 +152,7 @@ test("prod.yml deploy needs a job that calls ci.yml", () => {
     : [needed];
   assert.ok(
     callers.some((id) => neededIds.includes(id)),
-    `prod.yml deploy needs ${JSON.stringify(neededIds)}, but the ci.yml caller(s) are ${JSON.stringify(callers)}`,
+    `release.yml production needs ${JSON.stringify(neededIds)}, but the ci.yml caller(s) are ${JSON.stringify(callers)}`,
   );
 });
 
@@ -162,8 +165,14 @@ test("prod.yml deploy needs a job that calls ci.yml", () => {
      download a browser and start a server;
    - they do not run in `preview.yml`, because a smoke flow coupled to a deploy
      has two possible causes for every red run;
-   - they are pull_request-only, because prod.yml calls ci.yml as a reusable
-     workflow and a browser flow before every production merge buys nothing;
+   - they are pull_request-only. release.yml calls ci.yml as a reusable
+     workflow, and with strict branch protection every commit reaching main
+     already passed this flow against the identical tree on its PR, so a
+     post-merge run is a second run of the same tree -- which is exactly how
+     #206's flaky re-run held production for 1.5h. The real #120 gap was that
+     this flow is not a *required* status check (#205 item 1), not a missing
+     post-merge run. Post-deploy validation is the release pipeline's smoke
+     steps, which check the deployed artifact rather than re-running the tree;
    - the seeded specs are the gate and the hosted-checkout specs are
      best-effort, because Stripe gates its own page behind a bot check and an
      "I am an AI agent" attestation (Architect, #160 review);
@@ -219,12 +228,13 @@ test("the E2E job is pull_request-only, so a production merge does not re-run a 
       new RegExp(`^ {2}${id}:\\n((?:(?: {4}|\\t).*\\n|\\n)*)`, "m"),
     );
     assert.ok(job, `ci.yml has no ${id} job`);
-    // prod.yml gates deploy on the ci.yml caller job; without this guard every
-    // production merge pays for a Chromium download to re-test the same commit.
+    // release.yml gates the production deploy on the ci.yml caller job; without
+    // this guard every production merge pays for a Chromium download to re-test
+    // the same tree the PR already tested.
     assert.match(
       job[1],
       /if:\s*github\.event_name\s*==\s*'pull_request'/,
-      `${id} must not run when ci.yml is called by prod.yml`,
+      `${id} must not run when ci.yml is called by release.yml`,
     );
   }
 });

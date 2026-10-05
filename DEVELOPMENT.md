@@ -330,14 +330,26 @@ declared as `[env.staging]` in `wrangler.toml` (bindings are not inherited by a
 wrangler environment, so `ORDERS_DB`, `WEB` and `MASTERS` are redeclared there;
 the two R2 buckets are the production ones because the code only reads them).
 
-`.github/workflows/staging.yml` runs on push to `main` and `workflow_dispatch`:
-build → `wrangler d1 migrations apply … --env staging --remote` → secrets file
-via `scripts/sync-worker-secrets.sh staging` → `opennextjs-cloudflare deploy
+`.github/workflows/release.yml` runs on push to `main` and `workflow_dispatch`, and
+staging is its third job, after `checks` and the per-environment `build` matrix:
+`wrangler d1 migrations apply … --env staging --remote` → secrets file via
+`scripts/sync-worker-secrets.sh staging` → `opennextjs-cloudflare deploy
 --env staging --secrets-file` → `scripts/smoke.sh https://staging.nessebarlens.com`.
 The `staging` target of the script keeps the `sk_test_` check and, unlike
 `preview`, **fails** rather than warns when `RESEND_API_KEY`,
 `PRODIGI_WEBHOOK_TOKEN` or `PRINT_ASSET_HMAC_SECRET` is missing. Deploys queue and
 are never cancelled, so a run cannot stop between migration and deploy.
+
+Staging is now a **gate**, not a rehearsal: production is `needs: staging`, so a
+green migrate + deploy + smoke on staging is a precondition for the production
+deploy. Before #200 both workflows triggered on the same push and ran in
+parallel, which meant a staging smoke failure shipped to production anyway.
+
+The staging job verifies the artifact it downloaded before deploying it —
+`scripts/artifact-manifest.sh check` proves the tree survived the artifact
+round-trip unchanged, and `scripts/assert-artifact-origin.sh` proves it was built
+with staging's origin and carries no trace of production's. The two-build matrix
+is what makes that check necessary (see §6).
 
 Manual equivalent (break-glass; needs the staging secrets in your shell):
 
@@ -497,22 +509,56 @@ a host serving a reverted build is a support incident, not a deploy.
 ### D1 orders database
 
 Production is already created and applied; staging is created and migrated too
-(id in `wrangler.toml` under `[env.staging]`; `staging.yml` keeps it migrated).
+(id in `wrangler.toml` under `[env.staging]`; `release.yml` keeps both migrated).
 These are only for a fresh account:
 
 ```bash
 npx wrangler d1 create nessebar-lens-orders
 # paste the id into wrangler.toml [[d1_databases]].database_id
 npx wrangler d1 migrations apply nessebar-lens-orders --local
-npx wrangler d1 migrations apply nessebar-lens-orders --remote
 ```
 
 Staging takes the same migrations with `--remote --env staging` and the staging
 database name (`nessebar-lens-orders-staging`).
 
+**There is no remote migration to run by hand.** `release.yml` applies
+`wrangler d1 migrations apply … --remote` in both the staging and production jobs,
+*before* the deploy in each — so a PR that adds a migration cannot ship code that
+expects a schema the database does not have. (Before #200, production migrations
+were a line in this document telling a human to remember, which is how code
+reached production against a schema it did not match.) Local
+(`--local`) remains a manual step; that is for reading your own change before you
+push it.
+
+Migrations are additive and idempotent — wrangler records each applied file in
+`d1_migrations` — so a re-run after a rollback, or a manual
+`--remote --local` replay, is a no-op.
+
+#### Expand/contract — why there is no down-migration
+
+**D1 has no down-migration, and Cloudflare does not offer one.** `release.yml`
+rolls back the *Worker version* when the production smoke fails; it cannot roll
+back the schema. A migration therefore lands *while the previous code is still
+serving*, in two deployments, and it has to be safe for both.
+
+Write every migration as expand/contract:
+
+1. **Expand.** Add the new thing alongside the old one — a new column, a new
+   table, a new index. Nothing reads it yet, so the old code is unaffected.
+2. Ship code that *writes* both and reads the old one.
+3. Ship code that reads the new one.
+4. **Contract.** Only once no deployed version reads the old one, remove it — in a
+   later PR, not the same one that added it.
+
+Never rename or drop in the same migration that introduces the replacement, and
+never make a column `NOT NULL` without a default in an expand step.
+
+`tests/migrations-expand-contract.test.mts` enforces the mechanical part of this:
+no `DROP` and no `RENAME` in `migrations/*.sql`, overridable per line with a
+`-- contract:` marker so step 4 above is still expressible.
+
 `migrations/0002_prodigi_callbacks.sql` adds the CloudEvent dedupe table for
-`#117`. Apply it the same way (local + remote) before deploying a build that
-handles `POST /api/webhooks/prodigi`.
+`#117`.
 
 **The initial migration has run.** On 2026-10-03, against main `e6227b2`:
 
@@ -681,8 +727,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 |----------|---------|--------------|
 | `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a `workflow-audit` job (**install zizmor** → **gate on workflow script injection**, scoped to `template-injection` at Medium confidence and up — the other 40 findings are reported, not gated); plus two pull-request-only browser jobs — **required** `e2e-smoke` (no secrets: `npm ci` → **install chromium** → **e2e smoke flow (seeded)**: `npm run test:e2e -- --grep-invert @hosted` → **upload the failure trace** on failure) and **best-effort** `e2e-hosted-checkout` (`continue-on-error`; staging Environment → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **e2e hosted checkout** (`npm run test:e2e -- --grep @hosted`, headed under Xvfb) → **upload the trace** every run) |
 | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → **Worker Version upload** (secrets attached via `--secrets-file`) → **smoke test** the version URL (`scripts/smoke.sh`) → PR comment; `versions delete` on close |
-| `.github/workflows/staging.yml` | push to `main` + `workflow_dispatch` | staging Environment → build → **D1 migrations (`--env staging`)** → `opennextjs-cloudflare deploy --env staging --secrets-file` (the `staging` target of `sync-worker-secrets.sh`: `sk_test_` enforced, Resend key / Prodigi token / print HMAC required) → **smoke test** `https://staging.nessebarlens.com` |
-| `.github/workflows/prod.yml` | push to `main` + `workflow_dispatch` | production Environment → checks (`ci.yml`) → build → `opennextjs-cloudflare deploy --secrets-file` (guards run first in `version-only` mode) |
+| `.github/workflows/release.yml` | push to `main` + `workflow_dispatch` | The whole production path, in order (`concurrency: release`, never cancelled). `checks` (`ci.yml`) → `build` (matrix over `staging`/`production`, one artifact each — `NEXT_PUBLIC_*` and `metadataBase` bake the origin into the prerendered HTML, so one shared artifact would put nessebarlens.com's canonicals on staging; each leg gets `environment: ${{ matrix.env }}` and its own `NEXT_PUBLIC_*`) → `staging`: staging Environment → verify artifact (`artifact-manifest.sh` + `assert-artifact-origin.sh`) → **D1 migrations (`--env staging`)** → `opennextjs-cloudflare deploy --env staging --secrets-file` (the `staging` target of `sync-worker-secrets.sh`: `sk_test_` enforced, Resend key / Prodigi token / print HMAC required) → **smoke test** `https://staging.nessebarlens.com` → `production` (`needs: staging`): production Environment → verify artifact → record the current `100%` version id → **D1 migrations (`--remote`)** → `opennextjs-cloudflare deploy --secrets-file` (guards run first in `version-only` mode) → **smoke test** `https://nessebarlens.com` → on failure `wrangler versions deploy <previous>@100 -y` and fail the job. `notify`/`resolve` from #199 on `main` |
 | `.github/workflows/reconcile.yml` | cron `*/15 * * * *` + `workflow_dispatch` | production Environment → `POST /api/internal/reconcile` with `x-reconcile-secret` |
 | `.github/workflows/verify-stripe.yml` | cron `37 6 * * 1-5` | staging Environment → guard that the key is `sk_test_` → `scripts/verify-stripe-integration.mjs` (disputes/refunds against test mode) |
 | `.github/workflows/notify-failure.yml` | `workflow_call` only | The incident signal (#199). Not run directly — every workflow below calls it. Opens (or comments on) one `incident`-labelled issue per failing workflow, and closes it on the next green run. |
@@ -691,7 +736,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 
 A red run on `main` notifies nobody by itself, and that is how production failed
 ten times in a day and the reconcile cron six times without anyone noticing.
-Each of `staging.yml`, `prod.yml`, `reconcile.yml` and `verify-stripe.yml` ends
+Each of `release.yml`, `reconcile.yml` and `verify-stripe.yml` ends
 with two jobs:
 
 ```yaml
@@ -792,8 +837,9 @@ effect. That constraint is what the deleted sync-without-deploy workflow existed
 to work around, and why it was a silent-failure trap.
 
 **Through CI.** Update the GitHub Environment secret, then **Run workflow** on
-`prod.yml` (`workflow_dispatch`). This rebuilds and redeploys, carrying the
-secrets on the deploying version via `--secrets-file`.
+`release.yml` (`workflow_dispatch`). This rebuilds and redeploys — staging first,
+production after it smokes green — carrying the secrets on the deploying version
+via `--secrets-file`.
 
 Prefer the first unless the rotation is bundled with a code change — a deploy
 also picks up whatever else is on `main`, which is not something you want
@@ -809,7 +855,7 @@ re-dispatching.
 
 GitHub Environments:
 
-- **`staging`** — read by both `preview.yml` and `staging.yml`: sandbox Stripe + `PRODIGI_API_BASE=https://api.sandbox.prodigi.com` +
+- **`staging`** — read by `preview.yml` and by `release.yml`'s build matrix leg and staging deploy job: sandbox Stripe + `PRODIGI_API_BASE=https://api.sandbox.prodigi.com` +
   `PRODIGI_SANDBOX_API_KEY` + `SITE_URL=https://staging.nessebarlens.com` +
   `PRODIGI_WEBHOOK_TOKEN` (shared with whatever injects the bearer on sandbox
   callbacks) + `RESEND_API_KEY` (Resend test/sandbox key is fine; domain

@@ -407,7 +407,10 @@ test("all deploy workflows pass RECONCILE_SECRET to the sync script", () => {
   // The guard above is only reachable if the value reaches the script at all,
   // so the wiring is asserted too — otherwise the new guard hard-fails every
   // deploy with an error that names a secret nobody passed.
-  for (const wf of ["prod.yml", "preview.yml", "staging.yml"]) {
+  // release.yml carries both deploy targets since #200 merged staging.yml and
+  // prod.yml into one ordered pipeline, so one file entry covers what used to
+  // be two.
+  for (const wf of ["release.yml", "preview.yml"]) {
     const text = fs.readFileSync(path.join(root, ".github", "workflows", wf), "utf8");
     assert.match(
       text,
