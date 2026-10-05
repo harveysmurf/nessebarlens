@@ -275,7 +275,7 @@ PY
 # workflows both use version-only, and that is the mode to reach for:
 #   version-only  run every guard and write the JSON file, apply nothing. The
 #                 caller passes it to `deploy`/`upload --secrets-file`, so the
-#                 secrets ride on the version that actually serves. prod.yml
+#                 secrets ride on the version that actually serves. release.yml
 #                 and preview.yml both do this.
 #   version       `wrangler versions secret bulk` (default) — MINTS A NEW
 #                 version holding the secrets; it neither edits the deployed
@@ -294,7 +294,7 @@ elif [[ "${SYNC_SCOPE:-version}" == "version" ]]; then
   # A NEW VERSION carrying the secrets. It does not edit the version already
   # deployed, and it does not deploy what it mints. So a rotated key applied
   # this way sits on a version that never serves -- a green run with the old
-  # key still live. Neither prod.yml nor preview.yml uses this scope; both use
+  # key still live. Neither release.yml nor preview.yml uses this scope; both use
   # version-only plus `deploy`/`upload --secrets-file`, which puts the secrets
   # on the version that actually serves. Kept because it is the correct
   # primitive for a standalone secret change with no accompanying build.

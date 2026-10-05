@@ -1,0 +1,424 @@
+name: Release
+
+# One pipeline for a push to main, in one order: checks, then a build per
+# environment, then staging, then production. It replaces the pair this used to
+# be — `staging.yml` and `prod.yml` both triggered on the same push and ran in
+# parallel, so a build that broke staging's smoke still shipped to production and
+# a failed D1 migration only ever reached staging (#200).
+#
+# What production gained from the merge, and what it did not have before:
+#
+#   * D1 migrations run before the deploy in both environments. They used to be
+#     a line in DEVELOPMENT.md telling a human to run them by hand, so a PR
+#     adding a migration could deploy code against a schema that did not have it.
+#   * a post-deploy smoke against https://nessebarlens.com, with an automatic
+#     rollback of the recorded previous version when it fails.
+#
+# Migrations are not rolled back — D1 has no down-migration and Cloudflare does
+# not offer one. That is why every migration has to be backward-compatible with
+# the code still serving when it lands; see the expand/contract rule in
+# DEVELOPMENT.md and the no-DROP guard in tests/migrations-expand-contract.test.mts.
+on:
+  push:
+    branches: [main]
+  # A secret-only change (rotated Stripe key, new Prodigi credential) has no
+  # commit to trigger a release. On Workers a rotation does not need a rebuild at
+  # all -- `wrangler secret bulk` updates the deployed Worker in place -- so this
+  # trigger is a convenience that re-runs the whole pipeline, not a workaround.
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# One release at a time, and never cancelled part-way. A cancelled run could stop
+# between the D1 migration and the deploy and leave the schema ahead of the code.
+# A newer push queues behind the current one.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  # The full CI suite, unchanged. #200 originally also wanted `e2e-smoke` lifted
+  # to run here; it stays pull_request-only (tests/workflow-setup.test.mts pins
+  # that), because with strict branch protection every commit reaching main has
+  # already had that browser flow run against the identical tree on its PR, and a
+  # flaky re-run of the same tree is what held production for 1.5h on #206. The
+  # real gap that made #120 invisible -- E2E smoke flow not being a *required*
+  # check -- is #205 item 1, not a second run here. Post-deploy validation lives
+  # in the smoke steps below instead.
+  checks:
+    name: Checks
+    uses: $/.github/workflows/ci.yml
+
+  # Two builds, one per environment, in parallel. One build and one shared
+  # artifact was the alternative and it does not work: `src/app/layout.tsx`
+  # builds `metadataBase` from `configuredSiteUrl()` at module scope, so the
+  # origin is baked into the prerendered HTML's canonical and og:url, and
+  # NEXT_PUBLIC_WEB_IMAGES_BASE and NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED are the
+  # same shape. A shared artifact would put nessebarlens.com on staging.
+  #
+  # Measured, not assumed: a production build puts its own origin in 28 files
+  # under .open-next/ and the staging origin in none, and a staging build the
+  # reverse. `assert-artifact-origin.sh` re-checks that in the deploy job, so a
+  # swapped artifact name is a red job rather than a site with the wrong
+  # canonical URL.
+  build:
+    name: Build (${{ matrix.env }})
+    needs: checks
+    strategy:
+      # One leg must not cancel the other: a cancelled leg takes its artifact
+      # with it and the deploy job that needs it fails on a missing download.
+      fail-fast: false
+      matrix:
+        include:
+          - env: staging
+            origin: https://staging.nessebarlens.com
+          - env: production
+            origin: https://nessebarlens.com
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Per-matrix environment so each leg reads its own NEXT_PUBLIC_* values.
+    # The alternative -- one environment and a lookup table -- would put
+    # production's site url on staging, which is the bug the matrix exists to
+    # prevent. The cost is that adding required reviewers to the production
+    # Environment would ask for that approval at build time rather than at
+    # deploy time; moving NEXT_PUBLIC_* from secrets to Environment variables
+    # removes the coupling and is the right follow-up.
+    environment: ${{ matrix.env }}
+    env:
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      SITE_URL: ${{ secrets.SITE_URL }}
+      NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+      NEXT_PUBLIC_WEB_IMAGES_BASE: ${{ secrets.NEXT_PUBLIC_WEB_IMAGES_BASE }}
+      NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED: ${{ secrets.NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED }}
+      # Recorded into the artifact so the deploy job checks the tree it
+      # downloaded against the tree that produced it, not just against a
+      # string. An artifact is a zip round-trip, and a zip can change a tree.
+      EXPECTED_ORIGIN: ${{ matrix.origin }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: $/.github/actions/setup
+
+      - name: Build (OpenNext)
+        run: npx opennextjs-cloudflare build
+
+      # Written inside .open-next/ so it travels with the tree: the deploy job
+      # cannot be handed a manifest from a different build than the artifact it
+      # downloaded, because both come out of the same upload.
+      - name: Record the artifact manifest
+        run: bash scripts/artifact-manifest.sh write .open-next .open-next/MANIFEST.sha256
+
+      # Hidden files: .open-next/ is itself a dotfile, so without this the
+      # archive would arrive empty and every deploy job would fail on the
+      # manifest check with nothing to say why.
+      - name: Upload the build
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: open-next-${{ matrix.env }}-${{ github.sha }}
+          path: .open-next/
+          include-hidden-files: true
+          retention-days: 3
+          if-no-files-found: error
+
+  # `needs: build` waits for both matrix legs, so a production build failure
+  # stops the staging deploy too. That is the cheap direction to fail in: the
+  # alternative is deploying a staging artifact whose production twin never
+  # built, which is exactly the "rehearses an environment that gates nothing"
+  # shape #200 set out to remove.
+  staging:
+    name: Deploy staging
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: staging
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      SITE_URL: ${{ secrets.SITE_URL }}
+      NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+      NEXT_PUBLIC_WEB_IMAGES_BASE: ${{ secrets.NEXT_PUBLIC_WEB_IMAGES_BASE }}
+      NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED: ${{ secrets.NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED }}
+      EXPECTED_ORIGIN: https://staging.nessebarlens.com
+      # The other environment's origin. Checked for absence, so a staging tree
+      # that somehow carries the production origin cannot be deployed under
+      # either name.
+      FORBIDDEN_ORIGIN: https://nessebarlens.com
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: $/.github/actions/setup
+
+      - name: Download the staging build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: open-next-staging-${{ github.sha }}
+          path: .open-next
+
+      - name: Verify the downloaded build
+        run: |
+          set -euo pipefail
+          # Content first: an artifact that did not survive the round-trip is a
+          # broken deploy regardless of which origin it claims.
+          bash scripts/artifact-manifest.sh check .open-next .open-next/MANIFEST.sha256
+          bash scripts/assert-artifact-origin.sh .open-next "$EXPECTED_ORIGIN" "$FORBIDDEN_ORIGIN"
+
+      # Before the deploy, so the new code never runs against an older schema.
+      # Migrations are additive and idempotent (wrangler records each applied
+      # file in d1_migrations), so a re-run is a no-op. `--env staging` is what
+      # points this at the staging D1 declared under [env.staging]; without it
+      # wrangler would resolve the top-level binding, which is production.
+      - name: Apply D1 migrations (staging)
+        run: npx wrangler d1 migrations apply nessebar-lens-orders-staging --remote --env staging
+
+      # `deploy`, never `build`: the tree is already built and verified above,
+      # and a rebuild here would silently reintroduce the ~1.5min duplicate the
+      # matrix removed -- and would bake whatever NEXT_PUBLIC_* the deploy job's
+      # environment happens to hold rather than what the artifact was built with.
+      #
+      # The `staging` target of the script keeps the sk_test_ check and makes
+      # RESEND_API_KEY, PRODIGI_WEBHOOK_TOKEN and PRINT_ASSET_HMAC_SECRET hard
+      # requirements: staging exists to rehearse the whole purchase, so a
+      # missing email key or callback token is a failed deploy, not a warning.
+      - name: Deploy staging (OpenNext)
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          PRINT_ASSET_HMAC_SECRET: ${{ secrets.PRINT_ASSET_HMAC_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          PRODIGI_WEBHOOK_TOKEN: ${{ secrets.PRODIGI_WEBHOOK_TOKEN }}
+          RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
+          # Explicit host, never inferred from which Prodigi key is set.
+          PRODIGI_API_BASE: https://api.sandbox.prodigi.com
+          PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
+          PRODIGI_API_KEY: ${{ secrets.PRODIGI_API_KEY }}
+        run: |
+          set -euo pipefail
+          SYNC_SCOPE=version-only SECRETS_OUT=staging-secrets.json \
+            bash scripts/sync-worker-secrets.sh staging
+
+          # --tag/--message carry only the sha: opennextjs-cloudflare re-parses
+          # passthrough args in a second shell with `shell: true` and no
+          # escaping, so keep them free of spaces and metacharacters.
+          npx opennextjs-cloudflare deploy \
+            --env staging \
+            --secrets-file=staging-secrets.json \
+            --tag="staging-$COMMIT_SHA" \
+            --message="staging-$COMMIT_SHA"
+          rm -f staging-secrets.json
+
+      - name: Smoke test staging
+        run: bash scripts/smoke.sh "$EXPECTED_ORIGIN"
+
+  # `needs: staging` is the whole point of this file. Production waits for a
+  # staging deploy that migrated its D1 and passed a smoke test against the
+  # artifact production is about to deploy.
+  production:
+    name: Deploy production
+    needs: [checks, build, staging]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      SITE_URL: ${{ secrets.SITE_URL }}
+      NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
+      NEXT_PUBLIC_WEB_IMAGES_BASE: ${{ secrets.NEXT_PUBLIC_WEB_IMAGES_BASE }}
+      NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED: ${{ secrets.NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED }}
+      EXPECTED_ORIGIN: https://nessebarlens.com
+      FORBIDDEN_ORIGIN: https://staging.nessebarlens.com
+    outputs:
+      previous-version: ${{ steps.record-previous.outputs.version-id }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          persist-credentials: false
+
+      - uses: $/.github/actions/setup
+
+      - name: Download the production build
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          name: open-next-production-${{ github.sha }}
+          path: .open-next
+
+      - name: Verify the downloaded build
+        run: |
+          set -euo pipefail
+          bash scripts/artifact-manifest.sh check .open-next .open-next/MANIFEST.sha256
+          bash scripts/assert-artifact-origin.sh .open-next "$EXPECTED_ORIGIN" "$FORBIDDEN_ORIGIN"
+
+      # Recorded before the deploy, because afterwards the newest version *is*
+      # the bad one and there is nothing to roll back to. `deployments list`
+      # rather than `versions list`: the rollback target has to be a version
+      # that was actually serving, and versions list would hand back the most
+      # recent version including ones a deployment never promoted.
+      #
+      # jq rather than a positional read: `deployments list --json` returns an
+      # array newest-last (wrangler sorts ascending on created_on before
+      # printing), and each entry carries its versions at `.versions[]` with the
+      # traffic share in `.percentage`. `[0]` would be the oldest deployment.
+      - name: Record the currently deployed version
+        id: record-previous
+        run: |
+          set -euo pipefail
+          previous="$(npx wrangler deployments list --json \
+            | jq -r 'last(.[] | .versions[] | select(.percentage == 100) | .version_id)' \
+            | head -1)"
+          if [ -z "$previous" ] || [ "$previous" = "null" ]; then
+            echo "::error::could not read the currently deployed version id; a smoke failure would have nothing to roll back to" >&2
+            exit 1
+          fi
+          echo "version-id=$previous" >> "$GITHUB_OUTPUT"
+          echo "release: previous production version is $previous"
+
+      - name: Apply D1 migrations (production)
+        run: npx wrangler d1 migrations apply nessebar-lens-orders --remote
+
+      # The secrets go on the version this step deploys, via --secrets-file.
+      # The order here is deliberate and is the reverse of the Pages workflow:
+      #
+      #   * syncing first would describe a version the deploy then replaced, and
+      #   * syncing after is worse than useless. `wrangler versions secret bulk`
+      #     PATCHes versions/latest, which mints a NEW version rather than
+      #     editing the deployed one. Run after the deploy it would leave the
+      #     rotated key sitting on a version that never serves, and prod would
+      #     keep running the old key with a green run.
+      #
+      # --secrets-file has no such window: the deploying version carries its own
+      # secrets from the moment it starts serving. It also matches what the
+      # staging and preview jobs do, so there is one mechanism to reason about.
+      #
+      # The script runs in version-only mode -- every #114 guard executes and
+      # the JSON is written, but nothing is applied here. `deploy` applies it.
+      - name: Deploy production (OpenNext)
+        env:
+          COMMIT_SHA: ${{ github.sha }}
+          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          STRIPE_SECRET_KEY: ${{ secrets.STRIPE_SECRET_KEY }}
+          STRIPE_WEBHOOK_SECRET: ${{ secrets.STRIPE_WEBHOOK_SECRET }}
+          PRINT_ASSET_HMAC_SECRET: ${{ secrets.PRINT_ASSET_HMAC_SECRET }}
+          RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+          PRODIGI_WEBHOOK_TOKEN: ${{ secrets.PRODIGI_WEBHOOK_TOKEN }}
+          RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
+          # Live Prodigi host -- staging/preview stays on sandbox.
+          PRODIGI_API_BASE: https://api.prodigi.com
+          PRODIGI_API_KEY: ${{ secrets.PRODIGI_API_KEY }}
+          PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
+        run: |
+          set -euo pipefail
+          SYNC_SCOPE=version-only SECRETS_OUT=prod-secrets.json \
+            bash scripts/sync-worker-secrets.sh production
+
+          # The sha and message arrive via env, never interpolated straight into
+          # the script. Passing them through env was always necessary -- a
+          # backtick in a commit message became command substitution inside
+          # double quotes, which failed a real deploy -- but it is NOT sufficient
+          # here, and the comment above used to claim it was.
+          #
+          # opennextjs-cloudflare re-spawns wrangler with `shell: true`
+          # (run-wrangler.js) without escaping passthrough args, so this shell's
+          # quoting is discarded and a second shell re-parses the text. A commit
+          # message is free-form, so it can contain a `#`, a backtick or a `;`
+          # that the first shell handled correctly and the second one will not.
+          # Any merge whose message contains one of those would take production
+          # down with a mangled command.
+          #
+          # So the value is reduced here to something both shells pass through
+          # unchanged. Measured against a stand-in for opennextjs's `shell: true`
+          # re-parse, not assumed: a space arrives as several arguments, a `;`
+          # runs a second command, and a backtick executes. Stripping
+          # metacharacters alone is not enough -- spaces split too, and `(` `)`
+          # are themselves metacharacters, so my first two attempts at this
+          # allowlist both still failed. What is left is alphanumeric plus
+          # `._/,-`, verified to survive every one of: a `#`, a `;`, a backtick,
+          # a `$(...)`, a quote of either kind, and a multi-line body.
+          SAFE_MESSAGE="$(printf '%s' "$COMMIT_MESSAGE" | head -n 1)"
+          SAFE_MESSAGE="$(printf '%s' "$SAFE_MESSAGE" | tr -cd 'A-Za-z0-9._/,-' | tr -d '[:space:]')"
+          SAFE_MESSAGE="${SAFE_MESSAGE:0:72}"
+          [ -n "$SAFE_MESSAGE" ] || SAFE_MESSAGE="deploy-$COMMIT_SHA"
+
+          # No --commit-hash/--commit-dirty/--commit-message here: those are
+          # Pages deploy flags. `wrangler deploy` rejects them outright --
+          # "Unknown arguments: commit-dirty, commitDirty, commit-hash,
+          # commitHash, commit-message, commitMessage" -- which failed every
+          # production deploy on main from the Workers migration onwards
+          # (run 37154161818), leaving production serving a pre-migration
+          # build. --tag/--message are the Workers version identity and are
+          # what the staging job above already uses. The head sha travels in
+          # --tag, so a deployed version can still be traced back to its commit.
+          npx opennextjs-cloudflare deploy \
+            --secrets-file=prod-secrets.json \
+            --tag="prod-$COMMIT_SHA" \
+            --message="$SAFE_MESSAGE"
+          rm -f prod-secrets.json
+
+      # continue-on-error, not a plain failure: the rollback below is a later
+      # step in this job, and a failed step skips every step that follows unless
+      # they carry `if: always()`. Letting the smoke fail here and branching on
+      # `steps.smoke.outcome` keeps the rollback reachable and still leaves the
+      # job red at the end.
+      - name: Smoke test production
+        id: smoke
+        continue-on-error: true
+        run: bash scripts/smoke.sh "$EXPECTED_ORIGIN"
+        env:
+          SMOKE_ALLOW_PRODUCTION: "1"
+
+      # `<id>@100` is the version-spec shorthand: deploy that version with all
+      # of the traffic. Without the percentage the spec is ambiguous and wrangler
+      # prompts, which in CI means an empty deploy and a red job that has
+      # "rolled back" nothing.
+      #
+      # The migration above is NOT rolled back and cannot be. The old code has to
+      # survive the new schema, which is the expand/contract rule in
+      # DEVELOPMENT.md and why tests/migrations-expand-contract.test.mts refuses
+      # DROP and RENAME.
+      - name: Roll back to the previous version
+        if: steps.smoke.outcome == 'failure'
+        run: |
+          set -euo pipefail
+          echo "release: smoke failed against $EXPECTED_ORIGIN; rolling back to ${{ steps.record-previous.outputs.version-id }}"
+          npx wrangler versions deploy "${{ steps.record-previous.outputs.version-id }}@100" -y
+
+      # Fail last so the rollback above has already run. `-e` would have made
+      # the rollback step the failure point instead.
+      - name: Fail the release
+        if: steps.smoke.outcome == 'failure'
+        run: |
+          echo "::error::production smoke failed after deploy; the previous version has been rolled back. The D1 migration is not rolled back -- see the expand/contract rule in DEVELOPMENT.md." >&2
+          exit 1
+
+  # #199: a red run on main notifies nobody on its own, so production broke ten
+  # times in a day before anyone ran `gh run list` by hand. Both jobs are
+  # gated on `main` because a release failure on a feature branch is the PR
+  # author's problem and is already visible there.
+  #
+  # `needs` lists every job, so `failure()` means "something in this workflow
+  # failed" rather than "the deploy step failed": a failing `checks` or `build`
+  # job must page too -- that was run 37215131514, where the flaky coverage
+  # floor left production a commit behind while the merged PR looked shipped.
+  notify:
+    name: Notify incident
+    needs: [checks, build, staging, production]
+    if: failure() && github.ref == 'refs/heads/main'
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: release failing on main"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  resolve:
+    name: Close incident
+    needs: [checks, build, staging, production]
+    if: success() && github.ref == 'refs/heads/main'
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: release failing on main"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      close: true

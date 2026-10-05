@@ -27,8 +27,14 @@ const workflows = fs
     text: fs.readFileSync(path.join(workflowDir, name), "utf8"),
   }));
 
-/** Workflows that build a deployable artifact, so they need the env. */
-const BUILDING = ["preview.yml", "prod.yml"];
+/**
+ * Workflows that build a deployable artifact, so they need the env.
+ * `release.yml` replaced `prod.yml`/`staging.yml` in #200: one pipeline, and the
+ * build is a per-environment matrix rather than a copy in each deploy workflow.
+ * The matrix reads the secret once at job level, which is why the assertion
+ * below is satisfied by a single occurrence.
+ */
+const BUILDING = ["preview.yml", "release.yml"];
 
 test("every workflow that builds gets NEXT_PUBLIC_SITE_URL from secrets", () => {
   for (const name of BUILDING) {

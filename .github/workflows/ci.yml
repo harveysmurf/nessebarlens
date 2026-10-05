@@ -3,9 +3,9 @@ name: CI
 on:
   pull_request:
     branches: [main]
-  # No push trigger on purpose: prod.yml calls this workflow as a reusable
+  # No push trigger on purpose: release.yml calls this workflow as a reusable
   # workflow and gates deploy on it, so a main push already runs the suite
-  # through prod's `checks` job. Leaving `push` here ran it twice per merge.
+  # through release's `checks` job. Leaving `push` here ran it twice per merge.
   workflow_call:
 
 # Default to the least privilege every job here needs: read the
@@ -21,7 +21,7 @@ concurrency:
   # CALLER's name inside a reusable workflow, so a prod-called run and a
   # pull-request run of the same file would not share a group. Pull requests
   # are superseded freely; the production caller does not use this workflow's
-  # concurrency (prod.yml serializes with cancel-in-progress: false).
+  # concurrency (release.yml serializes with cancel-in-progress: false).
   group: ci-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
