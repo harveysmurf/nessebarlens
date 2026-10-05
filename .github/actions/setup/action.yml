@@ -11,13 +11,18 @@ runs:
   using: composite
   steps:
     - name: Setup Node
-      uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0
       with:
         # Exact pin via .nvmrc, not a "24" range: 24.10 fails
         # tests/routes.test.mts on a loader change, so a floating major lets
         # CI and .nvmrc disagree. tests/node-version-pin.test.mts holds every
         # workflow and this action to node-version-file: .nvmrc.
         node-version-file: .nvmrc
+        # v5 turns on automatic npm caching when package.json has a
+        # `packageManager` field. This repo has none, so the behaviour is
+        # unchanged — but `cache: npm` stays explicit rather than relying on
+        # that absence, because the day someone adds `packageManager` the two
+        # would be redundant at best and contradictory at worst.
         cache: npm
 
     - name: Install

@@ -874,6 +874,91 @@ Run it locally with zizmor on `PATH`:
 npm run lint && node scripts/zizmor-gate.mjs
 ```
 
+### Action versions and the runner image
+
+Two pins that are not about application code, and both of which move under you
+if nobody watches them.
+
+**Actions are on Node 24 majors** (`checkout` v5, `setup-node` v5,
+`upload-artifact` v6, `download-artifact` v7, `github-script` v8), each
+SHA-pinned with its `# vX.Y.Z` comment. The previous pins all ran on Node 20,
+which GitHub now force-upgrades at run time with a deprecation annotation on
+every single run — noise that trains people to ignore annotations. Note the
+artifact majors are not 5: `upload-artifact` v5 and `download-artifact` v5/v6
+were released as Node 24 *preparations* and still declared `using: node20`; v6
+and v7 are the first that actually run on it.
+
+**Every job runs on `ubuntu-24.04`, never `ubuntu-latest`** (`#205`). The
+`ubuntu-latest` label migrates to Ubuntu 26 on 2026-10-19, and a runner image is
+not just a kernel bump — it moves OpenSSL, glibc, and the package list
+`playwright install --with-deps` installs. That change would land inside a
+production deploy, on a day nobody is reading CI.
+`tests/workflow-hardening.test.mts` fails on any `ubuntu-latest` and requires
+every `runs-on` to be exactly `ubuntu-24.04`. Moving to `26.04` is not forbidden
+— do it in its own PR, after the e2e jobs are green on it.
+
+### Dependency updates (`#205`)
+
+`.github/dependabot.yml` opens weekly PRs for both ecosystems. A SHA pin never
+moves on its own, so "we pin" only does work once something is watching the
+tags.
+
+- **`github-actions`**, one group, one PR. The Node-runtime bumps and the
+  artifact pair that moves with them only make sense together; one PR per action
+  would open five and get them merged in the wrong order. Dependabot rewrites the
+  SHA and keeps the `# vX.Y.Z` comment, so the pin format the hardening test
+  enforces survives the bot — `tests/dependabot-config.test.mts` and the pin test
+  in `tests/workflow-hardening.test.mts` hold that claim against fixtures.
+- **`npm`**, grouped by what has to move together: `framework`
+  (`next` + `react` + `react-dom`), `deploy` (`wrangler` +
+  `@opennextjs/cloudflare` — opennext gates on the wrangler it is built against,
+  so a mismatch fails inside opennext rather than here), `payments` (`stripe`,
+  alone because it is the only group allowed to move on its own), and
+  `dev-tooling` as a `*` catch-all with the three named groups excluded.
+  Without the exclusions the catch-all wins and the grouping silently stops
+  happening.
+
+Security updates are on by default in v2 and are not disabled anywhere. Do not
+trade them for a tidier cadence.
+
+`tests/dependabot-config.test.mts` pins the shape, not just the existence:
+deleting the file, splitting a group, or adding an `ignore` list all produce no
+CI failure otherwise, because a missing bot produces no failures.
+
+### What each Environment holds
+
+The expected secret set per environment, checked rather than remembered.
+`tests/workflow-secrets.test.mts` asserts in both directions: every
+`secrets.X` a workflow reads is listed here, and every name listed here still
+has a reader. The second direction is the one that matters — a secret left in
+GitHub after its last reader is gone is pure exposure, and from inside the
+repository it looks identical to a live one until somebody opens the account
+settings.
+
+| Scope | Expected secrets |
+|---|---|
+| `staging` | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED`, `NEXT_PUBLIC_WEB_IMAGES_BASE`, `PRINT_ASSET_HMAC_SECRET`, `PRODIGI_API_KEY`, `PRODIGI_SANDBOX_API_KEY`, `PRODIGI_WEBHOOK_TOKEN`, `RECONCILE_SECRET`, `RESEND_API_KEY`, `SITE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
+| `production` | the same fourteen, with live values |
+| repository | `PRINT_ASSET_HMAC_SECRET` only |
+
+`release.yml`'s build matrix declares `environment: ${{ matrix.env }}` and so
+reads its `NEXT_PUBLIC_*` from both — the same name with a different value in
+each, which is why this is a set per environment and not a flat list.
+
+`PRINT_ASSET_HMAC_SECRET` is a *repository* secret because it signs print-asset
+URLs and has to be the same value everywhere: a signature made with one key and
+checked with another is the failure the indirection exists to avoid. The
+hosted-checkout job is the one place both scopes are read side by side.
+
+Not in the table, and asserted to stay out (`#205` item 6): `CF_ACCOUNT_ID` and
+`CF_API_TOKEN`, the pre-Workers names for the Cloudflare token, which
+`scripts/sync-worker-secrets.sh` still accepts as a fallback but no workflow
+passes; and `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`,
+`R2_S3_ENDPOINT`, `R2_ACCOUNT_ID` — the S3-compatibility keys. The site reaches
+R2 through the Workers *binding*, not the S3 API, so those were a second
+long-lived credential for the same data with no code behind it. The R2 key has
+to be revoked at Cloudflare as well as deleted from the Environment.
+
 ### Rotating a credential
 
 Two paths, and the difference matters during an incident.

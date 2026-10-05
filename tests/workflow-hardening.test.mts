@@ -57,6 +57,72 @@ const versionComment = /#[ \t]*v\d+\.\d+\.\d+/;
 /** `owner/repo[/path]@ref` — anything not `./` or `$/`, i.e. someone else's code. */
 const isThirdParty = (ref: string) => !/^\.\//.test(ref) && !/^\$\//.test(ref);
 
+test("no workflow runs on a floating runner label", () => {
+  // #205 item 4: `ubuntu-latest` migrates to Ubuntu 26 on 2026-10-19, and a
+  // runner image is not just a kernel bump — it moves OpenSSL, glibc, and the
+  // package list `playwright install --with-deps` installs. Those changes would
+  // arrive inside a production deploy, on a day nobody is looking at CI, which
+  // is the worst possible moment for a runner change to become a smoke failure.
+  //
+  // Moving to 26.04 is not forbidden, it is just not something a label edit
+  // should do: do it in its own PR, after the e2e jobs are green on it.
+  const floating = everyDefinition.flatMap(({ name, text }) =>
+    [...text.matchAll(/^([ \t]*)runs-on:[ \t]*(.+)$/gm)]
+      .filter(([, , value]) => /ubuntu-latest|ubuntu-latest-\S+/.test(value.trim()))
+      .map(() => name),
+  );
+  assert.deepEqual(
+    [...new Set(floating)],
+    [],
+    "these definitions run on ubuntu-latest, which GitHub migrates to Ubuntu 26 on 2026-10-19 — pin ubuntu-24.04 and move to 26.04 deliberately",
+  );
+
+  // A reader that silently stopped matching would make the assertion above
+  // vacuously true, which is how a check like this dies unnoticed. Floors
+  // rather than a count per file, because the job set legitimately changes.
+  const runnerLines = workflows.flatMap(({ text }) =>
+    [...text.matchAll(/^[ \t]*runs-on:[ \t]*(.+)$/gm)].map(([, value]) => value.trim()),
+  );
+  assert.ok(
+    runnerLines.length >= 8,
+    `found ${runnerLines.length} runs-on lines across ${workflows.length} workflows — the scan above is reading nothing`,
+  );
+  assert.ok(
+    runnerLines.every((value) => value === "ubuntu-24.04"),
+    `every runs-on must be exactly ubuntu-24.04; found: ${[...new Set(runnerLines)].join(", ")}`,
+  );
+});
+
+test("Dependabot's own pin format is what the SHA test above accepts", () => {
+  // #205 item 2 added the github-actions ecosystem, which means SHA pins are now
+  // written by a bot rather than by hand. Dependabot rewrites the ref and keeps
+  // the `# vX.Y.Z` comment, so the two assertions in "every third-party action is
+  // SHA-pinned" keep holding — but only for the exact comment shape it emits.
+  // If a future Dependabot writes `# v6` or drops the comment, its PR fails this
+  // test rather than arriving as a red CI run nobody can explain.
+  //
+  // Pinned as fixtures rather than as a live run: the point is the format, and a
+  // test that calls the API to check it would be a network-dependent test in a
+  // suite that has none.
+  const dependabotWrites = [
+    "actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8 # v5.0.0",
+    "actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444 # v5.0.0",
+    "actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0",
+  ];
+  for (const ref of dependabotWrites) {
+    assert.ok(SHA.test(ref), `SHA pattern rejects Dependabot's output: ${ref}`);
+    assert.ok(
+      versionComment.test(ref),
+      `version-comment pattern rejects Dependabot's output: ${ref}`,
+    );
+  }
+
+  // And the inverse, so the patterns above cannot be loosened into uselessness
+  // to accommodate the bot: an unpinned or uncommented ref is still rejected.
+  assert.equal(SHA.test("actions/checkout@v5"), false);
+  assert.equal(versionComment.test("actions/checkout@08c6903cd8c0fde910a37f88322edcfb5dd907a8"), false);
+});
+
 test("every third-party action is SHA-pinned with the version it came from", () => {
   const unpinned = usesLines
     .filter(({ ref }) => isThirdParty(ref) && !SHA.test(ref))

@@ -75,7 +75,7 @@ jobs:
             origin: https://staging.nessebarlens.com
           - env: production
             origin: https://nessebarlens.com
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     # Per-matrix environment so each leg reads its own NEXT_PUBLIC_* values.
     # The alternative -- one environment and a lookup table -- would put
@@ -96,7 +96,7 @@ jobs:
       # string. An artifact is a zip round-trip, and a zip can change a tree.
       EXPECTED_ORIGIN: ${{ matrix.origin }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
 
@@ -115,7 +115,7 @@ jobs:
       # archive would arrive empty and every deploy job would fail on the
       # manifest check with nothing to say why.
       - name: Upload the build
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
         with:
           name: open-next-${{ matrix.env }}-${{ github.sha }}
           path: .open-next/
@@ -131,7 +131,7 @@ jobs:
   staging:
     name: Deploy staging
     needs: build
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: staging
     env:
@@ -147,14 +147,14 @@ jobs:
       # either name.
       FORBIDDEN_ORIGIN: https://nessebarlens.com
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
 
       - uses: $/.github/actions/setup
 
       - name: Download the staging build
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: open-next-staging-${{ github.sha }}
           path: .open-next
@@ -221,7 +221,7 @@ jobs:
   production:
     name: Deploy production
     needs: [checks, build, staging]
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
     env:
@@ -236,14 +236,14 @@ jobs:
     outputs:
       previous-version: ${{ steps.record-previous.outputs.version-id }}
     steps:
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
 
       - uses: $/.github/actions/setup
 
       - name: Download the production build
-        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: open-next-production-${{ github.sha }}
           path: .open-next

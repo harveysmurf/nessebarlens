@@ -1,0 +1,66 @@
+# Issue #205 item 2: every action is SHA-pinned and every runtime dependency is
+# on the money and deploy path, but nothing moved a pin. A SHA never drifts on
+# its own, so "we pin" was doing no work until something watched the tags.
+#
+# Two ecosystems, deliberately configured differently:
+#
+#   * github-actions -- one group, weekly. Dependabot rewrites a SHA pin and
+#     keeps the `# vX.Y.Z` comment in place, so the pin format
+#     tests/workflow-hardening.test.mts enforces survives the bot. Grouped
+#     because a Node-major action bump and the artifact bump that goes with it
+#     only make sense together; one PR per action would open five PRs and
+#     merge them in the wrong order.
+#
+#   * npm -- grouped by what breaks together. `next` with a stale `react` is a
+#     broken tree; `wrangler` with a stale `@opennextjs/cloudflare` is a deploy
+#     that fails at opennext's own compatibility check, not ours. Stripe is
+#     alone because it is the payment path and its webhook payload shape is the
+#     one thing in this repo with a real blast radius.
+version: 2
+
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+    groups:
+      actions:
+        patterns:
+          - "*"
+    # A pinned action that is also vulnerable is the case where waiting for the
+    # weekly round is not good enough, so security updates stay on their own
+    # (empty `groups` is the default: one PR per vulnerable action, immediately).
+    open-pull-requests-limit: 5
+
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+    open-pull-requests-limit: 5
+    groups:
+      framework:
+        patterns:
+          - next
+          - react
+          - react-dom
+      deploy:
+        patterns:
+          - wrangler
+          - "@opennextjs/cloudflare"
+      payments:
+        patterns:
+          - stripe
+      dev-tooling:
+        patterns:
+          - "*"
+        exclude-patterns:
+          - next
+          - react
+          - react-dom
+          - wrangler
+          - "@opennextjs/cloudflare"
+          - stripe
+
+# Security updates are on by default in v2 and are not turned off anywhere here
+# -- they are the half of this file that must not be traded away for a tidier
+# weekly cadence. tests/dependabot-config.test.mts pins the shape above.

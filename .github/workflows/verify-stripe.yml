@@ -37,7 +37,7 @@ concurrency:
 jobs:
   verify:
     name: Verify Stripe test-mode integration
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: staging
     env:
@@ -46,7 +46,7 @@ jobs:
       # The checkout is for the repository, not for the local action: `$/`
       # loads .github/actions/setup from the running commit, so it does not
       # depend on the workspace being populated first.
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
         with:
           persist-credentials: false
 
