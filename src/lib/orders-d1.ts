@@ -52,6 +52,72 @@ type SpendRow = {
 };
 
 /**
+ * Every statement the store issues, as named constants (#203).
+ *
+ * Exported so `tests/schema-migrations.test.mts` can compile each one against
+ * the migrated schema: SQLite resolves table and column names at prepare time,
+ * so a misspelled column here, or a migration that drops a column the code
+ * reads, fails that test instead of failing in production on the money path.
+ */
+export const ORDER_SQL = {
+  getOrder: "SELECT record FROM orders WHERE session_id = ?",
+  putOrder: `INSERT INTO orders (
+     session_id, record, status, terminal, reason,
+     attempts, updated_at, created_at
+   ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
+   ON CONFLICT(session_id) DO UPDATE SET
+     record = excluded.record,
+     status = excluded.status,
+     terminal = excluded.terminal,
+     reason = excluded.reason,
+     attempts = 1,
+     updated_at = excluded.updated_at,
+     created_at = excluded.created_at`,
+  transitionOrder: `UPDATE orders SET
+     record = ?, status = ?, terminal = ?, reason = ?,
+     attempts = ?, updated_at = ?
+   WHERE session_id = ? AND attempts = ?`,
+  list: (where: string) =>
+    `SELECT record FROM orders ${where} ORDER BY created_at ASC LIMIT ?`,
+  getDownloadToken: "SELECT record FROM download_tokens WHERE token = ?",
+  putDownloadToken: `INSERT INTO download_tokens (
+     token, session_id, expires_at, max_downloads, downloads,
+     record, index_record
+   ) VALUES (?, ?, ?, ?, ?, ?, ?)
+   ON CONFLICT(token) DO UPDATE SET
+     session_id = excluded.session_id,
+     expires_at = excluded.expires_at,
+     max_downloads = excluded.max_downloads,
+     downloads = excluded.downloads,
+     record = excluded.record,
+     index_record = excluded.index_record`,
+  findDownloadToken:
+    "SELECT index_record FROM download_tokens WHERE session_id = ?",
+  claimProdigiCallback: `INSERT INTO prodigi_callbacks (event_id, received_at)
+   VALUES (?, ?)
+   ON CONFLICT(event_id) DO NOTHING`,
+  spendDownloadToken: `UPDATE download_tokens SET
+     downloads = downloads - 1,
+     record = json_object(
+       'v', 1,
+       'sessionId', session_id,
+       'expiresAt', expires_at,
+       'remaining', downloads - 1
+     ),
+     index_record = json_object(
+       'v', 1,
+       'sessionId', session_id,
+       'expiresAt', expires_at,
+       'remaining', downloads - 1,
+       'token', token
+     )
+   WHERE token = ? AND expires_at > ? AND downloads > 0
+   RETURNING session_id, expires_at, downloads, record`,
+  getTokenState:
+    "SELECT record, downloads, expires_at, session_id FROM download_tokens WHERE token = ?",
+} as const;
+
+/**
  * Build the OrdersStore over a D1 database.
  *
  * The binding shape is checked by `isOrdersDatabase` before this is called;
@@ -61,7 +127,7 @@ export function d1OrdersStore(db: D1Database): OrdersStore {
   return {
     async getOrder(sessionId) {
       const row = await db
-        .prepare("SELECT record FROM orders WHERE session_id = ?")
+        .prepare(ORDER_SQL.getOrder)
         .bind(sessionId)
         .first<OrderRow>();
       // D1's `first()` is `T | null`, so there is no third "present but
@@ -72,20 +138,7 @@ export function d1OrdersStore(db: D1Database): OrdersStore {
     async putOrder(record) {
       const stored = withAttempts(record, 1);
       await db
-        .prepare(
-          `INSERT INTO orders (
-             session_id, record, status, terminal, reason,
-             attempts, updated_at, created_at
-           ) VALUES (?, ?, ?, ?, ?, 1, ?, ?)
-           ON CONFLICT(session_id) DO UPDATE SET
-             record = excluded.record,
-             status = excluded.status,
-             terminal = excluded.terminal,
-             reason = excluded.reason,
-             attempts = 1,
-             updated_at = excluded.updated_at,
-             created_at = excluded.created_at`,
-        )
+        .prepare(ORDER_SQL.putOrder)
         .bind(
           stored.sessionId,
           JSON.stringify(stored),
@@ -102,12 +155,7 @@ export function d1OrdersStore(db: D1Database): OrdersStore {
       const nextAttempts = input.fromAttempts + 1;
       const stored = withAttempts(input.record, nextAttempts);
       const result = await db
-        .prepare(
-          `UPDATE orders SET
-             record = ?, status = ?, terminal = ?, reason = ?,
-             attempts = ?, updated_at = ?
-           WHERE session_id = ? AND attempts = ?`,
-        )
+        .prepare(ORDER_SQL.transitionOrder)
         .bind(
           JSON.stringify(stored),
           stored.status,
@@ -140,7 +188,7 @@ export function d1OrdersStore(db: D1Database): OrdersStore {
 
     async getDownloadToken(token) {
       const row = await db
-        .prepare("SELECT record FROM download_tokens WHERE token = ?")
+        .prepare(ORDER_SQL.getDownloadToken)
         .bind(token)
         .first<OrderRow>();
       // D1's `first()` is `T | null`, so there is no third "present but
@@ -152,19 +200,7 @@ export function d1OrdersStore(db: D1Database): OrdersStore {
       const maxDownloads = DOWNLOAD_TOKEN_MAX_DOWNLOADS;
       const statements: D1PreparedStatement[] = [
         db
-          .prepare(
-            `INSERT INTO download_tokens (
-               token, session_id, expires_at, max_downloads, downloads,
-               record, index_record
-             ) VALUES (?, ?, ?, ?, ?, ?, ?)
-             ON CONFLICT(token) DO UPDATE SET
-               session_id = excluded.session_id,
-               expires_at = excluded.expires_at,
-               max_downloads = excluded.max_downloads,
-               downloads = excluded.downloads,
-               record = excluded.record,
-               index_record = excluded.index_record`,
-          )
+          .prepare(ORDER_SQL.putDownloadToken)
           .bind(
             index.token,
             record.sessionId,
@@ -180,9 +216,7 @@ export function d1OrdersStore(db: D1Database): OrdersStore {
 
     async findDownloadToken(sessionId) {
       const row = await db
-        .prepare(
-          "SELECT index_record FROM download_tokens WHERE session_id = ?",
-        )
+        .prepare(ORDER_SQL.findDownloadToken)
         .bind(sessionId)
         .first<IndexRow>();
       return row === null ? null : row.index_record;
@@ -193,11 +227,7 @@ export function d1OrdersStore(db: D1Database): OrdersStore {
       // uniqueness of event_id is the whole contract, not the timestamp.
       const receivedAt = new Date().toISOString();
       const result = await db
-        .prepare(
-          `INSERT INTO prodigi_callbacks (event_id, received_at)
-           VALUES (?, ?)
-           ON CONFLICT(event_id) DO NOTHING`,
-        )
+        .prepare(ORDER_SQL.claimProdigiCallback)
         .bind(eventId, receivedAt)
         .run();
       return result.meta.changes > 0;
@@ -209,25 +239,7 @@ export function d1OrdersStore(db: D1Database): OrdersStore {
       // reader of getDownloadToken / findDownloadToken cannot see a stale
       // remaining count. RHS column refs are the pre-update values in SQLite.
       const spent = await db
-        .prepare(
-          `UPDATE download_tokens SET
-             downloads = downloads - 1,
-             record = json_object(
-               'v', 1,
-               'sessionId', session_id,
-               'expiresAt', expires_at,
-               'remaining', downloads - 1
-             ),
-             index_record = json_object(
-               'v', 1,
-               'sessionId', session_id,
-               'expiresAt', expires_at,
-               'remaining', downloads - 1,
-               'token', token
-             )
-           WHERE token = ? AND expires_at > ? AND downloads > 0
-           RETURNING session_id, expires_at, downloads, record`,
-        )
+        .prepare(ORDER_SQL.spendDownloadToken)
         .bind(token, nowSec)
         .first<SpendRow>();
 
@@ -244,9 +256,7 @@ export function d1OrdersStore(db: D1Database): OrdersStore {
       }
 
       const existing = await db
-        .prepare(
-          "SELECT record, downloads, expires_at, session_id FROM download_tokens WHERE token = ?",
-        )
+        .prepare(ORDER_SQL.getTokenState)
         .bind(token)
         .first<TokenRow>();
       if (!existing) return { kind: "missing" };
@@ -294,7 +304,7 @@ export function listOrdersQuery(filter: OrderStatusFilter): {
   }
 
   const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
-  const sql = `SELECT record FROM orders ${where} ORDER BY created_at ASC LIMIT ?`;
+  const sql = ORDER_SQL.list(where);
   binds.push(limit);
   return { sql, binds };
 }

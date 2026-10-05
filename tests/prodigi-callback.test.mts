@@ -17,7 +17,7 @@ import { buildProdigiOrderBody, type OrderRecipient } from "../src/lib/prodigi-o
 import type { SendEmail } from "../src/lib/email.ts";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
 import { d1OrdersStore } from "../src/lib/orders-d1.ts";
-import { fakeD1 } from "./fake-d1.mts";
+import { sqliteD1 } from "./sqlite-d1.mts";
 
 process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
 
@@ -335,7 +335,7 @@ test("Prodigi fetch failure ⇒ 5xx and no partial write", async () => {
 });
 
 test("D1 claimProdigiCallback is true once then false", async () => {
-  const db = fakeD1();
+  const db = sqliteD1();
   const store = d1OrdersStore(db as never);
   assert.equal(await store.claimProdigiCallback("evt_d1_1"), true);
   assert.equal(await store.claimProdigiCallback("evt_d1_1"), false);
