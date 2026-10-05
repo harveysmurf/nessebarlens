@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
 
 // NEXT_PUBLIC_* is inlined at build time, so a build missing the site url
 // cannot be repaired by a later deploy: it ships a checkout that redirects to
@@ -41,6 +42,23 @@ const nextConfig: NextConfig = {
 
 export default nextConfig;
 
-// Initialize OpenNext Cloudflare for local `next dev` bindings when present.
-import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
-initOpenNextCloudflareForDev();
+// Initialize OpenNext Cloudflare for local `next dev` bindings, dev-only.
+//
+// The guard is load-bearing, not a nicety: next.config.ts is evaluated by every
+// process that builds or serves the app, and `next build` runs its prerender
+// workers with NODE_ENV=production. Without the guard each of those would call
+// initOpenNextCloudflareForDev(), boot a local Workers runtime, and contend on
+// the same `.wrangler/state` SQLite file -- the SQLITE_BUSY "database is
+// locked" that failed `Build (production)` and blocked deploys (#227).
+// opennextjs-cloudflare's own dedupe is the AsyncLocalStorage heuristic in
+// cloudflare-context.js, which is aimed at the two `next dev` processes, not the
+// many `next build` workers, so it does not protect the build.
+//
+// In CI the dev bindings are in-memory (`persist: false`) so the two `next dev`
+// processes cannot share the `.wrangler/state` SQLite file either — the e2e seed
+// is in-memory Maps (orders-dev-seed.ts), so nothing the smoke flow reads needs
+// disk persistence, and dropping it removes the SQLITE_BUSY race seen on #228.
+// A local `next dev` keeps the default persistence.
+if (process.env.NODE_ENV === "development") {
+  initOpenNextCloudflareForDev(process.env.CI ? { persist: false } : undefined);
+}
