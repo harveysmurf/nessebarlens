@@ -408,6 +408,14 @@ jobs:
     name: Notify incident
     needs: [checks, build, staging, production]
     if: failure() && github.ref == 'refs/heads/main'
+
+    # #206 regression: a called workflow cannot hold a permission the caller did
+    # not grant, so `notify-failure.yml`'s `issues: write` used to make every
+    # caller startup-fail. Granted here, on the two jobs that actually write
+    # issues -- the deploy and cron jobs keep `contents: read` and never see it.
+    permissions:
+      contents: read
+      issues: write
     uses: $/.github/workflows/notify-failure.yml
     with:
       title: "incident: release failing on main"
@@ -417,6 +425,14 @@ jobs:
     name: Close incident
     needs: [checks, build, staging, production]
     if: success() && github.ref == 'refs/heads/main'
+
+    # #206 regression: a called workflow cannot hold a permission the caller did
+    # not grant, so `notify-failure.yml`'s `issues: write` used to make every
+    # caller startup-fail. Granted here, on the two jobs that actually write
+    # issues -- the deploy and cron jobs keep `contents: read` and never see it.
+    permissions:
+      contents: read
+      issues: write
     uses: $/.github/workflows/notify-failure.yml
     with:
       title: "incident: release failing on main"
