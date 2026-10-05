@@ -5,7 +5,8 @@
 # production, where a failure triggers the release pipeline's rollback.
 #
 # Usage: scripts/smoke.sh <base-url>
-#   e.g. scripts/smoke.sh https://fix-foo.nessebar-lens.pages.dev
+#   e.g. scripts/smoke.sh https://staging.nessebarlens.com
+#   or a PR preview's version URL, which has no stable alias
 #
 # Against the apex domain the caller must also pass SMOKE_ALLOW_PRODUCTION=1.
 # The smoke reads only, so it is safe there, but "never pointed at prod by
@@ -27,7 +28,7 @@ if [[ "$BASE" == "https://nessebarlens.com" && "${SMOKE_ALLOW_PRODUCTION:-}" != 
   exit 1
 fi
 
-# Pages can be cold and freshly-synced secrets take a moment to propagate, so
+# A cold Worker and freshly-attached secrets both take a moment to serve, so
 # each check retries for ~60s before it is called a failure.
 ATTEMPTS="${SMOKE_ATTEMPTS:-10}"
 SLEEP="${SMOKE_SLEEP:-6}"

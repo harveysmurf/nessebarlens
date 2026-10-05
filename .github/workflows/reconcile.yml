@@ -30,7 +30,7 @@ concurrency:
 jobs:
   reconcile:
     name: Reconcile
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 10
     # production Environment holds SITE_URL + RECONCILE_SECRET (same pattern
     # as release.yml). A repository-level secret would also work; match prod.
