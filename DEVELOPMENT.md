@@ -335,6 +335,12 @@ the upload step now fails with that named as the cause rather than a generic
 unreviewed `pull_request` code with the staging Cloudflare token, so it must not be
 the thing that mutates Worker settings.
 
+Version previews for `nessebar-lens-staging` were enabled 2026-10-05 (as the
+unblock for #224), so a preview upload now prints a `Version Preview URL` and
+`preview.yml` proceeds past the "no preview URL" branch. If a preview reds with
+"wrangler printed no Version Preview URL" again, re-check this setting first —
+it is an account state, not code.
+
 A preview is a **Worker Version**, addressed by id: `preview.yml` resolves the id
 from the tag it just set (`wrangler versions list --json`) and both the smoke test
 and the PR comment use `https://<version-id>.<subdomain>.workers.dev`. There is no

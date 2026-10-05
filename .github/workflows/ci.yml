@@ -177,7 +177,15 @@ jobs:
   # instead of it quietly disappearing from coverage.
   e2e-hosted-checkout:
     name: E2E hosted checkout (best effort)
-    if: github.event_name == 'pull_request'
+    # #224: Dependabot-triggered runs are given no Actions or Environment
+    # secrets, so `secrets.STRIPE_SECRET_KEY` and friends resolve empty on
+    # every `dependabot[bot]` push and the two `Require a ... key` guards below
+    # fail. Skip the job rather than failing it: the guard's whole point is to
+    # turn a missing key into a visible red, and a Dependabot run has no key by
+    # design, not by accident. `github.actor`, not `github.triggering_actor`: a
+    # human re-run of a Dependabot run still has no secrets, and the actor stays
+    # `dependabot[bot]` for it, so the job is correctly skipped there too.
+    if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
     continue-on-error: true
     # The sandbox Stripe and Prodigi keys are staging Environment secrets, not
     # repository ones. Without this line `secrets.*` resolves to the repository

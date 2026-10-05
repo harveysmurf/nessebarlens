@@ -540,3 +540,51 @@ test("the shared masters binding is documented as full access, not read-only", (
     "the comment must say an R2 binding is full read+write+delete, since that is the risk a future reader has to weigh",
   );
 });
+
+/**
+ * Issue #224: Dependabot-triggered runs receive no Actions or Environment
+ * secrets, so any job that reads `secrets.*` on a pull_request trigger fails on
+ * every `dependabot[bot]` push — the secret resolves empty, the guard step (or
+ * the build) reds, and the failure is indistinguishable from a real regression.
+ * The fix is a `github.actor != 'dependabot[bot]'` guard on the job's `if:`,
+ * which makes a Dependabot run skip instead of fail. This test pins that guard
+ * so a new secret-reading job on a pull_request trigger cannot reintroduce the
+ * red by omission.
+ *
+ * Scoped to pull_request triggers. release.yml, reconcile.yml and
+ * verify-stripe.yml run on push/schedule/workflow_dispatch, where the actor is
+ * the deploy pipeline or a human and Dependabot never fires them, so a guard
+ * there would be dead code and is deliberately not required.
+ */
+test("every secret-reading job on a pull_request trigger skips Dependabot runs", () => {
+  const pullRequestSecretJobs = workflows.flatMap(({ name, text }) => {
+    const header = text.slice(0, text.search(/^jobs:[ \t]*$/m));
+    if (!/^ {2}pull_request:/m.test(header)) return [];
+    const jobsText = text.slice(text.search(/^jobs:[ \t]*$/m));
+    return jobsText
+      .split(/\n {2}(?=[a-z][\w-]*:\n)/)
+      .slice(1)
+      .filter((block) => /secrets\.[A-Z0-9_]+/.test(block))
+      .map((block) => {
+        const job = block.match(/^([a-z][\w-]*):\n/)?.[1] ?? "?";
+        return { workflow: name, job, block };
+      });
+  });
+
+  // A reader that silently stopped matching would make the assertion below
+  // vacuously true, which is how a check like this dies unnoticed. Floor
+  // rather than exact count, because the job set legitimately changes.
+  assert.ok(
+    pullRequestSecretJobs.length >= 3,
+    `expected at least 3 secret-reading jobs on pull_request workflows, found ${pullRequestSecretJobs.length}: ${pullRequestSecretJobs.map((j) => `${j.workflow}/${j.job}`).join(", ")}`,
+  );
+
+  const unguarded = pullRequestSecretJobs
+    .filter(({ block }) => !/github\.actor\s*!=\s*'dependabot\[bot\]'/.test(block))
+    .map(({ workflow, job }) => `${workflow}/${job}`);
+  assert.deepEqual(
+    unguarded,
+    [],
+    `these jobs read secrets on a pull_request trigger but do not skip Dependabot runs with \`github.actor != 'dependabot[bot]'\`:\n${unguarded.join("\n")}`,
+  );
+});
