@@ -921,6 +921,16 @@ tags.
 Security updates are on by default in v2 and are not disabled anywhere. Do not
 trade them for a tidier cadence.
 
+**One exception, and it is a manual bump: `setup-node` in
+`.github/actions/setup/action.yml`.** Dependabot's `github-actions` ecosystem
+reads `.github/workflows/` and nothing else, so the composite action is outside
+its directory. This was measured, not assumed: its first run (#217 updated
+checkout, upload-artifact, download-artifact and github-script across all six
+workflows and left that file untouched), and no config value changes it. It is
+the one pin in this repo no bot maintains, so it is named in
+`tests/dependabot-config.test.mts` — which fails if a second action ever lands
+somewhere else Dependabot cannot see.
+
 `tests/dependabot-config.test.mts` pins the shape, not just the existence:
 deleting the file, splitting a group, or adding an `ignore` list all produce no
 CI failure otherwise, because a missing bot produces no failures.
