@@ -298,10 +298,42 @@ SITE_URL=https://staging.nessebarlens.com npx opennextjs-cloudflare build
 SYNC_SCOPE=version-only SECRETS_OUT=preview-secrets.json \
   bash scripts/sync-worker-secrets.sh preview
 npx opennextjs-cloudflare upload \
+  --env staging \
   --secrets-file=preview-secrets.json \
   --tag="pr-<number>-<branch>" --message="preview PR #<number>"
 rm -f preview-secrets.json
 ```
+
+**`--env staging` is not optional (#202).** Without it the upload targets the
+top-level Worker, `nessebar-lens` — the production one — and the version
+inherits its bindings: `ORDERS_DB` = `nessebar-lens-orders` and `MASTERS` = the
+real masters bucket. A preview runs unreviewed PR code, so a sandbox purchase
+made on one wrote to the production orders table next to real ones (the
+`cs_test_` rows the 2026-10-04 audit turned up). With it, a preview is a version
+of `nessebar-lens-staging` and binds `nessebar-lens-orders-staging`. The same
+applies to the cleanup job's `wrangler versions list`/`delete`, which must name
+the environment the upload used or they query production, match nothing, and
+report success.
+
+The upload step asserts the reported preview URL is a
+`<8-char-id>-nessebar-lens-staging.<sub>.workers.dev` hostname and fails
+otherwise. `--env staging` in the source is the flag; the hostname is the
+*observable* — a green upload proves a version exists, not which worker it
+belongs to.
+
+**One account setting this depends on: version previews must be enabled for
+`nessebar-lens-staging`.** wrangler only prints `Version Preview URL` when the
+worker's subdomain settings have `previews_enabled` (`result.metadata.has_preview`
+→ `subdomain.previews_enabled` in its publish output), and a version with no
+preview URL is unreachable by URL — the upload lands a version nothing can call.
+Staging was created with a `custom_domain` route and has never had previews on, so
+the upload step now fails with that named as the cause rather than a generic
+"no version id / preview URL". Enable it once (Dashboard → Workers →
+`nessebar-lens-staging` → Settings → Version Previews, or
+`POST /accounts/<id>/workers/scripts/nessebar-lens-staging/subdomain` with
+`previews_enabled`). It is deliberately not done from `preview.yml`: that job runs
+unreviewed `pull_request` code with the staging Cloudflare token, so it must not be
+the thing that mutates Worker settings.
 
 A preview is a **Worker Version**, addressed by id: `preview.yml` resolves the id
 from the tag it just set (`wrangler versions list --json`) and both the smoke test
@@ -323,9 +355,11 @@ deployed site.
 
 Staging is a **second Worker**, `nessebar-lens-staging`, at
 `https://staging.nessebarlens.com`, with its own D1 (`nessebar-lens-orders-staging`).
-It is distinct from a preview: a preview is a per-PR *version* of the production
-Worker and shares its D1; staging shares no mutable state with production, so a
-purchase can be rehearsed end to end against sandbox Stripe and Prodigi. It is
+It is distinct from a preview: staging is the Worker that *serves* traffic at
+`staging.nessebarlens.com`, while a preview is a per-PR version **of the staging
+Worker** that is never deployed (`upload`, not `deploy`). Both therefore share
+staging's D1, and neither reaches production state — so a purchase can be
+rehearsed end to end against sandbox Stripe and Prodigi. It is
 declared as `[env.staging]` in `wrangler.toml` (bindings are not inherited by a
 wrangler environment, so `ORDERS_DB`, `WEB` and `MASTERS` are redeclared there;
 the two R2 buckets are the production ones because the code only reads them).
@@ -434,9 +468,12 @@ other way, describing a version the deploy then replaces.
 `--secrets-file` has no window at all, and it is the same mechanism previews use,
 so there is one thing to reason about rather than two.
 
-Production and preview both target the **same Worker**, `nessebar-lens`, and are
-separated by version rather than by project. Apex `nessebarlens.com` / `www`
-CNAME to the Worker (see the cutover checklist below).
+Production targets the **production Worker**, `nessebar-lens` — the top-level
+bindings in `wrangler.toml`. A preview targets the **staging Worker**,
+`nessebar-lens-staging`, as a version of it (#202); before that it was a version
+of production and carried production's data bindings. Apex
+`nessebarlens.com` / `www` CNAME to the production Worker (see the cutover
+checklist below).
 
 ### Rotating a secret (no rebuild)
 
@@ -743,7 +780,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
 | `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a `workflow-audit` job (**install zizmor** → **gate on workflow script injection**, scoped to `template-injection` at Medium confidence and up — the other 40 findings are reported, not gated); plus two pull-request-only browser jobs — **required** `e2e-smoke` (no secrets: `npm ci` → **install chromium** → **e2e smoke flow (seeded)**: `npm run test:e2e -- --grep-invert @hosted` → **upload the failure trace** on failure) and **best-effort** `e2e-hosted-checkout` (`continue-on-error`; staging Environment → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **e2e hosted checkout** (`npm run test:e2e -- --grep @hosted`, headed under Xvfb) → **upload the trace** every run) |
-| `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → **Worker Version upload** (secrets attached via `--secrets-file`) → **smoke test** the version URL (`scripts/smoke.sh`) → PR comment; `versions delete` on close |
+| `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → **Worker Version upload `--env staging`** (a version of `nessebar-lens-staging`, so `ORDERS_DB` is the staging D1 and unreviewed PR code cannot write production orders — #202; the step asserts the reported URL is a `…-nessebar-lens-staging.…` hostname) with secrets attached via `--secrets-file` → **smoke test** the version URL (`scripts/smoke.sh`) → PR comment; `versions list`/`delete --env staging` on close |
 | `.github/workflows/release.yml` | push to `main` + `workflow_dispatch` | The whole production path, in order (`concurrency: release`, never cancelled). `checks` (`ci.yml`) → `build` (matrix over `staging`/`production`, one artifact each — `NEXT_PUBLIC_*` and `metadataBase` bake the origin into the prerendered HTML, so one shared artifact would put nessebarlens.com's canonicals on staging; each leg gets `environment: ${{ matrix.env }}` and its own `NEXT_PUBLIC_*`) → `staging`: staging Environment → verify artifact (`artifact-manifest.sh` + `assert-artifact-origin.sh`) → **D1 migrations (`--env staging`)** → `opennextjs-cloudflare deploy --env staging --secrets-file` (the `staging` target of `sync-worker-secrets.sh`: `sk_test_` enforced, Resend key / Prodigi token / print HMAC required) → **smoke test** `https://staging.nessebarlens.com` → `production` (`needs: staging`): production Environment → verify artifact → record the current `100%` version id → **D1 migrations (`--remote`)** → `opennextjs-cloudflare deploy --secrets-file` (guards run first in `version-only` mode) → **smoke test** `https://nessebarlens.com` → on failure `wrangler versions deploy <previous>@100 -y` and fail the job. `notify`/`resolve` from #199 on `main` |
 | `.github/workflows/reconcile.yml` | `workflow_dispatch` only | production Environment → `POST /api/internal/reconcile` with `x-reconcile-secret`. The `*/15` schedule moved to a Cloudflare Cron Trigger (#201) because GitHub delivered about 11 of 168 expected runs in 42 h. Kept as the one-shot path and as the fallback for one release — **delete it once the Cron Trigger has a green week's worth of ticks in the dashboard** |
 | `.github/workflows/verify-stripe.yml` | cron `37 6 * * 1-5` | staging Environment → guard that the key is `sk_test_` → `scripts/verify-stripe-integration.mjs` (disputes/refunds against test mode) |
