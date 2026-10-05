@@ -1,13 +1,20 @@
 name: Reconcile orders
 
-# Invokes POST /api/internal/reconcile every 15 minutes. workflow_dispatch is
-# not a convenience: it is how an operator forces a run after rotating a
-# Prodigi key (or after any other deploy-time fix that should drain the
-# paid-unfulfilled backlog without waiting for the next tick).
+# Operator-only since #201: the schedule is now a Cloudflare Cron Trigger
+# ([triggers] crons in wrangler.toml, driven by worker.ts's `scheduled`). GitHub
+# asked for every 15 minutes and actually delivered about 11 runs in 42 hours --
+# scheduled workflows are best-effort and get delayed or dropped, worst on a
+# low-activity repo. Keep this file as the one-shot path, and as the fallback
+# for one release while the Cron Trigger is proven in the logs; delete it in the
+# follow-up #201 asks for.
+#
+# workflow_dispatch is not a convenience: it is how an operator forces a drain
+# after rotating a Prodigi key, or right now, and it is also what a Cloudflare
+# Cron Trigger failure would fall back to. The `concurrency` group below is what
+# stops a dispatch overlapping the Worker cron: the route dedupes per order via
+# D1 claims, so overlap is safe, just wasteful of Stripe quota.
 
 on:
-  schedule:
-    - cron: "*/15 * * * *"
   workflow_dispatch:
 
 permissions:
