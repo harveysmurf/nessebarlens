@@ -9,11 +9,9 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import { d1OrdersStore, listOrdersQuery } from "../src/lib/orders-d1.ts";
 import { clampOrderListLimit } from "../src/lib/orders-store.ts";
-import { fakeD1, type FakeD1Row } from "./fake-d1.mts";
+import { sqliteD1 } from "./sqlite-d1.mts";
 import type { OrderRecord } from "../src/lib/order-decision.ts";
 import type { DownloadTokenIndex, DownloadTokenRecord } from "../src/lib/download-token.ts";
-
-type Row = FakeD1Row;
 
 const BASE_ORDER: OrderRecord = {
   v: 1,
@@ -42,7 +40,7 @@ const BASE_ORDER: OrderRecord = {
 };
 
 test("getOrder returns null when missing and the raw JSON when present", async () => {
-  const db = fakeD1();
+  const db = sqliteD1();
   const store = d1OrdersStore(db as never);
   assert.equal(await store.getOrder("cs_test_abcdefgh"), null);
   await store.putOrder(BASE_ORDER);
@@ -52,7 +50,7 @@ test("getOrder returns null when missing and the raw JSON when present", async (
 });
 
 test("transitionOrder is true only when attempts still match", async () => {
-  const db = fakeD1();
+  const db = sqliteD1();
   const store = d1OrdersStore(db as never);
   await store.putOrder(BASE_ORDER);
   const ok = await store.transitionOrder({
@@ -82,21 +80,41 @@ test("listOrdersQuery is parameterised and clamps the limit", () => {
 });
 
 test("listOrders skips corrupt JSON rows", async () => {
-  const orders = new Map<string, Row>([
-    ["cs_test_abcdefgh", { record: "not-json" }],
-    [
-      "cs_test_goodrecord00000001",
-      { record: JSON.stringify({ ...BASE_ORDER, sessionId: "cs_test_goodrecord00000001", merchantReference: "cs_test_goodrecord00000001" }) },
-    ],
-  ]);
-  const store = d1OrdersStore(fakeD1({ orders }) as never);
+  const db = sqliteD1();
+  // A `record` column that is not JSON is what a partial write or a bad
+  // migration leaves behind. With the real schema the corrupt row has to be
+  // inserted directly — putOrder would parse and reject it — so this is the
+  // one place a raw INSERT is the point.
+  db.prepare(
+    `INSERT INTO orders (
+       session_id, record, status, terminal, reason,
+       attempts, updated_at, created_at
+     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+  )
+    .bind(
+      "cs_test_badjson00000000001",
+      "not-json",
+      "paid",
+      1,
+      null,
+      1,
+      "2026-10-02T00:00:00.000Z",
+      "2026-10-02T00:00:00.000Z",
+    )
+    .run();
+  const store = d1OrdersStore(db as never);
+  await store.putOrder({
+    ...BASE_ORDER,
+    sessionId: "cs_test_goodrecord00000001",
+    merchantReference: "cs_test_goodrecord00000001",
+  });
   const listed = await store.listOrders({});
   assert.equal(listed.length, 1);
   assert.equal(listed[0]!.sessionId, "cs_test_goodrecord00000001");
 });
 
 test("putDownloadToken uses batch; find and get round-trip", async () => {
-  const db = fakeD1();
+  const db = sqliteD1();
   const store = d1OrdersStore(db as never);
   const record: DownloadTokenRecord = {
     v: 1,
@@ -111,7 +129,7 @@ test("putDownloadToken uses batch; find and get round-trip", async () => {
 });
 
 test("spendDownloadToken classifies missing, expired, exhausted, and spent", async () => {
-  const db = fakeD1();
+  const db = sqliteD1();
   const store = d1OrdersStore(db as never);
   const nowMs = Date.UTC(2026, 9, 2);
 
@@ -137,8 +155,8 @@ test("spendDownloadToken classifies missing, expired, exhausted, and spent", asy
     remaining: 0,
   };
   await store.putDownloadToken(exhausted, { ...exhausted, token: "d".repeat(32) });
-  // Force downloads column to 0 after put (put sets from remaining).
-  db.tokens.get("d".repeat(32))!.downloads = 0;
+  // putDownloadToken writes `downloads` from `remaining`, which is 0 here, so
+  // the row is already exhausted in the real table.
   assert.deepEqual(await store.spendDownloadToken("d".repeat(32), nowMs), {
     kind: "exhausted",
   });
@@ -159,7 +177,7 @@ test("a spend whose RETURNING row will not parse rebuilds the record from the co
   // The UPDATE is the atomic counter, so its own columns are authoritative even
   // when the JSON column is unreadable — a corrupted record must not turn a
   // legitimate download into a 500.
-  const db = fakeD1();
+  const db = sqliteD1();
   const store = d1OrdersStore(db as never);
   const nowMs = Date.UTC(2026, 9, 2);
   const live: DownloadTokenRecord = {
@@ -184,7 +202,7 @@ test("a spend that changes no rows but still looks live is exhausted, not a cras
   // The race the fallback exists for: another spend took the last download
   // between our UPDATE and our SELECT. The customer must get the same 410 a
   // fully spent token gets, so the store answers "exhausted".
-  const db = fakeD1();
+  const db = sqliteD1();
   const store = d1OrdersStore(db as never);
   const nowMs = Date.UTC(2026, 9, 2);
   const live: DownloadTokenRecord = {
@@ -213,7 +231,7 @@ test("a non-terminal order stores terminal 0, and a blank createdAt falls back",
   // both columns have to be written for the state they are meant to describe —
   // including for a record whose createdAt is still blank, which is what a
   // store's first write of a pre-`createdAt` order looks like.
-  const db = fakeD1();
+  const db = sqliteD1();
   const store = d1OrdersStore(db as never);
   const blank: OrderRecord = {
     ...BASE_ORDER,
@@ -225,9 +243,12 @@ test("a non-terminal order stores terminal 0, and a blank createdAt falls back",
     createdAt: "",
   };
   await store.putOrder(blank);
-  const row = db.orders.get(blank.sessionId)!;
-  assert.equal(row.terminal, 0);
-  assert.equal(row.created_at, BASE_ORDER.updatedAt);
+  const afterPut = db.query<{ terminal: number; created_at: string }>(
+    "SELECT terminal, created_at FROM orders WHERE session_id = ?",
+    blank.sessionId,
+  )[0]!;
+  assert.equal(afterPut.terminal, 0);
+  assert.equal(afterPut.created_at, BASE_ORDER.updatedAt);
 
   const ok = await store.transitionOrder({
     sessionId: blank.sessionId,
@@ -235,12 +256,16 @@ test("a non-terminal order stores terminal 0, and a blank createdAt falls back",
     record: { ...blank, reason: "prodigi-client" },
   });
   assert.equal(ok, true);
-  assert.equal(db.orders.get(blank.sessionId)!.terminal, 0);
-  assert.equal(db.orders.get(blank.sessionId)!.created_at, BASE_ORDER.updatedAt);
+  const afterTransition = db.query<{ terminal: number; created_at: string }>(
+    "SELECT terminal, created_at FROM orders WHERE session_id = ?",
+    blank.sessionId,
+  )[0]!;
+  assert.equal(afterTransition.terminal, 0);
+  assert.equal(afterTransition.created_at, BASE_ORDER.updatedAt);
 });
 
 test("a token and an index that are not in the database read as absent", async () => {
-  const store = d1OrdersStore(fakeD1() as never);
+  const store = d1OrdersStore(sqliteD1() as never);
   assert.equal(await store.getDownloadToken("a".repeat(32)), null);
   assert.equal(await store.findDownloadToken("cs_test_abcdefgh"), null);
 });
