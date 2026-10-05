@@ -335,6 +335,12 @@ the upload step now fails with that named as the cause rather than a generic
 unreviewed `pull_request` code with the staging Cloudflare token, so it must not be
 the thing that mutates Worker settings.
 
+Version previews for `nessebar-lens-staging` were enabled 2026-10-05 (as the
+unblock for #224), so a preview upload now prints a `Version Preview URL` and
+`preview.yml` proceeds past the "no preview URL" branch. If a preview reds with
+"wrangler printed no Version Preview URL" again, re-check this setting first —
+it is an account state, not code.
+
 A preview is a **Worker Version**, addressed by id: `preview.yml` resolves the id
 from the tag it just set (`wrangler versions list --json`) and both the smoke test
 and the PR comment use `https://<version-id>.<subdomain>.workers.dev`. There is no
@@ -920,6 +926,16 @@ tags.
 
 Security updates are on by default in v2 and are not disabled anywhere. Do not
 trade them for a tidier cadence.
+
+**One exception, and it is a manual bump: `setup-node` in
+`.github/actions/setup/action.yml`.** Dependabot's `github-actions` ecosystem
+reads `.github/workflows/` and nothing else, so the composite action is outside
+its directory. This was measured, not assumed: its first run (#217 updated
+checkout, upload-artifact, download-artifact and github-script across all six
+workflows and left that file untouched), and no config value changes it. It is
+the one pin in this repo no bot maintains, so it is named in
+`tests/dependabot-config.test.mts` — which fails if a second action ever lands
+somewhere else Dependabot cannot see.
 
 `tests/dependabot-config.test.mts` pins the shape, not just the existence:
 deleting the file, splitting a group, or adding an `ignore` list all produce no

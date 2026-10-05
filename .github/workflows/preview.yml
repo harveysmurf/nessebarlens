@@ -23,7 +23,15 @@ concurrency:
 jobs:
   deploy:
     name: Deploy staging preview
-    if: github.event.action != 'closed'
+    # #224: a Dependabot run gets no staging Environment secrets, so this job
+    # would build against empty Cloudflare/Stripe/Prodigi keys and red. Skip it
+    # rather than run it with no credentials: dependency-bump code should not
+    # reach a deploy gate before review, and a preview built with empty secrets
+    # is a red with no diagnostic value. `github.actor` (not
+    # `github.triggering_actor`) so a human re-run of a Dependabot run, which
+    # still has no secrets, is also skipped. To preview a Dependabot branch,
+    # push to it once as a human.
+    if: github.event.action != 'closed' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 25
     environment: staging
@@ -266,7 +274,12 @@ jobs:
 
   cleanup:
     name: Cleanup preview
-    if: github.event.action == 'closed'
+    # #224: Dependabot closes superseded PRs itself, and the closed event fires
+    # with `github.actor == 'dependabot[bot]'`, which has no staging secrets —
+    # so `versions list` would query Cloudflare unauthenticated and fail on a
+    # PR that never uploaded a version anyway. Skip it: there is nothing to
+    # clean up for a Dependabot branch, whose `deploy` job was skipped above.
+    if: github.event.action == 'closed' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     environment: staging

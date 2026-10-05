@@ -108,6 +108,34 @@ test("actions are updated as one group, and only ever as SHA pins", () => {
   );
 });
 
+test("the one action Dependabot cannot see is named, so it is bumped by hand", () => {
+  // Measured, not assumed: Dependabot's github-actions ecosystem scans
+  // `.github/workflows/`, and its first run after this config merged (#217)
+  // updated checkout, upload-artifact, download-artifact and github-script
+  // across all six workflows while leaving `.github/actions/setup/action.yml`
+  // untouched. There is no config that fixes this — the composite action is
+  // outside the directory the ecosystem reads.
+  //
+  // So `setup-node` is the one pin in this repository that no bot maintains,
+  // and the honest thing is to say which one it is. Read from the composite
+  // action rather than hard-coded, so this fails if a second action ever lands
+  // in a directory Dependabot ignores: the claim is "exactly one blind spot",
+  // and it stops being true the moment there are two.
+  const setupAction = fs.readFileSync(
+    path.join(root, ".github", "actions", "setup", "action.yml"),
+    "utf8",
+  );
+  const pinned = [...setupAction.matchAll(/uses:[ \t]*([\w.-]+\/[\w.-]+)@[0-9a-f]{40}/g)].map(
+    (match) => match[1],
+  );
+
+  assert.deepEqual(
+    [...new Set(pinned)],
+    ["actions/setup-node"],
+    `.github/actions/setup/action.yml is invisible to Dependabot, so every action pinned in it is a manual bump. This now names ${[...new Set(pinned)].join(", ")} — update the comment below, and check whether Dependabot has gained support for composite actions.`,
+  );
+});
+
 test("npm dependencies are grouped by what has to move together", () => {
   const block = updateFor("npm");
 
