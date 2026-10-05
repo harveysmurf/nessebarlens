@@ -194,17 +194,27 @@ test("the hosted job sets the skip reason and names the gate that causes it", ()
  * pin the boundaries: opt-in per invocation, no dev server in that mode, and
  * the specs that only make sense against local seeds kept out of it.
  */
-test("no workflow sets E2E_BASE_URL, so CI cannot drift onto a deployed host", () => {
+test("no workflow points E2E_BASE_URL at a deployed host", () => {
+  // #143 ruled out a CI job driving a *deployed* host: every red run would have
+  // two possible causes, the PR and the deployment. #204's `e2e-worker` job
+  // needs the one legitimate exception — the same harness pointed at a Worker
+  // built and started in the job — so the invariant is now the origin, not the
+  // variable. Localhost only, and an empty result is still valid.
   const workflows = fs
     .readdirSync(path.join(root, ".github", "workflows"))
     .filter((f) => f.endsWith(".yml"))
     .map((f) => fs.readFileSync(path.join(root, ".github", "workflows", f), "utf8"))
     .join("\n");
-  assert.doesNotMatch(
-    workflows,
-    /E2E_BASE_URL/,
-    "a CI job driving a deployed host reintroduces the two-causes red run #143 ruled out",
+  const values = [...workflows.matchAll(/E2E_BASE_URL["']?\s*[:=]\s*["']?([^\s"']+)/g)].map(
+    (match) => match[1],
   );
+  for (const value of values) {
+    assert.match(
+      value,
+      /^https?:\/\/localhost(:\d+)?$/,
+      `a CI job may point the harness at the local Worker build, never a deployed host: ${value}`,
+    );
+  }
 });
 
 test("a remote run starts no dev server, and the seeded states stay off it", () => {
