@@ -410,3 +410,30 @@ test("the preview's own D1 is staging's, which is what makes the isolation real"
   );
   assert.match(envStaging, /database_name = "nessebar-lens-orders-staging"/);
 });
+
+test("a version with no preview URL names the setting that has to change", () => {
+  // #202's rollout blocker, found by running it: nessebar-lens-staging has
+  // version previews disabled, so wrangler uploads the version and prints no
+  // `Version Preview URL` line at all. A single "no version id / preview URL"
+  // error for both cases reads like a wrangler output change and sends the next
+  // person looking for a parser bug instead of a Worker setting.
+  const preview = workflows.find(({ name }) => name === "preview.yml")!.text;
+  assert.match(
+    preview,
+    /if \[\[ -n "\$vid" && -z "\$url" \]\]; then/,
+    "preview.yml must have a branch for 'uploaded a version but got no preview URL' — it is a different failure from 'upload printed nothing', with a different cause",
+  );
+  assert.match(
+    preview,
+    /but wrangler printed no Version Preview URL -- version previews are disabled for that Worker/,
+    "that branch must name version previews as the cause, so the next person reads a setting name instead of hunting a wrangler parsing bug",
+  );
+  // And the fix must stay out of the job: this runs on unreviewed PR code with
+  // the staging Cloudflare token, so it must not be the thing that mutates
+  // Worker settings.
+  assert.doesNotMatch(
+    preview,
+    /curl[^\n]*\/subdomain|npx wrangler[^\n]*subdomain/,
+    "preview.yml must not write Worker subdomain settings — this job runs unreviewed pull_request code with the staging Cloudflare token. The endpoint may appear in an error message; a call may not",
+  );
+});

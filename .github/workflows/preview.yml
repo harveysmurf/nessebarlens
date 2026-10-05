@@ -156,6 +156,18 @@ jobs:
           echo "$upload_out"
           vid="$(printf '%s' "$upload_out" | sed -n 's/^Worker Version ID: //p' | head -n 1)"
           url="$(printf '%s' "$upload_out" | sed -n 's/^Version Preview URL: //p' | head -n 1)"
+          # A version id but no preview URL is a distinct failure, not an empty
+          # one, and it has a distinct cause. wrangler prints the URL only when
+          # the worker's subdomain settings have previews enabled
+          # (`result.metadata.has_preview`, then `subdomain.previews_enabled`,
+          # in wrangler's publish output). nessebar-lens-staging was created with
+          # a custom_domain route and has never had version previews turned on,
+          # so the upload lands a version that is not reachable by URL at all --
+          # and the generic message below reads like a wrangler parsing change.
+          if [[ -n "$vid" && -z "$url" ]]; then
+            echo "::error::uploaded version $vid of nessebar-lens-staging but wrangler printed no Version Preview URL -- version previews are disabled for that Worker. Enable them for nessebar-lens-staging (Dashboard > Workers > nessebar-lens-staging > Settings > Version Previews, or POST /accounts/<id>/workers/scripts/nessebar-lens-staging/subdomain with previews_enabled). This is a one-time account setting, deliberately not done from this job: it runs on unreviewed pull_request code."
+            exit 1
+          fi
           if [[ -z "$vid" || -z "$url" ]]; then
             echo "::error::upload did not report a version id / preview URL; cannot smoke this build"
             exit 1

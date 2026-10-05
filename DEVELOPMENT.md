@@ -321,6 +321,20 @@ otherwise. `--env staging` in the source is the flag; the hostname is the
 *observable* — a green upload proves a version exists, not which worker it
 belongs to.
 
+**One account setting this depends on: version previews must be enabled for
+`nessebar-lens-staging`.** wrangler only prints `Version Preview URL` when the
+worker's subdomain settings have `previews_enabled` (`result.metadata.has_preview`
+→ `subdomain.previews_enabled` in its publish output), and a version with no
+preview URL is unreachable by URL — the upload lands a version nothing can call.
+Staging was created with a `custom_domain` route and has never had previews on, so
+the upload step now fails with that named as the cause rather than a generic
+"no version id / preview URL". Enable it once (Dashboard → Workers →
+`nessebar-lens-staging` → Settings → Version Previews, or
+`POST /accounts/<id>/workers/scripts/nessebar-lens-staging/subdomain` with
+`previews_enabled`). It is deliberately not done from `preview.yml`: that job runs
+unreviewed `pull_request` code with the staging Cloudflare token, so it must not be
+the thing that mutates Worker settings.
+
 A preview is a **Worker Version**, addressed by id: `preview.yml` resolves the id
 from the tag it just set (`wrangler versions list --json`) and both the smoke test
 and the PR comment use `https://<version-id>.<subdomain>.workers.dev`. There is no
