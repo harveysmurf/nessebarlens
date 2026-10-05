@@ -234,4 +234,47 @@ test("only the notify workflow's job may write issues, and it says so", () => {
       `${name} grants issues: write at the workflow level — the notify workflow declares its own`,
     );
   }
+
+  // The other half of the same rule, and the one #206 got wrong: a called
+  // workflow cannot hold a permission the CALLER did not grant. Declaring
+  // `issues: write` here while every caller tops out at `contents: read` made
+  // GitHub reject notify-failure.yml at startup, so all four callers died with
+  // `startup_failure` and zero jobs — no log, no annotation, and the whole
+  // release pipeline looked broken for an unrelated reason.
+  //
+  // This assertion is about the *callers*, which is why it did not exist: the
+  // suite was green while production deploys were startup-failing on main.
+  // Three callers, not four: #200 merged staging.yml and prod.yml into
+  // release.yml. Asserted as a floor so a workflow silently dropping the call
+  // is a failure rather than a smaller number quietly passing.
+  const callers = workflows.filter((w) =>
+    /^ {4}uses:[ \t]*\$\/\.github\/workflows\/notify-failure\.yml[ \t]*$/m.test(w.text),
+  );
+  assert.ok(
+    callers.length >= 3,
+    `expected at least 3 workflows to call notify-failure.yml, found ${callers.length}: ${workflows
+      .map((w) => w.name)
+      .join(", ")}`,
+  );
+
+  for (const { name, text } of callers) {
+    for (const job of ["notify", "resolve"]) {
+      const block = text.match(
+        new RegExp(`^ {2}${job}:\\n((?:(?: {4}|\\t).*\\n|\\n)*)`, "m"),
+      );
+      assert.ok(block, `${name} calls notify-failure.yml but has no ${job} job`);
+      assert.match(
+        block[1],
+        /^ {4}permissions:\n {6}contents: read\n {6}issues: write$/m,
+        `${name}'s ${job} job calls notify-failure.yml, which writes issues, but the job does not grant issues: write. A called workflow cannot hold a permission its caller did not grant, so notify-failure.yml is rejected at startup and this workflow fails with startup_failure and zero jobs.`,
+      );
+      // Job-scoped, not workflow-scoped: the deploy and cron jobs in these same
+      // files must not gain the ability to edit the tracker.
+      assert.doesNotMatch(
+        text.slice(0, text.search(/^ {2}\w[\w-]*:\n/m) + 1),
+        /^ {2}issues: write$/m,
+        `${name} grants issues: write at the workflow level instead of on ${job}`,
+      );
+    }
+  }
 });

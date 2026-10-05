@@ -50,6 +50,16 @@ on:
 # Least privilege at the workflow level is `contents: read`; the one job that
 # writes raises `issues: write` for itself (see below). Callers cannot widen
 # what this needs beyond declaring it here.
+#
+# #206 regression, fixed in #208: a called workflow cannot hold a permission its
+# caller did not grant. Every caller here tops out at `contents: read`, so this
+# file declaring `issues: write` on its job made GitHub reject the *whole file*
+# at startup — `startup_failure`, zero jobs, no log to read. That silently broke
+# all four callers that use it (release, reconcile, verify-stripe) and it looked
+# like the deploy pipeline was broken. The callers now declare `issues: write` on
+# their own `notify`/`resolve` jobs, which is also where it belongs: the
+# permission is scoped to the two jobs that write issues and is never in reach of
+# the jobs holding Cloudflare or Stripe credentials.
 permissions:
   contents: read
 
