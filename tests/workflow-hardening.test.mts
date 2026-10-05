@@ -278,3 +278,135 @@ test("only the notify workflow's job may write issues, and it says so", () => {
     }
   }
 });
+
+/**
+ * Issue #202: `preview.yml` uploaded with no `--env`, so every PR preview was a
+ * *version of the production Worker* and inherited its bindings —
+ * `ORDERS_DB` = `nessebar-lens-orders`, `MASTERS` = the real masters bucket.
+ * A preview runs unreviewed PR code, so a sandbox purchase on one wrote to the
+ * production orders table.
+ *
+ * This is asserted per *invocation*, not per file, because the flag is the
+ * thing that regresses and a file-level grep cannot say which job regressed or
+ * whether the exemption is the production leg or something else entirely.
+ */
+const uploadOrVersions =
+  /(?:npx\s+)?(?:opennextjs-cloudflare\s+(?:upload|deploy)|wrangler\s+versions\s+(?:list|delete|deploy))/g;
+
+/** Each command invocation with its `\` continuations folded into one string. */
+const invocations = (script: string): string[] => {
+  const lines = script.split("\n");
+  const found: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const first = lines[i];
+    if (!uploadOrVersions.test(first)) {
+      // `g` is stateful across .test() calls; reset before reusing.
+      uploadOrVersions.lastIndex = 0;
+      continue;
+    }
+    uploadOrVersions.lastIndex = 0;
+    let command = first.trim();
+    while (command.endsWith("\\") && i + 1 < lines.length) {
+      i += 1;
+      command = `${command} ${lines[i].trim()}`;
+    }
+    found.push(command);
+  }
+  return found;
+};
+
+/** `{ job, command }` for every upload/deploy/versions call in every workflow. */
+const allDeployInvocations = workflows.flatMap(({ name, text }) => {
+  const jobsText = text.slice(text.search(/^jobs:[ \t]*$/m));
+  if (!jobsText) return [];
+  return jobsText
+    .split(/\n {2}(?=[a-z][\w-]*:\n)/)
+    .slice(1)
+    .flatMap((block) => {
+      const job = block.match(/^([a-z][\w-]*):\n/)?.[1] ?? "?";
+      return invocations(block).map((command) => ({
+        workflow: name,
+        job,
+        command,
+      }));
+    });
+});
+
+test("every upload/deploy/versions call is read out of a known job, not missed by the reader", () => {
+  // A reader that silently stopped matching would make every assertion below
+  // vacuously true, which is how a check like this dies unnoticed.
+  const summary = allDeployInvocations.map(
+    ({ workflow, job, command }) => `${workflow}/${job}: ${command.split(/\s+/).slice(0, 3).join(" ")}`,
+  );
+  assert.ok(
+    summary.length >= 5,
+    `found ${summary.length} deploy invocations, expected at least 5:\n${summary.join("\n")}`,
+  );
+  assert.ok(
+    summary.some((s) => s.startsWith("preview.yml/deploy:")),
+    "preview.yml's upload step is no longer visible to the reader — the #202 assertions cannot fail if they do not see it",
+  );
+});
+
+test("only release.yml's production leg may omit --env staging", () => {
+  // `release.yml`'s production job is the one legitimate omission: the
+  // top-level bindings in wrangler.toml ARE production, and `--env staging`
+  // there would deploy the wrong tree. Everything else — preview uploads, the
+  // cleanup list/delete, the staging deploy, any future workflow — must name
+  // the environment, because an unnamed environment is production.
+  const unnamed = allDeployInvocations
+    .filter(({ command }) => !/--env[= ]+staging/.test(command))
+    .map(({ workflow, job }) => `${workflow}/${job}`);
+
+  // Exactly the production job: the deploy itself and the rollback it performs
+  // on a failed smoke. Both are production, by definition — the rollback
+  // restores the version production was serving.
+  assert.deepEqual(
+    [...new Set(unnamed)].sort(),
+    ["release.yml/production"],
+    `these wrangler calls omit --env staging: ${JSON.stringify(unnamed)}. Every call outside release.yml's production leg must pass it — an upload with no --env targets the top-level Worker, so a PR preview inherits production's D1 and R2 bindings and unreviewed code can write to production orders`,
+  );
+});
+
+test("a preview's version URL is asserted to be a staging version, not read off the source", () => {
+  // `--env staging` in the upload is necessary but not sufficient evidence: a
+  // green upload proves a version exists, not which worker it belongs to. The
+  // hostname is the observable — `x-nessebar-lens-staging.<sub>.workers.dev` vs
+  // `x-nessebar-lens.<sub>.workers.dev` — so the step checks it and fails.
+  const preview = workflows.find(({ name }) => name === "preview.yml")!;
+  const deploy = allDeployInvocations.filter(
+    ({ workflow, job }) => workflow === "preview.yml" && job === "deploy",
+  );
+  assert.equal(deploy.length, 1, `expected one upload in preview.yml/deploy, got ${deploy.length}`);
+
+  const block = preview.text.slice(preview.text.search(/^jobs:[ \t]*$/m));
+  assert.match(
+    block,
+    /case "\$url" in\n\s+\*-nessebar-lens-staging\.\*\) ;;/,
+    "preview.yml must assert the reported preview URL belongs to nessebar-lens-staging — that assertion is what turns a lost --env into a red job instead of a production-bound preview",
+  );
+  assert.match(
+    block,
+    /::error::preview URL \$url is not a nessebar-lens-staging version URL/,
+    "the assertion must name the failure it catches",
+  );
+});
+
+test("the preview's own D1 is staging's, which is what makes the isolation real", () => {
+  // Half a rule again: `--env staging` on every call is only worth anything if
+  // [env.staging] actually points somewhere other than production. If someone
+  // edits wrangler.toml to reuse the production database id, every CI check
+  // still passes and previews write to production again.
+  const toml = fs.readFileSync(path.join(root, "wrangler.toml"), "utf8");
+  const envStaging = toml.slice(toml.search(/^\[env\.staging\]\s*$/m));
+  const prodDbId = toml.match(/^database_id = "([^"]+)"$/m)?.[1];
+  const stagingDbId = envStaging.match(/^database_id = "([^"]+)"$/m)?.[1];
+
+  assert.ok(prodDbId && stagingDbId, "could not read both database ids from wrangler.toml");
+  assert.notEqual(
+    stagingDbId,
+    prodDbId,
+    "[env.staging] binds the PRODUCTION database id — a preview uploaded with --env staging would still write to nessebar-lens-orders",
+  );
+  assert.match(envStaging, /database_name = "nessebar-lens-orders-staging"/);
+});
