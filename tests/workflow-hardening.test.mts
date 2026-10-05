@@ -196,6 +196,18 @@ test("every workflow that deploys or runs on a schedule notifies on failure", ()
       notifyJobs.some((block) => /^ {4}if:[ \t]*failure\(\)/m.test(block)),
       `${name} has no if: failure() guard, so the notify job runs on every successful deploy and comments on its own incident`,
     );
+
+    // The incident signal is about main. Every one of these workflows is
+    // dispatchable on a branch, and a green branch run reaching `resolve` would
+    // close a live main incident with a "recovered" comment — a false negative
+    // on exactly the thing this pair of jobs exists to raise.
+    for (const block of notifyJobs) {
+      assert.match(
+        block,
+        /^ {4}if:[ \t]*(failure|success)\(\)[ \t]*&&[ \t]*github\.ref ==[ \t]*'refs\/heads\/main'[ \t]*$/m,
+        `${name} has a notify-failure job without the refs/heads/main guard — a dispatch on another branch would close a live incident`,
+      );
+    }
   }
 });
 
