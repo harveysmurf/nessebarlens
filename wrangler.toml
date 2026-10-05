@@ -56,11 +56,22 @@ database_name = "nessebar-lens-orders-staging"
 database_id = "81efdc1d-087f-4b2c-981a-5902a4508fc6"
 migrations_dir = "migrations"
 
-# Both buckets are the PRODUCTION buckets, deliberately: the code only READS
-# them (MastersBucket is `get()` alone, and nothing reads env.WEB at all), so
-# staging needs the real photos to render and to sign print assets, and shares
-# no mutable state with production through them. If anything ever writes to
-# either bucket, give staging its own pair before that lands.
+# Both buckets are the PRODUCTION buckets, deliberately accepted for now (#202
+# item 4, option a) so staging and PR previews render real photos and can sign
+# print assets from real masters. Toll is near-zero only while these buckets are
+# empty.
+#
+# "The code only reads them" is NOT an enforced control. R2 bindings have no
+# read-only mode: an R2Bucket is full read+write+delete, and MastersBucket being
+# `get()`-only is a TypeScript type the Worker runtime does not enforce. A
+# preview runs unreviewed pull_request code, so it holds full access to
+# production masters plus a print-asset signing capability. Code review of that
+# code is the only thing standing between a PR and production masters.
+#
+# Before any real customer photos or a campaign land here, staging needs its own
+# `nessebar-lens-masters-staging`, seeded from production masters so the
+# full-purchase rehearsal stays visually representative. Placeholder-only
+# staging is not an option: it breaks the rehearsal this environment exists for.
 [[env.staging.r2_buckets]]
 binding = "WEB"
 bucket_name = "nessebar-lens-web"

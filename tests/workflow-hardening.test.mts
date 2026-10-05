@@ -437,3 +437,35 @@ test("a version with no preview URL names the setting that has to change", () =>
     "preview.yml must not write Worker subdomain settings — this job runs unreviewed pull_request code with the staging Cloudflare token. The endpoint may appear in an error message; a call may not",
   );
 });
+
+test("the shared masters binding is documented as full access, not read-only", () => {
+  // #202 item 4, decided option (a): staging and previews keep the production
+  // masters bucket so the full-purchase rehearsal renders real photos and signs
+  // real print assets. That decision is only safe to leave in a comment that
+  // states its actual toll. An earlier comment here claimed the code "only
+  // READS" the bucket — an R2 binding has no read-only mode, so a preview holds
+  // read+write+delete on production masters plus print-asset signing, and the
+  // only control is review of unreviewed PR code. A reassuring comment about an
+  // invariant previews exist to break is worse than no comment.
+  const toml = fs.readFileSync(path.join(root, "wrangler.toml"), "utf8");
+  const envStaging = toml.slice(toml.search(/^\[env\.staging\]\s*$/m));
+  // The whole [env.staging] tail — the shared-bucket comment sits above the
+  // MASTERS binding, after d1_databases, not directly under the section head.
+  const comment = envStaging;
+
+  assert.match(
+    envStaging,
+    /bucket_name = "nessebar-lens-masters"/,
+    "[env.staging] must keep the production masters bucket — option (a), per Simo 2026-10-05. If this now names a -staging bucket, the seeding step is required too or every miss renders the committed placeholder and signs print assets from placeholders",
+  );
+  assert.doesNotMatch(
+    comment,
+    /only READS? them\b(?![^#]*NOT)/i,
+    "the staging comment must not claim the code only reads the shared buckets — that is a TypeScript type, not an enforced control",
+  );
+  assert.match(
+    comment,
+    /no\s*\n?(?:#\s*)?read-only mode/,
+    "the comment must say an R2 binding is full read+write+delete, since that is the risk a future reader has to weigh",
+  );
+});
