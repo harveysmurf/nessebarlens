@@ -87,3 +87,26 @@ jobs:
 
       - name: Smoke test staging
         run: bash scripts/smoke.sh https://staging.nessebarlens.com
+
+  # #199: staging deploys on every push to main, so it fails on main as often
+  # as production does — and it is where a broken deploy is found first, before
+  # prod runs. `needs` covers the deploy job as a whole, so a smoke-test failure
+  # pages too, which is the failure mode that matters least to notice by hand.
+  notify:
+    name: Notify incident
+    needs: deploy
+    if: failure() && github.ref == 'refs/heads/main'
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: Staging deploy failing on main"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  resolve:
+    name: Close incident
+    needs: deploy
+    if: success() && github.ref == 'refs/heads/main'
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: Staging deploy failing on main"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      close: true

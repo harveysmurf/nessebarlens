@@ -31,7 +31,10 @@ const reusableWorkflowRef = String.raw`uses:\s*"?'?${sameRepo("workflows/")}`;
  * a heuristic, so the exemption is a reviewable decision rather than something
  * a new file can acquire by accident.
  */
-const noRepoCode: readonly string[] = ["reconcile.yml"];
+// notify-failure.yml joins it for #199: its one step is `gh` and `jq` against
+// the API, with no repo file on disk to read — checking out and running
+// `npm ci` to then call gh would be minutes of CI for nothing.
+const noRepoCode: readonly string[] = ["reconcile.yml", "notify-failure.yml"];
 
 const workflows = fs
   .readdirSync(workflowDir)

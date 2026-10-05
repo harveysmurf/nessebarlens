@@ -136,3 +136,31 @@ jobs:
             --tag="prod-$COMMIT_SHA" \
             --message="$SAFE_MESSAGE"
           rm -f prod-secrets.json
+
+  # #199: a red run on main notifies nobody on its own, so production broke ten
+  # times in a day before anyone ran `gh run list` by hand. Both jobs are
+  # gated on `main` because a deploy failure on a feature branch is the PR
+  # author's problem and is already visible there.
+  #
+  # `needs` lists every job, so `failure()` means "something in this workflow
+  # failed" rather than "the deploy step failed": a failing `checks` job must
+  # page too — that was run 37215131514, where the flaky coverage floor left
+  # production a commit behind while the merged PR looked shipped.
+  notify:
+    name: Notify incident
+    needs: [checks, deploy]
+    if: failure() && github.ref == 'refs/heads/main'
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: Production deploy failing on main"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  resolve:
+    name: Close incident
+    needs: [checks, deploy]
+    if: success() && github.ref == 'refs/heads/main'
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: Production deploy failing on main"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      close: true

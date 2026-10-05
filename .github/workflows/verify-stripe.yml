@@ -65,3 +65,25 @@ jobs:
 
       - name: Verify Stripe integration
         run: node scripts/verify-stripe-integration.mjs
+
+  # #199: a weekday cron that fails silently is a Stripe-side change that goes
+  # unnoticed for days. Scheduled runs are on main by definition, so the ref
+  # guard the push-triggered workflows need is not repeated here.
+  notify:
+    name: Notify incident
+    needs: verify
+    if: failure()
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: Stripe verification failing on main"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  resolve:
+    name: Close incident
+    needs: verify
+    if: success()
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: Stripe verification failing on main"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      close: true

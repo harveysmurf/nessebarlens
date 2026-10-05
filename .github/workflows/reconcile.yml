@@ -54,3 +54,26 @@ jobs:
             -H "x-reconcile-secret: ${RECONCILE_SECRET}" \
             -H "content-type: application/json" \
             "${base}/api/internal/reconcile"
+
+  # #199: six consecutive cron failures (a missing RECONCILE_SECRET, fixed in
+  # #191) were invisible for a day, during which a paid order that missed its
+  # webhook would never have been recovered. `workflow_dispatch` runs are on
+  # main too, so an operator-triggered failure pages the same way.
+  notify:
+    name: Notify incident
+    needs: reconcile
+    if: failure() && github.ref == 'refs/heads/main'
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: Reconcile cron failing on main"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  resolve:
+    name: Close incident
+    needs: reconcile
+    if: success() && github.ref == 'refs/heads/main'
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: Reconcile cron failing on main"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      close: true
