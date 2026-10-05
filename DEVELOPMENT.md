@@ -248,6 +248,16 @@ set, and that module refuses to run under `NODE_ENV=production`, so fabricated
 orders can never reach a deployed build. The webhook's own round trip is a
 separate handler-level concern and is not covered here — see §10.
 
+`next.config.ts` initialises those dev bindings **only when
+`NODE_ENV=development`** (#227): `next build` evaluates the same config in every
+prerender worker, and an unguarded `initOpenNextCloudflareForDev` makes each of
+them boot a local Workers runtime on the shared `.wrangler/state` SQLite file —
+the `SQLITE_BUSY` that failed `Build (production)` and blocked deploys. In CI
+the dev bindings are also `persist: false`, so the more-than-one `next dev`
+process cannot race on that file either; the smoke flow reads only the in-memory
+seed, so nothing needs to survive. `tests/no-workerd-in-build.test.mts` pins
+both.
+
 To see a seeded state by hand:
 
 ```bash
