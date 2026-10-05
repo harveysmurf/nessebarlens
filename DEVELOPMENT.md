@@ -490,10 +490,16 @@ a host serving a reverted build is a support incident, not a deploy.
   `migrations_dir = "migrations"`. The `database_id` is committed; the database
   exists and `migrations/` is applied. Re-create only if the account is reset —
   see the D1 subsection below.
-- Do **not** add `[triggers] crons`. OpenNext's generated
-  `.open-next/worker.js` exports only `default { fetch }` plus the DO classes,
-  so a cron trigger would be silently ignored. The reconciler is a Next route
-  invoked by GitHub Actions (`.github/workflows/reconcile.yml`).
+- `main = "worker.ts"`, **not** `.open-next/worker.js`. OpenNext's generated
+  entry exports only `default { fetch }` plus the DO classes, so a cron trigger
+  declared against it validates and then never fires. `worker.ts` re-exports the
+  DO classes, delegates `fetch`, and adds `scheduled()`.
+- `[triggers] crons` and `[env.staging.triggers] crons` are both declared, and
+  both are required: wrangler does not inherit top-level keys into `[env.*]`,
+  so a staging deploy without its own block is green and never reconciles.
+  `NEXT_PUBLIC_SITE_URL` is set as a **var** in each env for the same reason --
+  `worker.ts`'s `scheduled()` needs the origin at runtime and the build-time
+  inlined constant is not readable from the Worker env.
 - `preview_id` on a KV binding is a **KV namespace** preview id (`wrangler dev`),
   not a Pages preview-deployment concept. `scripts/remove-orders-kv.mjs` read and
   deleted both ids from the (now removed) `ORDERS` block.
@@ -703,19 +709,30 @@ happened.
 ### Reconciler
 
 `POST /api/internal/reconcile`, guarded by `x-reconcile-secret` /
-`RECONCILE_SECRET`. Triggered every 15 minutes by
-`.github/workflows/reconcile.yml`, and on demand via `workflow_dispatch`
-(force a run after rotating a Prodigi key). It retries paid-unfulfilled
-non-terminal orders through the same `fulfillCheckoutSession` the webhook
-uses, recovers paid Stripe sessions with no stored order, and logs
+`RECONCILE_SECRET`. Triggered every 15 minutes by a **Cloudflare Cron Trigger**
+(`[triggers] crons` in `wrangler.toml` → `worker.ts`'s `scheduled()`, which
+builds the POST and calls the Worker's own `fetch` in-process — same path, same
+header, one auth check), and on demand via `reconcile.yml`'s
+`workflow_dispatch` (force a run after rotating a Prodigi key). It retries
+paid-unfulfilled non-terminal orders through the same `fulfillCheckoutSession`
+the webhook uses, recovers paid Stripe sessions with no stored order, and logs
 `order.stuck` for #100.
 
-GitHub Actions scheduled workflows are best-effort AND auto-disable after
-60 days of repository inactivity, so for a print site that can sit quiet in
-maintenance mode "the reconciler silently stopped" is a real latent risk.
-The failure mode is a later run, not lost money, so this is acceptable now.
-The upgrade path is a separate Cloudflare-Cron worker, or a trigger-shim
-worker that only calls the route.
+GitHub's `schedule:` cannot carry this job: GitHub scheduled workflows are
+best-effort and auto-disable after 60 days of repository inactivity, and
+`reconcile.yml` asking for `*/15` actually delivered about 11 runs in 42 hours
+(#201) — the real bound on recovery from a lost webhook was hours. A Cron
+Trigger is delivered by the platform running the code, so the bound cannot be
+dropped that way.
+
+Two consequences worth knowing before you change anything here:
+
+- **`RECONCILE_SECRET` is required for staging, not only production.** The cron
+  runs in both envs, and the route answers 503 without the secret — a warning
+  would deploy a reconciler that fails every tick.
+- **A tick needs an origin.** `scheduled()` has no request to take a host from,
+  so it reads `NEXT_PUBLIC_SITE_URL` from the Worker env and falls back to a
+  deliberately fake `.invalid` host. The request never leaves the process.
 
 ---
 
@@ -728,7 +745,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 | `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a `workflow-audit` job (**install zizmor** → **gate on workflow script injection**, scoped to `template-injection` at Medium confidence and up — the other 40 findings are reported, not gated); plus two pull-request-only browser jobs — **required** `e2e-smoke` (no secrets: `npm ci` → **install chromium** → **e2e smoke flow (seeded)**: `npm run test:e2e -- --grep-invert @hosted` → **upload the failure trace** on failure) and **best-effort** `e2e-hosted-checkout` (`continue-on-error`; staging Environment → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **e2e hosted checkout** (`npm run test:e2e -- --grep @hosted`, headed under Xvfb) → **upload the trace** every run) |
 | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → **Worker Version upload** (secrets attached via `--secrets-file`) → **smoke test** the version URL (`scripts/smoke.sh`) → PR comment; `versions delete` on close |
 | `.github/workflows/release.yml` | push to `main` + `workflow_dispatch` | The whole production path, in order (`concurrency: release`, never cancelled). `checks` (`ci.yml`) → `build` (matrix over `staging`/`production`, one artifact each — `NEXT_PUBLIC_*` and `metadataBase` bake the origin into the prerendered HTML, so one shared artifact would put nessebarlens.com's canonicals on staging; each leg gets `environment: ${{ matrix.env }}` and its own `NEXT_PUBLIC_*`) → `staging`: staging Environment → verify artifact (`artifact-manifest.sh` + `assert-artifact-origin.sh`) → **D1 migrations (`--env staging`)** → `opennextjs-cloudflare deploy --env staging --secrets-file` (the `staging` target of `sync-worker-secrets.sh`: `sk_test_` enforced, Resend key / Prodigi token / print HMAC required) → **smoke test** `https://staging.nessebarlens.com` → `production` (`needs: staging`): production Environment → verify artifact → record the current `100%` version id → **D1 migrations (`--remote`)** → `opennextjs-cloudflare deploy --secrets-file` (guards run first in `version-only` mode) → **smoke test** `https://nessebarlens.com` → on failure `wrangler versions deploy <previous>@100 -y` and fail the job. `notify`/`resolve` from #199 on `main` |
-| `.github/workflows/reconcile.yml` | cron `*/15 * * * *` + `workflow_dispatch` | production Environment → `POST /api/internal/reconcile` with `x-reconcile-secret` |
+| `.github/workflows/reconcile.yml` | `workflow_dispatch` only | production Environment → `POST /api/internal/reconcile` with `x-reconcile-secret`. The `*/15` schedule moved to a Cloudflare Cron Trigger (#201) because GitHub delivered about 11 of 168 expected runs in 42 h. Kept as the one-shot path and as the fallback for one release — **delete it once the Cron Trigger has a green week's worth of ticks in the dashboard** |
 | `.github/workflows/verify-stripe.yml` | cron `37 6 * * 1-5` | staging Environment → guard that the key is `sk_test_` → `scripts/verify-stripe-integration.mjs` (disputes/refunds against test mode) |
 | `.github/workflows/notify-failure.yml` | `workflow_call` only | The incident signal (#199). Not run directly — every workflow below calls it. Opens (or comments on) one `incident`-labelled issue per failing workflow, and closes it on the next green run. |
 

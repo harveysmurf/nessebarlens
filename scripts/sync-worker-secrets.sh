@@ -168,21 +168,25 @@ fi
 # before calling, and the route guards it in the Worker env before answering --
 # but nothing shipped it, so every 15-minute tick got 503 reconcile-unconfigured
 # and the cron had been red since the Workers migration.
+#
+# Strict in staging too since #201: the Cloudflare Cron Trigger calls this route
+# from inside the Worker, so a staging deploy without the secret would deploy a
+# reconciler that fails every tick and log nothing on a path nothing tests.
 RECONCILE="${RECONCILE_SECRET:-}"
 RECONCILE="${RECONCILE#"${RECONCILE%%[![:space:]]*}"}"
 RECONCILE="${RECONCILE%"${RECONCILE##*[![:space:]]}"}"
 if [[ -z "$RECONCILE" ]]; then
-  if [[ "$TARGET" == "production" ]]; then
-    echo "production requires RECONCILE_SECRET" >&2
-    echo "without it /api/internal/reconcile answers 503 and reconcile.yml fails every tick" >&2
+  if [[ "$STRICT" == "1" ]]; then
+    echo "$TARGET requires RECONCILE_SECRET" >&2
+    echo "without it /api/internal/reconcile answers 503 and every cron tick fails" >&2
     exit 1
   fi
   echo "warning: RECONCILE_SECRET unset — /api/internal/reconcile will 503 on this preview" >&2
 elif [[ ${#RECONCILE} -lt 32 ]]; then
   # Same bar as the other two: a token short enough to guess is worse than none,
   # because it looks configured.
-  if [[ "$TARGET" == "production" ]]; then
-    echo "production requires RECONCILE_SECRET with at least 32 characters (got ${#RECONCILE})" >&2
+  if [[ "$STRICT" == "1" ]]; then
+    echo "$TARGET requires RECONCILE_SECRET with at least 32 characters (got ${#RECONCILE})" >&2
     exit 1
   fi
   echo "warning: RECONCILE_SECRET under 32 characters — weak bearer on this preview" >&2
