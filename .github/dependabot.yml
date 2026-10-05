@@ -61,6 +61,27 @@ updates:
           - "@opennextjs/cloudflare"
           - stripe
 
+    # #221: the dev-tooling catch-all bumped four dependencies across breaking
+    # majors in a single PR — typescript 5→7, eslint 9→10, eslint-config-next
+    # 15→16, @types/node 24→26 — and the tree broke. TypeScript 7 removes the
+    # `ts.findConfigFile` API that next 15.5's config transpiler calls, and
+    # `eslint-config-next` is versioned in lockstep with `next` so it must not
+    # run ahead of it. Hold each at its current major until the framework group
+    # moves Next to 16 and the toolchain catches up.
+    #
+    # These are version *floors*, not blanket ignores: `versions: [">=6"]` still
+    # lets a 5.x security patch through, which is what keeps this from being the
+    # "ignore a vulnerable package" failure mode the test below bans.
+    ignore:
+      - dependency-name: "typescript"
+        versions: [">=6"]
+      - dependency-name: "eslint"
+        versions: [">=10"]
+      - dependency-name: "eslint-config-next"
+        versions: [">=16"]
+      - dependency-name: "@types/node"
+        versions: [">=25"]
+
 # Security updates are on by default in v2 and are not turned off anywhere here
 # -- they are the half of this file that must not be traded away for a tidier
 # weekly cadence. tests/dependabot-config.test.mts pins the shape above.
