@@ -51,7 +51,7 @@ on:
 # writes raises `issues: write` for itself (see below). Callers cannot widen
 # what this needs beyond declaring it here.
 #
-# #206 regression, fixed in #208: a called workflow cannot hold a permission its
+# #206 regression, fixed in #209: a called workflow cannot hold a permission its
 # caller did not grant. Every caller here tops out at `contents: read`, so this
 # file declaring `issues: write` on its job made GitHub reject the *whole file*
 # at startup — `startup_failure`, zero jobs, no log to read. That silently broke
