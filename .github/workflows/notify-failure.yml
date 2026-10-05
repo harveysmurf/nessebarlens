@@ -1,0 +1,107 @@
+name: Notify failure
+
+# One reusable job for "this main-branch workflow is broken, tell a human".
+#
+# #199: production and the reconcile cron both failed repeatedly and nobody
+# found out, because a red run on `main` notifies nobody unless somebody runs
+# `gh run list` by hand. The signal this replaces was someone remembering to
+# look.
+#
+# Shape: one stable issue per workflow, so repeated failures stack on one
+# thread instead of spamming a new issue every 15 minutes (reconcile) or every
+# merge (prod). The title is the identity — `notify` finds an OPEN issue whose
+# title matches exactly and comments on it, otherwise it opens one. A later
+# green run calls the same workflow with `close: true`, which comments and
+# closes, so the issue list is a live board rather than a wall of stale red.
+#
+# Two properties keep this cheap and safe:
+#
+#   * no new secrets. `github.token` is enough, and it is scoped to this job
+#     alone — the calling workflows keep `contents: read` at the top level, so
+#     nothing that deploys can write to the issue tracker.
+#   * every interpolated value crosses into the shell through `env:`. The
+#     title and the run URL are the only two inputs, and both are workflow
+#     authors' text rather than user text, but the zizmor gate
+#     (scripts/zizmor-gate.mjs) fails on `${{ }}` inside a `run:` block at
+#     Medium confidence or above, so `env:` is mandatory here, not stylistic.
+
+on:
+  workflow_call:
+    inputs:
+      title:
+        description: >-
+          Stable incident title for this workflow, e.g.
+          "incident: Production deploy failing on main". Doubles as the
+          identity that stacks repeated failures onto one issue.
+        required: true
+        type: string
+      run_url:
+        description: URL of the run that triggered this call.
+        required: true
+        type: string
+      close:
+        description: >-
+          Set true on a green run: close the open incident issue with a comment
+          linking the green run instead of opening or updating one.
+        required: false
+        default: false
+        type: boolean
+
+# Least privilege at the workflow level is `contents: read`; the one job that
+# writes raises `issues: write` for itself (see below). Callers cannot widen
+# what this needs beyond declaring it here.
+permissions:
+  contents: read
+
+jobs:
+  notify:
+    name: Notify
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      issues: write
+    steps:
+      - name: Open, update or close the incident issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          INCIDENT_TITLE: ${{ inputs.title }}
+          RUN_URL: ${{ inputs.run_url }}
+          CLOSE: ${{ inputs.close }}
+        run: |
+          set -euo pipefail
+
+          # An exact title match, not a search hit count: `gh issue list
+          # --search "prod in:title"` also matches the staging and the
+          # reconcile incident, so a substring match would stack all three
+          # workflows onto whichever issue happened to sort first.
+          existing="$(gh issue list --state open --label incident --limit 100 \
+            --json number,title \
+            | jq -r --arg t "$INCIDENT_TITLE" 'map(select(.title == $t)) | .[0].number // empty')"
+
+          if [ "$CLOSE" = "true" ]; then
+            if [ -z "$existing" ]; then
+              echo "No open incident titled '$INCIDENT_TITLE' — nothing to close."
+              exit 0
+            fi
+            recovered="$(printf 'Recovered — this run is green, so the incident is closed.\n\nRun: %s\n' "$RUN_URL")"
+            gh issue comment "$existing" --body "$recovered"
+            gh issue close "$existing"
+            echo "Closed incident #$existing."
+            exit 0
+          fi
+
+          if [ -n "$existing" ]; then
+            gh issue comment "$existing" --body "Still failing on main: $RUN_URL"
+            echo "Commented on incident #$existing."
+            exit 0
+          fi
+
+          # printf into a variable rather than a multi-line --body literal: a
+          # backslash-continued double-quoted string inside a YAML block scalar
+          # is easy to break by re-indenting the workflow, and a broken body is
+          # an incident issue with no run link in it.
+          body="$(printf 'This workflow failed on main.\n\nRun: %s\n\nRepeated failures comment here. A green run closes the issue.\n' "$RUN_URL")"
+          gh issue create --title "$INCIDENT_TITLE" --label incident --body "$body"
+          echo "Opened incident."

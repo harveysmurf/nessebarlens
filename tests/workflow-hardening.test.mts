@@ -144,3 +144,94 @@ test("a job that writes to the GitHub API declares the permission to do it", () 
     }
   }
 });
+
+/**
+ * #199: production failed ten times in a day and the reconcile cron six times
+ * without telling anyone, because a red run on `main` is silent. The fix is a
+ * reusable notify workflow called from a final job of every workflow that can
+ * break main by itself — which is the set this test now pins.
+ *
+ * "Deploys or runs on a schedule" is read from the workflow text rather than a
+ * hand-maintained list, because a list is exactly what stops matching: the next
+ * deploy workflow would be added to `.github/workflows/` and not to the list,
+ * and the failure mode being guarded against is a workflow nobody reads.
+ */
+const deploysOrScheduled = workflows.filter(({ name, text }) =>
+  // notify-failure.yml is the mechanism itself, and preview.yml deploys on
+  // pull_request where the PR is the notification.
+  name !== "notify-failure.yml" &&
+  name !== "preview.yml" &&
+  (/\n {2}deploy:/m.test(text) || /^ {2}schedule:\s*$/m.test(text)),
+);
+
+test("every workflow that deploys or runs on a schedule notifies on failure", () => {
+  assert.ok(
+    deploysOrScheduled.length >= 2,
+    "no deploy or scheduled workflow matched — the detection went stale",
+  );
+
+  for (const { name, text } of deploysOrScheduled) {
+    // Same job-block split the permission test above uses: a job key starts at
+    // two spaces and a new one starts at the next such line.
+    const jobsText = text.slice(text.search(/^jobs:[ \t]*$/m));
+    const notifyJobs = jobsText
+      .split(/\n {2}(?=[a-z][\w-]*:\n)/)
+      .slice(1)
+      .filter((block) =>
+        /uses:[ \t]*\$\/\.github\/workflows\/notify-failure\.yml/.test(block),
+      );
+
+    assert.ok(
+      notifyJobs.length > 0,
+      `${name} deploys or runs on a schedule but has no job calling .github/workflows/notify-failure.yml — a red run on main would notify nobody`,
+    );
+
+    // Opening the incident is not enough: without the closing job the tracker
+    // fills with open incidents that nobody can tell are live.
+    assert.ok(
+      notifyJobs.some((block) => /close:[ \t]*true/.test(block)),
+      `${name} opens an incident but never closes it — pass close: true from a success() job`,
+    );
+    assert.ok(
+      notifyJobs.some((block) => /^ {4}if:[ \t]*failure\(\)/m.test(block)),
+      `${name} has no if: failure() guard, so the notify job runs on every successful deploy and comments on its own incident`,
+    );
+
+    // The incident signal is about main. Every one of these workflows is
+    // dispatchable on a branch, and a green branch run reaching `resolve` would
+    // close a live main incident with a "recovered" comment — a false negative
+    // on exactly the thing this pair of jobs exists to raise.
+    for (const block of notifyJobs) {
+      assert.match(
+        block,
+        /^ {4}if:[ \t]*(failure|success)\(\)[ \t]*&&[ \t]*github\.ref ==[ \t]*'refs\/heads\/main'[ \t]*$/m,
+        `${name} has a notify-failure job without the refs/heads/main guard — a dispatch on another branch would close a live incident`,
+      );
+    }
+  }
+});
+
+test("only the notify workflow's job may write issues, and it says so", () => {
+  // The calling workflows hold deploy credentials; widening their top-level
+  // default to `issues: write` to save a declaration on the notify job would
+  // hand every one of them the ability to edit the tracker. The scope has to
+  // stay on the job that uses it.
+  const notify = workflows.find(({ name }) => name === "notify-failure.yml");
+  assert.ok(notify, "notify-failure.yml is missing — nothing can notify");
+
+  assert.match(notify.text, /^ {6}issues:[ \t]*write[ \t]*$/m);
+  assert.match(
+    notify.text,
+    /^ {4}permissions:\n {6}contents: read\n {6}issues: write$/m,
+    "notify-failure.yml must raise issues: write on the notify job only, over a contents: read default",
+  );
+
+  for (const { name, text } of workflows) {
+    if (name === "notify-failure.yml") continue;
+    assert.doesNotMatch(
+      text,
+      /^ {2}issues:[ \t]*write[ \t]*$/m,
+      `${name} grants issues: write at the workflow level — the notify workflow declares its own`,
+    );
+  }
+});

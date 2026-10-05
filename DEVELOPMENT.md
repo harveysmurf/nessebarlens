@@ -683,6 +683,46 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → **Worker Version upload** (secrets attached via `--secrets-file`) → **smoke test** the version URL (`scripts/smoke.sh`) → PR comment; `versions delete` on close |
 | `.github/workflows/staging.yml` | push to `main` + `workflow_dispatch` | staging Environment → build → **D1 migrations (`--env staging`)** → `opennextjs-cloudflare deploy --env staging --secrets-file` (the `staging` target of `sync-worker-secrets.sh`: `sk_test_` enforced, Resend key / Prodigi token / print HMAC required) → **smoke test** `https://staging.nessebarlens.com` |
 | `.github/workflows/prod.yml` | push to `main` + `workflow_dispatch` | production Environment → checks (`ci.yml`) → build → `opennextjs-cloudflare deploy --secrets-file` (guards run first in `version-only` mode) |
+| `.github/workflows/reconcile.yml` | cron `*/15 * * * *` + `workflow_dispatch` | production Environment → `POST /api/internal/reconcile` with `x-reconcile-secret` |
+| `.github/workflows/verify-stripe.yml` | cron `37 6 * * 1-5` | staging Environment → guard that the key is `sk_test_` → `scripts/verify-stripe-integration.mjs` (disputes/refunds against test mode) |
+| `.github/workflows/notify-failure.yml` | `workflow_call` only | The incident signal (#199). Not run directly — every workflow below calls it. Opens (or comments on) one `incident`-labelled issue per failing workflow, and closes it on the next green run. |
+
+### Failure alerting (#199)
+
+A red run on `main` notifies nobody by itself, and that is how production failed
+ten times in a day and the reconcile cron six times without anyone noticing.
+Each of `staging.yml`, `prod.yml`, `reconcile.yml` and `verify-stripe.yml` ends
+with two jobs:
+
+```yaml
+notify:   { needs: [<every job>], if: failure() && github.ref == 'refs/heads/main', uses: $/.github/workflows/notify-failure.yml }
+resolve:  { needs: [<every job>], if: success() && github.ref == 'refs/heads/main', uses: $/.github/workflows/notify-failure.yml, with: { close: true } }
+```
+
+Both are needed. `notify` alone leaves a wall of open incidents that nobody can
+tell are live; `resolve` alone never opens one. `needs` lists *every* job in the
+workflow, so a red `checks` job pages as loudly as a red deploy — that was the
+flaky coverage floor that left production a commit behind while the merged PR
+looked shipped.
+
+The title is the identity. `notify-failure.yml` matches it **exactly** against
+open `incident` issues (`jq` over `gh issue list --json number,title`, not a
+`--search` substring — a substring match would stack all four workflows onto
+whichever issue sorted first). So repeated failures accumulate as comments on one
+issue, and the next green run comments and closes it. That is the whole reason
+there is no new secret: GitHub's own issue notifications reach the owner by
+email and mobile.
+
+`issues: write` is declared on the notify *job*, never at a caller's workflow
+level, so the workflows holding Cloudflare deploy credentials cannot write to
+the tracker. `tests/workflow-hardening.test.mts` fails if a workflow that deploys
+or runs on a schedule loses its notify/resolve pair, or if any other workflow
+gains `issues: write` at the top level. `preview.yml` is exempt: it runs on
+`pull_request`, where the PR is the notification, and its deploy target is a
+version URL that only the PR author is waiting on.
+
+Adding a new deploy or scheduled workflow means adding the two jobs. The test
+tells you.
 
 ### The workflow audit job
 

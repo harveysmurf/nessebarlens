@@ -65,3 +65,26 @@ jobs:
 
       - name: Verify Stripe integration
         run: node scripts/verify-stripe-integration.mjs
+
+  # #199: a weekday cron that fails silently is a Stripe-side change that goes
+  # unnoticed for days. The ref guard is needed despite that: `schedule` does run
+  # on main by definition, but `workflow_dispatch` above lets an operator fire
+  # this on any branch, and a green branch run must not close a live incident.
+  notify:
+    name: Notify incident
+    needs: verify
+    if: failure() && github.ref == 'refs/heads/main'
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: Stripe verification failing on main"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  resolve:
+    name: Close incident
+    needs: verify
+    if: success() && github.ref == 'refs/heads/main'
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: Stripe verification failing on main"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      close: true
