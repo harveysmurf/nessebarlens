@@ -69,19 +69,48 @@ test("every ecosystem is updated on a weekly schedule", () => {
 
 test("security updates are not turned off", () => {
   // `insecure-external-code-execution: deny` is the safe default and needs no
-  // spelling here. What must not appear is anything that stops a security update
-  // from arriving: an `ignore` list covering a vulnerable package, or an
-  // ecosystem-level `open-pull-requests-limit: 0`.
-  assert.doesNotMatch(
-    config,
-    /^[ \t]*ignore:/m,
-    "dependabot.yml carries an `ignore` list — a security update for an ignored package never arrives",
-  );
+  // spelling here. What must not appear is an ecosystem-level
+  // `open-pull-requests-limit: 0`, which stops every update including security
+  // ones from ever producing a PR. The `ignore` concern moved to the test below:
+  // a *version floor* ignore is allowed (it still lets the lower-major security
+  // patch through), only a blanket ignore is banned.
   for (const block of updateBlocks) {
     assert.doesNotMatch(
       block,
       /open-pull-requests-limit:[ \t]*0[ \t]*$/m,
       "an open-pull-requests-limit of 0 means no PR is ever opened, so no update is ever applied",
+    );
+  }
+});
+
+test("a held dependency is ignored by major, never by name", () => {
+  // #221: the dev-tooling catch-all bumped four dependencies across breaking
+  // majors in one PR -- typescript 5→7, eslint 9→10, eslint-config-next 15→16,
+  // @types/node 24→26 -- and the tree broke. The fix is a version *floor*: an
+  // `ignore` entry that constrains `versions: [">=N"]` still lets the lower-major
+  // security patches through, while an entry with no `versions` constraint (or
+  // `versions: ["*"]`) blocks every update for that package including the
+  // security ones -- which is exactly what the previous test used to forbid a
+  // whole `ignore` list to prevent.
+  const block = updateFor("npm");
+  const held = [...block.matchAll(/^[ \t]+-[ \t]+dependency-name:[ \t]*"([^"]+)"\n[ \t]+versions:[ \t]*\[([^\]]+)\]/gm)].map(
+    ([, name, versions]) => ({ name, versions: versions.trim() }),
+  );
+
+  // The held set is the four majors the pinned Next 15.5 toolchain cannot absorb
+  // yet. A package leaving this list, or a new one joining it, is a decision that
+  // needs a reason -- hence the exact match rather than a subset.
+  assert.deepEqual(
+    held.map(({ name }) => name).sort(),
+    ["@types/node", "eslint", "eslint-config-next", "typescript"],
+    "the held set changed — every ignore here is a documented breaking-major hold, and any new hold needs its reason recorded in dependabot.yml",
+  );
+
+  for (const { name, versions } of held) {
+    assert.match(
+      versions,
+      /^">=/,
+      `ignore for ${name} must be a version floor (">=N"), not a blanket block — a floor lets the lower-major security update through`,
     );
   }
 });
