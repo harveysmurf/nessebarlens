@@ -283,3 +283,102 @@ jobs:
           path: test-results/
           retention-days: 7
           if-no-files-found: ignore
+
+  # #204: run the built Worker, not `next dev`. Every other job here exercises
+  # Node and Next; the artifact we ship is `.open-next` in workerd with real
+  # bindings (`ORDERS_DB`, `MASTERS`, `ASSETS` with `run_worker_first`) and
+  # secrets delivered as bindings. Until this job, that runtime was first
+  # exercised by a deployed preview's smoke or by production itself — which is
+  # where #190 (NEXT_PUBLIC_SITE_URL never reached the Worker) and #188/#173 (a
+  # binding missing from the deploy) were found.
+  #
+  # Deliberately NOT pull_request-only like the two jobs above: this is the only
+  # gate that proves the artifact boots, so release.yml running it against the
+  # same tree is the point, not a redundant re-run (#200).
+  #
+  # No secrets and no `environment:`: `wrangler dev` local mode is Miniflare and
+  # the only credentials are the non-secret `.dev.vars` written below, so it runs
+  # on fork pull requests too.
+  e2e-worker:
+    name: E2E Worker runtime
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+        with:
+          persist-credentials: false
+
+      - uses: $/.github/actions/setup
+
+      # Next's compile cache only, keyed on the lockfile and `src/**`: a source or
+      # dependency change rebuilds, a docs-only change reuses it.
+      - name: Cache build
+        uses: actions/cache@5a3ec84eff668545956fd18022155c47e93e2684 # v4.2.3
+        with:
+          path: .next/cache
+          key: ${{ runner.os }}-next-${{ hashFiles('package-lock.json', 'src/**') }}
+          restore-keys: |
+            ${{ runner.os }}-next-
+
+      - name: Install Chromium
+        run: npx playwright install --with-deps chromium
+
+      # Everything the local Worker needs to boot, from non-secret test values.
+      # `wrangler d1`/`r2` and `preview` all default to the same `.wrangler/state`
+      # persistence, which is what makes the seeded master and the migrated schema
+      # the binding the Worker actually reads.
+      - name: Prepare the local Worker
+        run: |
+          cat > .dev.vars <<'EOF'
+          NEXT_PUBLIC_SITE_URL=http://localhost:8787
+          STRIPE_SECRET_KEY=sk_test_dummy
+          STRIPE_WEBHOOK_SECRET=whsec_dummy_e2e
+          PRINT_ASSET_HMAC_SECRET=0123456789abcdef0123456789abcdef
+          PRODIGI_WEBHOOK_TOKEN=e2e-prodigi-webhook-token
+          RECONCILE_SECRET=e2e-reconcile-secret
+          RESEND_API_KEY=re_e2e_dummy
+          EOF
+          npx wrangler d1 migrations apply nessebar-lens-orders --local
+          npx wrangler r2 object put nessebar-lens-masters/prints/dawn.jpg --local --file e2e/fixtures/worker-master.jpg
+
+      # The #190 acceptance: without NEXT_PUBLIC_SITE_URL the production build's
+      # guard (siteUrl()) throws here, before the Worker is ever started. It is a
+      # step `env:`, not a `.dev.vars` value, because `next build` reads
+      # process.env and never `.dev.vars`.
+      - name: Build the Worker
+        run: npx opennextjs-cloudflare build
+        env:
+          NEXT_PUBLIC_SITE_URL: http://localhost:8787
+
+      - name: Start the Worker
+        run: |
+          npx opennextjs-cloudflare preview > /tmp/worker.log 2>&1 &
+          for attempt in $(seq 1 60); do
+            if curl -fsS http://localhost:8787/ -o /dev/null; then
+              echo "the Worker answered on http://localhost:8787"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::the Worker did not answer on http://localhost:8787 within 120s" >&2
+          tail -50 /tmp/worker.log >&2
+          exit 1
+
+      - name: E2E against the Worker
+        run: npm run test:e2e -- --grep-invert @hosted
+        env:
+          E2E_BASE_URL: http://localhost:8787
+          PRINT_ASSET_HMAC_SECRET: 0123456789abcdef0123456789abcdef
+          PRODIGI_WEBHOOK_TOKEN: e2e-prodigi-webhook-token
+
+      - name: Smoke test the Worker
+        run: bash scripts/smoke.sh http://localhost:8787
+
+      - name: Upload the failure trace
+        if: failure()
+        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        with:
+          name: e2e-worker-trace
+          path: test-results/
+          retention-days: 7
+          if-no-files-found: ignore
