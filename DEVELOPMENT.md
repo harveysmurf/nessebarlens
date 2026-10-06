@@ -890,6 +890,51 @@ Run it locally with zizmor on `PATH`:
 npm run lint && node scripts/zizmor-gate.mjs
 ```
 
+### Required status checks (#205 item 1)
+
+`main` requires exactly the contexts listed in `.github/required-checks.txt` —
+`Lint & test`, `Workflow audit`, `E2E smoke flow`, `E2E Worker runtime`.
+Before #205, protection required only `Lint & test`, so the zizmor gate and the
+browser smoke flow could both be red and the merge button was still enabled.
+
+A branch-protection rule is a repository setting, so nothing in the repo can
+force it to stay correct. Two things do, and the split between them is a hard
+platform limit rather than a preference:
+
+- `tests/branch-protection.test.mts` holds the committed list against `ci.yml`
+  in both directions — a new gating job missing from the list fails, a list
+  entry matching no job name fails, and a `continue-on-error` job listed as
+  required fails. This runs on **every test run**.
+- `scripts/required-checks.mjs` holds the committed list against the **live**
+  rule and prints the exact `gh api` call to reconcile. It is run **by hand**,
+  not from CI.
+
+The live half cannot be a workflow step. Reading branch protection requires the
+`administration` permission, which is not among the scopes `permissions:`
+accepts for a job's `GITHUB_TOKEN` (`actionlint`: `unknown permission scope
+"administration"`), and no other Actions-provided token carries it. Wiring the
+step in anyway only produces a check that fails with `no GITHUB_TOKEN/GH_TOKEN`
+on every run while reporting nothing about real drift — which is exactly what
+happened while it was in `ci.yml`. The alternative, an admin-scoped PAT in
+Actions secrets, would park a repo-admin credential exactly where the
+job-scoped-permissions discipline in #209 keeps it out, which is a worse trade
+than rare, deliberate UI drift.
+
+Adding a gate to `ci.yml` therefore means three edits: the job, its line in
+`.github/required-checks.txt`, and the `gh api -X PATCH` that makes GitHub agree.
+Miss the second and the test fails on every run. Miss the third and only the
+manual comparison finds it.
+
+Run the live comparison locally with a token that can read protection:
+
+```
+GITHUB_TOKEN=$(gh auth token) node scripts/required-checks.mjs
+```
+
+`E2E hosted checkout (best effort)` stays optional. It is `continue-on-error`
+(#169), so requiring it would block merges on a result the workflow itself
+discards.
+
 ### Action versions and the runner image
 
 Two pins that are not about application code, and both of which move under you

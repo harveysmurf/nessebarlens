@@ -110,6 +110,27 @@ jobs:
       - name: Gate on workflow script injection
         run: node scripts/zizmor-gate.mjs
 
+      # #205 item 1 deliberately does NOT verify branch protection here, and the
+      # reason is a hard platform limit rather than a preference. Reading the
+      # rule needs the `administration` permission, which is not one of the
+      # scopes a job's GITHUB_TOKEN can be granted — an attempt to set it fails
+      # to parse (`unknown permission scope "administration"`, actionlint) —
+      # and no other Actions-provided token carries it. A step in this workflow
+      # therefore cannot read the setting it would have to compare, and that is
+      # not theoretical: this step sat here for two days failing on exactly that,
+      # exiting 4 "no GITHUB_TOKEN/GH_TOKEN" while reporting nothing about the
+      # drift it was written to catch.
+      #
+      # The automation that could work needs an admin-scoped PAT in Actions
+      # secrets, parking a repo-admin credential exactly where #209's
+      # job-scoped-permissions discipline keeps it out. Worse trade than the
+      # rare UI drift it would catch.
+      #
+      # So enforcement lives where it can run: tests/branch-protection.test.mts
+      # holds the committed list against ci.yml in both directions on every test
+      # run, and the live-rule comparison is a manual tool run from a machine
+      # holding an admin token. See DEVELOPMENT.md §Required status checks.
+
   # #143: the browser smoke flow, split by what it can actually promise.
   #
   # Everything that stays on our own pages — the five seeded success-page states
