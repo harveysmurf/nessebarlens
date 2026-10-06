@@ -17,6 +17,13 @@ if (
 }
 
 const nextConfig: NextConfig = {
+  // Next 16 blocks cross-origin requests to dev resources (/_next/*, the HMR
+  // socket) and trusts only localhost by default. Playwright drives the dev
+  // server on 127.0.0.1 (playwright.config.ts), so without this the page
+  // never hydrates: the configurator never calls /api/quote and the @hosted
+  // physical-print spec times out on a Checkout button that stays disabled.
+  // Dev-only; `next build` ignores it.
+  allowedDevOrigins: ["127.0.0.1"],
   // Gallery uses plain <img> srcset against NEXT_PUBLIC_WEB_IMAGES_BASE only.
   // No remotePatterns — do not allow images.unsplash.com or other third-party hosts.
   images: {
