@@ -14,7 +14,7 @@ export function PhotoCard({ photo }: { photo: Photo }) {
       >
         <WebPhoto
           slug={photo.slug}
-          alt={photo.title}
+          alt={photo.alt}
           preferred={1500}
           sizes="(max-width: 768px) 100vw, 33vw"
           className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${filmClass}`}
@@ -28,7 +28,7 @@ export function PhotoCard({ photo }: { photo: Photo }) {
               isFilmPhoto(photo) ? "font-mono text-stone-500" : ""
             }`}
           >
-            {photo.subtitle}
+            {photo.caption}
           </p>
         </div>
         <span className="text-stone-600 font-medium shrink-0">Print options</span>

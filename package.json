@@ -4,13 +4,20 @@
   "private": true,
   "type": "module",
   "scripts": {
+    "build:catalog": "node --import ./scripts/register.mjs scripts/build-catalog.mjs",
+    "predev": "npm run build:catalog",
     "dev": "next dev",
+    "prebuild": "npm run build:catalog",
     "build": "next build",
     "start": "next start",
+    "prelint": "npm run build:catalog",
     "lint": "eslint",
+    "pretypecheck": "npm run build:catalog",
     "typecheck": "tsc --noEmit",
+    "pretest": "npm run build:catalog",
     "test": "node --import ./tests/register.mjs --test tests/*.test.mts",
     "test:e2e": "playwright test",
+    "precoverage": "npm run build:catalog",
     "coverage": "node scripts/coverage.mjs",
     "coverage:report": "node scripts/coverage.mjs --print",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
@@ -40,7 +47,8 @@
     "eslint-config-next": "16.3.8",
     "sharp": "^0.35.5",
     "tailwindcss": "^4",
-    "typescript": "^5"
+    "typescript": "^5",
+    "yaml": "^2.9.1"
   },
   "engines": {
     "node": ">=24.21.0 <25"

@@ -31,7 +31,7 @@ export default async function PrintDetailPage({
           <div className="bg-stone-200 rounded-sm overflow-hidden aspect-[4/3] relative flex items-center justify-center p-3 border border-stone-300/60 shadow-inner">
             <WebPhoto
               slug={photo.slug}
-              alt={photo.title}
+              alt={photo.alt}
               preferred={2500}
               sizes="(max-width: 1024px) 100vw, 60vw"
               priority

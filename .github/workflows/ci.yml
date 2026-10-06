@@ -366,6 +366,9 @@ jobs:
       # guard (siteUrl()) throws here, before the Worker is ever started. It is a
       # step `env:`, not a `.dev.vars` value, because `next build` reads
       # process.env and never `.dev.vars`.
+      - name: Build catalog
+        run: npm run build:catalog
+
       - name: Build the Worker
         run: npx opennextjs-cloudflare build
         env:

@@ -48,6 +48,9 @@ yarn-error.log*
 .open-next/
 .wrangler/
 
+# generated catalog (compiled from content/photos/*.yaml)
+/src/generated/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts

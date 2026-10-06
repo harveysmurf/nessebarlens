@@ -3,11 +3,12 @@ import test from "node:test";
 import {
   PHOTOS,
   categoryHref,
+  featuredPhoto,
   getPhoto,
   isFilmPhoto,
   photosByCategory,
-  type PhotoCategory,
 } from "../src/lib/photos.ts";
+import type { PhotoCategory } from "../src/lib/photo-schema.ts";
 import { PHOTO_SLUG_PATTERN, isMasterKey } from "../src/lib/derivative-ladder.ts";
 import { masterKeyForSlug } from "../src/lib/master-key.ts";
 
@@ -107,4 +108,64 @@ test("every film photo carries a film look, so the filter agrees with the matte"
     }
   }
   assert.ok(photosByCategory("film").length > 0);
+});
+
+// The move to a YAML catalog must not have reordered anything a visitor sees.
+// The order is per category, so the flat PHOTOS order across categories is not
+// asserted — only what each gallery renders.
+test("the migrated catalog matches today's slugs, in today's display order", () => {
+  const expected: Record<PhotoCategory, string[]> = {
+    "fine-art": [
+      "dawn",
+      "cobblestones",
+      "isthmus",
+      "harbor-mist",
+      "chapel-light",
+      "stone-arch",
+      "evening-wall",
+    ],
+    archive: [
+      "fishermen",
+      "autumn",
+      "craftsman",
+      "market-day",
+      "net-menders",
+      "winter-pier",
+      "alley-cat",
+    ],
+    film: [
+      "windmill",
+      "fortress",
+      "seagulls",
+      "boat-hull",
+      "shadow-street",
+      "salt-air",
+    ],
+  };
+  for (const category of CATEGORIES) {
+    assert.deepEqual(
+      photosByCategory(category).map((photo) => photo.slug),
+      expected[category],
+      category,
+    );
+  }
+  assert.equal(PHOTOS.length, 20);
+});
+
+test("every photo has real alt text within the schema limit", () => {
+  for (const photo of PHOTOS) {
+    assert.ok(photo.alt.length > 0, photo.slug);
+    assert.ok(photo.alt.length <= 200, photo.slug);
+    assert.ok(photo.caption.length > 0, photo.slug);
+    // alt is a one-line description, not the title it used to be.
+    assert.notEqual(photo.alt, photo.title, photo.slug);
+  }
+});
+
+test("featuredPhoto returns the featured photo, else the first fine-art photo", () => {
+  assert.equal(featuredPhoto()?.slug, "dawn");
+  // No featured flag: the fallback is the first fine-art photo in display order.
+  const withoutFeatured = PHOTOS.map((photo) => ({ ...photo, featured: false }));
+  assert.equal(featuredPhoto(withoutFeatured)?.slug, "dawn");
+  assert.equal(featuredPhoto([]), undefined);
 });

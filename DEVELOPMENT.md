@@ -849,7 +849,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `.github/workflows/ci.yml` | PR + `workflow_call` (from `release.yml`; no push trigger) | `npm ci` → lint → typecheck → test → **coverage floors**; plus a `workflow-audit` job (**install zizmor** → **gate on workflow script injection**, scoped to `template-injection` at Medium confidence and up — the other 40 findings are reported, not gated); plus two pull-request-only browser jobs — **required** `e2e-smoke` (no secrets: `npm ci` → **install chromium** → **e2e smoke flow (seeded)**: `npm run test:e2e -- --grep-invert @hosted` → **upload the failure trace** on failure) and **best-effort** `e2e-hosted-checkout` (`continue-on-error`; staging Environment → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **e2e hosted checkout** (`npm run test:e2e -- --grep @hosted`, headed under Xvfb) → **upload the trace** every run); plus `e2e-worker` — runs on PRs **and** `workflow_call` (release.yml builds the same tree), no secrets so it also runs on forks: **cache build** → **install chromium** → **prepare the local worker** (`.dev.vars` from non-secret values, `wrangler d1 migrations apply --local`, seed `MASTERS` with `e2e/fixtures/worker-master.jpg`) → **build the worker** (`opennextjs-cloudflare build`, `NEXT_PUBLIC_SITE_URL=http://localhost:8787`) → **start the worker** (`opennextjs-cloudflare preview`) → **run e2e against the worker** (`npm run test:e2e -- --grep-invert @hosted` with `E2E_BASE_URL`, plus `e2e/worker-runtime.spec.ts`: print-asset streams the seeded master, Stripe webhook bad sig is 400 not 503, Prodigi webhook 401/400) → **smoke test the worker** (`scripts/smoke.sh`) → **upload the failure trace** |
+| `.github/workflows/ci.yml` | PR + `workflow_call` (from `release.yml`; no push trigger) | `npm ci` → lint → typecheck → test → **coverage floors**; plus a `workflow-audit` job (**install zizmor** → **gate on workflow script injection**, scoped to `template-injection` at Medium confidence and up — the other 40 findings are reported, not gated); plus two pull-request-only browser jobs — **required** `e2e-smoke` (no secrets: `npm ci` → **install chromium** → **e2e smoke flow (seeded)**: `npm run test:e2e -- --grep-invert @hosted` → **upload the failure trace** on failure) and **best-effort** `e2e-hosted-checkout` (`continue-on-error`; staging Environment → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **e2e hosted checkout** (`npm run test:e2e -- --grep @hosted`, headed under Xvfb) → **upload the trace** every run); plus `e2e-worker` — runs on PRs **and** `workflow_call` (release.yml builds the same tree), no secrets so it also runs on forks: **cache build** → **install chromium** → **prepare the local worker** (`.dev.vars` from non-secret values, `wrangler d1 migrations apply --local`, seed `MASTERS` with `e2e/fixtures/worker-master.jpg`) → **build catalog** (`npm run build:catalog`) → **build the worker** (`opennextjs-cloudflare build`, `NEXT_PUBLIC_SITE_URL=http://localhost:8787`) → **start the worker** (`opennextjs-cloudflare preview`) → **run e2e against the worker** (`npm run test:e2e -- --grep-invert @hosted` with `E2E_BASE_URL`, plus `e2e/worker-runtime.spec.ts`: print-asset streams the seeded master, Stripe webhook bad sig is 400 not 503, Prodigi webhook 401/400) → **smoke test the worker** (`scripts/smoke.sh`) → **upload the failure trace** |
 | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → **Worker Version upload `--env staging`** (a version of `nessebar-lens-staging`, so `ORDERS_DB` is the staging D1 and unreviewed PR code cannot write production orders — #202; the step asserts the reported URL is a `…-nessebar-lens-staging.…` hostname) with secrets attached via `--secrets-file` → **smoke test** the version URL (`scripts/smoke.sh`) → PR comment; `versions list`/`delete --env staging` on close |
 | `.github/workflows/release.yml` | push to `main` + `workflow_dispatch` | The whole production path, in order (`concurrency: release`, never cancelled). `checks` (`ci.yml`) → `build` (matrix over `staging`/`production`, one artifact each — `NEXT_PUBLIC_*` and `metadataBase` bake the origin into the prerendered HTML, so one shared artifact would put nessebarlens.com's canonicals on staging; each leg gets `environment: ${{ matrix.env }}` and its own `NEXT_PUBLIC_*`) → `staging`: staging Environment → verify artifact (`artifact-manifest.sh` + `assert-artifact-origin.sh`) → **D1 migrations (`--env staging`)** → `opennextjs-cloudflare deploy --env staging --secrets-file` (the `staging` target of `sync-worker-secrets.sh`: `sk_test_` enforced, Resend key / Prodigi token / print HMAC required) → **smoke test** `https://staging.nessebarlens.com` → `production` (`needs: staging`): production Environment → verify artifact → record the current `100%` version id → **D1 migrations (`--remote`)** → `opennextjs-cloudflare deploy --secrets-file` (guards run first in `version-only` mode) → **smoke test** `https://nessebarlens.com` → on failure `wrangler versions deploy <previous>@100 -y` and fail the job. `notify`/`resolve` from #199 on `main` |
 | `.github/workflows/reconcile.yml` | `workflow_dispatch` only | production Environment → `POST /api/internal/reconcile` with `x-reconcile-secret`. The `*/15` schedule moved to a Cloudflare Cron Trigger (#201) because GitHub delivered about 11 of 168 expected runs in 42 h. Kept as the one-shot path and as the fallback for one release — **delete it once the Cron Trigger has a green week's worth of ticks in the dashboard** |
@@ -1261,10 +1261,35 @@ script.
 
 ## 7. Data flow & invariants
 
-- **Catalog is the single source.** `src/lib/photos.ts` `PHOTOS` array holds every
-  photo (`slug`, `title`, `category`, `imageKey`, `fromPriceEur`, …). The only
-  master-key list is `photos.ts` `imageKey`, surfaced via
-  `src/lib/master-key.ts` `masterKeyForSlug()`.
+- **The catalog is YAML, compiled at build time.** One file per photo lives in
+  `content/photos/<slug>.yaml`; `scripts/build-catalog.mjs` validates every file
+  against `src/lib/photo-schema.ts` and writes the git-ignored
+  `src/generated/catalog.ts`. Workers have no filesystem, and `getPhoto()` is
+  read at request time by the checkout route and fulfillment, so the YAML cannot
+  be parsed at runtime — it is compiled ahead of it. Every path that builds,
+  tests or lints runs `npm run build:catalog` first (the `pre*` hooks in
+  `package.json`, and an explicit `Build catalog` step before
+  `opennextjs-cloudflare build` in `ci.yml`, `release.yml`, `preview.yml`), so no
+  path can build against a stale or missing catalog.
+- **One definition of a photo file.** `src/lib/photo-schema.ts` is the schema:
+  the field rules, the fixed categories and the film looks, exported as the
+  `PhotoFile` type and the `validatePhotoFile` runtime validator. Unknown keys
+  are an error, not ignored, so a typo like `catgory` fails the build loudly.
+  `slug` defaults to the filename and must equal it; `film_look` is film-only;
+  `hero_caption` is required when `featured` is true; at most one published
+  photo may set `featured`; `published` defaults true. A photo with
+  `published: false` is absent from the generated catalog, so every listing,
+  `generateStaticParams` and `getPhoto` (and therefore checkout) leave it out.
+- **`src/lib/photos.ts` is the runtime view.** It keeps its public API
+  (`PHOTOS`, `getPhoto`, `photosByCategory`, `categoryHref`, `filmLookClass`,
+  `featuredPhoto`, the `Photo` type), now backed by the generated file.
+  `categoryLabel` is derived from the category (one `Record`) and `imageKey` is
+  derived as `prints/{slug}.jpg` — the only form `masterKeyForSlug` accepts
+  (`src/lib/master-key.ts`). The only master-key list is that derived
+  `imageKey`, surfaced via `masterKeyForSlug()`.
+- **The homepage hero is the featured photo.** `featuredPhoto()` returns the one
+  photo with `featured: true`, or else the first published fine-art photo in
+  display order, so `src/app/page.tsx` no longer hard-codes a slug.
 - **Placeholders.** `public/placeholders/{slug}.jpg` are 20 local stand-ins
   (7 fine-art, 7 archive, 6 film). Gallery images resolve to
   `/placeholders/{slug}.jpg`; real photographs replace these on R2 later. Keep the
