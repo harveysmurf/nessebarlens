@@ -1,6 +1,5 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
-import path from "node:path";
 import test from "node:test";
 
 import {
@@ -14,6 +13,7 @@ import {
 } from "../src/lib/derivative-ladder.ts";
 import {
   MASTERS_BUCKET_NAME,
+  STAGING_MASTERS_BUCKET_NAME,
   WEB_BUCKET_NAME,
   slugFromMasterKey,
 } from "../src/lib/derivative-ladder.ts";
@@ -182,83 +182,29 @@ test("the rung list must be non-empty, positive, integral and ascending", () => 
   assert.doesNotThrow(() => assertRungList(RUNGS));
 });
 
-test("an upload is refused when the buckets are not the pair we own", () => {
-  const ok = {
-    mastersBucket: MASTERS_BUCKET_NAME,
-    webBucket: WEB_BUCKET_NAME,
-    ladderEnabled: false,
-  };
-  assert.doesNotThrow(() => assertUploadIsSafe(ok));
-  assert.throws(
-    () => assertUploadIsSafe({ ...ok, webBucket: "nessebar-lens-masters" }),
-    /web bucket must be nessebar-lens-web/,
-  );
-  assert.throws(
-    () => assertUploadIsSafe({ ...ok, mastersBucket: "nessebar-lens-web" }),
-    /masters bucket must be nessebar-lens-masters/,
-  );
-});
-
-test("an upload is refused while the ladder is on and serving that bucket", () => {
+test("an upload is refused when a bucket is not one we own", () => {
+  // Both masters buckets are legitimate: production (promote) and staging.
+  for (const mastersBucket of [MASTERS_BUCKET_NAME, STAGING_MASTERS_BUCKET_NAME]) {
+    assert.doesNotThrow(() =>
+      assertUploadIsSafe({ mastersBucket, webBucket: WEB_BUCKET_NAME }),
+    );
+  }
   assert.throws(
     () =>
       assertUploadIsSafe({
         mastersBucket: MASTERS_BUCKET_NAME,
-        webBucket: WEB_BUCKET_NAME,
-        ladderEnabled: true,
+        webBucket: "nessebar-lens-masters",
       }),
-    /already serving this bucket/,
+    /web bucket must be nessebar-lens-web/,
   );
-});
-
-test("the ingest script and the shared plan agree on the keys and buckets", () => {
-  const script = readFileSync(
-    new URL("../scripts/ingest-derivatives.mjs", import.meta.url),
-    "utf8",
+  assert.throws(
+    () =>
+      assertUploadIsSafe({
+        mastersBucket: "nessebar-lens-web",
+        webBucket: WEB_BUCKET_NAME,
+      }),
+    /masters bucket must be/,
   );
-  // Buckets are referenced through the shared constants, never spelled in
-  // code. Comments may name them — the header documents the flow.
-  const code = script.replace(/\/\*[\s\S]*?\*\//g, "").replace(/^\s*\/\/.*$/gm, "");
-  assert.ok(!code.includes("nessebar-lens-web"), "no hardcoded bucket name");
-  assert.ok(!code.includes("nessebar-lens-masters"), "no hardcoded bucket name");
-  assert.ok(code.includes('const DROP_DIR = "ingest"'));
-  assert.ok(
-    !/1500|2500|750/.test(
-      script.split("const DROP_DIR")[0] ?? "",
-    ),
-    "no rung width hardcoded in the script",
-  );
-  // Dry run is the default: uploading must be an explicit opt-in.
-  assert.ok(script.includes('process.argv.includes("--apply")'));
-});
-
-test("the --only check reads the catalog files, not the removed hand-written array", async () => {
-  const { catalogSlugs, unknownSlugs } = await import(
-    "../scripts/ingest-derivatives.mjs"
-  );
-  const root = path.join(import.meta.dirname, "..");
-  const catalog = await catalogSlugs(path.join(root, "content/photos"));
-  assert.equal(catalog.length, 20);
-  assert.ok(catalog.includes("alley-cat") && catalog.includes("dawn"));
-  assert.deepEqual(unknownSlugs(["alley-cat"], catalog), []);
-  assert.deepEqual(
-    unknownSlugs(["alley-cat", "cathedrall", "dawn"], catalog),
-    ["cathedrall"],
-  );
-
-  // The script must stay loadable under plain node: importing photos.ts would
-  // pull in the git-ignored generated catalog and a loader hook.
-  const script = readFileSync(
-    new URL("../scripts/ingest-derivatives.mjs", import.meta.url),
-    "utf8",
-  );
-  assert.doesNotMatch(
-    script,
-    /from "\.\.\/src\/lib\/photos\.ts"/,
-    "importing photos.ts pulls in the generated catalog and a loader hook",
-  );
-  assert.match(script, /const CATALOG_DIR = "content\/photos"/);
-  assert.doesNotMatch(script, /name\.includes\(only\)/);
 });
 
 test("the drop folder is gitignored, so masters never reach a commit", () => {

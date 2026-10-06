@@ -3,18 +3,17 @@
  * what one ingest run will write.
  *
  * No imports, on purpose. This module is what an ops script outside the Next
- * build can load — scripts/ingest-derivatives.mjs runs under plain node, where
- * `./something` has no extension and does not resolve, so every module this
- * one pulled in would have to be extension-annotated or hook-registered. One
- * leaf keeps the script honest about where its numbers come from: the rung
- * list the site advertises and the rung list that gets generated are the same
- * array, in one file, with no loader trickery between them.
+ * build can load — scripts/publish-photos.mjs reaches it directly, and a leaf
+ * with no imports of its own is one fewer module the loader has to resolve. One
+ * leaf keeps the script honest about where its numbers come from: the rung list
+ * the site advertises and the rung list that gets generated are the same array,
+ * in one file.
  *
  * The URL side of the ladder (src/lib/derivatives.ts) needs the environment
  * and therefore cannot live here; it imports from here instead.
  *
- * The ingest direction is the other way round: masters arrive as local files
- * in the gitignored `ingest/` folder (scripts/ingest-derivatives.mjs), get
+ * The publish direction is the other way round: masters arrive as local files
+ * in the gitignored `ingest/` folder (scripts/publish-photos.mjs), get
  * written to the private masters bucket as `prints/{slug}.jpg`, and their
  * rungs go to the public web bucket as `{slug}/{hash8}/{width}.{jpg|webp}`.
  * A dropped file is named for the slug it declares, so the plan is decided
@@ -37,6 +36,12 @@ const SLUG_BODY = PHOTO_SLUG_PATTERN.source.replace(/^\^/, "").replace(/\$$/, ""
 /** Where a master lives, and where its rungs go. Never inverted. */
 export const MASTERS_BUCKET_NAME = "nessebar-lens-masters";
 export const WEB_BUCKET_NAME = "nessebar-lens-web";
+/**
+ * Staging and PR previews read their own masters bucket (#212), a print-safe
+ * downscale rather than the original. `publish-photos` writes this one; only
+ * `--promote` (#242) writes MASTERS_BUCKET_NAME.
+ */
+export const STAGING_MASTERS_BUCKET_NAME = "nessebar-lens-masters-staging";
 
 const MASTER_KEY_PREFIX = "prints/";
 
@@ -84,11 +89,11 @@ export function webDerivativeKey(
 }
 
 /**
- * The first 8 hex chars of the master's SHA-256, which names its public
- * derivatives. Global Web Crypto, not `node:crypto`, so this module keeps its
- * no-imports property and the ingest script stays loadable under plain node.
+ * The full lowercase SHA-256 of the master's bytes. Global Web Crypto, not
+ * `node:crypto`, so this module keeps its no-imports property and the ops
+ * scripts stay loadable under plain node.
  */
-export async function imageHash(bytes: Uint8Array): Promise<string> {
+export async function sha256Hex(bytes: Uint8Array): Promise<string> {
   // The cast is the Uint8Array/BufferSource generic mismatch in TS 5.7's
   // typed arrays, not a real widening: this is a view over binary bytes.
   const digest = new Uint8Array(
@@ -96,7 +101,12 @@ export async function imageHash(bytes: Uint8Array): Promise<string> {
   );
   let hex = "";
   for (const byte of digest) hex += byte.toString(16).padStart(2, "0");
-  return hex.slice(0, 8);
+  return hex;
+}
+
+/** The first 8 hex chars of the master's SHA-256, which names its derivatives. */
+export async function imageHash(bytes: Uint8Array): Promise<string> {
+  return (await sha256Hex(bytes)).slice(0, 8);
 }
 
 /** A master below MASTER_MIN_WIDTH cannot fill the ladder; refuse it early. */
@@ -145,6 +155,14 @@ export function assertRungList(widths: readonly number[]): void {
  */
 export const DERIVATIVE_JPEG_QUALITY = 82;
 export const DERIVATIVE_WEBP_QUALITY = 80;
+
+/**
+ * The staging master is a print-safe downscale, not the original: long edge at
+ * most this, JPEG quality 80, sRGB, metadata stripped (#212). Bounded by the
+ * edge, so a portrait and a landscape both fit.
+ */
+export const STAGING_MASTER_MAX_EDGE = 2500;
+export const STAGING_MASTER_JPEG_QUALITY = 80;
 
 /**
  * Safe to make immutable because the object key carries the master's content
@@ -207,7 +225,7 @@ export function slugFromDroppedName(name: string): string | null {
  * the slug alone. Distinct from the catalog-backed resolver of the same shape
  * in master-key.ts (`masterKeyForSlug`), which returns null for unknown slugs.
  */
-function masterKeyFromSlug(slug: string): string {
+export function masterKeyFromSlug(slug: string): string {
   return `${MASTER_KEY_PREFIX}${slug}.jpg`;
 }
 
@@ -273,20 +291,21 @@ export function planDerivatives(
 }
 
 export type UploadTarget = {
+  /** Production masters (promote only) or the staging masters downscale. */
   mastersBucket: string;
   webBucket: string;
-  /** Read from NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED. */
-  ladderEnabled: boolean;
 };
 
 /**
- * Refuses an upload that could break a live gallery, before any bytes move.
+ * Refuses an upload that could send bytes to a bucket we do not own, before
+ * any bytes move: the web bucket must be the public one, and the masters
+ * bucket must be one of the two we maintain.
  *
- * Two ways this run hurts people, both checked here:
- *  - the ladder flag is on, so every photo is already being served from WEB
- *    and a half-written set of rungs turns the storefront into 404s;
- *  - the buckets are named wrong, so masters land in the public bucket.
- * Turn the flag on after the upload, never before.
+ * There is no `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` refusal here. Guarding a
+ * live-served rung mattered when a key was `{slug}/{rung}.jpg` and a
+ * half-written ladder was a 404; keys are content-addressed now
+ * (`{slug}/{hash8}/…`), so an upload cannot change what a live page shows — a
+ * changed image is a new URL.
  */
 export function assertUploadIsSafe(target: UploadTarget): void {
   if (target.webBucket !== WEB_BUCKET_NAME) {
@@ -294,14 +313,13 @@ export function assertUploadIsSafe(target: UploadTarget): void {
       `refusing to upload: web bucket must be ${WEB_BUCKET_NAME}, got ${target.webBucket}`,
     );
   }
-  if (target.mastersBucket !== MASTERS_BUCKET_NAME) {
+  if (
+    target.mastersBucket !== MASTERS_BUCKET_NAME &&
+    target.mastersBucket !== STAGING_MASTERS_BUCKET_NAME
+  ) {
     throw new Error(
-      `refusing to upload: masters bucket must be ${MASTERS_BUCKET_NAME}, got ${target.mastersBucket}`,
-    );
-  }
-  if (target.ladderEnabled) {
-    throw new Error(
-      "refusing to upload: NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED is on, so the site is already serving this bucket. Turn the flag off, ingest, verify, then turn it on.",
+      `refusing to upload: masters bucket must be ${MASTERS_BUCKET_NAME} or ` +
+        `${STAGING_MASTERS_BUCKET_NAME}, got ${target.mastersBucket}`,
     );
   }
 }
