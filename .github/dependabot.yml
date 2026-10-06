@@ -63,11 +63,19 @@ updates:
 
     # #221: the dev-tooling catch-all bumped four dependencies across breaking
     # majors in a single PR — typescript 5→7, eslint 9→10, eslint-config-next
-    # 15→16, @types/node 24→26 — and the tree broke. TypeScript 7 removes the
-    # `ts.findConfigFile` API that next 15.5's config transpiler calls, and
-    # `eslint-config-next` is versioned in lockstep with `next` so it must not
-    # run ahead of it. Hold each at its current major until the framework group
-    # moves Next to 16 and the toolchain catches up.
+    # 15→16, @types/node 24→26 — and the tree broke. #237 lifted the
+    # eslint-config-next hold (the framework group moved Next to 16, so the
+    # lockstep catch-up became safe and was done by hand). The three that
+    # remain are still real breaking-major holds under the Next 16 tree:
+    #
+    #   * typescript — typescript-eslint 8 (what eslint-config-next 16 bundles)
+    #     declares `typescript >=4.8.4 <6.1.0`, so TS 6/7 have no supported
+    #     parser. A TS-major move is a tree-wide change and earns its own PR.
+    #   * eslint — eslint-plugin-react pins `eslint ^9.7`, and
+    #     eslint-plugin-import and eslint-plugin-jsx-a11y pin `^9`; eslint 10 is
+    #     not supported by the Next 16 lint tree yet.
+    #   * @types/node — the Worker runs Node 24 (`engines` in package.json), so
+    #     the types must describe the 24.x API, not the Node 25/26 releases.
     #
     # These are version *floors*, not blanket ignores: `versions: [">=6"]` still
     # lets a 5.x security patch through, which is what keeps this from being the
@@ -77,8 +85,6 @@ updates:
         versions: [">=6"]
       - dependency-name: "eslint"
         versions: [">=10"]
-      - dependency-name: "eslint-config-next"
-        versions: [">=16"]
       - dependency-name: "@types/node"
         versions: [">=25"]
 

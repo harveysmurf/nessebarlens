@@ -105,7 +105,7 @@ test("the format options are a real radio group", () => {
   assert.match(source, /const active = format === f\.id;/);
   assert.match(source, /type="radio"/);
   assert.match(source, /checked=\{active\}/);
-  assert.match(source, /onChange=\{\(\) => setFormat\(f\.id\)\}/);
+  assert.match(source, /onChange=\{\(\) => selectFormat\(f\.id\)\}/);
   // A group without a shared name is not a group: every option must be part
   // of the same named set for exclusivity and arrow keys to work.
   assert.match(source, /name="print-format"/);

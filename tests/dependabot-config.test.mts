@@ -97,12 +97,13 @@ test("a held dependency is ignored by major, never by name", () => {
     ([, name, versions]) => ({ name, versions: versions.trim() }),
   );
 
-  // The held set is the four majors the pinned Next 15.5 toolchain cannot absorb
-  // yet. A package leaving this list, or a new one joining it, is a decision that
-  // needs a reason -- hence the exact match rather than a subset.
+  // #237 lifted the eslint-config-next hold when the framework group moved Next
+  // to 16, so the held set is now the three majors the Next 16 toolchain cannot
+  // absorb. A package leaving this list, or a new one joining it, is a decision
+  // that needs a reason -- hence the exact match rather than a subset.
   assert.deepEqual(
     held.map(({ name }) => name).sort(),
-    ["@types/node", "eslint", "eslint-config-next", "typescript"],
+    ["@types/node", "eslint", "typescript"],
     "the held set changed — every ignore here is a documented breaking-major hold, and any new hold needs its reason recorded in dependabot.yml",
   );
 
