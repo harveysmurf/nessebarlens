@@ -530,30 +530,42 @@ test("staging deploys keep version previews on (preview_urls = true)", () => {
   );
 });
 
-test("the shared masters binding is documented as full access, not read-only", () => {
-  // #202 item 4, decided option (a): staging and previews keep the production
-  // masters bucket so the full-purchase rehearsal renders real photos and signs
-  // real print assets. That decision is only safe to leave in a comment that
-  // states its actual toll. An earlier comment here claimed the code "only
-  // READS" the bucket — an R2 binding has no read-only mode, so a preview holds
-  // read+write+delete on production masters plus print-asset signing, and the
-  // only control is review of unreviewed PR code. A reassuring comment about an
-  // invariant previews exist to break is worse than no comment.
+test("staging's masters binding is its own bucket, documented as full access not read-only", () => {
+  // #212: staging and previews used to share the production masters bucket
+  // (#202 item 4, option a), which was only tolerable while it held
+  // placeholders. [env.staging] MASTERS is now `nessebar-lens-masters-staging`,
+  // holding print-safe downscales. The comment above it must still state the
+  // actual toll of any bound bucket: an R2 binding has no read-only mode, so a
+  // preview (unreviewed PR code) holds read+write+delete on whatever is bound
+  // here. A reassuring comment about an invariant previews exist to break is
+  // worse than no comment. The binding itself is guarded in
+  // tests/wrangler-bindings.test.mts.
   const toml = fs.readFileSync(path.join(root, "wrangler.toml"), "utf8");
   const envStaging = toml.slice(toml.search(/^\[env\.staging\]\s*$/m));
-  // The whole [env.staging] tail — the shared-bucket comment sits above the
-  // MASTERS binding, after d1_databases, not directly under the section head.
+  // The whole [env.staging] tail: the bucket comment sits above the r2_buckets
+  // entries, after d1_databases, not directly under the section head.
   const comment = envStaging;
 
+  assert.ok(envStaging.length > 0 && toml.includes("[env.staging]"), "[env.staging] not found");
   assert.match(
     envStaging,
+    /binding = "MASTERS"\nbucket_name = "nessebar-lens-masters-staging"/,
+    "[env.staging] MASTERS must be nessebar-lens-masters-staging (#212). The production masters bucket would give every PR preview read+write+delete on the originals",
+  );
+  assert.doesNotMatch(
+    envStaging,
     /bucket_name = "nessebar-lens-masters"/,
-    "[env.staging] must keep the production masters bucket — option (a), per Simo 2026-10-05. If this now names a -staging bucket, the seeding step is required too or every miss renders the committed placeholder and signs print assets from placeholders",
+    "[env.staging] must not bind the production masters bucket",
   );
   assert.doesNotMatch(
     comment,
     /only READS? them\b(?![^#]*NOT)/i,
-    "the staging comment must not claim the code only reads the shared buckets — that is a TypeScript type, not an enforced control",
+    "the staging comment must not claim the code only reads the buckets: that is a TypeScript type, not an enforced control",
+  );
+  assert.doesNotMatch(
+    comment,
+    /Both buckets are the PRODUCTION buckets/,
+    "the staging comment still describes the pre-#212 shared-production state",
   );
   assert.match(
     comment,
