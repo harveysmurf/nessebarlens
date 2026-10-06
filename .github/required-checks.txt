@@ -1,0 +1,23 @@
+# #205 item 1: the status checks branch protection requires on main.
+#
+# One job display name per line, exactly as `name:` spells it in the workflow.
+# Blank lines and `#` comments are ignored. This file is the source of truth:
+#
+#   - tests/branch-protection.test.mts fails if a gating job in .github/workflows
+#     is missing here, if an entry matches no job name (a rename or a typo), or
+#     if a `continue-on-error` job is listed as required. This runs on every
+#     test run and is the half that is actually automated.
+#   - scripts/required-checks.mjs compares this list against the live branch
+#     protection rule, catching a change made in the GitHub UI that nobody
+#     committed here. Run it BY HAND (`GITHUB_TOKEN=$(gh auth token) node
+#     scripts/required-checks.mjs`): it cannot be a ci.yml step, because reading
+#     branch protection needs the `administration` permission and a job's
+#     GITHUB_TOKEN cannot be granted it.
+#
+# `E2E hosted checkout (best effort)` is deliberately absent: it is
+# `continue-on-error`, so requiring it would gate merges on a check that is
+# designed not to block. Required gates that do block are listed below.
+Lint & test
+Workflow audit
+E2E smoke flow
+E2E Worker runtime
