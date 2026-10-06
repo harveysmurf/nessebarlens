@@ -6,11 +6,12 @@ import { expect, test } from "@playwright/test";
  * Worker-runtime assertions (#204).
  *
  * Every other spec runs against `next dev`, where ORDERS and MASTERS are dev
- * shims rather than the deployed artifact's bindings. These three checks can
+ * shims rather than the deployed artifact's bindings. These four checks can
  * only pass when the thing under test is the built Worker with real bindings:
  *
  *   - the print-asset route streams the master from the R2 `MASTERS` binding,
- *     which a `next dev` server answers 503 for;
+ *     which a `next dev` server answers 503 for, and refuses a bad signature
+ *     with 401 rather than 503;
  *   - the Stripe webhook answers 400 (bad signature) rather than 503, which
  *     says STRIPE_WEBHOOK_SECRET reached the runtime as a binding;
  *   - the Prodigi webhook answers 401 without the token and 400 with it and a

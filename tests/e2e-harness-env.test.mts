@@ -217,6 +217,25 @@ test("no workflow points E2E_BASE_URL at a deployed host", () => {
   }
 });
 
+/**
+ * The `e2e-worker` job is the only thing that makes `worker-runtime.spec.ts`
+ * run: the spec skips green unless E2E_BASE_URL's hostname is exactly
+ * `localhost`. So a job value the spec rejects — `127.0.0.1:8787` is the
+ * obvious typo — would leave the job reporting success having tested nothing,
+ * the same trap the hosted split guards against. Pinning the value here closes
+ * it from the other side: the skip condition and the job now have to agree.
+ */
+test("the e2e-worker job points the harness at the local Worker the spec accepts", () => {
+  const ci = fs.readFileSync(path.join(root, ".github", "workflows", "ci.yml"), "utf8");
+  const job = ci.match(/^ {2}e2e-worker:\n((?:(?: {4}|\t).*\n|\n)*)/m);
+  assert.ok(job, "the Worker runtime specs must run in their own job");
+  assert.match(
+    job[1],
+    /E2E_BASE_URL:\s*http:\/\/localhost:8787\s*$/m,
+    "the job must set the exact origin the spec's skip guard accepts, or the suite skips green",
+  );
+});
+
 test("a remote run starts no dev server, and the seeded states stay off it", () => {
   assert.match(
     config,
