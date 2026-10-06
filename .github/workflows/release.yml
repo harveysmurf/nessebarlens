@@ -96,7 +96,7 @@ jobs:
       # string. An artifact is a zip round-trip, and a zip can change a tree.
       EXPECTED_ORIGIN: ${{ matrix.origin }}
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
@@ -115,7 +115,7 @@ jobs:
       # archive would arrive empty and every deploy job would fail on the
       # manifest check with nothing to say why.
       - name: Upload the build
-        uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6.0.0
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: open-next-${{ matrix.env }}-${{ github.sha }}
           path: .open-next/
@@ -147,14 +147,14 @@ jobs:
       # either name.
       FORBIDDEN_ORIGIN: https://nessebarlens.com
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - uses: $/.github/actions/setup
 
       - name: Download the staging build
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: open-next-staging-${{ github.sha }}
           path: .open-next
@@ -236,14 +236,14 @@ jobs:
     outputs:
       previous-version: ${{ steps.record-previous.outputs.version-id }}
     steps:
-      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd # v5.0.1
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
 
       - uses: $/.github/actions/setup
 
       - name: Download the production build
-        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
         with:
           name: open-next-production-${{ github.sha }}
           path: .open-next
