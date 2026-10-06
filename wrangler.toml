@@ -75,6 +75,13 @@ bucket_name = "nessebar-lens-masters"
 [env.staging]
 name = "nessebar-lens-staging"
 routes = [{ pattern = "staging.nessebarlens.com", custom_domain = true }]
+# Keep version previews on across deploys. `preview_urls` defaults to false, and
+# `wrangler deploy` (which release.yml runs for staging on every main push)
+# re-applies the worker's subdomain settings from this config. Without this key
+# each staging deploy silently clears the account-side `previews_enabled` flag
+# that preview.yml needs to read a `Version Preview URL`, so the PR preview job
+# reds until somebody re-enables it by hand. See DEVELOPMENT.md §Staging previews.
+preview_urls = true
 
 # Repeated, not inherited (see the note on the top-level [triggers]). Staging
 # having no reconciler at all is why the GitHub schedule's real behaviour could

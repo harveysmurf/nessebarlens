@@ -38,6 +38,8 @@ yarn-error.log*
 
 # env files (can opt-in for committing if needed)
 .env*
+# wrangler's local secrets file (the e2e-worker job writes it from non-secret values)
+.dev.vars
 
 # vercel
 .vercel

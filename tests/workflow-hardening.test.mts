@@ -509,6 +509,27 @@ test("a version with no preview URL names the setting that has to change", () =>
   );
 });
 
+test("staging deploys keep version previews on (preview_urls = true)", () => {
+  // The upload in preview.yml reads a `Version Preview URL`, which wrangler only
+  // prints when the staging Worker's account-side `previews_enabled` is on. But
+  // wrangler's `preview_urls` config defaults to false, and release.yml runs
+  // `opennextjs-cloudflare deploy --env staging` on every main push, re-applying
+  // subdomain settings from this file. Without the key each release silently
+  // clears the flag, so the next PR's preview is the one that reds — that is
+  // exactly the #230 failure (2026-10-05): #229 previewed green at 17:50, the
+  // release ran at 17:56, and the next preview got no URL. It must live under
+  // [env.staging], not the top level: environments do not inherit it.
+  const toml = fs.readFileSync(path.join(root, "wrangler.toml"), "utf8");
+  const envStaging = toml.slice(toml.search(/^\[env\.staging\]\s*$/m));
+  const nextSection = envStaging.search(/^\[env\.staging\./m);
+  const block = nextSection === -1 ? envStaging : envStaging.slice(0, nextSection);
+  assert.match(
+    block,
+    /^preview_urls = true$/m,
+    "[env.staging] must set preview_urls = true — otherwise every staging deploy clears the Worker's version previews and preview.yml reds until someone re-enables the account flag by hand",
+  );
+});
+
 test("the shared masters binding is documented as full access, not read-only", () => {
   // #202 item 4, decided option (a): staging and previews keep the production
   // masters bucket so the full-purchase rehearsal renders real photos and signs

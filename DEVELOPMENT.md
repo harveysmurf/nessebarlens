@@ -248,6 +248,16 @@ set, and that module refuses to run under `NODE_ENV=production`, so fabricated
 orders can never reach a deployed build. The webhook's own round trip is a
 separate handler-level concern and is not covered here — see §10.
 
+`next.config.ts` initialises those dev bindings **only when
+`NODE_ENV=development`** (#227): `next build` evaluates the same config in every
+prerender worker, and an unguarded `initOpenNextCloudflareForDev` makes each of
+them boot a local Workers runtime on the shared `.wrangler/state` SQLite file —
+the `SQLITE_BUSY` that failed `Build (production)` and blocked deploys. In CI
+the dev bindings are also `persist: false`, so the more-than-one `next dev`
+process cannot race on that file either; the smoke flow reads only the in-memory
+seed, so nothing needs to survive. `tests/no-workerd-in-build.test.mts` pins
+both.
+
 To see a seeded state by hand:
 
 ```bash
@@ -785,7 +795,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a `workflow-audit` job (**install zizmor** → **gate on workflow script injection**, scoped to `template-injection` at Medium confidence and up — the other 40 findings are reported, not gated); plus two pull-request-only browser jobs — **required** `e2e-smoke` (no secrets: `npm ci` → **install chromium** → **e2e smoke flow (seeded)**: `npm run test:e2e -- --grep-invert @hosted` → **upload the failure trace** on failure) and **best-effort** `e2e-hosted-checkout` (`continue-on-error`; staging Environment → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **e2e hosted checkout** (`npm run test:e2e -- --grep @hosted`, headed under Xvfb) → **upload the trace** every run) |
+| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a `workflow-audit` job (**install zizmor** → **gate on workflow script injection**, scoped to `template-injection` at Medium confidence and up — the other 40 findings are reported, not gated); plus two pull-request-only browser jobs — **required** `e2e-smoke` (no secrets: `npm ci` → **install chromium** → **e2e smoke flow (seeded)**: `npm run test:e2e -- --grep-invert @hosted` → **upload the failure trace** on failure) and **best-effort** `e2e-hosted-checkout` (`continue-on-error`; staging Environment → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **e2e hosted checkout** (`npm run test:e2e -- --grep @hosted`, headed under Xvfb) → **upload the trace** every run); plus `e2e-worker` — runs on PRs **and** `workflow_call` (release.yml builds the same tree), no secrets so it also runs on forks: **cache build** → **install chromium** → **prepare the local worker** (`.dev.vars` from non-secret values, `wrangler d1 migrations apply --local`, seed `MASTERS` with `e2e/fixtures/worker-master.jpg`) → **build the worker** (`opennextjs-cloudflare build`, `NEXT_PUBLIC_SITE_URL=http://localhost:8787`) → **start the worker** (`opennextjs-cloudflare preview`) → **run e2e against the worker** (`npm run test:e2e -- --grep-invert @hosted` with `E2E_BASE_URL`, plus `e2e/worker-runtime.spec.ts`: print-asset streams the seeded master, Stripe webhook bad sig is 400 not 503, Prodigi webhook 401/400) → **smoke test the worker** (`scripts/smoke.sh`) → **upload the failure trace** |
 | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → **Worker Version upload `--env staging`** (a version of `nessebar-lens-staging`, so `ORDERS_DB` is the staging D1 and unreviewed PR code cannot write production orders — #202; the step asserts the reported URL is a `…-nessebar-lens-staging.…` hostname) with secrets attached via `--secrets-file` → **smoke test** the version URL (`scripts/smoke.sh`) → PR comment; `versions list`/`delete --env staging` on close |
 | `.github/workflows/release.yml` | push to `main` + `workflow_dispatch` | The whole production path, in order (`concurrency: release`, never cancelled). `checks` (`ci.yml`) → `build` (matrix over `staging`/`production`, one artifact each — `NEXT_PUBLIC_*` and `metadataBase` bake the origin into the prerendered HTML, so one shared artifact would put nessebarlens.com's canonicals on staging; each leg gets `environment: ${{ matrix.env }}` and its own `NEXT_PUBLIC_*`) → `staging`: staging Environment → verify artifact (`artifact-manifest.sh` + `assert-artifact-origin.sh`) → **D1 migrations (`--env staging`)** → `opennextjs-cloudflare deploy --env staging --secrets-file` (the `staging` target of `sync-worker-secrets.sh`: `sk_test_` enforced, Resend key / Prodigi token / print HMAC required) → **smoke test** `https://staging.nessebarlens.com` → `production` (`needs: staging`): production Environment → verify artifact → record the current `100%` version id → **D1 migrations (`--remote`)** → `opennextjs-cloudflare deploy --secrets-file` (guards run first in `version-only` mode) → **smoke test** `https://nessebarlens.com` → on failure `wrangler versions deploy <previous>@100 -y` and fail the job. `notify`/`resolve` from #199 on `main` |
 | `.github/workflows/reconcile.yml` | `workflow_dispatch` only | production Environment → `POST /api/internal/reconcile` with `x-reconcile-secret`. The `*/15` schedule moved to a Cloudflare Cron Trigger (#201) because GitHub delivered about 11 of 168 expected runs in 42 h. Kept as the one-shot path and as the fallback for one release — **delete it once the Cron Trigger has a green week's worth of ticks in the dashboard** |
@@ -879,6 +889,51 @@ Run it locally with zizmor on `PATH`:
 ```
 npm run lint && node scripts/zizmor-gate.mjs
 ```
+
+### Required status checks (#205 item 1)
+
+`main` requires exactly the contexts listed in `.github/required-checks.txt` —
+`Lint & test`, `Workflow audit`, `E2E smoke flow`, `E2E Worker runtime`.
+Before #205, protection required only `Lint & test`, so the zizmor gate and the
+browser smoke flow could both be red and the merge button was still enabled.
+
+A branch-protection rule is a repository setting, so nothing in the repo can
+force it to stay correct. Two things do, and the split between them is a hard
+platform limit rather than a preference:
+
+- `tests/branch-protection.test.mts` holds the committed list against `ci.yml`
+  in both directions — a new gating job missing from the list fails, a list
+  entry matching no job name fails, and a `continue-on-error` job listed as
+  required fails. This runs on **every test run**.
+- `scripts/required-checks.mjs` holds the committed list against the **live**
+  rule and prints the exact `gh api` call to reconcile. It is run **by hand**,
+  not from CI.
+
+The live half cannot be a workflow step. Reading branch protection requires the
+`administration` permission, which is not among the scopes `permissions:`
+accepts for a job's `GITHUB_TOKEN` (`actionlint`: `unknown permission scope
+"administration"`), and no other Actions-provided token carries it. Wiring the
+step in anyway only produces a check that fails with `no GITHUB_TOKEN/GH_TOKEN`
+on every run while reporting nothing about real drift — which is exactly what
+happened while it was in `ci.yml`. The alternative, an admin-scoped PAT in
+Actions secrets, would park a repo-admin credential exactly where the
+job-scoped-permissions discipline in #209 keeps it out, which is a worse trade
+than rare, deliberate UI drift.
+
+Adding a gate to `ci.yml` therefore means three edits: the job, its line in
+`.github/required-checks.txt`, and the `gh api -X PATCH` that makes GitHub agree.
+Miss the second and the test fails on every run. Miss the third and only the
+manual comparison finds it.
+
+Run the live comparison locally with a token that can read protection:
+
+```
+GITHUB_TOKEN=$(gh auth token) node scripts/required-checks.mjs
+```
+
+`E2E hosted checkout (best effort)` stays optional. It is `continue-on-error`
+(#169), so requiring it would block merges on a result the workflow itself
+discards.
 
 ### Action versions and the runner image
 
