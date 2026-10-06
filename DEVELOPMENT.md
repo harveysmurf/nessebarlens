@@ -734,25 +734,35 @@ needs the same photo at the same aspect ratio; Prodigi sandbox never prints.
 `WEB` (public derivatives) stays shared. `tests/wrangler-bindings.test.mts`
 fails if any `[env.*]` binds `nessebar-lens-masters` or `nessebar-lens-orders`.
 
-**Create the staging masters bucket (one time, by the owner).** It must exist
-**before** this config is deployed, because a staging deploy fails on a binding
-to a missing bucket:
+**The staging bucket exists (created 2026-10-06).** Private, no custom domain,
+r2.dev URL disabled. Only for a fresh account:
 
 ```
 npx wrangler r2 bucket create nessebar-lens-masters-staging
 ```
 
-Private by default; do **not** enable public access or attach a custom domain.
-The Cloudflare API token used by `release.yml` and `preview.yml` must be allowed
-to use R2 on this bucket.
+Keep it private: do **not** enable public access or attach a custom domain. It
+must exist **before** the config naming it is deployed, because a staging deploy
+fails on a binding to a missing bucket. The Cloudflare API token behind
+`release.yml` and `preview.yml` must be allowed to use R2 on this bucket; check
+that first if a staging deploy fails on the binding.
 
-**Until #241 lands the bucket is empty.** There is no placeholder fallback for
-masters: `src/lib/placeholder-photo.ts` only supplies the gallery *display*
-image. `/api/print-asset` and `/api/download` read `MASTERS` directly, and a
-missing object is a 404 `master-not-found` (a missing or throwing binding is
-503 `masters-unavailable`). So on staging, until seeded, a print order's asset
-URL and a digital download fail rather than serve a placeholder, even though the
-pages render placeholder photos. Interim manual seed, only for small downscales:
+**What it holds today.** Copies of the two placeholder masters that were already
+in production, `prints/dawn.jpg` and `prints/cobblestones.jpg` (about 5.5 KB
+each, so the copies are placeholders, not originals), so staging print orders and
+digital downloads keep working. Every other slug is missing. There is no
+placeholder fallback for masters: `src/lib/placeholder-photo.ts` only supplies the
+gallery *display* image. `/api/print-asset` and `/api/download` read `MASTERS`
+directly, and a missing object is a 404 `master-not-found` (a missing or throwing
+binding is 503 `masters-unavailable`). So on staging, a print order's asset URL
+or a digital download for an unseeded slug fails rather than serving a
+placeholder, even though the page renders one.
+
+`npm run ingest` (§6a) still writes only the production bucket, so a newly
+ingested photo is **not** purchasable on staging until #241 (`publish-photos
+--apply`) writes the 2500 px staging copy. Until then, seed it by hand, and only
+with a downscale (long edge <= 2500 px, quality 80, metadata stripped), never the
+original:
 
 ```
 npx wrangler r2 object put nessebar-lens-masters-staging/prints/<slug>.jpg --remote --file <downscaled.jpg>
@@ -1230,7 +1240,9 @@ Then, per photo:
    `nessebar-lens-web/{slug}/{750,1500,2500}.jpg`. Width-driven resize, aspect
    ratio preserved, no crop: the list page's uniform tiles are a CSS
    `aspect-ratio` with `object-fit: cover`, and the photo page is uncropped.
-   `--only alley-cat` narrows a run to one photo.
+   `--only alley-cat` narrows a run to one photo. It does **not** touch
+   `nessebar-lens-masters-staging`: staging cannot sell the new photo until
+   #241 or a manual downscale seed (§Masters bucket per environment).
 4. Verify a couple of URLs resolve under `NEXT_PUBLIC_WEB_IMAGES_BASE`, **then**
    set `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED=true`. Only `true` or `1` enable
    the ladder; a configured base alone does not.
