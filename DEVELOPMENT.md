@@ -379,8 +379,10 @@ Worker** that is never deployed (`upload`, not `deploy`). Both therefore share
 staging's D1, and neither reaches production state — so a purchase can be
 rehearsed end to end against sandbox Stripe and Prodigi. It is
 declared as `[env.staging]` in `wrangler.toml` (bindings are not inherited by a
-wrangler environment, so `ORDERS_DB`, `WEB` and `MASTERS` are redeclared there;
-the two R2 buckets are the production ones because the code only reads them).
+wrangler environment, so `ORDERS_DB`, `WEB` and `MASTERS` are redeclared there).
+`WEB` is the production `nessebar-lens-web` (public derivatives only). `MASTERS`
+is **not** shared: it is `nessebar-lens-masters-staging` (#212), see
+§Masters bucket per environment below.
 
 `.github/workflows/release.yml` runs on push to `main` and `workflow_dispatch`, and
 staging is its third job, after `checks` and the per-environment `build` matrix:
@@ -716,6 +718,46 @@ Operator view (CLI, not an admin route — this Worker serves customers):
 ```bash
 npm run orders -- --status paid-unfulfilled --limit 50
 ```
+
+### Masters bucket per environment (#212)
+
+| Environment | `MASTERS` bucket | Contents |
+|---|---|---|
+| Production (top-level `wrangler.toml`) | `nessebar-lens-masters` | Full-resolution originals. Written only by `--promote` (#242). |
+| Staging and every PR preview (`[env.staging]`) | `nessebar-lens-masters-staging` | Print-safe downscales **by design**: long edge <= 2500 px, JPEG quality 80, metadata stripped. Seeded by `publish-photos --apply` (#241). |
+
+Why not share the production bucket: R2 bindings have no read-only mode (an
+`R2Bucket` is read+write+delete, and `MastersBucket` being `get()`-only is a
+TypeScript type, not an enforced control), a PR preview runs unreviewed code, and
+masters are the product (the digital download is the master file). Staging only
+needs the same photo at the same aspect ratio; Prodigi sandbox never prints.
+`WEB` (public derivatives) stays shared. `tests/wrangler-bindings.test.mts`
+fails if any `[env.*]` binds `nessebar-lens-masters` or `nessebar-lens-orders`.
+
+**Create the staging masters bucket (one time, by the owner).** It must exist
+**before** this config is deployed, because a staging deploy fails on a binding
+to a missing bucket:
+
+```
+npx wrangler r2 bucket create nessebar-lens-masters-staging
+```
+
+Private by default; do **not** enable public access or attach a custom domain.
+The Cloudflare API token used by `release.yml` and `preview.yml` must be allowed
+to use R2 on this bucket.
+
+**Until #241 lands the bucket is empty.** There is no placeholder fallback for
+masters: `src/lib/placeholder-photo.ts` only supplies the gallery *display*
+image. `/api/print-asset` and `/api/download` read `MASTERS` directly, and a
+missing object is a 404 `master-not-found` (a missing or throwing binding is
+503 `masters-unavailable`). So on staging, until seeded, a print order's asset
+URL and a digital download fail rather than serve a placeholder, even though the
+pages render placeholder photos. Interim manual seed, only for small downscales:
+
+```
+npx wrangler r2 object put nessebar-lens-masters-staging/prints/<slug>.jpg --remote --file <downscaled.jpg>
+```
+
 
 ### Prodigi sandbox isolation (#193)
 
@@ -1170,7 +1212,8 @@ Simo runs this from his own box, not CI. Three prerequisites, in order:
    ```
 
    From Cloudflare → R2 → Manage R2 API Tokens → *Object Read & Write* scoped
-   to `nessebar-lens-masters` and `nessebar-lens-web`. The workspace copy of
+   to `nessebar-lens-masters` and `nessebar-lens-web` (the staging masters
+   bucket is covered in §Masters bucket per environment). The workspace copy of
    these lives in `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
    Missing keys fail as `missing env: R2_ACCESS_KEY_ID ...`, never as a 403.
 
