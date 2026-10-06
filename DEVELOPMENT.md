@@ -145,6 +145,8 @@ imports.
 
 - Always run `npm test` before opening a PR and again before a deploy.
 - CI (see §6) blocks deploy on a failing test run.
+- `tests/stripe-contract.test.mts` runs recorded Stripe webhook fixtures through the
+  installed SDK with no secrets (#225); see "Dependency updates".
 - Add a test whenever you change `src/lib/order-decision.ts`,
   `src/lib/fulfillment.ts`, `pricing.ts`, or any quote/order logic.
 
@@ -795,19 +797,21 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `.github/workflows/ci.yml` | PR + push to `main` | `npm ci` → lint → typecheck → test → **coverage floors**; plus a `workflow-audit` job (**install zizmor** → **gate on workflow script injection**, scoped to `template-injection` at Medium confidence and up — the other 40 findings are reported, not gated); plus two pull-request-only browser jobs — **required** `e2e-smoke` (no secrets: `npm ci` → **install chromium** → **e2e smoke flow (seeded)**: `npm run test:e2e -- --grep-invert @hosted` → **upload the failure trace** on failure) and **best-effort** `e2e-hosted-checkout` (`continue-on-error`; staging Environment → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **e2e hosted checkout** (`npm run test:e2e -- --grep @hosted`, headed under Xvfb) → **upload the trace** every run); plus `e2e-worker` — runs on PRs **and** `workflow_call` (release.yml builds the same tree), no secrets so it also runs on forks: **cache build** → **install chromium** → **prepare the local worker** (`.dev.vars` from non-secret values, `wrangler d1 migrations apply --local`, seed `MASTERS` with `e2e/fixtures/worker-master.jpg`) → **build the worker** (`opennextjs-cloudflare build`, `NEXT_PUBLIC_SITE_URL=http://localhost:8787`) → **start the worker** (`opennextjs-cloudflare preview`) → **run e2e against the worker** (`npm run test:e2e -- --grep-invert @hosted` with `E2E_BASE_URL`, plus `e2e/worker-runtime.spec.ts`: print-asset streams the seeded master, Stripe webhook bad sig is 400 not 503, Prodigi webhook 401/400) → **smoke test the worker** (`scripts/smoke.sh`) → **upload the failure trace** |
+| `.github/workflows/ci.yml` | PR + `workflow_call` (from `release.yml`; no push trigger) | `npm ci` → lint → typecheck → test → **coverage floors**; plus a `workflow-audit` job (**install zizmor** → **gate on workflow script injection**, scoped to `template-injection` at Medium confidence and up — the other 40 findings are reported, not gated); plus two pull-request-only browser jobs — **required** `e2e-smoke` (no secrets: `npm ci` → **install chromium** → **e2e smoke flow (seeded)**: `npm run test:e2e -- --grep-invert @hosted` → **upload the failure trace** on failure) and **best-effort** `e2e-hosted-checkout` (`continue-on-error`; staging Environment → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **e2e hosted checkout** (`npm run test:e2e -- --grep @hosted`, headed under Xvfb) → **upload the trace** every run); plus `e2e-worker` — runs on PRs **and** `workflow_call` (release.yml builds the same tree), no secrets so it also runs on forks: **cache build** → **install chromium** → **prepare the local worker** (`.dev.vars` from non-secret values, `wrangler d1 migrations apply --local`, seed `MASTERS` with `e2e/fixtures/worker-master.jpg`) → **build the worker** (`opennextjs-cloudflare build`, `NEXT_PUBLIC_SITE_URL=http://localhost:8787`) → **start the worker** (`opennextjs-cloudflare preview`) → **run e2e against the worker** (`npm run test:e2e -- --grep-invert @hosted` with `E2E_BASE_URL`, plus `e2e/worker-runtime.spec.ts`: print-asset streams the seeded master, Stripe webhook bad sig is 400 not 503, Prodigi webhook 401/400) → **smoke test the worker** (`scripts/smoke.sh`) → **upload the failure trace** |
 | `.github/workflows/preview.yml` | PR open/sync | staging Environment → build → **Worker Version upload `--env staging`** (a version of `nessebar-lens-staging`, so `ORDERS_DB` is the staging D1 and unreviewed PR code cannot write production orders — #202; the step asserts the reported URL is a `…-nessebar-lens-staging.…` hostname) with secrets attached via `--secrets-file` → **smoke test** the version URL (`scripts/smoke.sh`) → PR comment; `versions list`/`delete --env staging` on close |
 | `.github/workflows/release.yml` | push to `main` + `workflow_dispatch` | The whole production path, in order (`concurrency: release`, never cancelled). `checks` (`ci.yml`) → `build` (matrix over `staging`/`production`, one artifact each — `NEXT_PUBLIC_*` and `metadataBase` bake the origin into the prerendered HTML, so one shared artifact would put nessebarlens.com's canonicals on staging; each leg gets `environment: ${{ matrix.env }}` and its own `NEXT_PUBLIC_*`) → `staging`: staging Environment → verify artifact (`artifact-manifest.sh` + `assert-artifact-origin.sh`) → **D1 migrations (`--env staging`)** → `opennextjs-cloudflare deploy --env staging --secrets-file` (the `staging` target of `sync-worker-secrets.sh`: `sk_test_` enforced, Resend key / Prodigi token / print HMAC required) → **smoke test** `https://staging.nessebarlens.com` → `production` (`needs: staging`): production Environment → verify artifact → record the current `100%` version id → **D1 migrations (`--remote`)** → `opennextjs-cloudflare deploy --secrets-file` (guards run first in `version-only` mode) → **smoke test** `https://nessebarlens.com` → on failure `wrangler versions deploy <previous>@100 -y` and fail the job. `notify`/`resolve` from #199 on `main` |
 | `.github/workflows/reconcile.yml` | `workflow_dispatch` only | production Environment → `POST /api/internal/reconcile` with `x-reconcile-secret`. The `*/15` schedule moved to a Cloudflare Cron Trigger (#201) because GitHub delivered about 11 of 168 expected runs in 42 h. Kept as the one-shot path and as the fallback for one release — **delete it once the Cron Trigger has a green week's worth of ticks in the dashboard** |
 | `.github/workflows/verify-stripe.yml` | cron `37 6 * * 1-5` | staging Environment → guard that the key is `sk_test_` → `scripts/verify-stripe-integration.mjs` (disputes/refunds against test mode) |
+| `.github/workflows/dependabot-triage.yml` | `pull_request` from `dependabot[bot]` | No secrets (#225). Reads the group with `dependabot/fetch-metadata` → **labels** the PR `deps:<group>` → for money-path groups (`deploy`, `framework`, `payments`, ungrouped security updates) **posts the rehearsal checklist** once per PR → for `dev-tooling`/`actions` **patch and minor only**, `gh pr merge --auto --squash`. Token is `contents: write` + `pull-requests: write` on the job only. See "Dependency updates". |
+| `.github/workflows/release-backstop.yml` | hourly cron + `workflow_dispatch` | If the tip of `main` is more than 10 minutes old and `release.yml` has no run for that SHA, dispatches `release.yml` (#225). Covers merges made with `GITHUB_TOKEN` (auto-merge), which do not fire push workflows. |
 | `.github/workflows/notify-failure.yml` | `workflow_call` only | The incident signal (#199). Not run directly — every workflow below calls it. Opens (or comments on) one `incident`-labelled issue per failing workflow, and closes it on the next green run. |
 
 ### Failure alerting (#199)
 
 A red run on `main` notifies nobody by itself, and that is how production failed
 ten times in a day and the reconcile cron six times without anyone noticing.
-Each of `release.yml`, `reconcile.yml` and `verify-stripe.yml` ends
-with two jobs:
+Each of `release.yml`, `reconcile.yml`, `verify-stripe.yml` and
+`release-backstop.yml` ends with two jobs:
 
 ```yaml
 notify:   { needs: [<every job>], if: failure() && github.ref == 'refs/heads/main', uses: $/.github/workflows/notify-failure.yml }
@@ -958,7 +962,7 @@ production deploy, on a day nobody is reading CI.
 every `runs-on` to be exactly `ubuntu-24.04`. Moving to `26.04` is not forbidden
 — do it in its own PR, after the e2e jobs are green on it.
 
-### Dependency updates (`#205`)
+### Dependency updates (#205, #225)
 
 `.github/dependabot.yml` opens weekly PRs for both ecosystems. A SHA pin never
 moves on its own, so "we pin" only does work once something is watching the
@@ -995,6 +999,65 @@ somewhere else Dependabot cannot see.
 `tests/dependabot-config.test.mts` pins the shape, not just the existence:
 deleting the file, splitting a group, or adding an `ignore` list all produce no
 CI failure otherwise, because a missing bot produces no failures.
+
+#### Validating a bump before merge (#225)
+
+Dependabot runs get **no Actions or Environment secrets**, so `Preview` and
+`E2E hosted checkout` skip themselves (#224). A green Dependabot PR is
+therefore **not** a verified one: what ran is the secret-free half of CI, and
+which groups that half covers is the table below.
+
+| Group | Packages | Validated before merge by | Merge policy |
+|---|---|---|---|
+| `deploy` | `wrangler`, `@opennextjs/cloudflare` | `E2E Worker runtime` (**required**; secret-free OpenNext build + `wrangler dev` + Playwright + smoke, #204) + rehearsal | Human. Never auto-merged |
+| `framework` | `next`, `react`, `react-dom` | `E2E Worker runtime` + rehearsal | Human. Never auto-merged |
+| `payments` | `stripe` | `tests/stripe-contract.test.mts` + the compile-time contract in `src/lib/stripe-event.ts` + the pinned `STRIPE_API_VERSION` + rehearsal | Human. Never auto-merged |
+| `actions` | GitHub Actions | workflow audit + `tests/workflow-hardening.test.mts` | Auto-merge, patch/minor |
+| `dev-tooling` | everything else | lint, typecheck, test, coverage, E2E jobs | Auto-merge, patch/minor |
+| ungrouped | security updates (Dependabot never groups them) | whatever ran | Held, checklist posted |
+
+Majors never auto-merge, in any group. `dependabot-triage.yml` labels every
+PR `deps:<group>` and decides from the `fetch-metadata` update type; an empty
+or unreadable type matches no auto-merge arm, so it holds.
+
+**Rehearsal, and "push, don't re-run".** Money-path PRs get a bot checklist:
+push to the branch so CI runs again with secrets, then do one sandbox purchase
+on the preview. A **re-run does not work**: it keeps Dependabot's restricted
+context (`github.actor` stays `dependabot[bot]`) and the secret-holding jobs
+skip again. Only a push by a human, an empty commit or a rebase, runs them.
+Once a human has pushed, Dependabot stops rebasing that PR;
+`@dependabot recreate` restores it, discarding the human commit. The triage
+job also requires `github.actor == 'dependabot[bot]'`, so the rehearsal push
+does not re-run auto-merge logic on a branch holding a human's commit.
+
+**Post-merge backstop.** A Dependabot commit takes the same path as any other:
+`release.yml` (staging, smoke, production gate), no special-casing. One
+platform rule stands in the way: events caused by `GITHUB_TOKEN` do not start
+workflow runs, except `workflow_dispatch`. Auto-merge enabled by the triage
+job's token can therefore land on `main` without firing the push trigger, and
+`main` would sit unreleased. `release-backstop.yml` polls hourly and
+dispatches `release.yml` when the tip of `main` has no run for its SHA. It
+waits 10 minutes before acting, so a slow push trigger does not get a second
+release, and scheduled runs are delayed under load, so the effective lag is up
+to an hour or more. It is not Dependabot-specific.
+
+**Stripe fixtures.** `tests/fixtures/stripe/` holds **real sandbox
+captures**, scrubbed of personal data. Refresh them with:
+
+```sh
+STRIPE_SECRET_KEY=sk_test_… node scripts/capture-stripe-fixtures.mjs
+```
+
+It needs events from the **last 30 days**: one sandbox physical purchase;
+refunds and disputes come from `verify-stripe.yml`'s runs. Review the scrubbed
+diff before committing. **Recapture whenever the webhook endpoint's (or account default) API version
+changes** (the contract test's `WEBHOOK_API_VERSION` fails otherwise, by
+design); it is also worth doing when the `stripe` SDK major moves.
+`STRIPE_API_VERSION` only pins API requests, not payload shape.
+
+**Adding a Dependabot group** means adding it to the `case` in
+`dependabot-triage.yml`. `tests/dependabot-config.test.mts` fails if you do
+not, and the workflow's `*)` arm fails the job at runtime.
 
 ### What each Environment holds
 

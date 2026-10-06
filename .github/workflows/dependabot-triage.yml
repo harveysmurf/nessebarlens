@@ -1,0 +1,145 @@
+name: Dependabot triage
+
+# #225: a Dependabot PR runs with no Actions or Environment secrets, so the
+# preview deploy and the hosted checkout skip themselves (#224) and what is left
+# green is the secret-free half of CI. That is enough for some groups and not
+# for others, and a green check mark does not say which. This workflow does:
+#
+#   * labels every Dependabot PR with its group (`deps:<group>`), so the risk
+#     class is visible in the PR list without opening the PR;
+#   * for the money-path groups (`deploy`, `framework`, `payments`) and anything
+#     Dependabot did not group (security updates), posts the rehearsal
+#     checklist: a human push for the secret-holding CI half, then one sandbox
+#     purchase on the preview;
+#   * for `dev-tooling` and `actions` patch/minor bumps only, turns on
+#     auto-merge, which GitHub honours once every required check is green.
+#
+# No secrets, on purpose and by test (tests/workflow-hardening.test.mts): bump
+# PRs must not run with credentials before review. The job token is raised to
+# exactly what the three API writes need, on the job, never the workflow.
+#
+# The group -> class mapping is the `case` in "Classify the update" below.
+# tests/dependabot-config.test.mts fails if a group in .github/dependabot.yml
+# is missing from it, and the `*)` arm fails the job at runtime too, so a new
+# group cannot go unclassified in either place.
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, reopened, synchronize]
+
+permissions:
+  contents: read
+
+jobs:
+  triage:
+    name: Dependabot triage
+    # Both halves. `user.login` is who opened the PR; `actor` is who caused this
+    # run. A human push to a Dependabot branch (the rehearsal step) is the PR's
+    # author still, but the actor is the human, and that run must not re-enable
+    # auto-merge on a branch that now holds a human's commit.
+    if: github.event.pull_request.user.login == 'dependabot[bot]' && github.actor == 'dependabot[bot]'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      # `gh pr merge --auto` enables auto-merge, which is a contents write.
+      contents: write
+      pull-requests: write
+    steps:
+      - name: Read the Dependabot metadata
+        id: metadata
+        uses: dependabot/fetch-metadata@25dd0e34f4fe68f24cc83900b1fe3fe149efef98 # v3.1.0
+
+      # `routine` groups are the ones the secret-free checks cover end to end:
+      # lint, typecheck, tests, the workflow audit, and the built Worker
+      # (`E2E Worker runtime`, #204). `money-path` groups change something those
+      # checks cannot reach: the deployed Worker, a real Stripe call or a real
+      # Prodigi call. An empty group is a security update, which Dependabot
+      # never groups; it is held for a human because nothing here knows which
+      # package it moved.
+      - name: Classify the update
+        id: classify
+        env:
+          GROUP: ${{ steps.metadata.outputs.dependency-group }}
+        run: |
+          case "$GROUP" in
+            deploy|framework|payments) class=money-path; label="deps:$GROUP" ;;
+            dev-tooling|actions) class=routine; label="deps:$GROUP" ;;
+            "") class=money-path; label="deps:ungrouped" ;;
+            *)
+              echo "::error::Dependabot group '$GROUP' has no triage class. Add it to the case in .github/workflows/dependabot-triage.yml." >&2
+              exit 1
+              ;;
+          esac
+          echo "class=$class" >> "$GITHUB_OUTPUT"
+          echo "label=$label" >> "$GITHUB_OUTPUT"
+          echo "group '${GROUP:-<none>}' -> $class ($label)"
+
+      # The issues-labels endpoint creates a label that does not exist yet, so a
+      # new group needs no one-off `gh label create`.
+      - name: Label the pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          LABEL: ${{ steps.classify.outputs.label }}
+        run: gh api --method POST "repos/$REPO/issues/$NUMBER/labels" -f "labels[]=$LABEL" --silent
+
+      # Once per PR: Dependabot rebases fire `synchronize`, and the marker keeps
+      # a rebased PR from collecting one checklist per rebase.
+      #
+      # The body is a quoted heredoc, so nothing in it is expanded by the shell;
+      # the two values are substituted afterwards. The branch name comes from the
+      # PR, which is attacker-influenced text, so it only ever travels through an
+      # env var and a quoted parameter expansion, never through `${{ }}` in the
+      # script or an unquoted heredoc (which would run `$(...)` inside it).
+      - name: Post the rehearsal checklist
+        if: steps.classify.outputs.class == 'money-path'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          NUMBER: ${{ github.event.pull_request.number }}
+          LABEL: ${{ steps.classify.outputs.label }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -euo pipefail
+          marker='<!-- dependabot-triage:rehearsal -->'
+          if gh pr view "$NUMBER" --repo "$REPO" --json comments --jq '.comments[].body' | grep -qF "$marker"; then
+            echo "checklist already posted"
+            exit 0
+          fi
+          body=$(cat <<'EOF'
+          @@MARKER@@
+          **`@@LABEL@@`: this bump is on the money path and is never auto-merged.**
+
+          The checks on this PR ran as Dependabot, with no secrets, so the preview deploy and the hosted checkout were **skipped**, not passed. Before merging:
+
+          - [ ] **Push to this branch** (an empty commit, or a rebase from your machine) so CI runs again as you, with secrets: a real preview and the hosted checkout. **Push, don't re-run.** A re-run keeps Dependabot's restricted context, and the secret-holding jobs skip again.
+            ```sh
+            git fetch origin && git switch '@@BRANCH@@'
+            git commit --allow-empty -m "ci: rehearse with secrets" && git push
+            ```
+          - [ ] `Preview` is green and its smoke test passed against the deployed version URL.
+          - [ ] One **sandbox purchase on the preview** with test card `4242 4242 4242 4242`: the success page shows the order, and the staging D1 has it.
+
+          See DEVELOPMENT.md, "Dependency updates".
+          EOF
+          )
+          # Quoted replacements: an unquoted one would treat `&` as the match.
+          body=${body//@@MARKER@@/"$marker"}
+          body=${body//@@LABEL@@/"$LABEL"}
+          body=${body//@@BRANCH@@/"$HEAD_REF"}
+          gh pr comment "$NUMBER" --repo "$REPO" --body "$body"
+
+      # Patch and minor only: a major is a migration, whatever group it is in.
+      # `update-type` is the highest change in the PR, so one major in a group
+      # holds the whole group. An empty update-type (Dependabot could not read
+      # the versions) holds it too, because it matches neither arm.
+      - name: Enable auto-merge
+        if: >-
+          steps.classify.outputs.class == 'routine' &&
+          (steps.metadata.outputs.update-type == 'version-update:semver-patch' ||
+           steps.metadata.outputs.update-type == 'version-update:semver-minor')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: gh pr merge --auto --squash "$PR_URL"

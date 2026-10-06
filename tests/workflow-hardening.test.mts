@@ -609,3 +609,153 @@ test("every secret-reading job on a pull_request trigger skips Dependabot runs",
     `these jobs read secrets on a pull_request trigger but do not skip Dependabot runs with \`github.actor != 'dependabot[bot]'\`:\n${unguarded.join("\n")}`,
   );
 });
+
+/**
+ * Issue #225: a Dependabot PR runs without secrets, so what keeps a bump from
+ * landing unverified is a small triage workflow and a post-merge backstop. Both
+ * hold a write-scoped token, so what they can reach is pinned the same way the
+ * rest of the audit is: from the workflow text, so a loosening is a red test
+ * and not a quiet review comment.
+ */
+const workflowText = (file: string): string => {
+  const found = workflows.find(({ name }) => name === file);
+  assert.ok(found, `${file} is missing`);
+  return found.text;
+};
+
+/** `permissions:` entries of a block whose `permissions:` key is at `indent`. */
+const permissionsAt = (text: string, indent: number): string[] => {
+  const pad = " ".repeat(indent);
+  const match = text.match(new RegExp(`^${pad}permissions:[ \\t]*\\n((?:${pad}  .*\\n)+)`, "m"));
+  assert.ok(match, `no permissions block at indent ${indent}`);
+  return match[1]
+    .split("\n")
+    .filter((line) => line.trim() && !line.trim().startsWith("#"))
+    .map((line) => line.trim().replace(/\s+/g, " "))
+    .sort();
+};
+
+/** The text of one top-level job, header line included. */
+const jobBlock = (text: string, job: string): string => {
+  const jobsText = text.slice(text.search(/^jobs:[ \t]*$/m));
+  const block = jobsText
+    .split(/\n {2}(?=[a-z][\w-]*:\n)/)
+    .slice(1)
+    .find((candidate) => candidate.startsWith(`${job}:\n`));
+  assert.ok(block, `job ${job} not found`);
+  return block;
+};
+
+/** Every `run:` body (inline or block scalar) in a workflow. */
+const runBodies = (text: string): string[] => {
+  const lines = text.split("\n");
+  const bodies: string[] = [];
+  for (let i = 0; i < lines.length; i += 1) {
+    const m = lines[i].match(/^( *)(?:- )?run:[ \t]*(.*)$/);
+    if (!m) continue;
+    const indent = m[1].length;
+    if (!/^[|>][+-]?$/.test(m[2])) {
+      bodies.push(m[2]);
+      continue;
+    }
+    const body: string[] = [];
+    while (i + 1 < lines.length && (lines[i + 1].trim() === "" || /^ */.exec(lines[i + 1])![0].length > indent + 1)) {
+      i += 1;
+      body.push(lines[i]);
+    }
+    bodies.push(body.join("\n"));
+  }
+  return bodies;
+};
+
+test("dependabot-triage.yml reads no secrets", () => {
+  // Out of scope in #225, and the point of the design: bump PRs must not run
+  // with credentials before review. The job token is not a secret in this
+  // sense; `github.token` is the only credential and it is scoped below.
+  assert.doesNotMatch(workflowText("dependabot-triage.yml"), /\bsecrets\./);
+  assert.doesNotMatch(workflowText("release-backstop.yml"), /\bsecrets\./);
+});
+
+test("dependabot-triage.yml starts from contents: read and raises exactly two scopes on its job", () => {
+  const text = workflowText("dependabot-triage.yml");
+  assert.deepEqual(permissionsAt(text, 0), ["contents: read"]);
+  assert.deepEqual(
+    permissionsAt(jobBlock(text, "triage"), 4),
+    ["contents: write", "pull-requests: write"],
+    "the triage job needs contents: write (auto-merge) and pull-requests: write (label, comment) and nothing else -- no issues, actions or id-token",
+  );
+});
+
+test("the triage job runs only for Dependabot, as Dependabot", () => {
+  // `user.login` alone would also fire for a human's push to a Dependabot branch
+  // (the rehearsal step), re-enabling auto-merge on a branch now holding a
+  // human's commit. `actor` alone would fire for a human re-running a PR. Both.
+  const text = workflowText("dependabot-triage.yml");
+  const condition = jobBlock(text, "triage").match(/^ {4}if:[ \t]*(.+)$/m)?.[1] ?? "";
+  assert.match(condition, /github\.event\.pull_request\.user\.login == 'dependabot\[bot\]'/);
+  assert.match(condition, /github\.actor == 'dependabot\[bot\]'/);
+  assert.match(condition, /&&/);
+  assert.doesNotMatch(condition, /\|\|/, "an OR here would let one half stand in for the other");
+});
+
+test("auto-merge is reachable only for routine groups at patch/minor", () => {
+  const text = workflowText("dependabot-triage.yml");
+
+  const step = text.match(/- name: Enable auto-merge\n([\s\S]*?)(?=\n {6}- name:|$)/)?.[1];
+  assert.ok(step, "Enable auto-merge step not found");
+  assert.match(step, /steps\.classify\.outputs\.class == 'routine'/);
+  assert.match(step, /update-type == 'version-update:semver-patch'/);
+  assert.match(step, /update-type == 'version-update:semver-minor'/);
+  assert.doesNotMatch(step, /semver-major/);
+  // Exactly one `gh pr merge` in the file: a second one elsewhere would be an
+  // auto-merge path this test does not guard.
+  assert.equal(
+    runBodies(text).filter((body) => /gh pr merge/.test(body)).length,
+    1,
+  );
+
+  const arms = [...text.matchAll(/^ {10}\s*([^\n\s]+?)\) class=routine;/gm)].map((m) => m[1]);
+  assert.deepEqual(arms, ["dev-tooling|actions"], "only dev-tooling and actions may map to routine");
+  assert.doesNotMatch(
+    text.match(/case "\$GROUP" in([\s\S]*?)esac/)![1].replace(/^.*class=routine.*$/m, ""),
+    /class=routine/,
+    "a second arm maps to routine",
+  );
+});
+
+test("dependabot-triage.yml has no expression inside a run: script", () => {
+  // zizmor's template-injection gate is the machine check; this keeps the
+  // property visible in the unit suite too. Values reach a script through env.
+  const bodies = runBodies(workflowText("dependabot-triage.yml"));
+  assert.ok(bodies.length >= 3, `found ${bodies.length} run bodies -- the reader is reading nothing`);
+  for (const body of bodies) {
+    assert.doesNotMatch(body, /\$\{\{/, `expression inside run:\n${body}`);
+  }
+});
+
+test("release-backstop.yml dispatches release.yml with the narrowest token", () => {
+  const text = workflowText("release-backstop.yml");
+  assert.deepEqual(permissionsAt(text, 0), ["contents: read"]);
+  assert.deepEqual(
+    permissionsAt(jobBlock(text, "backstop"), 4),
+    ["actions: write", "contents: read"],
+  );
+  assert.match(text, /gh workflow run release\.yml\b/);
+  assert.match(text, /--commit "\$sha"/, "the check must be per commit, not 'any run today'");
+  assert.match(text, /^ {2}schedule:\s*$/m);
+  assert.match(text, /^ {2}workflow_dispatch:/m);
+  for (const body of runBodies(text)) {
+    assert.doesNotMatch(body, /\$\{\{/, `expression inside run:\n${body}`);
+  }
+});
+
+test("release.yml treats a Dependabot merge like any other (#225 step 5)", () => {
+  // "No special-casing": the same pipeline, the same gates. The one thing that
+  // differs for a merge made with GITHUB_TOKEN is whether the push trigger
+  // fires, and release-backstop.yml covers that without touching this file.
+  const text = workflowText("release.yml");
+  const header = text.slice(0, text.search(/^jobs:[ \t]*$/m));
+  assert.match(header, /^ {2}push:\s*\n {4}branches: \[main\]/m);
+  assert.match(header, /^ {2}workflow_dispatch:/m);
+  assert.doesNotMatch(text, /dependabot/i, "release.yml special-cases Dependabot");
+});
