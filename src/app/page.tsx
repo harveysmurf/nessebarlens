@@ -37,9 +37,8 @@ export default function HomePage() {
           className="relative aspect-[21/9] rounded-sm overflow-hidden bg-stone-200 group block"
         >
           <WebPhoto
-            slug={hero.slug}
-            alt={hero.alt}
-            preferred={2500}
+            photo={hero}
+            preferred={2000}
             priority
             sizes="(max-width: 1280px) 100vw, 1280px"
             className="absolute inset-0 w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000"
@@ -86,8 +85,7 @@ export default function HomePage() {
                   }`}
                 >
                   <WebPhoto
-                    slug={photo.slug}
-                    alt={cat.title}
+                    photo={photo}
                     preferred={1500}
                     sizes="(max-width: 768px) 100vw, 33vw"
                     className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ${filmLookClass(photo.filmLook)}`}

@@ -30,9 +30,8 @@ export default async function PrintDetailPage({
         <div className="lg:col-span-7 space-y-3">
           <div className="bg-stone-200 rounded-sm overflow-hidden aspect-[4/3] relative flex items-center justify-center p-3 border border-stone-300/60 shadow-inner">
             <WebPhoto
-              slug={photo.slug}
-              alt={photo.alt}
-              preferred={2500}
+              photo={photo}
+              preferred={2000}
               sizes="(max-width: 1024px) 100vw, 60vw"
               priority
               className={`max-h-full max-w-full object-contain shadow-md ${filmLookClass(photo.filmLook)}`}

@@ -1236,13 +1236,19 @@ Then, per photo:
 2. `npm run ingest` — **dry run by default.** It prints every object it would
    write, in both buckets, and uploads nothing. Read that list.
 3. `npm run ingest -- --apply` — writes the original to
-   `nessebar-lens-masters/prints/{slug}.jpg` and each rung to
-   `nessebar-lens-web/{slug}/{750,1500,2500}.jpg`. Width-driven resize, aspect
-   ratio preserved, no crop: the list page's uniform tiles are a CSS
-   `aspect-ratio` with `object-fit: cover`, and the photo page is uncropped.
-   `--only alley-cat` narrows a run to one photo. It does **not** touch
-   `nessebar-lens-masters-staging`: staging cannot sell the new photo until
-   #241 or a manual downscale seed (§Masters bucket per environment).
+   `nessebar-lens-masters/prints/{slug}.jpg` and each rung, in **JPEG
+   (mozjpeg, q82) and WebP (q80)**, to
+   `nessebar-lens-web/{slug}/{hash8}/{400,750,1500,2000}.{jpg,webp}`. The
+   `hash8` is the first 8 hex chars of the master's SHA-256, so a changed image
+   is a new URL and the derivatives can be served
+   `Cache-Control: public, max-age=31536000, immutable`. Width-driven resize,
+   `rotate()` + `toColorspace('srgb')` (EXIF orientation applied, embedded ICC
+   converted), aspect ratio preserved, metadata stripped, no crop: the list
+   page's uniform tiles are a CSS `aspect-ratio` with `object-fit: cover`, and
+   the photo page is uncropped. A master under 2000 px (the top rung) is
+   refused. `--only alley-cat` narrows a run to one photo. It does **not**
+   touch `nessebar-lens-masters-staging`: staging cannot sell the new photo
+   until #241 or a manual downscale seed (§Masters bucket per environment).
 4. Verify a couple of URLs resolve under `NEXT_PUBLIC_WEB_IMAGES_BASE`, **then**
    set `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED=true`. Only `true` or `1` enable
    the ladder; a configured base alone does not.
@@ -1295,15 +1301,18 @@ script.
   `/placeholders/{slug}.jpg`; real photographs replace these on R2 later. Keep the
   slug set stable.
 - **No remote image hosts.** `next.config.ts` sets `images.remotePatterns: []` —
-  do not add `images.unsplash.com` or any third-party host. Gallery uses plain
-  `<img>` srcset against `NEXT_PUBLIC_WEB_IMAGES_BASE` only.
+  do not add `images.unsplash.com` or any third-party host. Gallery uses a plain
+  `<picture>` (`src/components/WebPhoto.tsx`) — a WebP `<source>` plus a JPEG
+  `<img>` srcset — against `NEXT_PUBLIC_WEB_IMAGES_BASE` only.
 - **The derivative ladder is gated.** `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED`
-  (default off) decides between the R2 ladder (`{slug}/{width}.jpg` in
-  `nessebar-lens-web`) and the committed placeholders. Set the base without the
-  flag and the gallery keeps serving placeholders — that is deliberate, because
-  the base is configured in every environment while both buckets are still
-  empty. Turn the flag on only after the upload is verified, and expect
-  `tests/placeholder-photo.test.mts` to need updating at that moment.
+  (default off) decides between the R2 ladder (`{slug}/{hash8}/{width}.{jpg|webp}`
+  in `nessebar-lens-web`, four widths × two formats) and the committed
+  placeholders. A photo with no `image_hash` also falls back to the placeholder.
+  Set the base without the flag and the gallery keeps serving placeholders —
+  that is deliberate, because the base is configured in every environment while
+  both buckets are still empty. Turn the flag on only after the upload is
+  verified, and expect `tests/placeholder-photo.test.mts` to need updating at
+  that moment.
 - **Quotes are cached; checkout is not.** `/api/quote` is unauthenticated and
   shares Prodigi's rate limit with `/api/checkout`, so a cached-miss loop could
   otherwise 429 Prodigi and break checkout for real customers. `src/lib/quote-cache.ts`

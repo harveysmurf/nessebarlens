@@ -1,70 +1,84 @@
 /**
- * Public gallery derivatives — Squarespace ladder trimmed to three widths.
- * Pre-rendered at ingest into nessebar-lens-web as:
- *   {slug}/750.jpg | {slug}/1500.jpg | {slug}/2500.jpg
+ * Public gallery derivatives — four widths in two formats, pre-rendered at
+ * ingest/publish into nessebar-lens-web as:
+ *   {slug}/{hash8}/400.jpg | 750 | 1500 | 2000, and the same as .webp
  * Never link masters or Image Resizing URLs from the gallery.
  * No third-party image hosts (Unsplash etc.) — missing base → no remote image.
  *
- * Naming: masters are prints/{slug}.jpg, derivatives are {slug}/{width}.jpg.
- * Name by intrinsic width, never by device — a retina phone, a tablet and a
- * desktop tile are all just "width N", and the browser picks the rung from
- * the srcSet/sizes attributes in the HTML. Nested rather than flat so one
- * photo's rungs delete together under a single prefix.
+ * Naming: masters are prints/{slug}.jpg; derivatives are
+ * {slug}/{hash8}/{width}.{ext}. Name by intrinsic width, never by device — a
+ * retina phone, a tablet and a desktop tile are all just "width N", and the
+ * browser picks the rung from the srcSet/sizes attributes in the HTML. The
+ * hash segment is the master's content hash: a changed image is a new URL, so
+ * the objects can be served immutable.
  *
  * THE GATE. The ladder is served only when NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED
  * is set, and not merely because the base URL is set. Those are different
  * facts: the base was configured in all three environments while both buckets
  * were still empty, so treating "base is set" as "files exist" would have
  * replaced every working placeholder with a 404. Turning the flag on is the
- * deliberate act that says the upload happened.
+ * deliberate act that says the upload happened. A photo with no image_hash is
+ * still a placeholder and is served from /public/placeholders regardless.
  */
 
 import {
-  derivativeKey,
   WEB_DEFAULT_WIDTH,
   WEB_DERIVATIVE_WIDTHS,
+  webDerivativeKey,
+  type WebDerivativeFormat,
   type WebDerivativeWidth,
 } from "./derivative-ladder";
 import { webDerivativesEnabled, webImagesBase } from "./config";
 
-/**
- * Public gallery derivative URLs for the site.
- *
- * The rung list, bucket names and key shapes are declared in
- * derivative-ladder.ts, which the ingest script loads directly. Nothing is
- * re-exported from here: a caller that wants a rung imports it from the module
- * that owns it, so "which file declares this" has one answer and adding a rung
- * does not mean editing a second list of names.
- */
+/** The catalog fields the web ladder needs — a slug and, once published, its hash. */
+export type WebPhotoSource = { slug: string; imageHash?: string };
+
 export type WebDerivativeUrls = {
-  /** One URL per entry in WEB_DERIVATIVE_WIDTHS, keyed by that width. */
-  urls: Record<WebDerivativeWidth, string>;
-  /** Default display source. */
+  /** The JPEG URL for every rung, keyed by width. */
+  jpeg: Record<WebDerivativeWidth, string>;
+  /** The WebP URL for every rung, keyed by width. */
+  webp: Record<WebDerivativeWidth, string>;
+  /** Default display source — the middle-rung JPEG. */
   src: string;
+  /** JPEG srcset, one entry per rung. */
   srcSet: string;
+  /** WebP srcset, one entry per rung. */
+  webpSrcSet: string;
 };
 
 /**
- * Returns null unless the ladder is explicitly enabled and the base resolves.
- * Production must not fall back to any remote host, and must not serve the
- * ladder from an empty bucket.
+ * The URLs for one photo, or null when the ladder is off, the base is
+ * unusable, or the photo has no image_hash yet (a placeholder). Null means
+ * "fall back to the placeholder", never "render nothing".
  */
-export function webDerivativeUrls(slug: string): WebDerivativeUrls | null {
+export function webDerivativeUrls(
+  photo: WebPhotoSource,
+): WebDerivativeUrls | null {
   if (!webDerivativesEnabled()) return null;
   const base = webImagesBase();
   if (!base) return null;
+  // A catalog entry without a hash has not been published yet, so no
+  // derivative exists at any key we could build.
+  const hash = photo.imageHash;
+  if (!hash) return null;
 
-  // derivativeKey owns the {slug}/{rung}.jpg shape; this module only adds
-  // the base. Spelling the path again here is the one copy that could
-  // disagree with the key the ingest writes.
-  const path = (w: WebDerivativeWidth) => `${base}/${derivativeKey(slug, w)}`;
-  const urls = Object.fromEntries(
-    WEB_DERIVATIVE_WIDTHS.map((w) => [w, path(w)]),
-  ) as Record<WebDerivativeWidth, string>;
+  const url = (width: WebDerivativeWidth, ext: WebDerivativeFormat) =>
+    `${base}/${webDerivativeKey(photo.slug, hash, width, ext)}`;
+  const urlsFor = (ext: WebDerivativeFormat) =>
+    Object.fromEntries(
+      WEB_DERIVATIVE_WIDTHS.map((w) => [w, url(w, ext)]),
+    ) as Record<WebDerivativeWidth, string>;
+
+  const jpeg = urlsFor("jpg");
+  const webp = urlsFor("webp");
+  const srcSetOf = (urls: Record<WebDerivativeWidth, string>) =>
+    WEB_DERIVATIVE_WIDTHS.map((w) => `${urls[w]} ${w}w`).join(", ");
 
   return {
-    urls,
-    src: urls[WEB_DEFAULT_WIDTH],
-    srcSet: WEB_DERIVATIVE_WIDTHS.map((w) => `${urls[w]} ${w}w`).join(", "),
+    jpeg,
+    webp,
+    src: jpeg[WEB_DEFAULT_WIDTH],
+    srcSet: srcSetOf(jpeg),
+    webpSrcSet: srcSetOf(webp),
   };
 }

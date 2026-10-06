@@ -22,12 +22,12 @@
  * it has parsed the srcSet, and the one a client that ignores srcSet gets
  * forever. It does NOT narrow the srcSet: the ladder stays complete so the
  * browser can still pick a different rung for a different viewport. A call site
- * asking for 2500 is saying "this is the largest thing on the page", which is
- * different from "only ever offer 2500".
+ * asking for 2000 is saying "this is the largest thing on the page", which is
+ * different from "only ever offer 2000".
  */
 
 import { PHOTO_SLUG_PATTERN, WEB_DEFAULT_WIDTH } from "./derivative-ladder";
-import { webDerivativeUrls } from "./derivatives";
+import { webDerivativeUrls, type WebPhotoSource } from "./derivatives";
 import type { WebDerivativeWidth } from "./derivative-ladder";
 
 /**
@@ -40,11 +40,13 @@ export const PLACEHOLDER_VERSION = 3;
 export type GalleryImage = {
   src: string;
   /**
-   * Null when there is no ladder. Never a one-rung srcSet: it would render
-   * correctly and imply a responsive ladder that does not exist, which is
-   * how a missing ladder stays invisible.
+   * The JPEG srcset. Null when there is no ladder. Never a one-rung srcSet: it
+   * would render correctly and imply a responsive ladder that does not exist,
+   * which is how a missing ladder stays invisible.
    */
   srcSet: string | null;
+  /** The WebP srcset for the `<source>`, or null when there is no ladder. */
+  webpSrcSet: string | null;
   /** "ladder" or "placeholder" — surfaced for tests and debugging. */
   source: "ladder" | "placeholder";
 };
@@ -62,29 +64,35 @@ export function placeholderPhotoSrc(slug: string): string | null {
 }
 
 /**
- * The image for one slug. Null only when the slug is unusable — the ladder
- * being off is a normal state, not a failure, and degrades to the
- * placeholder rather than to nothing.
+ * The image for one photo. Null only when the slug is unusable — the ladder
+ * being off, or the photo having no hash, are normal states, not failures, and
+ * degrade to the placeholder rather than to nothing.
  */
 export function galleryImage(
-  slug: string,
+  photo: WebPhotoSource,
   preferred: WebDerivativeWidth = WEB_DEFAULT_WIDTH,
 ): GalleryImage | null {
-  if (!PHOTO_SLUG_PATTERN.test(slug)) return null;
+  if (!PHOTO_SLUG_PATTERN.test(photo.slug)) return null;
 
-  const ladder = webDerivativeUrls(slug);
+  const ladder = webDerivativeUrls(photo);
   if (ladder) {
     // Only take a rung the ladder actually has. A caller asking for a width
     // that is not in WEB_DERIVATIVE_WIDTHS falls back to the default rather
     // than building a URL for an object ingest never writes.
-    const rung = ladder.urls[preferred] ? preferred : WEB_DEFAULT_WIDTH;
-    return { src: ladder.urls[rung], srcSet: ladder.srcSet, source: "ladder" };
+    const rung = ladder.jpeg[preferred] ? preferred : WEB_DEFAULT_WIDTH;
+    return {
+      src: ladder.jpeg[rung],
+      srcSet: ladder.srcSet,
+      webpSrcSet: ladder.webpSrcSet,
+      source: "ladder",
+    };
   }
 
   // The slug is already known good here, so this cannot be null.
   return {
-    src: placeholderPhotoSrc(slug)!,
+    src: placeholderPhotoSrc(photo.slug)!,
     srcSet: null,
+    webpSrcSet: null,
     source: "placeholder",
   };
 }

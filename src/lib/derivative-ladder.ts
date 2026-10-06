@@ -16,9 +16,9 @@
  * The ingest direction is the other way round: masters arrive as local files
  * in the gitignored `ingest/` folder (scripts/ingest-derivatives.mjs), get
  * written to the private masters bucket as `prints/{slug}.jpg`, and their
- * rungs go to the public web bucket as `{slug}/{rung}.jpg`. A dropped file is
- * named for the slug it declares, so the plan is decided from file names and
- * pixel widths alone.
+ * rungs go to the public web bucket as `{slug}/{hash8}/{width}.{jpg|webp}`.
+ * A dropped file is named for the slug it declares, so the plan is decided
+ * from file names, pixel widths and the master's content hash alone.
  */
 
 /**
@@ -51,15 +51,61 @@ export const MASTER_KEY_PATTERN = new RegExp(
  * Ascending, unique, positive — assertRungList() rejects anything else rather
  * than generating a ladder the srcSet cannot express.
  */
-export const WEB_DERIVATIVE_WIDTHS = [750, 1500, 2500] as const;
+export const WEB_DERIVATIVE_WIDTHS = [400, 750, 1500, 2000] as const;
 export type WebDerivativeWidth = (typeof WEB_DERIVATIVE_WIDTHS)[number];
 
 /** Default display source — the middle rung of the ladder. */
 export const WEB_DEFAULT_WIDTH: WebDerivativeWidth = 1500;
 
-/** The one place a rung's object key is spelled. */
-export function derivativeKey(slug: string, rung: number): string {
-  return `${slug}/${rung}.jpg`;
+/** Output formats every rung is written in. No AVIF. */
+export const WEB_DERIVATIVE_FORMATS = ["jpg", "webp"] as const;
+export type WebDerivativeFormat = (typeof WEB_DERIVATIVE_FORMATS)[number];
+
+/**
+ * A master narrower than this is refused: the top rung is 2000, so anything
+ * under it could never fill the largest public image. Derived from the rung
+ * list, not spelled again, so the two cannot drift.
+ */
+export const MASTER_MIN_WIDTH: number =
+  WEB_DERIVATIVE_WIDTHS[WEB_DERIVATIVE_WIDTHS.length - 1]!;
+
+/**
+ * The one place a web derivative's object key is spelled:
+ * `{slug}/{hash8}/{width}.{ext}`. The content hash in the path is what makes
+ * the immutable cache header safe — a changed image is always a new URL.
+ */
+export function webDerivativeKey(
+  slug: string,
+  hash: string,
+  width: number,
+  ext: WebDerivativeFormat,
+): string {
+  return `${slug}/${hash}/${width}.${ext}`;
+}
+
+/**
+ * The first 8 hex chars of the master's SHA-256, which names its public
+ * derivatives. Global Web Crypto, not `node:crypto`, so this module keeps its
+ * no-imports property and the ingest script stays loadable under plain node.
+ */
+export async function imageHash(bytes: Uint8Array): Promise<string> {
+  // The cast is the Uint8Array/BufferSource generic mismatch in TS 5.7's
+  // typed arrays, not a real widening: this is a view over binary bytes.
+  const digest = new Uint8Array(
+    await crypto.subtle.digest("SHA-256", bytes as unknown as BufferSource),
+  );
+  let hex = "";
+  for (const byte of digest) hex += byte.toString(16).padStart(2, "0");
+  return hex.slice(0, 8);
+}
+
+/** A master below MASTER_MIN_WIDTH cannot fill the ladder; refuse it early. */
+export function assertMasterIsUsable(width: number): void {
+  if (!Number.isInteger(width) || width < MASTER_MIN_WIDTH) {
+    throw new Error(
+      `master is ${width}px wide; the floor is ${MASTER_MIN_WIDTH}px (the top rung)`,
+    );
+  }
 }
 
 /** True only for a well-formed `prints/{slug}.jpg` master key. */
@@ -91,13 +137,21 @@ export function assertRungList(widths: readonly number[]): void {
 }
 
 /**
- * A rung never encodes more pixels than the master has. A 1200px master
- * still gets 750/1500/2500 written — each at its own intrinsic width — so
- * every key the srcSet advertises exists. Skipping the wide rungs instead
- * would leave a srcSet pointing at 404s, which is the failure the ladder gate
- * in derivatives.ts exists to prevent.
+ * A rung never encodes more pixels than the master has. A 1200px master still
+ * gets 400/750/1500/2000 written — each at its own intrinsic width — so every
+ * key the srcSet advertises exists. Skipping the wide rungs instead would
+ * leave a srcSet pointing at 404s, which is the failure the ladder gate in
+ * derivatives.ts exists to prevent.
  */
 export const DERIVATIVE_JPEG_QUALITY = 82;
+export const DERIVATIVE_WEBP_QUALITY = 80;
+
+/**
+ * Safe to make immutable because the object key carries the master's content
+ * hash: new bytes are a new key, so a URL's content never changes.
+ */
+export const WEB_DERIVATIVE_CACHE_CONTROL =
+  "public, max-age=31536000, immutable";
 
 export type MasterUpload = {
   slug: string;
@@ -109,11 +163,15 @@ export type DerivativeJob = {
   slug: string;
   /** The dropped file this object comes from, by name — `alley-cat.jpg`. */
   sourceName: string;
+  /** The master's content hash, the path segment that makes the URL immutable. */
+  hash: string;
   /** The rung this object is stored as, in the width the srcSet advertises. */
   rung: number;
   /** Pixels to resize to — the rung, capped at the master's own width. */
   pixels: number;
-  /** Where it is written: `{slug}/{rung}.jpg` in WEB. */
+  /** jpg or webp. */
+  format: WebDerivativeFormat;
+  /** Where it is written: `{slug}/{hash8}/{rung}.{ext}` in WEB. */
   key: string;
 };
 
@@ -127,7 +185,7 @@ export type IngestPlan = {
   notes: string[];
 };
 
-export type DroppedMaster = { name: string; width: number };
+export type DroppedMaster = { name: string; width: number; hash: string };
 
 /**
  * The slug a dropped file declares, or null if the name cannot be one.
@@ -192,13 +250,17 @@ export function planDerivatives(
     for (const rung of rungs) {
       const pixels = Math.min(rung, drop.width);
       if (pixels < rung) clamped += 1;
-      jobs.push({
-        slug,
-        sourceName: drop.name,
-        rung,
-        pixels,
-        key: derivativeKey(slug, rung),
-      });
+      for (const format of WEB_DERIVATIVE_FORMATS) {
+        jobs.push({
+          slug,
+          sourceName: drop.name,
+          hash: drop.hash,
+          rung,
+          pixels,
+          format,
+          key: webDerivativeKey(slug, drop.hash, rung, format),
+        });
+      }
     }
     if (clamped > 0) {
       notes.push(
