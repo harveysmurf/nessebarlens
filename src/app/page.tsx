@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { WebPhoto } from "@/components/WebPhoto";
-import { filmLookClass, getPhoto, isFilmPhoto } from "@/lib/photos";
+import { featuredPhoto, filmLookClass, getPhoto, isFilmPhoto } from "@/lib/photos";
 
 const CATEGORIES = [
   {
@@ -27,7 +27,7 @@ const CATEGORIES = [
 ] as const;
 
 export default function HomePage() {
-  const hero = getPhoto("dawn")!;
+  const hero = featuredPhoto()!;
 
   return (
     <section className="fade-in">
@@ -38,7 +38,7 @@ export default function HomePage() {
         >
           <WebPhoto
             slug={hero.slug}
-            alt={hero.title}
+            alt={hero.alt}
             preferred={2500}
             priority
             sizes="(max-width: 1280px) 100vw, 1280px"

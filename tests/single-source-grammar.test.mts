@@ -18,7 +18,8 @@ import test from "node:test";
 import ts from "typescript";
 import { MASTERS_BUCKET_NAME } from "../src/lib/derivative-ladder.ts";
 import { MASTERS_BUCKET, MASTER_MARKER } from "../src/lib/master-guard.ts";
-import { FILM_LOOKS, filmLookClass } from "../src/lib/photos.ts";
+import { FILM_LOOKS } from "../src/lib/photo-schema.ts";
+import { filmLookClass } from "../src/lib/photos.ts";
 import { AWAITING_PRODIGI_REASON } from "../src/lib/order-decision.ts";
 import { ORDERS_STORE_UNAVAILABLE_ERROR } from "../src/lib/orders-store.ts";
 

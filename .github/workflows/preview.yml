@@ -71,6 +71,9 @@ jobs:
           HEAD_REF: ${{ github.head_ref }}
         run: echo "name=$(bash scripts/sanitize-branch-name.sh "$HEAD_REF")" >> "$GITHUB_OUTPUT"
 
+      - name: Build catalog
+        run: npm run build:catalog
+
       - name: Build (OpenNext)
         run: npx opennextjs-cloudflare build
 

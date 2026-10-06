@@ -102,6 +102,9 @@ jobs:
 
       - uses: $/.github/actions/setup
 
+      - name: Build catalog
+        run: npm run build:catalog
+
       - name: Build (OpenNext)
         run: npx opennextjs-cloudflare build
 

@@ -33,13 +33,20 @@ fi
 ATTEMPTS="${SMOKE_ATTEMPTS:-10}"
 SLEEP="${SMOKE_SLEEP:-6}"
 
-# Read the first catalog slug from photos.ts so the happy path can never
-# drift away from the photos we actually ship.
+# Read a catalog slug from content/photos so the happy path can never drift
+# away from the photos we actually ship. The filename is the slug (the schema
+# requires any `slug:` in the file to equal it), and every committed photo is
+# published, so the first file is a real, served slug.
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-VALID_SLUG="$(sed -nE 's/^[[:space:]]*slug:[[:space:]]*"([a-z0-9-]+)",[[:space:]]*$/\1/p' \
-  "$ROOT/src/lib/photos.ts" | head -1)"
+VALID_SLUG=""
+for f in "$ROOT"/content/photos/*.yaml; do
+  [[ -e "$f" ]] || break
+  VALID_SLUG="${f##*/}"
+  VALID_SLUG="${VALID_SLUG%.yaml}"
+  break
+done
 if [[ -z "$VALID_SLUG" ]]; then
-  echo "smoke: could not read a slug from src/lib/photos.ts" >&2
+  echo "smoke: could not read a slug from content/photos/*.yaml" >&2
   exit 1
 fi
 BAD_SLUG="zzz-not-a-real-photo-slug"
