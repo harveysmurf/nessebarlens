@@ -25,7 +25,7 @@
     "next": "16.3.8",
     "react": "19.3.0",
     "react-dom": "19.3.0",
-    "stripe": "^22.6.2"
+    "stripe": "^23.0.0"
   },
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.984.0",

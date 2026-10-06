@@ -148,7 +148,9 @@ async function paidIntent(stripe, paymentMethod, amount = AMOUNT_EUR) {
   const intent = await stripe.paymentIntents.create({
     amount,
     currency: "eur",
-    payment_method_types: ["card"],
+    // `payment_method_types` was removed from PaymentIntent create in API
+    // version 2026-09-30.endive (stripe v23); this is its replacement.
+    allowed_payment_method_types: ["card"],
   });
   // request_three_d_secure=automatic: a test card that succeeds without
   // authentication, so the confirm does not stall on a 3DS challenge.
@@ -173,8 +175,16 @@ async function disputeForCharge(stripe, chargeId) {
   return null;
 }
 
+/**
+ * The API version the app pins in src/lib/stripe.ts. This check exists to prove
+ * the shapes the app depends on, so it must ask for the same version the app
+ * does; tests/verify-stripe-script.test.mts holds the two together.
+ */
+export const STRIPE_API_VERSION = "2026-09-30.endive";
+
 export async function main() {
   const stripe = new Stripe(testModeKey(process.env.STRIPE_SECRET_KEY), {
+    apiVersion: STRIPE_API_VERSION,
     httpClient: Stripe.createFetchHttpClient(),
   });
 
