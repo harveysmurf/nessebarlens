@@ -25,7 +25,7 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-import { ciJobs, readRequiredContexts } from "../scripts/required-checks.mjs";
+import { ciJobs, readRequiredContexts, remediationCommand } from "../scripts/required-checks.mjs";
 
 const jobs = ciJobs();
 const required = readRequiredContexts();
@@ -91,4 +91,23 @@ test("ci.yml does not try to verify branch protection", () => {
     !/required-checks\.mjs/.test(ci),
     "ci.yml invokes required-checks.mjs again; a workflow step cannot read branch protection, so this can only ever exit 4",
   );
+});
+
+test("the drift hint PATCHes /required_status_checks, never the bare protection endpoint", () => {
+  // branches/main/protection accepts PUT only, so `-X PATCH` there is a 404
+  // whatever the token can do. The old hint printed exactly that.
+  const hint = remediationCommand("owner/repo", required);
+  assert.match(
+    hint,
+    /gh api -X PATCH repos\/owner\/repo\/branches\/main\/protection\/required_status_checks --input -/,
+  );
+  assert.ok(
+    !/-X PATCH \S*branches\/main\/protection(?!\/required_status_checks)/.test(hint),
+    "the hint PATCHes branches/main/protection, which has no PATCH and returns 404",
+  );
+  const body = JSON.parse(/<<'JSON'\n([\s\S]*)\nJSON$/.exec(hint)?.[1] ?? "null");
+  assert.deepEqual(body, {
+    strict: true,
+    checks: required.map((context) => ({ context, app_id: 15368 })),
+  });
 });

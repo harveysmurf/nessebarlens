@@ -108,6 +108,27 @@ export function liveContexts(rule) {
     : (rule.required_status_checks?.contexts ?? []);
 }
 
+/**
+ * The copy-pasteable fix for drift. It targets `/required_status_checks`
+ * because `branches/main/protection` itself accepts PUT only: a PATCH there
+ * returns 404 whatever the token's scopes, which is how this hint once sent
+ * the person fixing the drift down a dead end. The body uses `checks` rather
+ * than the legacy `contexts`: when both are sent GitHub honours `checks` and
+ * ignores `contexts`, so writing the legacy field would report success while
+ * changing nothing. 15368 is GitHub Actions.
+ */
+export function remediationCommand(repo, declared) {
+  const body = {
+    strict: true,
+    checks: declared.map((context) => ({ context, app_id: 15368 })),
+  };
+  return [
+    `  gh api -X PATCH repos/${repo}/branches/main/protection/required_status_checks --input - <<'JSON'`,
+    JSON.stringify(body, null, 2),
+    "JSON",
+  ].join("\n");
+}
+
 async function main() {
   const token = process.env.GITHUB_TOKEN ?? process.env.GH_TOKEN ?? process.env.GITHUB_API_TOKEN;
   const repo = process.env.GITHUB_REPOSITORY ?? "harveysmurf/nessebarlens";
@@ -132,18 +153,7 @@ async function main() {
     console.log(`branch protection requires exactly the ${declared.length} declared check(s): ${declared.join(", ")}`);
     return 0;
   }
-  // `checks` rather than the legacy `contexts`: when both are sent GitHub
-  // honours `checks` and ignores `contexts`, so writing the legacy field would
-  // report success while changing nothing. 15368 is GitHub Actions.
-  const lines = [
-    `gh api -X PATCH repos/${repo}/branches/main/protection`,
-    "  -f required_status_checks[strict]=true",
-    ...declared.flatMap((context) => [
-      `  -f 'required_status_checks[checks][][context]=${context}'`,
-      "  -f 'required_status_checks[checks][][app_id]=15368'",
-    ]),
-  ];
-  console.error(`\nSet the rule to exactly the committed list:\n  ${lines.join(" \\\n  ")}`);
+  console.error(`\nSet the rule to exactly the committed list:\n${remediationCommand(repo, declared)}`);
   return 1;
 }
 
