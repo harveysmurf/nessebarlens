@@ -1,6 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
+import { STRIPE_API_VERSION as APP_API_VERSION } from "../src/lib/stripe.ts";
 import {
+  STRIPE_API_VERSION,
   disputeChargeId,
   pickCompletedSession,
   refundSteps,
@@ -85,4 +87,10 @@ test("refundSteps refunds partially first and exactly covers the amount", () => 
   assert.throws(() => refundSteps(1), /at least 2/);
   assert.throws(() => refundSteps(1500.5), /at least 2/);
   assert.throws(() => refundSteps("3000"), /at least 2/);
+});
+
+test("the live check asks Stripe for the API version the app pins", () => {
+  // A check that proves the shapes of a different API version than checkout
+  // and the webhook use proves nothing about them.
+  assert.equal(STRIPE_API_VERSION, APP_API_VERSION);
 });
