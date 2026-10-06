@@ -1041,8 +1041,8 @@ waits 10 minutes before acting, so a slow push trigger does not get a second
 release, and scheduled runs are delayed under load, so the effective lag is up
 to an hour or more. It is not Dependabot-specific.
 
-**Stripe fixtures.** `tests/fixtures/stripe/` is currently **hand-built from the
-API reference**, not captured. Replace it with real events:
+**Stripe fixtures.** `tests/fixtures/stripe/` holds **real sandbox
+captures**, scrubbed of personal data. Refresh them with:
 
 ```sh
 STRIPE_SECRET_KEY=sk_test_… node scripts/capture-stripe-fixtures.mjs
@@ -1050,8 +1050,10 @@ STRIPE_SECRET_KEY=sk_test_… node scripts/capture-stripe-fixtures.mjs
 
 It needs events from the **last 30 days**: one sandbox physical purchase;
 refunds and disputes come from `verify-stripe.yml`'s runs. Review the scrubbed
-diff before committing. **Recapture whenever `STRIPE_API_VERSION` moves** (the
-contract test fails otherwise, by design).
+diff before committing. **Recapture whenever the webhook endpoint's (or account default) API version
+changes** (the contract test's `WEBHOOK_API_VERSION` fails otherwise, by
+design); it is also worth doing when the `stripe` SDK major moves.
+`STRIPE_API_VERSION` only pins API requests, not payload shape.
 
 **Adding a Dependabot group** means adding it to the `case` in
 `dependabot-triage.yml`. `tests/dependabot-config.test.mts` fails if you do

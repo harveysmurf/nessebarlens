@@ -33,13 +33,21 @@ import {
        and rejects a tampered body or wrong secret;
      - the REAL webhook route turns the checkout fixture into a stored order;
      - the refund and dispute fixtures carry the fields the revocation path reads;
-     - the API version pin has not moved without the fixtures moving with it.
+     - the fixtures all share the webhook endpoint's API version.
 
    Compile-time shape checks against the SDK types live in
    src/lib/stripe-event.ts and run under `npm run typecheck`.
 
-   The fixtures are hand-built from the API reference until replaced by
+   The fixtures are real sandbox captures, scrubbed of personal data by
    `node scripts/capture-stripe-fixtures.mjs` (see tests/fixtures/stripe/README.md). */
+
+/* The API version the webhook payloads are rendered at. Stripe renders an event
+   at the webhook ENDPOINT's API version, falling back to the account default;
+   the staging endpoint has api_version null, so it follows the account default.
+   The client pin STRIPE_API_VERSION (src/lib/stripe.ts) only governs API
+   requests, so it need not equal this. Changing this is a Stripe-dashboard
+   decision; when it changes, re-capture the fixtures and update this constant. */
+const WEBHOOK_API_VERSION = "2026-08-26.dahlia";
 
 const FAKE = "buzz-test:fake-worker-bindings";
 
@@ -161,11 +169,11 @@ for (const name of FIXTURE_NAMES) {
     );
   });
 
-  test(`${name}: the fixture was captured under the pinned API version`, () => {
+  test(`${name}: the fixture carries the webhook endpoint's API version`, () => {
     assert.equal(
       fixtures[name].api_version,
-      STRIPE_API_VERSION,
-      "STRIPE_API_VERSION moved: re-capture fixtures with scripts/capture-stripe-fixtures.mjs",
+      WEBHOOK_API_VERSION,
+      "webhook API version changed: re-capture fixtures with scripts/capture-stripe-fixtures.mjs and update WEBHOOK_API_VERSION",
     );
     assert.equal(fixtures[name].object, "event");
     assert.equal(fixtures[name].livemode, false);
@@ -242,9 +250,9 @@ test("checkout.session.completed: the real route stores the order the fixture de
   assert.equal(order.reason, null);
   assert.equal(order.prodigiOrderId, "ord_contract_1");
   assert.equal(sent.length, 1, "one Prodigi order was placed");
-  assert.equal(sent[0].body.recipient.address.townOrCity, "Nessebar");
-  assert.equal(sent[0].body.recipient.address.countryCode, "BG");
   const shipping = session.collected_information!.shipping_details!;
+  assert.equal(sent[0].body.recipient.address.townOrCity, shipping.address!.city);
+  assert.equal(sent[0].body.recipient.address.countryCode, shipping.address!.country);
   assert.equal(order.recipient?.name, shipping.name);
   assert.equal(order.recipient?.line1, shipping.address!.line1);
   assert.equal(order.recipient?.city, shipping.address!.city);
@@ -321,13 +329,11 @@ function lookupFor(paymentIntent: string, sessionId: string, chargeId?: string) 
 
 test("charge.refunded: a full refund revokes the order the payment intent maps to", async () => {
   const charge = fixtures["charge.refunded"].data.object as Stripe.Charge;
-  const paid = fixtures["checkout.session.completed"].data
-    .object as Stripe.Checkout.Session;
   // The shapes the route reads: a string payment_intent and a full refund.
+  // The real refund comes from its own PaymentIntent, not the checkout
+  // fixture's, so the lookup below maps this fixture's PI to the seeded order.
   assert.equal(typeof charge.payment_intent, "string");
-  assert.equal(charge.payment_intent, paid.payment_intent);
   assert.equal(charge.amount_refunded, charge.amount);
-  assert.equal(charge.amount, paid.amount_total);
 
   const { store, sessionId } = seededOrders();
   const { lookup } = lookupFor(charge.payment_intent as string, sessionId);
@@ -344,18 +350,21 @@ test("charge.refunded: a full refund revokes the order the payment intent maps t
 
 test("charge.dispute.created: the charge resolves to the payment intent, then revokes", async () => {
   const dispute = fixtures["charge.dispute.created"].data.object as Stripe.Dispute;
-  const paid = fixtures["checkout.session.completed"].data
-    .object as Stripe.Checkout.Session;
   assert.equal(typeof dispute.charge, "string");
+  // The dispute's own PaymentIntent (not the checkout fixture's), else a stub.
+  const disputePi =
+    typeof dispute.payment_intent === "string"
+      ? dispute.payment_intent
+      : "pi_stub_for_dispute";
 
   const { store, sessionId } = seededOrders();
   const { lookup, calls } = lookupFor(
-    paid.payment_intent as string,
+    disputePi,
     sessionId,
     dispute.charge as string,
   );
   const paymentIntent = await paymentIntentForDispute(dispute, lookup);
-  assert.equal(paymentIntent, paid.payment_intent);
+  assert.equal(paymentIntent, disputePi);
   assert.deepEqual(calls, [`charge:${dispute.charge}`]);
 
   const outcome = await revokeOrderByPaymentIntent({
@@ -367,15 +376,6 @@ test("charge.dispute.created: the charge resolves to the payment intent, then re
   });
   assert.equal(outcome.httpStatus, 200);
   assert.equal(parseOrderRecord(store.orders.get(sessionId)!)?.status, "disputed");
-});
-
-test("the three fixtures describe one purchase", () => {
-  const paid = fixtures["checkout.session.completed"].data
-    .object as Stripe.Checkout.Session;
-  const charge = fixtures["charge.refunded"].data.object as Stripe.Charge;
-  const dispute = fixtures["charge.dispute.created"].data.object as Stripe.Dispute;
-  assert.equal(charge.payment_intent, paid.payment_intent);
-  assert.equal(dispute.charge, charge.id);
 });
 
 test("scrub replaces personal data and keeps the shape", () => {

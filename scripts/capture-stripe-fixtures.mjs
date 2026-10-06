@@ -3,9 +3,8 @@
  * Capture real Stripe test-mode webhook events as contract-test fixtures (#225).
  *
  * Dependabot PRs have no Stripe secrets, so tests/stripe-contract.test.mts runs
- * against files in tests/fixtures/stripe/. Until they are captured here they
- * are hand-built from the API reference (see that folder's README). This script
- * replaces them with what Stripe actually sent: the newest checkout, refund and
+ * against files in tests/fixtures/stripe/. This script refreshes them with what
+ * Stripe actually sent (see that folder's README): the newest checkout, refund and
  * dispute events in the account, scrubbed of personal data.
  *
  * Test-mode only: it refuses any key that is not sk_test_.

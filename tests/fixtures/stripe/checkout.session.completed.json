@@ -1,26 +1,20 @@
 {
-  "id": "evt_1TestCheckoutCompleted0001",
+  "id": "evt_1UMsV2V05vP7dtnkADFbEFBi",
   "object": "event",
-  "api_version": "2026-09-30.endive",
-  "created": 1790000000,
-  "livemode": false,
-  "type": "checkout.session.completed",
-  "pending_webhooks": 1,
-  "request": {
-    "id": null,
-    "idempotency_key": null
-  },
+  "api_version": "2026-08-26.dahlia",
+  "created": 1791132176,
   "data": {
     "object": {
-      "id": "cs_test_a1B2c3D4e5F6g7H8i9J0kLmNoPqRsTuVwXyZ",
+      "id": "cs_test_a14U9LkdJvA0dScqO6nEtKCUW4ekcUuo1W427DVwlt1LuJ9CMDgKMFy7n3",
       "object": "checkout.session",
       "adaptive_pricing": {
         "enabled": false
       },
       "after_expiration": null,
       "allow_promotion_codes": null,
-      "amount_subtotal": 2500,
-      "amount_total": 2999,
+      "allowed_payment_method_types": null,
+      "amount_subtotal": 1549,
+      "amount_total": 2482,
       "automatic_tax": {
         "enabled": false,
         "liability": null,
@@ -32,7 +26,7 @@
         "background_color": "#ffffff",
         "border_style": "rounded",
         "button_color": "#0074d4",
-        "display_name": "Nessebar Lens",
+        "display_name": "Nessebar Lens sandbox",
         "font_family": "default",
         "icon": null,
         "logo": null
@@ -57,7 +51,7 @@
       },
       "consent": null,
       "consent_collection": null,
-      "created": 1789999900,
+      "created": 1791132148,
       "currency": "eur",
       "currency_conversion": null,
       "custom_fields": [],
@@ -72,9 +66,9 @@
       "customer_creation": "if_required",
       "customer_details": {
         "address": {
-          "city": null,
+          "city": "Nessebar",
           "country": "BG",
-          "line1": null,
+          "line1": "1 Test Street",
           "line2": null,
           "postal_code": "8230",
           "state": null
@@ -89,7 +83,8 @@
       },
       "customer_email": null,
       "discounts": [],
-      "expires_at": 1790086300,
+      "expires_at": 1791218547,
+      "integration_identifier": null,
       "invoice": null,
       "invoice_creation": {
         "enabled": false,
@@ -105,28 +100,41 @@
       },
       "livemode": false,
       "locale": null,
+      "managed_payments": {
+        "enabled": false
+      },
       "metadata": {
-        "photoSlug": "dawn",
+        "destinationCountryCode": "BG",
         "format": "giclee",
-        "size": "30x40",
         "frame": "",
-        "quoteEur": "25",
-        "shippingEur": "4.99",
-        "sku": "GLOBAL-FAP-12X16",
-        "destinationCountryCode": "BG"
+        "photoSlug": "dawn",
+        "quoteEur": "15.49",
+        "shippingEur": "9.33",
+        "size": "50x70",
+        "sku": "GLOBAL-FAP-20X28"
       },
       "mode": "payment",
       "origin_context": null,
-      "payment_intent": "pi_3TestCheckoutCompleted0001",
+      "payment_intent": "pi_1UMsV0V05vP7dtnkjaJsPupf",
       "payment_link": null,
       "payment_method_collection": "if_required",
-      "payment_method_configuration_details": null,
+      "payment_method_configuration_details": {
+        "id": "pmc_1UKGP6V05vP7dtnkH6Q1LryM",
+        "parent": null
+      },
       "payment_method_options": {
         "card": {
           "request_three_d_secure": "automatic"
         }
       },
-      "payment_method_types": ["card"],
+      "payment_method_types": [
+        "card",
+        "bancontact",
+        "eps",
+        "link",
+        "mb_way",
+        "satispay"
+      ],
       "payment_status": "paid",
       "permissions": null,
       "phone_number_collection": {
@@ -136,18 +144,20 @@
       "saved_payment_method_options": null,
       "setup_intent": null,
       "shipping_address_collection": {
-        "allowed_countries": ["BG"]
+        "allowed_countries": [
+          "BG"
+        ]
       },
       "shipping_cost": {
-        "amount_subtotal": 499,
+        "amount_subtotal": 933,
         "amount_tax": 0,
-        "amount_total": 499,
-        "shipping_rate": "shr_1TestShippingRate0001"
+        "amount_total": 933,
+        "shipping_rate": "shr_1UMsUZV05vP7dtnkIDGWzXAw"
       },
       "shipping_options": [
         {
-          "shipping_amount": 499,
-          "shipping_rate": "shr_1TestShippingRate0001"
+          "shipping_amount": 933,
+          "shipping_rate": "shr_1UMsUZV05vP7dtnkIDGWzXAw"
         }
       ],
       "status": "complete",
@@ -156,12 +166,19 @@
       "success_url": "https://staging.nessebarlens.com/checkout/success?session_id={CHECKOUT_SESSION_ID}",
       "total_details": {
         "amount_discount": 0,
-        "amount_shipping": 499,
+        "amount_shipping": 933,
         "amount_tax": 0
       },
-      "ui_mode": "hosted",
+      "ui_mode": "hosted_page",
       "url": null,
       "wallet_options": null
     }
-  }
+  },
+  "livemode": false,
+  "pending_webhooks": 0,
+  "request": {
+    "id": null,
+    "idempotency_key": null
+  },
+  "type": "checkout.session.completed"
 }

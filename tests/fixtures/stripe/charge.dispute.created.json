@@ -1,50 +1,44 @@
 {
-  "id": "evt_1TestDisputeCreated000001",
+  "id": "evt_1UNTDzV05vP7dtnkoIRAaUs6",
   "object": "event",
-  "api_version": "2026-09-30.endive",
-  "created": 1790007200,
-  "livemode": false,
-  "type": "charge.dispute.created",
-  "pending_webhooks": 1,
-  "request": {
-    "id": null,
-    "idempotency_key": null
-  },
+  "api_version": "2026-08-26.dahlia",
+  "created": 1791273347,
   "data": {
     "object": {
-      "id": "du_1TestDispute00000000001",
+      "id": "du_1UNTDyV05vP7dtnkdWi5ctBC",
       "object": "dispute",
-      "amount": 2999,
-      "balance_transaction": "txn_1TestDisputeBalanceTxn01",
+      "amount": 3000,
+      "balance_transaction": "txn_1UNTDyV05vP7dtnk1uJXrCu9",
       "balance_transactions": [
         {
-          "id": "txn_1TestDisputeBalanceTxn01",
+          "id": "txn_1UNTDyV05vP7dtnk1uJXrCu9",
           "object": "balance_transaction",
-          "amount": -2999,
-          "available_on": 1790007200,
-          "created": 1790007200,
+          "amount": -3000,
+          "available_on": 1791273346,
+          "balance_type": "payments",
+          "created": 1791273346,
           "currency": "eur",
-          "description": "Chargeback withdrawal for ch_3TestCheckoutCompleted0001",
+          "description": "Chargeback withdrawal for ch_1UNTDwV05vP7dtnkFCJAlHZE",
           "exchange_rate": null,
-          "fee": 1500,
+          "fee": 2000,
           "fee_details": [
             {
-              "amount": 1500,
+              "amount": 2000,
               "application": null,
               "currency": "eur",
               "description": "Dispute fee",
               "type": "stripe_fee"
             }
           ],
-          "net": -4499,
+          "net": -5000,
           "reporting_category": "dispute",
-          "source": "du_1TestDispute00000000001",
-          "status": "pending",
+          "source": "du_1UNTDyV05vP7dtnkdWi5ctBC",
+          "status": "available",
           "type": "adjustment"
         }
       ],
-      "charge": "ch_3TestCheckoutCompleted0001",
-      "created": 1790007200,
+      "charge": "ch_1UNTDwV05vP7dtnkFCJAlHZE",
+      "created": 1791273346,
       "currency": "eur",
       "enhanced_eligibility_types": [],
       "evidence": {
@@ -78,7 +72,7 @@
         "uncategorized_text": null
       },
       "evidence_details": {
-        "due_by": 1791000000,
+        "due_by": 1792022399,
         "enhanced_eligibility": {},
         "has_evidence": false,
         "past_due": false,
@@ -87,18 +81,25 @@
       "is_charge_refundable": false,
       "livemode": false,
       "metadata": {},
-      "network_reason_code": "83",
-      "payment_intent": "pi_3TestCheckoutCompleted0001",
+      "payment_intent": "pi_1UNTDwV05vP7dtnkFK1yCD5d",
       "payment_method_details": {
         "card": {
           "brand": "visa",
           "case_type": "chargeback",
-          "network_reason_code": "83"
+          "network": "visa",
+          "network_reason_code": "10.4"
         },
         "type": "card"
       },
       "reason": "fraudulent",
       "status": "needs_response"
     }
-  }
+  },
+  "livemode": false,
+  "pending_webhooks": 0,
+  "request": {
+    "id": "req_LLT6bkuRmGGY1c",
+    "idempotency_key": null
+  },
+  "type": "charge.dispute.created"
 }

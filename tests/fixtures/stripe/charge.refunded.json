@@ -1,43 +1,36 @@
 {
-  "id": "evt_1TestChargeRefunded000001",
+  "id": "evt_1UNTE3V05vP7dtnkx5cj5c8P",
   "object": "event",
-  "api_version": "2026-09-30.endive",
-  "created": 1790003600,
-  "livemode": false,
-  "type": "charge.refunded",
-  "pending_webhooks": 1,
-  "request": {
-    "id": "req_TestRefundRequest0001",
-    "idempotency_key": null
-  },
+  "api_version": "2026-08-26.dahlia",
+  "created": 1791273351,
   "data": {
     "object": {
-      "id": "ch_3TestCheckoutCompleted0001",
+      "id": "ch_1UNTE0V05vP7dtnkVAs1SZYZ",
       "object": "charge",
-      "amount": 2999,
-      "amount_captured": 2999,
-      "amount_refunded": 2999,
+      "amount": 3000,
+      "amount_captured": 3000,
+      "amount_refunded": 3000,
       "application": null,
       "application_fee": null,
       "application_fee_amount": null,
-      "balance_transaction": "txn_3TestCheckoutCompleted0001",
+      "balance_transaction": "txn_1UNTE1V05vP7dtnk1KzdcOk1",
       "billing_details": {
         "address": {
           "city": null,
-          "country": "BG",
+          "country": null,
           "line1": null,
           "line2": null,
-          "postal_code": "8230",
+          "postal_code": null,
           "state": null
         },
-        "email": "buyer@example.com",
-        "name": "Test Buyer",
+        "email": null,
+        "name": null,
         "phone": null,
         "tax_id": null
       },
-      "calculated_statement_descriptor": "NESSEBAR LENS",
+      "calculated_statement_descriptor": "NESSEBAR LENS SANDBOX",
       "captured": true,
-      "created": 1789999950,
+      "created": 1791273348,
       "currency": "eur",
       "customer": null,
       "description": null,
@@ -49,16 +42,7 @@
       "failure_message": null,
       "fraud_details": {},
       "livemode": false,
-      "metadata": {
-        "photoSlug": "dawn",
-        "format": "giclee",
-        "size": "30x40",
-        "frame": "",
-        "quoteEur": "25",
-        "shippingEur": "4.99",
-        "sku": "GLOBAL-FAP-12X16",
-        "destinationCountryCode": "BG"
-      },
+      "metadata": {},
       "on_behalf_of": null,
       "order": null,
       "outcome": {
@@ -68,35 +52,53 @@
         "network_status": "approved_by_network",
         "reason": null,
         "risk_level": "normal",
-        "risk_score": 20,
+        "risk_score": 33,
         "seller_message": "Payment complete.",
         "type": "authorized"
       },
       "paid": true,
-      "payment_intent": "pi_3TestCheckoutCompleted0001",
-      "payment_method": "pm_1TestPaymentMethod0001",
+      "payment_intent": "pi_1UNTE0V05vP7dtnkTYfvteDv",
+      "payment_method": "pm_1UNTE0V05vP7dtnk3caFaiFw",
       "payment_method_details": {
         "card": {
-          "amount_authorized": 2999,
+          "amount_authorized": 3000,
+          "authorization_code": "670755",
           "brand": "visa",
           "checks": {
             "address_line1_check": null,
-            "address_postal_code_check": "pass",
+            "address_postal_code_check": null,
             "cvc_check": "pass"
           },
           "country": "US",
-          "exp_month": 12,
-          "exp_year": 2030,
+          "electronic_commerce_indicator": "07",
+          "exp_month": 10,
+          "exp_year": 2027,
+          "extended_authorization": {
+            "status": "disabled"
+          },
           "fingerprint": "TestFingerprint0001",
           "funding": "credit",
+          "incremental_authorization": {
+            "status": "unavailable"
+          },
           "installments": null,
           "last4": "4242",
           "mandate": null,
+          "multicapture": {
+            "status": "unavailable"
+          },
           "network": "visa",
           "network_token": {
             "used": false
           },
+          "network_transaction_id": "806911968104114",
+          "overcapture": {
+            "maximum_amount_capturable": 3000,
+            "status": "unavailable"
+          },
+          "regulated_status": "unregulated",
           "three_d_secure": null,
+          "transaction_link_id": null,
           "wallet": null
         },
         "type": "card"
@@ -117,8 +119,16 @@
       "transfer_group": null
     },
     "previous_attributes": {
-      "amount_refunded": 0,
+      "amount_refunded": 1500,
+      "receipt_url": "https://pay.stripe.com/receipts/payment/test_receipt",
       "refunded": false
     }
-  }
+  },
+  "livemode": false,
+  "pending_webhooks": 0,
+  "request": {
+    "id": "req_YECSlpRpePidWn",
+    "idempotency_key": null
+  },
+  "type": "charge.refunded"
 }
