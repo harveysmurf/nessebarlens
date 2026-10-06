@@ -54,12 +54,7 @@ export function PrintConfigurator({
   const isFramed = format === "framed";
 
   useEffect(() => {
-    if (isDigital) {
-      setQuote(null);
-      setQuoteError(null);
-      setQuoteLoading(false);
-      return;
-    }
+    if (isDigital) return;
 
     const controller = new AbortController();
     const timer = setTimeout(async () => {
@@ -115,6 +110,15 @@ export function PrintConfigurator({
   // become a catalog value. The option lists come from the same sku-map lists
   // the predicates read, so a value that fails here is a value the selector
   // could not have produced.
+  function selectFormat(value: PrintFormat) {
+    setFormat(value);
+    if (value === "digital") {
+      setQuote(null);
+      setQuoteError(null);
+      setQuoteLoading(false);
+    }
+  }
+
   function selectSize(value: string) {
     if (isPrintSize(value)) setSize(value);
   }
@@ -233,7 +237,7 @@ export function PrintConfigurator({
                     name="print-format"
                     value={f.id}
                     checked={active}
-                    onChange={() => setFormat(f.id)}
+                    onChange={() => selectFormat(f.id)}
                     className="sr-only"
                   />
                   <div className="font-medium text-stone-900">{f.title}</div>
