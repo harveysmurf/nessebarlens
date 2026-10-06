@@ -87,6 +87,48 @@ export type StripeCheckoutSession = {
 };
 
 /**
+ * Compile-time contract with the installed `stripe` types (#225).
+ *
+ * Dependabot PRs for the `payments` group run without Stripe secrets, so a
+ * bump that reshapes an event can only be caught by the type checker. The
+ * handler reads these shapes through the hand-written types above, and the
+ * `event.data.object as StripeCheckoutSession` cast hides any disagreement.
+ *
+ * Assignability alone is not enough: every property in StripeCheckoutSession is
+ * optional, so a key the SDK REMOVED would still be assignable. The indexed
+ * reads below name each key we rely on, and fail to compile when it is gone.
+ */
+type Assignable<T extends U, U> = T;
+
+export type StripeSessionContract = Assignable<
+  Stripe.Checkout.Session,
+  StripeCheckoutSession
+>;
+
+export type StripeSessionKeysWeRead = [
+  Stripe.Checkout.Session["id"],
+  Stripe.Checkout.Session["payment_status"],
+  Stripe.Checkout.Session["currency"],
+  Stripe.Checkout.Session["amount_total"],
+  Stripe.Checkout.Session["metadata"],
+  Stripe.Checkout.Session["success_url"],
+  Stripe.Checkout.Session["customer_details"],
+  NonNullable<Stripe.Checkout.Session["customer_details"]>["email"],
+  NonNullable<Stripe.Checkout.Session["customer_details"]>["phone"],
+  NonNullable<Stripe.Checkout.Session["collected_information"]>["shipping_details"],
+  NonNullable<
+    NonNullable<Stripe.Checkout.Session["collected_information"]>["shipping_details"]
+  >["address"],
+];
+
+export type StripeRefundAndDisputeKeysWeRead = [
+  Stripe.Charge["payment_intent"],
+  Stripe.Charge["amount"],
+  Stripe.Charge["amount_refunded"],
+  Stripe.Dispute["charge"],
+];
+
+/**
  * Did this Checkout Session belong to this deployment? (#193)
  *
  * Stripe test mode has one event stream and one set of webhook endpoints per

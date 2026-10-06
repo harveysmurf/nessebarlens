@@ -1,0 +1,124 @@
+{
+  "id": "evt_1TestChargeRefunded000001",
+  "object": "event",
+  "api_version": "2026-09-30.endive",
+  "created": 1790003600,
+  "livemode": false,
+  "type": "charge.refunded",
+  "pending_webhooks": 1,
+  "request": {
+    "id": "req_TestRefundRequest0001",
+    "idempotency_key": null
+  },
+  "data": {
+    "object": {
+      "id": "ch_3TestCheckoutCompleted0001",
+      "object": "charge",
+      "amount": 2999,
+      "amount_captured": 2999,
+      "amount_refunded": 2999,
+      "application": null,
+      "application_fee": null,
+      "application_fee_amount": null,
+      "balance_transaction": "txn_3TestCheckoutCompleted0001",
+      "billing_details": {
+        "address": {
+          "city": null,
+          "country": "BG",
+          "line1": null,
+          "line2": null,
+          "postal_code": "8230",
+          "state": null
+        },
+        "email": "buyer@example.com",
+        "name": "Test Buyer",
+        "phone": null,
+        "tax_id": null
+      },
+      "calculated_statement_descriptor": "NESSEBAR LENS",
+      "captured": true,
+      "created": 1789999950,
+      "currency": "eur",
+      "customer": null,
+      "description": null,
+      "destination": null,
+      "dispute": null,
+      "disputed": false,
+      "failure_balance_transaction": null,
+      "failure_code": null,
+      "failure_message": null,
+      "fraud_details": {},
+      "livemode": false,
+      "metadata": {
+        "photoSlug": "dawn",
+        "format": "giclee",
+        "size": "30x40",
+        "frame": "",
+        "quoteEur": "25",
+        "shippingEur": "4.99",
+        "sku": "GLOBAL-FAP-12X16",
+        "destinationCountryCode": "BG"
+      },
+      "on_behalf_of": null,
+      "order": null,
+      "outcome": {
+        "advice_code": null,
+        "network_advice_code": null,
+        "network_decline_code": null,
+        "network_status": "approved_by_network",
+        "reason": null,
+        "risk_level": "normal",
+        "risk_score": 20,
+        "seller_message": "Payment complete.",
+        "type": "authorized"
+      },
+      "paid": true,
+      "payment_intent": "pi_3TestCheckoutCompleted0001",
+      "payment_method": "pm_1TestPaymentMethod0001",
+      "payment_method_details": {
+        "card": {
+          "amount_authorized": 2999,
+          "brand": "visa",
+          "checks": {
+            "address_line1_check": null,
+            "address_postal_code_check": "pass",
+            "cvc_check": "pass"
+          },
+          "country": "US",
+          "exp_month": 12,
+          "exp_year": 2030,
+          "fingerprint": "TestFingerprint0001",
+          "funding": "credit",
+          "installments": null,
+          "last4": "4242",
+          "mandate": null,
+          "network": "visa",
+          "network_token": {
+            "used": false
+          },
+          "three_d_secure": null,
+          "wallet": null
+        },
+        "type": "card"
+      },
+      "radar_options": {},
+      "receipt_email": null,
+      "receipt_number": null,
+      "receipt_url": "https://pay.stripe.com/receipts/payment/test_receipt",
+      "refunded": true,
+      "review": null,
+      "shipping": null,
+      "source": null,
+      "source_transfer": null,
+      "statement_descriptor": null,
+      "statement_descriptor_suffix": null,
+      "status": "succeeded",
+      "transfer_data": null,
+      "transfer_group": null
+    },
+    "previous_attributes": {
+      "amount_refunded": 0,
+      "refunded": false
+    }
+  }
+}

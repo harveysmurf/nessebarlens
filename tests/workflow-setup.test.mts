@@ -34,7 +34,18 @@ const reusableWorkflowRef = String.raw`uses:\s*"?'?${sameRepo("workflows/")}`;
 // notify-failure.yml joins it for #199: its one step is `gh` and `jq` against
 // the API, with no repo file on disk to read — checking out and running
 // `npm ci` to then call gh would be minutes of CI for nothing.
-const noRepoCode: readonly string[] = ["reconcile.yml", "notify-failure.yml"];
+//
+// dependabot-triage.yml and release-backstop.yml join it for #225: both run only
+// `gh` against the API (label, comment, enable auto-merge; list runs, dispatch a
+// workflow) and neither checks out the repository. The triage one also must not:
+// it runs for a Dependabot PR, and a checkout there would put the bot's branch
+// on disk next to a write-scoped token.
+const noRepoCode: readonly string[] = [
+  "reconcile.yml",
+  "notify-failure.yml",
+  "dependabot-triage.yml",
+  "release-backstop.yml",
+];
 
 const workflows = fs
   .readdirSync(workflowDir)

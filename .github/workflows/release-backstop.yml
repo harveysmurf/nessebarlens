@@ -1,0 +1,117 @@
+name: Release backstop
+
+# #225 step 5: a Dependabot commit that lands on main must go through the same
+# release pipeline as any other, with no special-casing. release.yml already has
+# none -- it triggers on `push: main` -- but there is a platform rule between
+# that trigger and an auto-merged Dependabot PR:
+#
+#   Events caused by `GITHUB_TOKEN` do not start new workflow runs, except
+#   `workflow_dispatch` and `repository_dispatch`.
+#
+# dependabot-triage.yml enables auto-merge with the job's `GITHUB_TOKEN` (no
+# secrets, by design and by test), so the merge is attributed to
+# github-actions[bot] and the resulting push to main may not start release.yml.
+# The merge would then sit on main unreleased: staging never deployed, smoke
+# never run, production never gated. That is the failure this closes.
+#
+# This looks for the same condition directly instead of trying to change who
+# merges: if the commit at the tip of main has no release.yml run, it dispatches
+# one. `workflow_dispatch` is exempt from the rule above, so it works with the
+# job's own token and needs no PAT or app. It is not Dependabot-specific -- any
+# unreleased tip of main, whoever put it there, is released.
+#
+# Deliberately a poll rather than a `workflow_run` trigger: the missing event is
+# the one that would carry the signal, so there is nothing to react to.
+on:
+  workflow_dispatch:
+  schedule:
+    # Hourly, off the hour: GitHub delays scheduled runs near :00 under load.
+    - cron: "23 * * * *"
+
+# The job below asks for `actions: write` to dispatch; nothing else here needs
+# more than reading the repository.
+permissions:
+  contents: read
+
+# One look at a time. A queued look would only see the same tip.
+concurrency:
+  group: release-backstop
+  cancel-in-progress: false
+
+jobs:
+  backstop:
+    name: Release unreleased main
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      # `gh workflow run` is a workflow_dispatch, which needs actions: write.
+      actions: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      REPO: ${{ github.repository }}
+    steps:
+      - name: Dispatch release.yml if the tip of main has no run
+        run: |
+          set -euo pipefail
+          read -r sha committed < <(gh api "repos/$REPO/commits/main" \
+            --jq '[.sha, .commit.committer.date] | @tsv')
+          age=$(( $(date +%s) - $(date -d "$committed" +%s) ))
+          echo "main is $sha, committed ${age}s ago"
+
+          # A push-triggered run can take a moment to register. Looking too
+          # early would dispatch a second release for a commit that is about to
+          # have one.
+          if (( age < 600 )); then
+            echo "tip of main is under 10 minutes old; leaving it to the push trigger"
+            exit 0
+          fi
+
+          runs=$(gh run list --repo "$REPO" --workflow release.yml \
+            --commit "$sha" --json databaseId --jq length)
+          if (( runs > 0 )); then
+            echo "release.yml already ran for $sha ($runs run(s))"
+            exit 0
+          fi
+
+          echo "::notice::main at $sha has no release.yml run (a merge made with GITHUB_TOKEN does not trigger push workflows); dispatching one"
+          gh workflow run release.yml --repo "$REPO" --ref main
+
+  # #199: a scheduled job that fails silently leaves an unreleased main nobody
+  # knows about. The ref guard is needed despite that: `schedule` does run on
+  # main by definition, but `workflow_dispatch` above lets an operator fire this
+  # on any branch, and a green branch run must not close a live incident.
+  notify:
+    name: Notify incident
+    needs: backstop
+    if: failure() && github.ref == 'refs/heads/main'
+
+    # #206 regression: a called workflow cannot hold a permission the caller did
+    # not grant, so `notify-failure.yml`'s `issues: write` used to make every
+    # caller startup-fail. Granted here, on the two jobs that actually write
+    # issues -- the backstop job keeps its own narrow scopes and never sees it.
+    permissions:
+      contents: read
+      issues: write
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: release backstop failing on main"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  resolve:
+    name: Close incident
+    needs: backstop
+    if: success() && github.ref == 'refs/heads/main'
+
+    # #206 regression: a called workflow cannot hold a permission the caller did
+    # not grant, so `notify-failure.yml`'s `issues: write` used to make every
+    # caller startup-fail. Granted here, on the two jobs that actually write
+    # issues -- the backstop job keeps its own narrow scopes and never sees it.
+    permissions:
+      contents: read
+      issues: write
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: release backstop failing on main"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      close: true

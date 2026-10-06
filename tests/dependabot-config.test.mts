@@ -231,3 +231,43 @@ test("npm dependencies are grouped by what has to move together", () => {
     "stripe",
   ]);
 });
+
+test("every Dependabot group is classified by dependabot-triage.yml, and nothing else is", () => {
+  // #225: the triage workflow decides which groups may auto-merge. A group added
+  // here and not there fails the triage job at runtime (the `*)` arm) -- on a
+  // bot PR, where nobody is watching -- so it is caught here, at review time.
+  // The reverse matters too: a stale arm is a classification for a group that
+  // no longer exists, and would silently apply to a future group reusing the name.
+  const triage = fs.readFileSync(
+    path.join(root, ".github", "workflows", "dependabot-triage.yml"),
+    "utf8",
+  );
+  const caseBody = triage.match(/case "\$GROUP" in\n([\s\S]*?)\n\s*esac/)?.[1];
+  assert.ok(caseBody, 'could not find `case "$GROUP" in` in dependabot-triage.yml');
+
+  const patterns = [...caseBody.matchAll(/^\s*("[^"]*"|[\w|-]+)\)/gm)].map((m) => m[1]);
+  assert.ok(patterns.length >= 3, `parsed ${patterns.length} case arms -- the reader is reading nothing`);
+
+  assert.ok(patterns.includes('""'), "the empty-group arm (ungrouped security updates) is missing");
+  const classified = patterns.filter((p) => p !== '""').flatMap((p) => p.split("|"));
+
+  const groups = [...config.matchAll(/^ {4}groups:\n((?:(?: {6}.*)?\n)+)/gm)].flatMap(
+    ([, body]) => [...body.matchAll(/^ {6}([\w-]+):\s*$/gm)].map((m) => m[1]),
+  );
+  assert.deepEqual(
+    [...groups].sort(),
+    ["actions", "deploy", "dev-tooling", "framework", "payments"],
+    "group list read from dependabot.yml changed -- update the expectation deliberately",
+  );
+
+  assert.deepEqual(
+    groups.filter((g) => !classified.includes(g)),
+    [],
+    "these Dependabot groups have no arm in dependabot-triage.yml's case",
+  );
+  assert.deepEqual(
+    classified.filter((g) => !groups.includes(g)),
+    [],
+    "these case arms name a group dependabot.yml does not define",
+  );
+});
