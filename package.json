@@ -22,6 +22,7 @@
     "coverage:report": "node scripts/coverage.mjs --print",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
+    "publish-photos": "node scripts/ingest.mjs",
     "ingest": "node scripts/ingest.mjs",
     "orders": "node scripts/list-orders.mjs",
     "migrate:orders": "node --import ./scripts/register.mjs scripts/migrate-orders-kv-to-d1.mjs",

@@ -122,7 +122,7 @@ Environment variables (names only — values live in the `.env.local` symlink):
 | `NEXT_PUBLIC_WEB_IMAGES_BASE` | Base URL for gallery `<img>` srcset |
 | `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` | Opt-in gate for the R2 derivative ladder. Unset = placeholders. Only `true`/`1` enable it — a configured base alone does **not**. |
 | `R2_ACCOUNT_ID`, `R2_ENDPOINT`, `R2_S3_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | R2 S3 creds (unused by Workers — they use bucket bindings) |
-| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Needed only by `npm run ingest` from a laptop (see §6a) |
+| `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Needed only by `npm run publish-photos` from a laptop (see §6a) |
 | `EU_SHIPPING_EUR` | Flat EU shipping (must match `EU_FLAT_SHIPPING_CENTS`) |
 
 ---
@@ -758,11 +758,11 @@ binding is 503 `masters-unavailable`). So on staging, a print order's asset URL
 or a digital download for an unseeded slug fails rather than serving a
 placeholder, even though the page renders one.
 
-`npm run ingest` (§6a) still writes only the production bucket, so a newly
-ingested photo is **not** purchasable on staging until #241 (`publish-photos
---apply`) writes the 2500 px staging copy. Until then, seed it by hand, and only
-with a downscale (long edge <= 2500 px, quality 80, metadata stripped), never the
-original:
+`npm run publish-photos -- --apply` (§6a) writes the 2500 px staging copy, so a
+newly published photo **is** purchasable on staging and its preview; only
+`--promote` (#242) writes the production bucket's original. If a photo needs to
+be seeded by hand before its publish run, use a downscale (long edge <= 2500 px,
+quality 80, metadata stripped), never the original:
 
 ```
 npx wrangler r2 object put nessebar-lens-masters-staging/prints/<slug>.jpg --remote --file <downscaled.jpg>
@@ -1203,17 +1203,18 @@ Debian-host symlink to `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
 
 ---
 
-## 6a. Ingesting photos (masters → R2 ladder)
+## 6a. Publishing photos (drop folder → web ladder + staging master + catalog PR)
 
 Simo runs this from his own box, not CI. Three prerequisites, in order:
 
-1. **Node 24.21** — `nvm use` in the repo root. `npm run ingest` checks the
-   pin in `.nvmrc` and stops with `ingest needs Node 24.21.0` otherwise,
-   because `sharp` is a native binding and a mismatch otherwise surfaces as an
-   opaque `ERR_UNKNOWN_FILE_EXTENSION`.
-2. **`npm install`** — `sharp` and `@aws-sdk/client-s3` are devDependencies
-   only the ingest uses; the site itself never imports them.
-3. **R2 credentials in `.env.local`** (gitignored) or exported:
+1. **Node 24.21** — `nvm use` in the repo root. `npm run publish-photos` checks
+   the pin in `.nvmrc` and stops with `publish-photos needs Node 24.21.0`
+   otherwise, because `sharp` is a native binding and a mismatch otherwise
+   surfaces as an opaque `ERR_UNKNOWN_FILE_EXTENSION`.
+2. **`npm install`** — `sharp`, `@aws-sdk/client-s3` and `yaml` are
+   devDependencies only this tool uses; the site itself never imports them.
+3. **R2 credentials in `.env.local`** (gitignored, loaded with
+   `process.loadEnvFile`) or exported:
 
    ```
    R2_S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com
@@ -1222,46 +1223,42 @@ Simo runs this from his own box, not CI. Three prerequisites, in order:
    ```
 
    From Cloudflare → R2 → Manage R2 API Tokens → *Object Read & Write* scoped
-   to `nessebar-lens-masters` and `nessebar-lens-web` (the staging masters
-   bucket is covered in §Masters bucket per environment). The workspace copy of
-   these lives in `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
-   Missing keys fail as `missing env: R2_ACCESS_KEY_ID ...`, never as a 403.
+   to exactly `nessebar-lens-web` and `nessebar-lens-masters-staging` (and
+   `nessebar-lens-masters` for `--promote`, #242). The workspace copy lives in
+   `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`. Missing keys fail as
+   `missing env: R2_ACCESS_KEY_ID ...`, never as a 403.
 
-Then, per photo:
+Then, per photo, drop a `<slug>.jpg` **and** a `<slug>.yaml` (the catalog entry
+from §7) into `ingest/` (repo root, gitignored), both named for the same slug:
 
-1. Drop the master JPEG in `ingest/` (repo root, gitignored), **named for its
-   slug** — `alley-cat.jpg` is the catalog slug `alley-cat`. Files not matching
-   `{slug}.jpg` are reported and skipped, so a `.DS_Store` or `IMG_4021.jpg`
-   cannot become an unlinkable photo.
-2. `npm run ingest` — **dry run by default.** It prints every object it would
-   write, in both buckets, and uploads nothing. Read that list.
-3. `npm run ingest -- --apply` — writes the original to
-   `nessebar-lens-masters/prints/{slug}.jpg` and each rung, in **JPEG
-   (mozjpeg, q82) and WebP (q80)**, to
-   `nessebar-lens-web/{slug}/{hash8}/{400,750,1500,2000}.{jpg,webp}`. The
-   `hash8` is the first 8 hex chars of the master's SHA-256, so a changed image
-   is a new URL and the derivatives can be served
-   `Cache-Control: public, max-age=31536000, immutable`. Width-driven resize,
-   `rotate()` + `toColorspace('srgb')` (EXIF orientation applied, embedded ICC
-   converted), aspect ratio preserved, metadata stripped, no crop: the list
-   page's uniform tiles are a CSS `aspect-ratio` with `object-fit: cover`, and
-   the photo page is uncropped. A master under 2000 px (the top rung) is
-   refused. `--only alley-cat` narrows a run to one photo. It does **not**
-   touch `nessebar-lens-masters-staging`: staging cannot sell the new photo
-   until #241 or a manual downscale seed (§Masters bucket per environment).
-4. Verify a couple of URLs resolve under `NEXT_PUBLIC_WEB_IMAGES_BASE`, **then**
-   set `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED=true`. Only `true` or `1` enable
-   the ladder; a configured base alone does not.
+- `npm run publish-photos` — **dry run.** Validates the batch and prints the
+  eight web objects, the staging master and the YAML path per photo. Nothing is
+  uploaded.
+- `npm run publish-photos -- --apply` — uploads the eight web objects per photo
+  (four widths × JPEG/WebP) to
+  `nessebar-lens-web/{slug}/{hash8}/{400,750,1500,2000}.{jpg,webp}`, uploads the
+  **staging master** (long edge ≤ 2500 px, JPEG q80, sRGB, metadata stripped) to
+  `nessebar-lens-masters-staging/prints/{slug}.jpg`, writes `slug`,
+  `master_sha256` and `image_hash` into `content/photos/{slug}.yaml` preserving
+  the owner's comments and key order, then opens **one PR** for the run.
+- `--only dawn,dusk` narrows a run; `--replace-image dawn` re-publishes an
+  existing slug (the new master's hash must differ).
+- The production masters bucket is **never** written here; that is
+  `npm run publish-photos -- --promote --pr <n>` (#242), after the PR merges.
 
-Idempotent — re-running overwrites the same keys with the same bytes. The run
-**refuses outright** if `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` is set, because at
-that point the site is already serving this bucket and a half-written ladder
-would 404 the storefront. Turn the flag off, ingest, verify, then turn it on.
+Validation runs before any upload and reports every problem: the YAML must pass
+the schema with `master_sha256`/`image_hash` absent; the long edge must be
+≥ 3500 px (a warning below 6000 px); a new slug must not already exist; the
+working tree must be clean apart from `ingest/` and `content/photos/`. Web keys
+are content-addressed (`{slug}/{hash8}/…`), so re-running skips identical
+objects, and the derivatives can be served
+`Cache-Control: public, max-age=31536000, immutable`.
 
 The rung list is `WEB_DERIVATIVE_WIDTHS` in `src/lib/derivative-ladder.ts` —
-one array, read by both the srcSet the site serves and the plan the script
-executes. Changing the rungs is a one-line edit there; do not add widths in the
-script.
+one array, read by the srcSet the site serves, the web upload plan and the
+tests. Changing the rungs is a one-line edit there.
+
+`npm run ingest` is the one-release deprecated alias for `npm run publish-photos`.
 
 ---
 
@@ -1448,8 +1445,9 @@ the guard to keep the honest copy honest.
   live quote + order calls, and a HMAC-signed master asset URL. Sandbox and live
   are selected by an explicit `PRODIGI_API_BASE`, never inferred from the key.
 - Real photographs still need to land in the R2 `MASTERS`/`WEB` buckets to replace
-  the 20 placeholders. `npm run ingest` (§6a) does that; the ladder stays off
-  until the upload is verified.
+  the 20 placeholders. `npm run publish-photos` (§6a) uploads the web ladder and
+  the staging master and opens the catalog PR; `--promote` (#242) writes the
+  production masters after it merges.
 - If a 502 shows up from `/api/quote` or `/api/checkout` and it is *not* Prodigi
   being down, the failure's `kind` is the answer: 503 means this deploy is
   misconfigured (`kind: "unconfigured"` — unset Prodigi key, or a

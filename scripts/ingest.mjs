@@ -1,15 +1,22 @@
 #!/usr/bin/env node
 /**
- * npm run ingest — a launcher, not the work.
+ * npm run publish-photos / npm run ingest — a launcher, not the work.
  *
  * Its only job is the Node version check, and it is a separate file for a
  * concrete reason: ES module imports are hoisted, so a check at the top of
- * ingest-derivatives.mjs would run *after* that file had already imported
- * ../src/lib/derivative-ladder.ts. Under Node 20 that import throws
- * ERR_UNKNOWN_FILE_EXTENSION before a single line of the script's own body
- * executes, and the operator gets a stack trace about a loader instead of
- * "install Node 24.21". Here the check runs first, in a file with no imports
- * of ours, so the message is the one the reader needs.
+ * publish-photos.mjs would run *after* that file had already imported sharp /
+ * the ladder. Under Node 20 that import throws ERR_UNKNOWN_FILE_EXTENSION
+ * before a single line of the script's own body executes, and the operator
+ * gets a stack trace about a loader instead of "install Node 24.21". Here the
+ * check runs first, in a file with no imports of ours, so the message is the
+ * one the reader needs.
+ *
+ * `npm run ingest` is the one-release alias for `npm run publish-photos`; the
+ * deprecation note keys off which npm script invoked this launcher.
+ *
+ * The spawn passes `--import ./scripts/register.mjs` because publish-photos
+ * imports src/lib/photo-schema.ts, whose own imports are extensionless. The
+ * version check above is what makes that safe on an old Node.
  */
 
 import { spawnSync } from "node:child_process";
@@ -27,7 +34,7 @@ const [major, minor] = process.versions.node.split(".").map(Number);
 
 if (major !== reqMajor || (minor ?? 0) < reqMinor) {
   process.stderr.write(
-    `ingest needs Node ${PINNED} (this is ${process.versions.node}).\n` +
+    `publish-photos needs Node ${PINNED} (this is ${process.versions.node}).\n` +
       `sharp is a native binding compiled per Node line, so a mismatch fails ` +
       `with an opaque loader error rather than anything about images.\n` +
       `Fix: nvm use   (or install Node ${PINNED} and re-run)\n`,
@@ -35,9 +42,20 @@ if (major !== reqMajor || (minor ?? 0) < reqMinor) {
   process.exit(1);
 }
 
+if (process.env.npm_lifecycle_event === "ingest") {
+  process.stderr.write(
+    "note: npm run ingest is deprecated and will be removed; use npm run publish-photos\n",
+  );
+}
+
 const result = spawnSync(
   process.execPath,
-  [path.join(import.meta.dirname, "ingest-derivatives.mjs"), ...process.argv.slice(2)],
+  [
+    "--import",
+    "./scripts/register.mjs",
+    path.join(import.meta.dirname, "publish-photos.mjs"),
+    ...process.argv.slice(2),
+  ],
   { stdio: "inherit", cwd: ROOT },
 );
 process.exit(result.status ?? 1);

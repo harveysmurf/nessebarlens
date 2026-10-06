@@ -1,9 +1,9 @@
 /**
  * One derivative's pixels, from a master's bytes.
  *
- * Shared by the ingest script (scripts/ingest-derivatives.mjs) and the publish
- * script (#241), so both produce byte-identical output for the same input —
- * the key is the master's content hash, so two generators that disagree would
+ * Shared by scripts/publish-photos.mjs (#241) — its web ladder and the staging
+ * master — so both produce byte-identical output for the same input. The web
+ * key is the master's content hash, so two generators that disagree would
  * fight over the same object forever.
  *
  * The pixel pipeline, applied to every rung:
@@ -24,11 +24,28 @@ import sharp from "sharp";
 import {
   DERIVATIVE_JPEG_QUALITY,
   DERIVATIVE_WEBP_QUALITY,
+  STAGING_MASTER_JPEG_QUALITY,
+  STAGING_MASTER_MAX_EDGE,
 } from "../src/lib/derivative-ladder.ts";
 
 /** The Content-Type for a derivative's format. */
 export function derivativeContentType(format) {
   return format === "webp" ? "image/webp" : "image/jpeg";
+}
+
+/**
+ * The master's pixel size after EXIF orientation, so a portrait phone capture
+ * is measured as the viewer sees it. `metadata()` does not apply the rotation,
+ * so orientations 5-8 swap the axes here.
+ */
+export async function masterDimensions(bytes) {
+  const meta = await sharp(bytes).metadata();
+  let width = meta.width ?? 0;
+  let height = meta.height ?? 0;
+  if (meta.orientation && meta.orientation >= 5) {
+    [width, height] = [height, width];
+  }
+  return { width, height };
 }
 
 /**
@@ -46,5 +63,24 @@ export async function renderDerivative(bytes, { pixels, format }) {
   }
   return pipeline
     .jpeg({ quality: DERIVATIVE_JPEG_QUALITY, mozjpeg: true })
+    .toBuffer();
+}
+
+/**
+ * The staging master (#212): the same srgb + orientation + metadata-stripped
+ * pipeline, bounded by the long edge rather than the width, JPEG quality 80.
+ * Staging and PR previews read this instead of the original.
+ */
+export async function renderStagingMaster(bytes) {
+  return sharp(bytes)
+    .rotate()
+    .toColorspace("srgb")
+    .resize({
+      width: STAGING_MASTER_MAX_EDGE,
+      height: STAGING_MASTER_MAX_EDGE,
+      fit: "inside",
+      withoutEnlargement: true,
+    })
+    .jpeg({ quality: STAGING_MASTER_JPEG_QUALITY, mozjpeg: true })
     .toBuffer();
 }
