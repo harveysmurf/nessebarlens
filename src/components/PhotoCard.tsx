@@ -13,8 +13,7 @@ export function PhotoCard({ photo }: { photo: Photo }) {
         }`}
       >
         <WebPhoto
-          slug={photo.slug}
-          alt={photo.alt}
+          photo={photo}
           preferred={1500}
           sizes="(max-width: 768px) 100vw, 33vw"
           className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-500 ${filmClass}`}

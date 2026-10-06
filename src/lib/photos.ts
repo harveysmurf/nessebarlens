@@ -17,6 +17,8 @@ export type Photo = {
   filmLook?: FilmLook;
   /** Set on at most one published photo; drives the homepage hero. */
   featured?: boolean;
+  /** Master content hash; when present the web derivative ladder is keyed by it. */
+  imageHash?: string;
 };
 
 /**
@@ -49,6 +51,7 @@ function toPhoto(file: PhotoFile): Photo {
     imageKey: `prints/${file.slug}.jpg`,
     filmLook: file.filmLook,
     featured: file.featured,
+    imageHash: file.imageHash,
   };
 }
 

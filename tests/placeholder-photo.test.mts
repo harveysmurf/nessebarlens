@@ -51,6 +51,9 @@ const LADDER_ON = {
   [BASE]: "https://cdn.example.com/gallery",
   [FLAG]: "true",
 };
+const HASH = "abcdef12";
+/** A published photo, as the catalog will look once #241 writes its hash. */
+const LADDER_PHOTO = { slug: "dawn", imageHash: HASH };
 
 test("every catalog photo resolves to a placeholder that exists on disk", () => {
   withEnv(PLACEHOLDER_ONLY, () => {
@@ -98,46 +101,57 @@ test("a base URL without the flag serves placeholders, not 404s", () => {
   // This is the live production configuration today: the base is set, the
   // buckets are empty. Every photo must still render.
   withEnv({ [BASE]: "https://cdn.example.com/gallery", [FLAG]: undefined }, () => {
-    const image = galleryImage(PHOTOS[0].slug);
+    const image = galleryImage(PHOTOS[0]!);
     assert.ok(image);
     assert.equal(image.source, "placeholder");
-    assert.equal(image.src, `/placeholders/${PHOTOS[0].slug}.jpg?v=${PLACEHOLDER_VERSION}`);
+    assert.equal(image.src, `/placeholders/${PHOTOS[0]!.slug}.jpg?v=${PLACEHOLDER_VERSION}`);
   });
 });
 
-test("with the ladder on, the image is a CDN derivative with a real srcSet", () => {
+test("a photo with no image hash stays on the placeholder even when the ladder is on", () => {
   withEnv(LADDER_ON, () => {
-    const slug = PHOTOS[0].slug;
-    const image = galleryImage(slug);
+    const image = galleryImage(PHOTOS[0]!);
+    assert.ok(image);
+    assert.equal(image.source, "placeholder");
+    assert.equal(image.src, `/placeholders/${PHOTOS[0]!.slug}.jpg?v=${PLACEHOLDER_VERSION}`);
+    assert.equal(image.webpSrcSet, null);
+  });
+});
+
+test("with the ladder on, the image is a CDN derivative with jpeg and webp srcSets", () => {
+  withEnv(LADDER_ON, () => {
+    const image = galleryImage(LADDER_PHOTO);
     assert.ok(image);
     assert.equal(image.source, "ladder");
     assert.equal(
       image.src,
-      `https://cdn.example.com/gallery/${slug}/${WEB_DEFAULT_WIDTH}.jpg`,
+      `https://cdn.example.com/gallery/dawn/${HASH}/${WEB_DEFAULT_WIDTH}.jpg`,
     );
     // A one-rung srcSet would render correctly and imply a responsive ladder
     // that does not exist, which is how a missing ladder stays invisible.
-    assert.ok(image.srcSet, "ladder images need a srcSet");
-    assert.equal(image.srcSet.split(", ").length, 3);
-    for (const part of image.srcSet.split(", ")) {
-      assert.match(part, /^\S+ \d+w$/);
+    assert.ok(image.srcSet, "ladder images need a jpeg srcSet");
+    assert.ok(image.webpSrcSet, "ladder images need a webp srcSet");
+    for (const set of [image.srcSet, image.webpSrcSet]) {
+      assert.equal(set.split(", ").length, WEB_DERIVATIVE_WIDTHS.length);
+      for (const part of set.split(", ")) {
+        assert.match(part, /^\S+ \d+w$/);
+      }
     }
   });
 });
 
-test("preferred picks the src rung without narrowing the srcSet", () => {
+test("preferred picks the jpeg src rung without narrowing the srcSet", () => {
   withEnv(LADDER_ON, () => {
-    const slug = PHOTOS[0].slug;
-    for (const width of [750, 1500, 2500] as const) {
-      const image = galleryImage(slug, width);
+    for (const width of WEB_DERIVATIVE_WIDTHS) {
+      const image = galleryImage(LADDER_PHOTO, width);
       assert.ok(image);
       assert.equal(
         image.src,
-        `https://cdn.example.com/gallery/${slug}/${width}.jpg`,
+        `https://cdn.example.com/gallery/dawn/${HASH}/${width}.jpg`,
         `preferred ${width} did not reach the src`,
       );
       // The browser can still choose a different rung for a different viewport:
-      // a hero asking for 2500 is not asking to be offered only 2500.
+      // a hero asking for 2000 is not asking to be offered only 2000.
       assert.equal(image.srcSet?.split(", ").length, WEB_DERIVATIVE_WIDTHS.length);
     }
   });
@@ -148,11 +162,12 @@ test("preferred is ignored while the placeholder is the only source", () => {
   // about a ladder that does not exist. `preferred` must not invent a second
   // URL or a srcSet here.
   withEnv(PLACEHOLDER_ONLY, () => {
-    const image = galleryImage(PHOTOS[0].slug, 2500);
+    const image = galleryImage(PHOTOS[0]!, 2000);
     assert.ok(image);
     assert.equal(image.source, "placeholder");
-    assert.equal(image.src, `/placeholders/${PHOTOS[0].slug}.jpg?v=${PLACEHOLDER_VERSION}`);
+    assert.equal(image.src, `/placeholders/${PHOTOS[0]!.slug}.jpg?v=${PLACEHOLDER_VERSION}`);
     assert.equal(image.srcSet, null);
+    assert.equal(image.webpSrcSet, null);
   });
 });
 
@@ -161,12 +176,11 @@ test("a preferred rung the ladder does not have falls back to the default", () =
   // produce a URL for an object that will never exist — the 404-in-a-screenshot
   // failure this file exists to prevent.
   withEnv(LADDER_ON, () => {
-    const slug = PHOTOS[0].slug;
-    const image = galleryImage(slug, 4000 as never);
+    const image = galleryImage(LADDER_PHOTO, 4000 as never);
     assert.ok(image);
     assert.equal(
       image.src,
-      `https://cdn.example.com/gallery/${slug}/${WEB_DEFAULT_WIDTH}.jpg`,
+      `https://cdn.example.com/gallery/dawn/${HASH}/${WEB_DEFAULT_WIDTH}.jpg`,
     );
     assert.ok(image.srcSet);
   });
@@ -175,8 +189,8 @@ test("a preferred rung the ladder does not have falls back to the default", () =
 test("an unusable slug yields null in both modes, not a URL to a missing file", () => {
   for (const env of [PLACEHOLDER_ONLY, LADDER_ON]) {
     withEnv(env, () => {
-      assert.equal(galleryImage("../escape"), null, JSON.stringify(env));
-      assert.equal(galleryImage("UPPER"), null, JSON.stringify(env));
+      assert.equal(galleryImage({ slug: "../escape" }), null, JSON.stringify(env));
+      assert.equal(galleryImage({ slug: "UPPER" }), null, JSON.stringify(env));
     });
   }
 });

@@ -9,18 +9,23 @@
  *
  * Drop JPEGs into the gitignored `ingest/` folder at the repo root, named for
  * the catalog slug they are (`alley-cat.jpg`). The original goes to
- * nessebar-lens-masters as `prints/{slug}.jpg`; sharp resizes it
- * width-driven, preserving aspect ratio, to every rung in
- * src/lib/derivative-ladder.ts and each rung goes to nessebar-lens-web as
- * `{slug}/{rung}.jpg`. Never crops: the list page's uniform tiles are a CSS
- * aspect-ratio with object-fit: cover, and the photo page is uncropped.
+ * nessebar-lens-masters as `prints/{slug}.jpg`; sharp resizes it width-driven,
+ * preserving aspect ratio, to every rung in src/lib/derivative-ladder.ts, in
+ * both jpg and webp, and each rung goes to nessebar-lens-web as
+ * `{slug}/{hash8}/{rung}.{ext}`. Never crops: the list page's uniform tiles
+ * are a CSS aspect-ratio with object-fit: cover, and the photo page is
+ * uncropped.
  *
- * Idempotent: keys are overwritten with the same bytes for the same input, so
- * a re-run after a rung change adds keys and leaves the rest alone.
+ * The key carries the master's content hash, so a changed image is a new URL
+ * and the derivative objects can be served immutable.
+ *
+ * Idempotent: the same input produces the same keys and the same bytes, so a
+ * re-run after a rung change adds keys and leaves the rest alone.
  *
  * Never upsamples. A master narrower than a rung is written at its own width
  * under the rung's key, because the srcSet advertises that key and a missing
- * rung is a 404 the ladder gate exists to prevent.
+ * rung is a 404 the ladder gate exists to prevent. A master below the top rung
+ * (2000 px) is refused outright: it could never fill the largest public image.
  *
  * Dry run is the default. Uploading is opt-in per invocation, and
  * assertUploadIsSafe() refuses the run outright if the ladder flag is on.
@@ -28,6 +33,11 @@
  * Env: R2_S3_ENDPOINT (or R2_ENDPOINT), R2_ACCESS_KEY_ID,
  * R2_SECRET_ACCESS_KEY. NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED is read so the
  * guard can refuse.
+ *
+ * Loads under plain node: every import is either a package or a module with
+ * no extensionless imports of its own, so no loader hook is needed. The
+ * catalog is read from content/photos/*.yaml filenames rather than through
+ * src/lib/photos.ts, which would pull in the git-ignored generated catalog.
  */
 
 import { readdir, readFile } from "node:fs/promises";
@@ -38,16 +48,16 @@ import { fileURLToPath } from "node:url";
 import { S3Client, PutObjectCommand } from "@aws-sdk/client-s3";
 import sharp from "sharp";
 
-// One import, and it has no imports of its own — so this script runs under
-// plain node with no loader hook, and the rung list it generates is the same
-// array the site's srcSet is built from.
 import {
-  DERIVATIVE_JPEG_QUALITY,
   MASTERS_BUCKET_NAME,
   WEB_BUCKET_NAME,
+  WEB_DERIVATIVE_CACHE_CONTROL,
   WEB_DERIVATIVE_WIDTHS,
+  assertMasterIsUsable,
   assertUploadIsSafe,
+  imageHash,
   planDerivatives,
+  slugFromDroppedName,
 } from "../src/lib/derivative-ladder.ts";
 // envFlag, not a second copy of its `true|1` grammar: this file already
 // reaches into src/, and a hand-inlined regex here would be the one place
@@ -55,15 +65,13 @@ import {
 // the guard would refuse a run the site is happily serving from, or allow
 // one it is not.
 import { envFlag } from "../src/lib/env.ts";
-// The catalog, for the same single-source reason: a --only slug that no photo
-// declares uploads a master the site can never render.
-import { PHOTOS } from "../src/lib/photos.ts";
+import { derivativeContentType, renderDerivative } from "./derivative-image.mjs";
 
 const DROP_DIR = "ingest";
-/** A week, never `immutable`: a re-ingest overwrites the same key, and an
- *  immutable object the browser has cached cannot be corrected without a new
- *  filename. The ladder's cache-busting is the `?v=N` bump, not the header. */
-const CACHE_CONTROL = "public, max-age=604800";
+const CATALOG_DIR = "content/photos";
+/** A week, never `immutable`: a re-ingest overwrites the master's same key.
+ *  Derivative keys carry the content hash and are immutable instead. */
+const MASTER_CACHE_CONTROL = "public, max-age=604800";
 
 function arg(name) {
   const i = process.argv.indexOf(name);
@@ -94,6 +102,19 @@ export function selectDrops(names, slugs) {
  *  site cannot render is the failure this catches, so it is worth an abort. */
 export function unknownSlugs(slugs, catalog) {
   return (slugs ?? []).filter((slug) => !catalog.includes(slug));
+}
+
+/**
+ * Every photo slug in the catalog, from the YAML filenames. The schema makes
+ * the filename the slug, and the file's own `slug:` has to equal it, so this
+ * is the catalog without loading photos.ts (and its generated module).
+ */
+export async function catalogSlugs(dir = CATALOG_DIR) {
+  const entries = await readdir(dir);
+  return entries
+    .filter((name) => name.endsWith(".yaml"))
+    .map(stemOf)
+    .sort();
 }
 
 function requiredEnv(...names) {
@@ -139,7 +160,10 @@ async function readDrops(dir) {
       console.log(`  unreadable, skipping: ${name}`);
       continue;
     }
-    drops.push({ name, bytes, width });
+    // The floor is enforced only for files that name a real slug, so a stray
+    // small image the plan would ignore anyway cannot fail the run.
+    if (slugFromDroppedName(name) !== null) assertMasterIsUsable(width);
+    drops.push({ name, bytes, width, hash: await imageHash(bytes) });
   }
   return drops;
 }
@@ -150,11 +174,11 @@ async function main() {
 
   // Before any read of the drop folder or any R2 call, so an unknown slug costs
   // nothing and cannot half-write.
-  const unknown = unknownSlugs(only, PHOTOS.map((photo) => photo.slug));
+  const unknown = unknownSlugs(only, await catalogSlugs());
   if (unknown.length > 0) {
     throw new Error(
-      `--only ${unknown.join(", ")} is not in the catalog (src/lib/photos.ts) — ` +
-        `add the slug there first, or check the spelling.`,
+      `--only ${unknown.join(", ")} is not in the catalog ` +
+        `(${CATALOG_DIR}) — add the slug there first, or check the spelling.`,
     );
   }
 
@@ -187,7 +211,7 @@ async function main() {
   }
 
   const plan = planDerivatives(
-    drops.map(({ name, width }) => ({ name, width })),
+    drops.map(({ name, width, hash }) => ({ name, width, hash })),
     WEB_DERIVATIVE_WIDTHS,
   );
 
@@ -203,12 +227,12 @@ async function main() {
     console.log(`  ${MASTERS_BUCKET_NAME}/${master.key}  (original)`);
   }
   for (const job of plan.jobs) {
-    console.log(`  ${WEB_BUCKET_NAME}/${job.key}  ${job.pixels}px  (rung ${job.rung})`);
+    console.log(`  ${WEB_BUCKET_NAME}/${job.key}  ${job.pixels}px`);
   }
   if (plan.masters.length === 0) {
     throw new Error(
       `nothing in ${DROP_DIR}/ is named {slug}.jpg — rename the masters to ` +
-        `their catalog slug, or add the slug to src/lib/photos.ts first.`,
+        `their catalog slug, or add the slug to ${CATALOG_DIR} first.`,
     );
   }
   if (!apply) {
@@ -229,7 +253,7 @@ async function main() {
         Key: master.key,
         Body: bytes,
         ContentType: "image/jpeg",
-        CacheControl: CACHE_CONTROL,
+        CacheControl: MASTER_CACHE_CONTROL,
       }),
     );
     written += 1;
@@ -239,20 +263,17 @@ async function main() {
   for (const job of plan.jobs) {
     const bytes = byName.get(job.sourceName);
     if (!bytes) throw new Error(`no bytes read for ${job.sourceName}`);
-    // rotate() with no argument applies the EXIF orientation first, so the
-    // width-driven resize below is measured on the upright photo.
-    const out = await sharp(bytes)
-      .rotate()
-      .resize({ width: job.pixels, withoutEnlargement: true })
-      .jpeg({ quality: DERIVATIVE_JPEG_QUALITY, mozjpeg: true })
-      .toBuffer();
+    const out = await renderDerivative(bytes, {
+      pixels: job.pixels,
+      format: job.format,
+    });
     await client.send(
       new PutObjectCommand({
         Bucket: WEB_BUCKET_NAME,
         Key: job.key,
         Body: out,
-        ContentType: "image/jpeg",
-        CacheControl: CACHE_CONTROL,
+        ContentType: derivativeContentType(job.format),
+        CacheControl: WEB_DERIVATIVE_CACHE_CONTROL,
       }),
     );
     written += 1;

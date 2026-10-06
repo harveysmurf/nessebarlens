@@ -71,8 +71,7 @@ export default function StoryPage() {
                   }`}
                 >
                   <WebPhoto
-                    slug={photo.slug}
-                    alt={block.title}
+                    photo={photo}
                     preferred={1500}
                     sizes="(max-width: 768px) 100vw, 60vw"
                     className={`w-full h-full object-cover hover:scale-105 transition-transform duration-700 ${filmLookClass(photo.filmLook)}`}
