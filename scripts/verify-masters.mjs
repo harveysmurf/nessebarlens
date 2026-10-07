@@ -185,12 +185,31 @@ function requiredEnv(names, env) {
   }
 }
 
-export async function main(env = process.env) {
+/** The published photos that actually need a master checked (not allow-listed). */
+export function photosToVerify(photos = PHOTOS, allowlist = ALLOWLISTED_SLUGS) {
+  return photos.filter(
+    (photo) => photo.published !== false && !allowlist.has(photo.slug),
+  );
+}
+
+export async function main(env = process.env, photos = PHOTOS) {
+  // While every published photo is still an allow-listed placeholder there is
+  // nothing to read, so the read-only token is not required yet: the gate is a
+  // clean no-op rather than a red release for a credential nobody needs. It is
+  // needed the moment the first real photo is published — which is exactly when
+  // `photosToVerify` stops being empty.
+  if (photosToVerify(photos).length === 0) {
+    console.log(
+      "verify-masters: no published photo needs a master yet (placeholder allow-list); nothing to verify",
+    );
+    return 0;
+  }
   requiredEnv(
     ["R2_S3_ENDPOINT", "R2_MASTERS_READ_ACCESS_KEY_ID", "R2_MASTERS_READ_SECRET_ACCESS_KEY"],
     env,
   );
   const failures = await verifyMasters({
+    photos,
     s3: createMastersS3(env),
     log: (line) => console.log(line),
   });

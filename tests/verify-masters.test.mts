@@ -13,7 +13,9 @@ import { PHOTOS } from "../src/generated/catalog.ts";
 import {
   ALLOWLISTED_SLUGS,
   createMastersS3,
+  main,
   metadataValue,
+  photosToVerify,
   verifyMasters,
 } from "../scripts/verify-masters.mjs";
 
@@ -179,4 +181,34 @@ test("the read-only uploader refuses any bucket but the production masters bucke
     /refusing to read nessebar-lens-masters-staging/,
   );
   assert.ok(ALLOWLISTED_SLUGS.has("dawn"));
+});
+
+test("photosToVerify drops unpublished and allow-listed photos", () => {
+  const photos = [
+    { slug: "dawn", published: true, masterSha256: SHA_A },
+    { slug: "draft", published: false, masterSha256: SHA_A },
+    { slug: "cobblestones", published: true, masterSha256: SHA_A },
+  ];
+  assert.deepEqual(
+    photosToVerify(photos, new Set(["cobblestones"])).map((p) => p.slug),
+    ["dawn"],
+  );
+});
+
+test("main is a no-op with no credentials while every photo is allow-listed", async () => {
+  // The placeholder phase must not need the read-only token: an empty check
+  // returns 0 before requiredEnv, so the release is green without a credential
+  // that has nothing to read.
+  assert.deepEqual(
+    photosToVerify([{ slug: "dawn", published: true, masterSha256: undefined }]).map((p) => p.slug),
+    [],
+  );
+  assert.equal(await main({}, []), 0);
+});
+
+test("main needs the read-only credentials as soon as a real photo must be checked", async () => {
+  await assert.rejects(
+    () => main({}, [{ slug: "real-photo", published: true, masterSha256: SHA_A }]),
+    /missing env: R2_S3_ENDPOINT/,
+  );
 });
