@@ -236,7 +236,7 @@ test("a padded Resend key is trimmed, not dropped", () => {
  */
 const SITE_ENV = {
   NEXT_PUBLIC_SITE_URL: "https://nessebarlens.com",
-  NEXT_PUBLIC_WEB_IMAGES_BASE: "https://nessebarlens.com",
+  NEXT_PUBLIC_WEB_IMAGES_BASE: "https://images.nessebarlens.com",
 };
 
 /** The #117 keys production also requires, so a run reaches the file at all. */
@@ -254,7 +254,7 @@ test("production ships NEXT_PUBLIC_SITE_URL to the Worker, not just to the build
 
 test("production ships NEXT_PUBLIC_WEB_IMAGES_BASE too", () => {
   const { secrets } = runAndReadSecrets("production", WITH_SITE_ENV);
-  assert.equal(secrets.NEXT_PUBLIC_WEB_IMAGES_BASE, "https://nessebarlens.com");
+  assert.equal(secrets.NEXT_PUBLIC_WEB_IMAGES_BASE, "https://images.nessebarlens.com");
 });
 
 test("an unset NEXT_PUBLIC_SITE_URL is dropped and loudly named, not shipped blank", () => {
