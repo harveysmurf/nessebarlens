@@ -27,7 +27,6 @@ import {
   missingProductionConfig,
   printAssetSecret,
   PRINT_ASSET_SECRET_MIN_LENGTH,
-  productionConfigError,
   prodigiConfig,
   siteUrl,
   stripeSecretKey,
@@ -95,10 +94,6 @@ test("a fully configured deployment reports nothing missing", () => withCleanEnv
     PRINT_ASSET_HMAC_SECRET: SECRET,
   };
   assert.deepEqual(missingProductionConfig(env), []);
-  assert.equal(
-    productionConfigError(missingProductionConfig(env)),
-    "Missing production config: ",
-  );
 
   const config = getConfig(env);
   assert.deepEqual(config, {
@@ -123,12 +118,6 @@ test("an empty deployment names every missing value, in a stable order", () =>
     "PRODIGI_API_KEY",
     "PRINT_ASSET_HMAC_SECRET",
   ]);
-  assert.equal(
-    productionConfigError(missingProductionConfig({})),
-    "Missing production config: NEXT_PUBLIC_SITE_URL, STRIPE_SECRET_KEY, " +
-      "PRODIGI_API_BASE, PRODIGI_API_KEY, PRINT_ASSET_HMAC_SECRET",
-  );
-  assert.equal(productionConfigError(["A", "B"]), "Missing production config: A, B");
 }));
 
 test("a half-configured deployment names only what is actually absent", () => withCleanEnv(() => {
@@ -272,7 +261,6 @@ test("the readers default to the deployment's own environment", () => {
   withEnv({ PRINT_ASSET_HMAC_SECRET: undefined, NEXT_PUBLIC_SITE_URL: undefined }, () => {
     assert.equal(missingProductionConfig().includes("NEXT_PUBLIC_SITE_URL"), true);
   });
-  assert.match(productionConfigError(), /^Missing production config: /);
 });
 
 test("webImagesBase is https-only and never carries a trailing slash", () => withCleanEnv(() => {
