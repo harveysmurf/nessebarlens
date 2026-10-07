@@ -408,11 +408,14 @@ test("the real uploader has no client for the production masters bucket", async 
 
 test("the launcher spawns publish-photos and is wired as the npm script", () => {
   const root = path.join(import.meta.dirname, "..");
-  const launcher = readFileSync(path.join(root, "scripts/ingest.mjs"), "utf8");
+  const launcher = readFileSync(
+    path.join(root, "scripts/publish-photos-launcher.mjs"),
+    "utf8",
+  );
   assert.match(launcher, /publish-photos\.mjs/);
   assert.match(launcher, /"--import",\s*\n?\s*"\.\/scripts\/register\.mjs"/);
   const pkg = JSON.parse(readFileSync(path.join(root, "package.json"), "utf8"));
-  assert.equal(pkg.scripts["publish-photos"], "node scripts/ingest.mjs");
+  assert.equal(pkg.scripts["publish-photos"], "node scripts/publish-photos-launcher.mjs");
   // #278: the deprecated `npm run ingest` alias was removed after its
   // transition; publish-photos is the one supported command.
   assert.equal(pkg.scripts.ingest, undefined);
