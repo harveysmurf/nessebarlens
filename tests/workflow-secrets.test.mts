@@ -46,7 +46,12 @@ const workflowDir = path.join(root, ".github", "workflows");
  * environments; that is the one place the same name means a different value, and
  * it is the reason these are per-environment lists rather than one global set.
  *
- * `production` — the same names with live values.
+ * `production` — the same names with live values, plus the read-only R2 token
+ * the release gate uses: `R2_MASTERS_READ_ACCESS_KEY_ID`,
+ * `R2_MASTERS_READ_SECRET_ACCESS_KEY`, and `R2_S3_ENDPOINT`. These are
+ * production-only on purpose (#243): the gate HeadObjects the production
+ * masters bucket from the `production` job, which only runs on `main`; staging
+ * serves its own bucket and is not gated.
  *
  * `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` is the ladder's on/off switch. It is in
  * both lists because the release build reads it for staging and production, and
@@ -87,6 +92,9 @@ const EXPECTED: Record<string, ReadonlySet<string>> = {
     "PRODIGI_API_KEY",
     "PRODIGI_SANDBOX_API_KEY",
     "PRODIGI_WEBHOOK_TOKEN",
+    "R2_MASTERS_READ_ACCESS_KEY_ID",
+    "R2_MASTERS_READ_SECRET_ACCESS_KEY",
+    "R2_S3_ENDPOINT",
     "RECONCILE_SECRET",
     "RESEND_API_KEY",
     "SITE_URL",
@@ -218,12 +226,18 @@ test("no workflow reads the retired Pages credentials or the unused R2 S3 keys",
   //     Cloudflare token. scripts/sync-worker-secrets.sh still accepts them as a
   //     fallback for wrangler's own names, but the workflows have long passed
   //     CLOUDFLARE_* directly, so the Environment copies are unread.
-  //   R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_ENDPOINT / R2_S3_ENDPOINT /
-  //     R2_ACCOUNT_ID  — the S3-compatibility keys. The site reaches R2 through
-  //     the Workers *binding*, not the S3 API, and wrangler.toml says so; these
-  //     are a second credential for the same data with no code behind it.
+  //   R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY / R2_ENDPOINT / R2_ACCOUNT_ID  —
+  //     the S3-compatibility keys. The site reaches R2 through the Workers
+  //     *binding*, not the S3 API, and wrangler.toml says so; these are a second
+  //     credential for the same data with no code behind it.
   //
-  // The R2 key is the one that matters most: an S3 access key is a long-lived
+  // `R2_S3_ENDPOINT` is deliberately NOT in this list any more: #243's release
+  // gate (scripts/verify-masters.mjs) reads the masters bucket over the S3 API
+  // in the production job, so the endpoint has a reader again. The read-only
+  // access keys are separate names (R2_MASTERS_READ_*), so the write-capable
+  // R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY stay retired.
+  //
+  // The R2 keys are the ones that matter most: an S3 access key is a long-lived
   // bearer credential for the masters bucket, so it must be revoked at
   // Cloudflare as well as deleted here. That step is an account action and is
   // tracked on the issue, not in this file.
@@ -233,7 +247,6 @@ test("no workflow reads the retired Pages credentials or the unused R2 S3 keys",
     "R2_ACCESS_KEY_ID",
     "R2_SECRET_ACCESS_KEY",
     "R2_ENDPOINT",
-    "R2_S3_ENDPOINT",
     "R2_ACCOUNT_ID",
   ];
   const used = new Set(jobs.flatMap((job) => job.secrets));

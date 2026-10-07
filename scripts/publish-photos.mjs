@@ -47,6 +47,7 @@ import { HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s
 import { parse as parseYaml, parseDocument, Pair, Scalar } from "yaml";
 
 import {
+  MASTER_SHA256_PATTERN,
   MASTERS_BUCKET_NAME,
   PHOTO_SLUG_PATTERN,
   STAGING_MASTERS_BUCKET_NAME,
@@ -961,7 +962,7 @@ export async function runPromote(options, deps = {}) {
       }
       const expected =
         data && typeof data === "object" ? data.master_sha256 : undefined;
-      if (typeof expected !== "string" || !/^[0-9a-f]{64}$/.test(expected)) {
+      if (typeof expected !== "string" || !MASTER_SHA256_PATTERN.test(expected)) {
         fatals.push(
           `${yaml.path}: master_sha256 is missing or malformed; ` +
             `run publish-photos --apply first`,
