@@ -1240,7 +1240,10 @@ from §7) into `ingest/` (repo root, gitignored), both named for the same slug:
   **staging master** (long edge ≤ 2500 px, JPEG q80, sRGB, metadata stripped) to
   `nessebar-lens-masters-staging/prints/{slug}.jpg`, writes `slug`,
   `master_sha256` and `image_hash` into `content/photos/{slug}.yaml` preserving
-  the owner's comments and key order, then opens **one PR** for the run.
+  the owner's comments and key order, writes the committed fallback
+  `public/placeholders/{slug}.jpg` (long edge ≤ 1600 px, metadata stripped — the
+  tile checkout shows with the ladder off, #257), then opens **one PR** for the
+  run. That PR is `content/photos/**` plus `public/placeholders/**` only.
 - `--only dawn,dusk` narrows a run; `--replace-image dawn` re-publishes an
   existing slug (the new master's hash must differ).
 - The production masters bucket is **never** written by `--apply`. Its client
@@ -1259,7 +1262,9 @@ npm run publish-photos -- --promote --pr <n>
 It reads the PR's changed `content/photos/*.yaml` **from the PR head** (the PR,
 not `ingest/` and not `main`, is the authority on what to promote) and refuses
 unless the PR is open, targets `main`, was opened by the owner (`gh api user`),
-and changes nothing outside `content/photos/`. For each slug it hashes the local
+and changes nothing outside `content/photos/` and `public/placeholders/` (the
+catalog entry and the committed fallback a publish writes, #257). For each slug
+it hashes the local
 `ingest/{slug}.jpg` and refuses unless that SHA-256 is exactly the
 `master_sha256` the YAML recorded, so the promoted bytes are the ones that were
 previewed — **stop before any upload** if one file does not match.
@@ -1284,8 +1289,9 @@ What to do if `--promote` refuses:
 - **`already holds a different master … pass --replace-image`** — production
   already serves a different file for that slug. If the new bytes are intended,
   re-run `--apply --replace-image x` so the PR modifies the entry, then promote.
-- **`changes files outside content/photos/`** — the PR is broader than a photo
-  publish; promote does not merge it. Split the photo change into its own PR.
+- **`changes files outside content/photos/ and public/placeholders/`** — the PR
+  is broader than a photo publish; promote does not merge it. Split the photo
+  change into its own PR.
 
 Nothing is uploaded and auto-merge is not enabled on any refusal, so fixing the
 input and re-running is always safe. The web keys from `--apply` are

@@ -110,48 +110,12 @@ test("every film photo carries a film look, so the filter agrees with the matte"
   assert.ok(photosByCategory("film").length > 0);
 });
 
-// The move to a YAML catalog must not have reordered anything a visitor sees.
-// The order is per category, so the flat PHOTOS order across categories is not
-// asserted — only what each gallery renders.
-test("the migrated catalog matches today's slugs, in today's display order", () => {
-  const expected: Record<PhotoCategory, string[]> = {
-    "fine-art": [
-      "dawn",
-      "cobblestones",
-      "isthmus",
-      "harbor-mist",
-      "chapel-light",
-      "stone-arch",
-      "evening-wall",
-      "lorem-ipsum",
-    ],
-    archive: [
-      "fishermen",
-      "autumn",
-      "craftsman",
-      "market-day",
-      "net-menders",
-      "winter-pier",
-      "alley-cat",
-    ],
-    film: [
-      "windmill",
-      "fortress",
-      "seagulls",
-      "boat-hull",
-      "shadow-street",
-      "salt-air",
-    ],
-  };
-  for (const category of CATEGORIES) {
-    assert.deepEqual(
-      photosByCategory(category).map((photo) => photo.slug),
-      expected[category],
-      category,
-    );
-  }
-  assert.equal(PHOTOS.length, 21);
-});
+// The #239 migration snapshot (the hand-written per-category slug list and the
+// total count) was removed in #257: it had to be edited on every publish, which
+// a publish PR must not need. What it guarded is covered by the well-formed
+// test above: slugs are unique, every category is populated, and every photo is
+// in exactly one category. Display order comes from the YAML `order` field and
+// is compiled by scripts/build-catalog.mjs, so it is not re-pinned here.
 
 test("every photo has real alt text within the schema limit", () => {
   for (const photo of PHOTOS) {

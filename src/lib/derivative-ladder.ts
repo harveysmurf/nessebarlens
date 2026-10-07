@@ -171,6 +171,15 @@ export const STAGING_MASTER_JPEG_QUALITY = 80;
 export const WEB_DERIVATIVE_CACHE_CONTROL =
   "public, max-age=31536000, immutable";
 
+/**
+ * The gallery/checkout fallback image: a small JPEG of the photo, long edge at
+ * most this, metadata stripped, written by `publish-photos --apply` into
+ * `public/placeholders/{slug}.jpg` (#257). It is the one image the site serves
+ * with no R2 at all, so it ships in the repo rather than a bucket.
+ */
+export const PLACEHOLDER_MAX_EDGE = 1600;
+export const PLACEHOLDER_JPEG_QUALITY = 80;
+
 export type MasterUpload = {
   slug: string;
   /** Where the original bytes are written: `prints/{slug}.jpg` in MASTERS. */
