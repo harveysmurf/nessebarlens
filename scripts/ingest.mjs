@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * npm run publish-photos / npm run ingest — a launcher, not the work.
+ * npm run publish-photos — a launcher, not the work.
  *
  * Its only job is the Node version check, and it is a separate file for a
  * concrete reason: ES module imports are hoisted, so a check at the top of
@@ -10,9 +10,6 @@
  * gets a stack trace about a loader instead of "install Node 24.21". Here the
  * check runs first, in a file with no imports of ours, so the message is the
  * one the reader needs.
- *
- * `npm run ingest` is the one-release alias for `npm run publish-photos`; the
- * deprecation note keys off which npm script invoked this launcher.
  *
  * The spawn passes `--import ./scripts/register.mjs` because publish-photos
  * imports src/lib/photo-schema.ts, whose own imports are extensionless. The
@@ -40,12 +37,6 @@ if (major !== reqMajor || (minor ?? 0) < reqMinor) {
       `Fix: nvm use   (or install Node ${PINNED} and re-run)\n`,
   );
   process.exit(1);
-}
-
-if (process.env.npm_lifecycle_event === "ingest") {
-  process.stderr.write(
-    "note: npm run ingest is deprecated and will be removed; use npm run publish-photos\n",
-  );
 }
 
 const result = spawnSync(
