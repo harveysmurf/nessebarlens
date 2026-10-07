@@ -4,7 +4,7 @@
  */
 
 import assert from "node:assert/strict";
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -261,6 +261,7 @@ test("a dry run prints the plan and uploads nothing", async () => {
     assert.equal(d.s3.puts.length, 0);
     assert.ok(d.logs.some((line) => line.includes("staging master")));
     assert.ok(d.logs.some((line) => line.includes("image_hash")));
+    assert.ok(d.logs.some((line) => line.includes("fallback placeholder")));
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
@@ -287,7 +288,7 @@ test("one bad photo in a batch of three uploads nothing and reports every error"
   }
 });
 
-test("--apply uploads 8 web objects + 1 staging master and never production masters", async () => {
+test("--apply uploads 8 web objects + 1 staging master, writes the placeholder, and never production masters", async () => {
   const dir = makeProject();
   try {
     await writeMaster(path.join(dir, "ingest/dawn.jpg"), { exif: true });
@@ -317,9 +318,18 @@ test("--apply uploads 8 web objects + 1 staging master and never production mast
     assert.match(written, /image_hash: [0-9a-f]{8}/);
     assert.match(written, /# written by publish-photos/);
 
-    // Git: branch from origin/main, add only content/photos, one commit.
+    // The fallback placeholder is committed: a <=1600px, EXIF-stripped JPEG.
+    const placeholder = path.join(dir, "public/placeholders/dawn.jpg");
+    assert.ok(existsSync(placeholder), "the placeholder must be written");
+    const placeholderMeta = await sharp(readFileSync(placeholder)).metadata();
+    assert.equal(placeholderMeta.format, "jpeg");
+    assert.equal(placeholderMeta.width, 1600);
+    assert.ok((placeholderMeta.height ?? 0) <= 1600, `height ${placeholderMeta.height}`);
+    assert.equal(placeholderMeta.exif, undefined, "placeholder must have no EXIF");
+
+    // Git: branch from origin/main, add content/photos + the placeholder, one commit.
     assert.ok(d.exec.calls.some((c) => c[0] === "git" && c[1] === "checkout" && c.includes(result.branch)));
-    assert.ok(d.exec.calls.some((c) => c.join(" ") === "git add -- content/photos"));
+    assert.ok(d.exec.calls.some((c) => c.join(" ") === "git add -- content/photos public/placeholders"));
     assert.ok(d.exec.calls.some((c) => c[0] === "gh" && c[1] === "pr"));
     assert.equal(result.branch, "photos/2026-10-06-dawn");
     assert.equal(result.prUrl, "https://github.com/harveysmurf/nessebarlens/pull/999");
