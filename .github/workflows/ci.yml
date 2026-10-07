@@ -40,8 +40,18 @@ jobs:
 
       - uses: $/.github/actions/setup
 
+      # #274: generate src/generated/catalog.ts once, here. The `pre*` hooks
+      # on lint / typecheck / coverage each call `build:catalog`, so without
+      # this the same catalog is compiled four times in one job (three, since
+      # #273 dropped the separate test step). The checks below run with
+      # `--ignore-scripts` to skip those hooks: the generated module is on disk
+      # for all of them. An independent `npm run lint` / `npm test` in a
+      # developer's shell keeps its hook and still builds the catalog.
+      - name: Build catalog
+        run: npm run build:catalog
+
       - name: Lint
-        run: npm run lint
+        run: npm run --ignore-scripts lint
 
       # Type-level constraints cannot die in a test: a Record keyed by a mapped
       # type, a Record<union, string> label table, a `satisfies` guard — all of
@@ -50,7 +60,7 @@ jobs:
       # step the only typecheck was `next build` in the preview job, one job
       # later than a green "Lint & test" on a pull request implied.
       - name: Typecheck
-        run: npm run typecheck
+        run: npm run --ignore-scripts typecheck
 
       # #273: one run of the suite, not two. `npm run coverage` drives the
       # whole test glob under node's V8 coverage and, before it checks any
@@ -59,7 +69,7 @@ jobs:
       # identical files a second time for a verdict this step already owns.
       # `npm test` stays for a local run without coverage.
       - name: Test and coverage floors
-        run: npm run coverage
+        run: npm run --ignore-scripts coverage
 
   # #112: a workflow linter in CI, scoped to the class of bug the issue is
   # about. `preview.yml` used to interpolate `github.head_ref` — the PR

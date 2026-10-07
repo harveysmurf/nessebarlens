@@ -201,7 +201,7 @@ test("lint-and-test runs the suite once, under coverage, not twice (#273)", () =
 
   assert.match(
     body,
-    /run: npm run coverage/,
+    /run: npm run (?:--ignore-scripts )?coverage/,
     "lint-and-test must gate coverage; coverage.mjs runs the suite under V8 and fails the job on a test failure before it checks the floors",
   );
   assert.doesNotMatch(
@@ -209,6 +209,43 @@ test("lint-and-test runs the suite once, under coverage, not twice (#273)", () =
     /run: npm test\b/,
     "lint-and-test must not also run `npm test`: the same files would execute a second time in the same job for a verdict coverage.mjs already owns (#273)",
   );
+});
+
+test("lint-and-test builds the catalog once and skips the pre* hooks (#274)", () => {
+  const ci = workflows.find((w) => w.name === "ci.yml");
+  assert.ok(ci, "ci.yml is gone");
+
+  const job = ci.text.match(/^ {2}lint-and-test:\n((?:(?: {4}|\t).*\n|\n)*)/m);
+  assert.ok(job, "ci.yml has no lint-and-test job");
+  const body = job[1];
+
+  // One explicit generation step...
+  assert.match(
+    body,
+    /- name: Build catalog\n\s+run: npm run build:catalog/,
+    "lint-and-test must generate the catalog once, explicitly, before the checks that read it",
+  );
+  // ...and the checks skip the pre* hooks that would each regenerate it.
+  for (const script of ["lint", "typecheck", "coverage"]) {
+    assert.match(
+      body,
+      new RegExp(`run: npm run --ignore-scripts ${script}\\b`),
+      `lint-and-test must run \`npm run --ignore-scripts ${script}\`, or the pre${script} hook regenerates the catalog a second/third time (#274)`,
+    );
+  }
+
+  // The hooks stay, so `npm run lint` (or `npm test`) in a developer's shell
+  // still prepares the catalog with no extra command.
+  const pkg = JSON.parse(fs.readFileSync(path.join(root, "package.json"), "utf8")) as {
+    scripts?: Record<string, string>;
+  };
+  for (const hook of ["prelint", "pretypecheck", "precoverage"]) {
+    assert.equal(
+      pkg.scripts?.[hook],
+      "npm run build:catalog",
+      `package.json lost the ${hook} hook; an independent \`npm run ${hook.slice(3)}\` would then need the catalog built by hand`,
+    );
+  }
 });
 
 test("the E2E flow is its own job in ci.yml, not a step in lint-and-test", () => {
