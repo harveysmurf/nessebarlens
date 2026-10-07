@@ -18,6 +18,7 @@ import type { SendEmail } from "../src/lib/email.ts";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
 import { d1OrdersStore } from "../src/lib/orders-d1.ts";
 import { sqliteD1 } from "./sqlite-d1.mts";
+import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
 
@@ -43,7 +44,7 @@ function paidPhysical(overrides: Partial<OrderRecord> = {}): OrderRecord {
     merchantReference: SESSION,
     terminal: true,
     status: "paid",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     kind: "physical",
     format: "giclee",
     size: "30x40",
@@ -56,7 +57,7 @@ function paidPhysical(overrides: Partial<OrderRecord> = {}): OrderRecord {
     recipient: RECIPIENT,
     prodigiOrderId: PRODIGI_ID,
     prodigiStage: "InProgress",
-    assetUrl: "https://nessebarlens.com/api/print-asset?slug=dawn&exp=1&sig=" + "a".repeat(64),
+    assetUrl: `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1&sig=` + "a".repeat(64),
     updatedAt: NOW,
     createdAt: NOW,
     attempts: 1,
@@ -344,11 +345,12 @@ test("D1 claimProdigiCallback is true once then false", async () => {
 test("order creation body includes same-origin callbackUrl", () => {
   const body = buildProdigiOrderBody({
     sessionId: SESSION,
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "giclee",
     size: "50x70",
     frame: null,
     recipient: RECIPIENT,
+    assetUrl: `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`,
     webhookToken: "tok",
   });
   assert.equal(

@@ -25,10 +25,10 @@ test("the catalog is well-formed: unique slugs, valid categories, master keys", 
     assert.ok(photo.title.length > 0, photo.slug);
     assert.ok(photo.categoryLabel.length > 0, photo.slug);
   }
-  // Every category has at least one photo, or its gallery page is empty.
-  for (const category of CATEGORIES) {
-    assert.ok(photosByCategory(category).length > 0, category);
-  }
+  // A published catalog must not be empty: the homepage hero needs a photo.
+  // Individual categories may be empty (#245) — the gallery page and the
+  // homepage tile both handle that.
+  assert.ok(PHOTOS.length > 0, "the catalog has no published photo");
 });
 
 test("getPhoto and photosByCategory agree with the catalog", () => {
@@ -77,9 +77,11 @@ test("isFilmPhoto is the category, checked against every photo", () => {
       `${photo.slug} (${photo.category})`,
     );
   }
-  // Non-vacuous in both directions: the walk above is a real comparison, not a
-  // walk over photos that are all one thing.
-  assert.ok(PHOTOS.some((p) => isFilmPhoto(p)), "no film photo to check");
+  // The film category can be empty (#245), so the positive direction is
+  // asserted on a synthetic film photo rather than requiring one in the
+  // catalog. The walk above is still a real comparison against every published
+  // photo, and the negative direction is pinned by a photo that is not film.
+  assert.equal(isFilmPhoto({ category: "film" }), true);
   assert.ok(PHOTOS.some((p) => !isFilmPhoto(p)), "no non-film photo to check");
   // A category added to the union but not handled by the helper must not read
   // as film. Typed as PhotoCategory via a cast, because the point is that a
@@ -107,15 +109,14 @@ test("every film photo carries a film look, so the filter agrees with the matte"
       assert.equal(photo.filmLook, undefined, `${photo.slug} has a film look`);
     }
   }
-  assert.ok(photosByCategory("film").length > 0);
 });
 
 // The #239 migration snapshot (the hand-written per-category slug list and the
 // total count) was removed in #257: it had to be edited on every publish, which
 // a publish PR must not need. What it guarded is covered by the well-formed
-// test above: slugs are unique, every category is populated, and every photo is
-// in exactly one category. Display order comes from the YAML `order` field and
-// is compiled by scripts/build-catalog.mjs, so it is not re-pinned here.
+// test above: slugs are unique, the catalog is non-empty, and every photo is in
+// exactly one category. Display order comes from the YAML `order` field and is
+// compiled by scripts/build-catalog.mjs, so it is not re-pinned here.
 
 test("every photo has real alt text within the schema limit", () => {
   for (const photo of PHOTOS) {
@@ -128,9 +129,11 @@ test("every photo has real alt text within the schema limit", () => {
 });
 
 test("featuredPhoto returns the featured photo, else the first fine-art photo", () => {
-  assert.equal(featuredPhoto()?.slug, "dawn");
+  const firstFineArt = PHOTOS.find((photo) => photo.category === "fine-art");
+  assert.ok(firstFineArt, "the catalog needs a fine-art photo for the hero");
+  assert.equal(featuredPhoto()?.slug, firstFineArt.slug);
   // No featured flag: the fallback is the first fine-art photo in display order.
   const withoutFeatured = PHOTOS.map((photo) => ({ ...photo, featured: false }));
-  assert.equal(featuredPhoto(withoutFeatured)?.slug, "dawn");
+  assert.equal(featuredPhoto(withoutFeatured)?.slug, firstFineArt.slug);
   assert.equal(featuredPhoto([]), undefined);
 });

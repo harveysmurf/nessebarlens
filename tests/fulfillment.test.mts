@@ -26,11 +26,16 @@ import {
   readDownloadToken,
 } from "../src/lib/download-token.ts";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
+import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
 const NOW = "2026-09-27T12:00:00.000Z";
 const SESSION = "cs_test_abcdefgh";
 
 process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
+
+// The one asset URL shape a stored physical order may carry after #245: the
+// Worker's HMAC /api/print-asset, never a public placeholder.
+const ASSET_URL = `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`;
 
 const SHIPPING: StripeShippingDetails = {
   name: "Test Buyer",
@@ -55,7 +60,7 @@ function paidInput(overrides: Record<string, unknown> = {}) {
     currency: "eur" as string | null,
     amountTotal: 3000 as number | null,
     metadata: {
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "digital",
       size: "",
       frame: "",
@@ -74,7 +79,7 @@ function physicalMeta(
   extra: Record<string, string> = {},
 ): Record<string, string> {
   return {
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "giclee",
     size: "30x40",
     frame: "",
@@ -91,11 +96,11 @@ const okCreate: CreateProdigiOrder = async () => ({
   value: {
     orderId: "ord_sandbox_1",
     stage: "InProgress",
-    assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+    assetUrl: ASSET_URL,
   },
 });
 
-test("parseOrderRecord accepts the two safe asset shapes at any origin (#110)", () => {
+test("parseOrderRecord accepts the signed asset shape at any origin and rejects the retired placeholder (#110)", () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   const base = {
     v: 1,
@@ -103,7 +108,7 @@ test("parseOrderRecord accepts the two safe asset shapes at any origin (#110)", 
     merchantReference: SESSION,
     terminal: true,
     status: "paid",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "giclee",
     size: "30x40",
     frame: "",
@@ -133,23 +138,23 @@ test("parseOrderRecord accepts the two safe asset shapes at any origin (#110)", 
   // signing payload is origin-independent, so a re-hosted URL still verifies.
   // Same-origin is enforced at generation instead — see the generation test in
   // prodigi-order.test.mts.
-  const movedPlaceholder = parseOrderRecord(
-    JSON.stringify({
-      ...base,
-      assetUrl: "https://old-domain.example/placeholders/dawn.jpg",
-    }),
-  );
-  assert.ok(movedPlaceholder, "a record from the previous origin must parse");
+  // The public placeholder path is retired (#245): a record carrying it is
+  // rejected at any origin, so no old shape can read as a paid physical order.
   assert.equal(
-    movedPlaceholder.assetUrl,
-    "https://old-domain.example/placeholders/dawn.jpg",
+    parseOrderRecord(
+      JSON.stringify({
+        ...base,
+        assetUrl: "https://old-domain.example/placeholders/dawn.jpg",
+      }),
+    ),
+    null,
   );
 
   const movedSigned = parseOrderRecord(
     JSON.stringify({
       ...base,
       assetUrl:
-        "https://old-domain.example/api/print-asset?slug=dawn&exp=1&sig=" +
+        `https://old-domain.example/api/print-asset?slug=${SAMPLE_SLUG}&exp=1&sig=` +
         "a".repeat(64),
     }),
   );
@@ -186,23 +191,23 @@ test("parseOrderRecord accepts the two safe asset shapes at any origin (#110)", 
     null,
   );
 
-  const okPlaceholder = parseOrderRecord(
-    JSON.stringify({
-      ...base,
-      assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
-    }),
-  );
-  assert.ok(okPlaceholder);
+  // Rejected: the retired same-origin placeholder is no more a served shape
+  // than a foreign one.
   assert.equal(
-    okPlaceholder.assetUrl,
-    "https://nessebarlens.com/placeholders/dawn.jpg",
+    parseOrderRecord(
+      JSON.stringify({
+        ...base,
+        assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+      }),
+    ),
+    null,
   );
 
   const okPrintAsset = parseOrderRecord(
     JSON.stringify({
       ...base,
       assetUrl:
-        "https://nessebarlens.com/api/print-asset?slug=dawn&exp=1&sig=" +
+        `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1&sig=` +
         "a".repeat(64),
     }),
   );
@@ -245,7 +250,7 @@ test("digital payment with a matching total is paid and does not call Prodigi", 
   let called = 0;
   const create: CreateProdigiOrder = async () => {
     called += 1;
-      return { ok: true, value: { orderId: "x", stage: null, assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" } };
+      return { ok: true, value: { orderId: "x", stage: null, assetUrl: ASSET_URL } };
   };
   const store = memoryOrdersStore();
   const result = await fulfillCheckoutSession({
@@ -260,7 +265,7 @@ test("digital payment with a matching total is paid and does not call Prodigi", 
   const stored = parseOrderRecord((await store.getOrder(SESSION))!);
   assert.ok(stored);
   assert.equal(stored.status, "paid");
-  assert.equal(stored.masterKey, getPhoto("dawn")?.imageKey);
+  assert.equal(stored.masterKey, getPhoto(SAMPLE_SLUG)?.imageKey);
   assert.equal(stored.prodigiOrderId, null);
   assert.equal(stored.terminal, true);
   assert.equal(stored.format, "digital");
@@ -318,11 +323,11 @@ test("physical payment creates a Prodigi sandbox order and stores the id", async
   assert.equal(stored.prodigiStage, "InProgress");
   assert.equal(
     stored.assetUrl,
-    "https://nessebarlens.com/placeholders/dawn.jpg",
+    ASSET_URL,
   );
   assert.equal(stored.recipient?.countryCode, "BG");
   assert.equal(stored.recipient?.email, "buyer@example.com");
-  assert.equal(JSON.stringify(stored).includes("prints/dawn.jpg"), false);
+  assert.equal(JSON.stringify(stored).includes(SAMPLE_MASTER_KEY), false);
 });
 
 test("missing shipping is a permanent stop without calling Prodigi", async () => {
@@ -338,7 +343,7 @@ test("missing shipping is a permanent stop without calling Prodigi", async () =>
     store,
     createOrder: async () => {
       called += 1;
-    return { ok: true, value: { orderId: "x", stage: null, assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" } };
+    return { ok: true, value: { orderId: "x", stage: null, assetUrl: ASSET_URL } };
     },
   });
   assert.equal(result.body.status, "paid-unfulfilled");
@@ -469,7 +474,7 @@ test("a retryable record that is not a complete physical order is parked as bad-
         merchantReference: SESSION,
         terminal: false,
         status: "paid-unfulfilled",
-        photoSlug: "dawn",
+        photoSlug: SAMPLE_SLUG,
         kind: "physical",
         format: "giclee",
         size: "30x40",
@@ -500,7 +505,7 @@ test("a retryable record that is not a complete physical order is parked as bad-
       called += 1;
       return {
         ok: true,
-        value: { orderId: "x", stage: null, assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" },
+        value: { orderId: "x", stage: null, assetUrl: ASSET_URL },
       };
     },
   });
@@ -674,7 +679,7 @@ test("amount mismatch and missing shipping metadata are permanent stops", () => 
       shippingDetails: SHIPPING,
       prodigiKeyConfigured: true,
       metadata: {
-        photoSlug: "dawn",
+        photoSlug: SAMPLE_SLUG,
         format: "framed",
         size: "30x40",
         frame: "black",
@@ -708,7 +713,7 @@ test("amount mismatch and missing shipping metadata are permanent stops", () => 
 
 test("bad metadata, unknown photo, and unpaid sessions do not become downloads", () => {
   const bad = decideFulfillment(
-    paidInput({ metadata: { photoSlug: "dawn", format: "nope", quoteEur: "30" } }),
+    paidInput({ metadata: { photoSlug: SAMPLE_SLUG, format: "nope", quoteEur: "30" } }),
   );
   assert.equal(bad.action, "write");
   if (bad.action === "write") assert.equal(bad.record.reason, "bad-metadata");
@@ -740,7 +745,7 @@ test("a physical order stops the same way for missing quote or unknown photo", (
   // digital or unknown one.
   const noQuote = decideFulfillment(
     paidInput({
-      metadata: { photoSlug: "dawn", format: "giclee", size: "30x40" },
+      metadata: { photoSlug: SAMPLE_SLUG, format: "giclee", size: "30x40" },
     }),
   );
   assert.equal(noQuote.action, "write");
@@ -775,7 +780,7 @@ test("a second delivery does not overwrite the first ORDERS record or call Prodi
   let calls = 0;
   const create: CreateProdigiOrder = async () => {
     calls += 1;
-    return { ok: true, value: { orderId: "ord_1", stage: "InProgress", assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg" } };
+    return { ok: true, value: { orderId: "ord_1", stage: "InProgress", assetUrl: ASSET_URL } };
   };
   await fulfillCheckoutSession({
     ...paidInput({
@@ -828,10 +833,10 @@ test("download waits until ORDERS has a paid digital session, then streams MASTE
   const streamed = await resolveDownload(paid, masters);
   assert.equal(streamed.kind, "stream");
   if (streamed.kind === "stream") {
-    assert.equal(streamed.filename, "dawn.jpg");
+    assert.equal(streamed.filename, `${SAMPLE_SLUG}.jpg`);
     assert.equal(streamed.contentType, "image/jpeg");
   }
-  assert.deepEqual(calls, ["prints/dawn.jpg"]);
+  assert.deepEqual(calls, [SAMPLE_MASTER_KEY]);
 
   const physicalKv = memoryKv();
   await fulfillCheckoutSession({
@@ -887,7 +892,7 @@ function webhookPayload() {
         currency: "eur",
         amount_total: 3000,
         metadata: {
-          photoSlug: "dawn",
+          photoSlug: SAMPLE_SLUG,
           format: "digital",
           size: "",
           frame: "",
@@ -909,7 +914,7 @@ test("webhook signature is checked against the raw body", async () => {
   assert.equal(event.type, "checkout.session.completed");
   await assert.rejects(() => readStripeEvent(payload, header, "whsec_other"));
   await assert.rejects(() =>
-    readStripeEvent(payload.replace("dawn", "dusk"), header, secret),
+    readStripeEvent(payload.replace(SAMPLE_SLUG, "dusk"), header, secret),
   );
 });
 
@@ -925,7 +930,7 @@ test("web crypto verifies when constructEvent cannot run, and a bad signature do
   assert.equal(event.type, "checkout.session.completed");
 
   await assert.rejects(() =>
-    readStripeEvent(payload.replace("dawn", "dusk"), header, secret, {
+    readStripeEvent(payload.replace(SAMPLE_SLUG, "dusk"), header, secret, {
       construct() {
         throw new Error("createHmac is not a function");
       },
@@ -986,7 +991,7 @@ test("webhook + download routes still do not call Prodigi; order module is the o
   );
   assert.equal(config.includes("https://api.sandbox.prodigi.com"), true);
   assert.equal(config.includes("https://api.prodigi.com"), true);
-  assert.equal(masterKeyForSlug("dawn"), getPhoto("dawn")?.imageKey);
+  assert.equal(masterKeyForSlug(SAMPLE_SLUG), getPhoto(SAMPLE_SLUG)?.imageKey);
   assert.equal(masterKeyForSlug("not-a-photo"), null);
 });
 
@@ -1008,7 +1013,7 @@ test("fulfillment metadata validation tracks the sku-map lists", () => {
           paidInput({
             amountTotal: 1999,
             metadata: {
-              photoSlug: "dawn",
+              photoSlug: SAMPLE_SLUG,
               format,
               size,
               frame,
@@ -1033,7 +1038,7 @@ test("fulfillment metadata validation tracks the sku-map lists", () => {
     const decided = decideFulfillment(
       paidInput({
             amountTotal: 1999,
-        metadata: { photoSlug: "dawn", format: "giclee", size, frame: "", quoteEur: "15" },
+        metadata: { photoSlug: SAMPLE_SLUG, format: "giclee", size, frame: "", quoteEur: "15" },
         shippingDetails: SHIPPING,
       }),
     );
@@ -1048,7 +1053,7 @@ test("fulfillment metadata validation tracks the sku-map lists", () => {
     const decided = decideFulfillment(
       paidInput({
             amountTotal: 1999,
-        metadata: { photoSlug: "dawn", format, size: "30x40", frame: "", quoteEur: "15" },
+        metadata: { photoSlug: SAMPLE_SLUG, format, size: "30x40", frame: "", quoteEur: "15" },
         shippingDetails: SHIPPING,
       }),
     );
@@ -1063,7 +1068,7 @@ test("fulfillment metadata validation tracks the sku-map lists", () => {
     const decided = decideFulfillment(
       paidInput({
             amountTotal: 1999,
-        metadata: { photoSlug: "dawn", format: "framed", size: "30x40", frame, quoteEur: "15" },
+        metadata: { photoSlug: SAMPLE_SLUG, format: "framed", size: "30x40", frame, quoteEur: "15" },
         shippingDetails: SHIPPING,
       }),
     );
@@ -1170,7 +1175,7 @@ test("parseOrderRecord accepts cent-exact amounts and rejects sub-cent ones", ()
     merchantReference: SESSION,
     terminal: true,
     status: "paid-unfulfilled",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "giclee",
     size: "30x40",
     frame: "",
@@ -1263,7 +1268,7 @@ test("resolveDownload is a gate, and every rejection path is distinguishable", a
   });
 
   // 5. The filename comes from the slug, with a safe fallback if it is not one.
-  const odd = digitalPaid({ photoSlug: "Not A Slug", masterKey: "prints/dawn.jpg" });
+  const odd = digitalPaid({ photoSlug: "Not A Slug", masterKey: SAMPLE_MASTER_KEY });
   const oddStream = await resolveDownload(odd, bytes("image/jpeg"));
   assert.equal(oddStream.kind === "stream" && oddStream.filename, "download.jpg");
   // contentType falls back to image/jpeg when the bucket does not say.
@@ -1361,7 +1366,7 @@ test("parseOrderRecord rejects a stored recipient it cannot vouch for", () => {
     merchantReference: SESSION,
     terminal: true,
     status: "paid-unfulfilled",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "giclee",
     size: "30x40",
     frame: "",

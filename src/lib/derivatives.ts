@@ -12,13 +12,9 @@
  * hash segment is the master's content hash: a changed image is a new URL, so
  * the objects can be served immutable.
  *
- * THE GATE. The ladder is served only when NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED
- * is set, and not merely because the base URL is set. Those are different
- * facts: the base was configured in all three environments while both buckets
- * were still empty, so treating "base is set" as "files exist" would have
- * replaced every working placeholder with a 404. Turning the flag on is the
- * deliberate act that says the upload happened. A photo with no image_hash is
- * still a placeholder and is served from /public/placeholders regardless.
+ * The base being configured is the whole condition for serving the ladder: a
+ * published photo carries an image_hash and its derivatives exist, so the two
+ * states are equivalent. A photo with no image_hash has nothing to serve.
  */
 
 import {
@@ -28,7 +24,7 @@ import {
   type WebDerivativeFormat,
   type WebDerivativeWidth,
 } from "./derivative-ladder";
-import { webDerivativesEnabled, webImagesBase } from "./config";
+import { webImagesBase } from "./config";
 
 /** The catalog fields the web ladder needs — a slug and, once published, its hash. */
 export type WebPhotoSource = { slug: string; imageHash?: string };
@@ -54,7 +50,6 @@ export type WebDerivativeUrls = {
 export function webDerivativeUrls(
   photo: WebPhotoSource,
 ): WebDerivativeUrls | null {
-  if (!webDerivativesEnabled()) return null;
   const base = webImagesBase();
   if (!base) return null;
   // A catalog entry without a hash has not been published yet, so no

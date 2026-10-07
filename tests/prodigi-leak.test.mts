@@ -6,6 +6,7 @@ import {
   buildProdigiOrderBody,
   type OrderRecipient,
 } from "../src/lib/prodigi-order.ts";
+import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 /* What may not leave the Worker. A master JPEG key in the Prodigi payload
    would be a paid-for file handed to a third party, and these are the checks
@@ -24,6 +25,10 @@ const RECIPIENT: OrderRecipient = {
   email: "",
   phone: null,
 };
+
+// buildProdigiOrderBody requires the signed asset URL since #245; the public
+// placeholder path it used to make up is gone.
+const ASSET_URL = `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`;
 
 test("a master imageKey anywhere in the payload is a leak, not a string", () => {
   // The bucket name and the prints/ path are checked separately. A photo's
@@ -52,7 +57,7 @@ test("a non-string key of a photo is not mistaken for that photo's imageKey", ()
   // The check is a substring test over the serialised body, so an unrelated
   // field that happens to contain part of a key would throw in production.
   assert.doesNotThrow(() =>
-    assertNoMasterLeak({ note: "dawn", quantity: 1, sku: "GLOBAL-FAP-20X28" }),
+    assertNoMasterLeak({ note: SAMPLE_SLUG, quantity: 1, sku: "GLOBAL-FAP-20X28" }),
   );
 });
 
@@ -60,11 +65,12 @@ test("recipient line2, state, email and phone are only sent when present", () =>
   const body = (recipient: OrderRecipient) =>
     buildProdigiOrderBody({
       sessionId: "cs_test_abcdefgh",
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "giclee",
       size: "50x70",
       frame: null,
       recipient,
+      assetUrl: ASSET_URL,
     });
 
   const bare = body(RECIPIENT);

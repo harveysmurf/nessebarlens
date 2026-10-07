@@ -15,6 +15,7 @@ import {
 import { masterKeyForSlug } from "../src/lib/master-key.ts";
 import { isPhotoSlug } from "../src/lib/print-asset.ts";
 import { PHOTOS, getPhoto } from "../src/lib/photos.ts";
+import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const SESSION = "cs_test_12345678abcd";
 
@@ -141,7 +142,7 @@ test("the download filename is gated by the shared slug grammar, not a private c
     paymentStatus: "paid",
     currency: "eur",
     amountTotal: 3000,
-    metadata: { photoSlug: "dawn", format: "digital", quoteEur: "30" },
+    metadata: { photoSlug: SAMPLE_SLUG, format: "digital", quoteEur: "30" },
     shippingDetails: null,
     customerEmail: "a@example.com",
     customerPhone: null,

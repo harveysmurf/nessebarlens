@@ -16,6 +16,7 @@ import { quotePhysical } from "../src/lib/prodigi-quote.ts";
 import { createProdigiOrder } from "../src/lib/prodigi-order.ts";
 import { fulfillCheckoutSession } from "../src/lib/fulfillment.ts";
 import { parseOrderRecord } from "../src/lib/order-decision.ts";
+import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const RECIPIENT: OrderRecipient = {
   name: "Test Buyer",
@@ -107,7 +108,7 @@ test("a hung order is a retryable timeout, not a dead end", async () => {
   try {
     const result = await createProdigiOrder({
       sessionId: "cs_test_abcdefgh",
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "giclee",
       size: "50x70",
       frame: null,
@@ -158,7 +159,7 @@ test("a body read that dies mid-stream is a retryable timeout, not a lost order"
   try {
     const result = await createProdigiOrder({
       sessionId: "cs_test_abcdefgh",
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "giclee",
       size: "50x70",
       frame: null,
@@ -196,7 +197,7 @@ test("a genuinely empty 200 body is still the terminal missing-id failure", asyn
   try {
     const result = await createProdigiOrder({
       sessionId: "cs_test_abcdefgh",
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "giclee",
       size: "50x70",
       frame: null,
@@ -237,7 +238,7 @@ test("a timeout on the order path is stored non-terminal and answered 5xx", asyn
       currency: "eur",
       amountTotal: 1999,
       metadata: {
-        photoSlug: "dawn",
+        photoSlug: SAMPLE_SLUG,
         format: "giclee",
         size: "50x70",
         frame: "",
@@ -297,7 +298,7 @@ test("a non-timeout network failure is still prodigi-unavailable", async () => {
   try {
     const result = await createProdigiOrder({
       sessionId: "cs_test_abcdefgh",
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "giclee",
       size: "50x70",
       frame: null,

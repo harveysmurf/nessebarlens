@@ -119,8 +119,7 @@ Environment variables (names only — values live in the `.env.local` symlink):
 | `PRODIGI_WEBHOOK_TOKEN` | Bearer token Prodigi must send on `POST /api/webhooks/prodigi` (`Authorization: Bearer …`). Prodigi v4 signs nothing, so this is the only callback auth. **Unset ⇒ 503** `prodigi-webhook-unconfigured`; mismatch ⇒ 401. Generate with `openssl rand -hex 32` and configure the same value as the shared secret Prodigi is told to send (or that a reverse-proxy injects). |
 | `RESEND_API_KEY` | Resend API key for customer email (order confirmation, print shipped, unfulfilled apology). **Unset ⇒ emails are skipped** with a structured `email.skipped` log line — never a throw on a paid webhook path. The sending domain (`nessebarlens.com`) must have Resend's **DNS TXT domain verification** before production mail will deliver; until then sandbox/`onboarding@resend.dev` testing is fine locally. |
 | `NEXT_PUBLIC_SITE_URL` | Canonical public origin (used by `src/lib/stripe.ts`). **Required for any production build** — `next.config.ts` fails the build without it, because `NEXT_PUBLIC_*` is inlined at build time and a silent `http://localhost:3000` fallback would ship a checkout that redirects to localhost. `next dev` and `npm test` do not need it. |
-| `NEXT_PUBLIC_WEB_IMAGES_BASE` | Base URL for gallery `<img>` srcset |
-| `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` | Opt-in gate for the R2 derivative ladder. Unset = placeholders. Only `true`/`1` enable it — a configured base alone does **not**. |
+| `NEXT_PUBLIC_WEB_IMAGES_BASE` | Base URL for gallery `<img>` srcset. When set it turns the R2 derivative ladder on; unset serves nothing (`src/lib/derivatives.ts`). |
 | `R2_ACCOUNT_ID`, `R2_ENDPOINT`, `R2_S3_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | R2 S3 creds (unused by Workers — they use bucket bindings) |
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Needed only by `npm run publish-photos` from a laptop (see §6a) |
 | `EU_SHIPPING_EUR` | Flat EU shipping (must match `EU_FLAT_SHIPPING_CENTS`) |
@@ -449,8 +448,8 @@ the webhooks.
    JSON column.
 4. **Prodigi sandbox order.** Find the order id from step 3 in the Prodigi
    sandbox dashboard (`dashboard.prodigi.com`, sandbox toggle). The order's
-   asset URL must be a signed `/api/print-asset?…` on `staging.nessebarlens.com`,
-   never the placeholder.
+   asset URL must be a signed `/api/print-asset?…` on `staging.nessebarlens.com`
+   — there is no public placeholder fallback (#245).
 5. **Prodigi callbacks.** The order was created with
    `callbackUrl=https://staging.nessebarlens.com/api/webhooks/prodigi?token=…`,
    built from `PRODIGI_WEBHOOK_TOKEN`. Advance the sandbox order's stage from the
@@ -496,12 +495,10 @@ the object's `sha256` metadata against the catalog's `master_sha256`; a photo
 whose master is missing, empty, or stale fails the release with production still
 on its current version, so a forgotten `--promote` stops the deploy instead of
 shipping a photo that cannot be downloaded or printed. The fix is
-`npm run publish-photos -- --promote --pr <n>` (§6a). While the placeholder
-catalog is live the check skips the transitional slugs through an explicit
-allow-list in `scripts/verify-masters.mjs` that #245 deletes. When every
-published photo is still allow-listed the step is a no-op and does **not** need
-the read-only token — it requires `R2_MASTERS_READ_*` only once the first real
-photo is published, which is the first time it has anything to read.
+`npm run publish-photos -- --promote --pr <n>` (§6a). There is no allow-list
+anymore (#245): every published photo has a real master, so the check always
+reads the bucket and always requires `R2_MASTERS_READ_*`. A catalog with no
+published photos still makes it a no-op.
 
 Production targets the **production Worker**, `nessebar-lens` — the top-level
 bindings in `wrangler.toml`. A preview targets the **staging Worker**,
@@ -762,16 +759,13 @@ fails on a binding to a missing bucket. The Cloudflare API token behind
 `release.yml` and `preview.yml` must be allowed to use R2 on this bucket; check
 that first if a staging deploy fails on the binding.
 
-**What it holds today.** Copies of the two placeholder masters that were already
-in production, `prints/dawn.jpg` and `prints/cobblestones.jpg` (about 5.5 KB
-each, so the copies are placeholders, not originals), so staging print orders and
-digital downloads keep working. Every other slug is missing. There is no
-placeholder fallback for masters: `src/lib/placeholder-photo.ts` only supplies the
-gallery *display* image. `/api/print-asset` and `/api/download` read `MASTERS`
-directly, and a missing object is a 404 `master-not-found` (a missing or throwing
-binding is 503 `masters-unavailable`). So on staging, a print order's asset URL
-or a digital download for an unseeded slug fails rather than serving a
-placeholder, even though the page renders one.
+**What it holds today.** The staging master for each published photo, written by
+`publish-photos --apply` at `prints/{slug}.jpg` (long edge ≤ 2500 px). A slug with
+no staging master is missing. There is no fallback for masters: `/api/print-asset`
+and `/api/download` read `MASTERS` directly, and a missing object is a 404
+`master-not-found` (a missing or throwing binding is 503 `masters-unavailable`).
+So on staging, a print order's asset URL or a digital download for an unseeded
+slug fails rather than serving a stand-in.
 
 `npm run publish-photos -- --apply` (§6a) writes the 2500 px staging copy, so a
 newly published photo **is** purchasable on staging and its preview; only
@@ -1138,7 +1132,7 @@ settings.
 
 | Scope | Expected secrets |
 |---|---|
-| `staging` | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED`, `NEXT_PUBLIC_WEB_IMAGES_BASE`, `PRINT_ASSET_HMAC_SECRET`, `PRODIGI_API_KEY`, `PRODIGI_SANDBOX_API_KEY`, `PRODIGI_WEBHOOK_TOKEN`, `RECONCILE_SECRET`, `RESEND_API_KEY`, `SITE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
+| `staging` | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_WEB_IMAGES_BASE`, `PRINT_ASSET_HMAC_SECRET`, `PRODIGI_API_KEY`, `PRODIGI_SANDBOX_API_KEY`, `PRODIGI_WEBHOOK_TOKEN`, `RECONCILE_SECRET`, `RESEND_API_KEY`, `SITE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
 | `production` | the same fourteen, with live values, plus the read-only masters token: `R2_MASTERS_READ_ACCESS_KEY_ID`, `R2_MASTERS_READ_SECRET_ACCESS_KEY`, `R2_S3_ENDPOINT` (#243) |
 | repository | `PRINT_ASSET_HMAC_SECRET` only |
 
@@ -1263,10 +1257,9 @@ from §7) into `ingest/` (repo root, gitignored), both named for the same slug:
   **staging master** (long edge ≤ 2500 px, JPEG q80, sRGB, metadata stripped) to
   `nessebar-lens-masters-staging/prints/{slug}.jpg`, writes `slug`,
   `master_sha256` and `image_hash` into `content/photos/{slug}.yaml` preserving
-  the owner's comments and key order, writes the committed fallback
-  `public/placeholders/{slug}.jpg` (long edge ≤ 1600 px, metadata stripped — the
-  tile checkout shows with the ladder off, #257), then opens **one PR** for the
-  run. That PR is `content/photos/**` plus `public/placeholders/**` only.
+  the owner's comments and key order, then opens **one PR** for the run. That PR
+  is `content/photos/**` only. (Before #245 it also wrote a committed
+  `public/placeholders/{slug}.jpg` fallback; that path is gone.)
 - `--only dawn,dusk` narrows a run; `--replace-image dawn` re-publishes an
   existing slug (the new master's hash must differ).
 - The production masters bucket is **never** written by `--apply`. Its client
@@ -1285,9 +1278,8 @@ npm run publish-photos -- --promote --pr <n>
 It reads the PR's changed `content/photos/*.yaml` **from the PR head** (the PR,
 not `ingest/` and not `main`, is the authority on what to promote) and refuses
 unless the PR is open, targets `main`, was opened by the owner (`gh api user`),
-and changes nothing outside `content/photos/` and `public/placeholders/` (the
-catalog entry and the committed fallback a publish writes, #257). For each slug
-it hashes the local
+and changes nothing outside `content/photos/` (the catalog entry a publish
+writes). For each slug it hashes the local
 `ingest/{slug}.jpg` and refuses unless that SHA-256 is exactly the
 `master_sha256` the YAML recorded, so the promoted bytes are the ones that were
 previewed — **stop before any upload** if one file does not match.
@@ -1312,9 +1304,8 @@ What to do if `--promote` refuses:
 - **`already holds a different master … pass --replace-image`** — production
   already serves a different file for that slug. If the new bytes are intended,
   re-run `--apply --replace-image x` so the PR modifies the entry, then promote.
-- **`changes files outside content/photos/ and public/placeholders/`** — the PR
-  is broader than a photo publish; promote does not merge it. Split the photo
-  change into its own PR.
+- **`changes files outside content/photos/`** — the PR is broader than a photo
+  publish; promote does not merge it. Split the photo change into its own PR.
 
 Nothing is uploaded and auto-merge is not enabled on any refusal, so fixing the
 input and re-running is always safe. The web keys from `--apply` are
@@ -1395,23 +1386,22 @@ flow.
 - **The homepage hero is the featured photo.** `featuredPhoto()` returns the one
   photo with `featured: true`, or else the first published fine-art photo in
   display order, so `src/app/page.tsx` no longer hard-codes a slug.
-- **Placeholders.** `public/placeholders/{slug}.jpg` are 20 local stand-ins
-  (7 fine-art, 7 archive, 6 film). Gallery images resolve to
-  `/placeholders/{slug}.jpg`; real photographs replace these on R2 later. Keep the
-  slug set stable.
+- **No placeholders.** `public/placeholders/**` is gone (#245). Every published
+  photo is served from the R2 derivative ladder; the homepage and story category
+  tiles show the first real photo of their category and render without an image
+  when that category is empty. There is no local stand-in anywhere.
 - **No remote image hosts.** `next.config.ts` sets `images.remotePatterns: []` —
   do not add `images.unsplash.com` or any third-party host. Gallery uses a plain
   `<picture>` (`src/components/WebPhoto.tsx`) — a WebP `<source>` plus a JPEG
   `<img>` srcset — against `NEXT_PUBLIC_WEB_IMAGES_BASE` only.
-- **The derivative ladder is gated.** `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED`
-  (default off) decides between the R2 ladder (`{slug}/{hash8}/{width}.{jpg|webp}`
-  in `nessebar-lens-web`, four widths × two formats) and the committed
-  placeholders. A photo with no `image_hash` also falls back to the placeholder.
-  Set the base without the flag and the gallery keeps serving placeholders —
-  that is deliberate, because the base is configured in every environment while
-  both buckets are still empty. Turn the flag on only after the upload is
-  verified, and expect `tests/placeholder-photo.test.mts` to need updating at
-  that moment.
+- **The derivative ladder follows the base, not a flag.** `NEXT_PUBLIC_WEB_IMAGES_BASE`
+  (with a photo's `image_hash`) decides whether the R2 ladder
+  (`{slug}/{hash8}/{width}.{jpg|webp}` in `nessebar-lens-web`, four widths × two
+  formats) is served. A photo with no `image_hash` has no derivative to serve and
+  renders its alt text; a published photo always has one (the schema requires
+  `master_sha256` and `image_hash` for `published: true`). The old
+  `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` gate was removed in #245, once real
+  photos — not an empty bucket — made the base the whole condition.
 - **Quotes are cached; checkout is not.** `/api/quote` is unauthenticated and
   shares Prodigi's rate limit with `/api/checkout`, so a cached-miss loop could
   otherwise 429 Prodigi and break checkout for real customers. `src/lib/quote-cache.ts`
@@ -1546,10 +1536,11 @@ the guard to keep the honest copy honest.
 - Prodigi order creation is wired end to end: a pinned 9-SKU map (`src/lib/sku-map.ts`),
   live quote + order calls, and a HMAC-signed master asset URL. Sandbox and live
   are selected by an explicit `PRODIGI_API_BASE`, never inferred from the key.
-- Real photographs still need to land in the R2 `MASTERS`/`WEB` buckets to replace
-  the 20 placeholders. `npm run publish-photos` (§6a) uploads the web ladder and
-  the staging master and opens the catalog PR; `--promote` (#242) writes the
-  production masters after it merges.
+- Real photographs land in the R2 `MASTERS`/`WEB` buckets through the publish
+  flow. `npm run publish-photos` (§6a) uploads the web ladder and the staging
+  master and opens the catalog PR; `--promote` (#242) writes the production
+  masters after it merges. There is no committed placeholder set anymore (#245):
+  a category with no published photo renders its tile without an image.
 - If a 502 shows up from `/api/quote` or `/api/checkout` and it is *not* Prodigi
   being down, the failure's `kind` is the answer: 503 means this deploy is
   misconfigured (`kind: "unconfigured"` — unset Prodigi key, or a

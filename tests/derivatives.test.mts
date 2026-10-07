@@ -26,14 +26,13 @@ function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
 }
 
 const BASE = "NEXT_PUBLIC_WEB_IMAGES_BASE";
-const FLAG = "NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED";
 const BASE_URL = "https://cdn.example.com/g";
 const HASH = "abcdef12";
 const PHOTO = { slug: "dawn", imageHash: HASH };
 
-/** Both env vars as the ladder needs them to be on. */
+/** The env the ladder needs: a usable https base (the flag is gone, #245). */
 function on(base = BASE_URL) {
-  return { [BASE]: base, [FLAG]: "true" };
+  return { [BASE]: base };
 }
 
 test("webImagesBase rejects non-https, relative, and unset values", () => {
@@ -61,36 +60,22 @@ test("webImagesBase normalizes trailing slashes and keeps the path", () => {
   });
 });
 
-test("a configured base alone does not turn the ladder on", () => {
-  // The exact state this repo was in: the base set in every environment,
-  // both buckets empty. Serving here would 404 the whole storefront.
-  for (const flag of [undefined, "", "   ", "false", "no", "off", "0", "maybe"]) {
-    withEnv({ [BASE]: BASE_URL, [FLAG]: flag }, () => {
-      assert.equal(
-        webDerivativeUrls(PHOTO),
-        null,
-        `flag ${JSON.stringify(flag)} must not enable the ladder`,
-      );
-    });
-  }
+test("a configured base turns the ladder on (#245)", () => {
+  // The flag that used to gate this is gone: real photos are published, so a
+  // configured base is the whole condition.
+  withEnv(on(), () => {
+    assert.ok(webDerivativeUrls(PHOTO));
+  });
 });
 
-test("the flag is opt-in and accepts only true or 1", () => {
-  for (const flag of ["true", "TRUE", " true ", "1"]) {
-    withEnv({ ...on(), [FLAG]: flag }, () => {
-      assert.ok(webDerivativeUrls(PHOTO), `flag ${JSON.stringify(flag)} should enable the ladder`);
-    });
-  }
-});
-
-test("enabled but with no usable base still serves nothing", () => {
-  withEnv({ [BASE]: undefined, [FLAG]: "true" }, () => {
+test("with no usable base the ladder serves nothing", () => {
+  withEnv({ [BASE]: undefined }, () => {
     assert.equal(webDerivativeUrls(PHOTO), null);
   });
 });
 
 test("a photo without an image hash has no derivative to serve", () => {
-  // A catalog entry is a placeholder until the publish script writes its hash.
+  // A catalog entry without a hash has not been published yet.
   withEnv(on(), () => {
     assert.equal(webDerivativeUrls({ slug: "dawn" }), null);
     assert.equal(webDerivativeUrls({ slug: "dawn", imageHash: "" }), null);

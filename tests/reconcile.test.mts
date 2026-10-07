@@ -11,8 +11,13 @@ import {
 import { memoryOrdersStore } from "./fake-orders-store.mts";
 import { parseOrderRecord, type OrderRecord } from "../src/lib/order-decision.ts";
 import type { CreateProdigiOrder } from "../src/lib/prodigi-order.ts";
+import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const NOW = Date.parse("2026-10-03T00:00:00.000Z");
+
+// The HMAC /api/print-asset shape a fulfilled physical order carries after
+// #245; the public placeholder path is retired.
+const ASSET_URL = `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`;
 
 function session(id: string, extra: Partial<ReconcileSession> = {}): ReconcileSession {
   return {
@@ -21,7 +26,7 @@ function session(id: string, extra: Partial<ReconcileSession> = {}): ReconcileSe
     currency: "eur",
     amount_total: 3000,
     metadata: {
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "digital",
       size: "",
       frame: "",
@@ -40,7 +45,7 @@ function retryable(sessionId: string, createdAt: string): OrderRecord {
     merchantReference: sessionId,
     terminal: false,
     status: "paid-unfulfilled",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     kind: "physical",
     format: "giclee",
     size: "30x40",
@@ -116,7 +121,7 @@ test("reconcile retries a retryable order and skips terminal ones", async () => 
       value: {
         orderId: "ord_1",
         stage: "InProgress",
-        assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+        assetUrl: ASSET_URL,
       },
     };
   };
@@ -125,7 +130,7 @@ test("reconcile retries a retryable order and skips terminal ones", async () => 
     retrieveCheckoutSession: async (id) => session(id, {
       amount_total: 1999,
       metadata: {
-        photoSlug: "dawn",
+        photoSlug: SAMPLE_SLUG,
         format: "giclee",
         size: "30x40",
         frame: "",
@@ -188,7 +193,7 @@ test("reconcile recovers a paid Stripe session with no stored order", async () =
       value: {
         orderId: "ord_collected",
         stage: "InProgress",
-        assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+        assetUrl: ASSET_URL,
       },
     }),
     nowMs: NOW,
@@ -307,7 +312,7 @@ test("the reconciler prefers Stripe's collected shipping over the legacy field",
     amount_total: 1999,
     customer_details: { email: "t@example.com", phone: null },
     metadata: {
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "giclee",
       size: "30x40",
       frame: "",
@@ -353,7 +358,7 @@ test("the reconciler prefers Stripe's collected shipping over the legacy field",
       value: {
         orderId: "ord_collected",
         stage: "InProgress",
-        assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+        assetUrl: ASSET_URL,
       },
     }),
     nowMs: NOW,
@@ -459,7 +464,7 @@ test("an own-origin session, www or apex, is fulfilled; unknown is treated like 
           value: {
             orderId: `ord_${prodigiCalls}`,
             stage: "InProgress",
-            assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+            assetUrl: ASSET_URL,
           },
         };
       },

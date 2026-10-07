@@ -8,13 +8,14 @@ import {
   readOrderRecord,
   reportCorruptOrder,
 } from "../src/lib/order-corrupt.ts";
+import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const SESSION = "cs_test_abcdefgh";
 // parseOrderRecord holds a paid digital order to the catalog's own master key,
-// so the happy-path fixture has to carry the real one for "dawn" rather than
+// so the happy-path fixture has to carry the real one for SAMPLE_SLUG rather than
 // any placeholder — otherwise the fixture is rejected and every silence
 // assertion below would pass for the wrong reason.
-const MASTER_KEY = masterKeyForSlug("dawn") ?? "";
+const MASTER_KEY = masterKeyForSlug(SAMPLE_SLUG) ?? "";
 
 /** Capture every console.error line `body` emits, parsed. */
 async function captureErrors(
@@ -41,7 +42,7 @@ function validRecord(over: Record<string, unknown> = {}): string {
     merchantReference: SESSION,
     terminal: true,
     status: "paid",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "digital",
     size: "",
     frame: "",

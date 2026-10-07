@@ -1,11 +1,16 @@
 import { expect, test } from "@playwright/test";
 import { DIGITAL_PRICE_EUR } from "@/lib/pricing";
+import { PHOTOS } from "@/lib/photos";
 import {
   selectCardMethod,
   fillCard,
   stripeTestKey,
   TEST_CARD,
 } from "./support/stripe";
+
+// A real catalog slug, read from the compiled catalog rather than hardcoded:
+// the placeholder slugs this spec used to name are gone (#245).
+const CATALOG_SLUG = PHOTOS[0]!.slug;
 
 /**
  * The #143 happy path: home → photo → configurator → price → checkout redirect
@@ -131,7 +136,7 @@ test.describe("@hosted checkout smoke flow", () => {
     );
 
     test("quotes from the Prodigi sandbox and reaches Stripe", async ({ page }) => {
-      await page.goto("/prints/dawn");
+      await page.goto(`/prints/${CATALOG_SLUG}`);
 
       // Default format is physical, so the configurator must call /api/quote
       // and replace "—" with a real number before Checkout unlocks.
@@ -146,7 +151,7 @@ test.describe("@hosted checkout smoke flow", () => {
       await expect(page.locator("input[name=email]")).toBeVisible();
 
       // Cancelling exercises the other half of the redirect pair.
-      await page.goto("/checkout/cancel?slug=dawn");
+      await page.goto(`/checkout/cancel?slug=${CATALOG_SLUG}`);
       await expect(page.getByRole("heading")).toBeVisible();
     });
   });

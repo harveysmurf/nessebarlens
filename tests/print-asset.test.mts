@@ -16,6 +16,11 @@ import {
   buildProdigiOrderBody,
   type OrderRecipient,
 } from "../src/lib/prodigi-order.ts";
+import { hmacSha256Hex } from "../src/lib/crypto-hex.ts";
+import {
+  SAMPLE_MASTER_KEY,
+  SAMPLE_SLUG,
+} from "./fixtures/sample-photo.mts";
 
 const SECRET = "test-print-asset-hmac-secret-32b-min!!";
 const NOW_MS = Date.parse("2026-09-28T12:00:00.000Z");
@@ -67,7 +72,7 @@ test("readWorkerBindings and printAssetSecret never disagree", async () => {
 
 test("sign + verify round-trip; expiry and bad sig fail", async () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
-  const url = await signPrintAssetUrl("dawn", {
+  const url = await signPrintAssetUrl(SAMPLE_SLUG, {
     secret: SECRET,
     nowMs: NOW_MS,
   });
@@ -85,7 +90,7 @@ test("sign + verify round-trip; expiry and bad sig fail", async () => {
     secret: SECRET,
     nowMs: NOW_MS,
   });
-  assert.deepEqual(ok, { ok: true, slug: "dawn" });
+  assert.deepEqual(ok, { ok: true, slug: SAMPLE_SLUG });
 
   const expired = await verifyPrintAssetRequest(slug, exp, sig, {
     secret: SECRET,
@@ -103,7 +108,7 @@ test("sign + verify round-trip; expiry and bad sig fail", async () => {
 });
 
 test("signed URL has no .jpg extension (Prodigi tolerance unknown; content-type is jpeg)", async () => {
-  const url = await signPrintAssetUrl("dawn", {
+  const url = await signPrintAssetUrl(SAMPLE_SLUG, {
     secret: SECRET,
     nowMs: NOW_MS,
   });
@@ -120,19 +125,19 @@ test("signer and verifier resolve the configured secret identically", async () =
   // checks another.
   process.env.PRINT_ASSET_HMAC_SECRET = `  ${SECRET}  `;
   const nowMs = 1_700_000_000_000;
-  const url = (await signPrintAssetUrl("dawn", { nowMs }))!;
+  const url = (await signPrintAssetUrl(SAMPLE_SLUG, { nowMs }))!;
   assert.ok(url, "configured secret must produce a signature");
   const query = new URL(url).searchParams;
-  const verified = await verifyPrintAssetRequest("dawn", query.get("exp")!, query.get("sig")!, {
+  const verified = await verifyPrintAssetRequest(SAMPLE_SLUG, query.get("exp")!, query.get("sig")!, {
     nowMs,
   });
   assert.equal(verified.ok, true, JSON.stringify(verified));
 
   // A whitespace-only secret is unusable on both sides, identically.
   process.env.PRINT_ASSET_HMAC_SECRET = " ".repeat(32);
-  assert.equal(await signPrintAssetUrl("dawn", { nowMs }), null);
+  assert.equal(await signPrintAssetUrl(SAMPLE_SLUG, { nowMs }), null);
   assert.deepEqual(
-    await verifyPrintAssetRequest("dawn", query.get("exp")!, query.get("sig")!, { nowMs }),
+    await verifyPrintAssetRequest(SAMPLE_SLUG, query.get("exp")!, query.get("sig")!, { nowMs }),
     { ok: false, status: 503, error: "print-asset-unavailable" },
   );
   delete process.env.PRINT_ASSET_HMAC_SECRET;
@@ -141,21 +146,21 @@ test("signer and verifier resolve the configured secret identically", async () =
 test("sign returns null without secret, and the order asset path has no placeholder left", async () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   delete process.env.PRINT_ASSET_HMAC_SECRET;
-  assert.equal(await signPrintAssetUrl("dawn", { secret: null }), null);
+  assert.equal(await signPrintAssetUrl(SAMPLE_SLUG, { secret: null }), null);
   // Null, not a fallback: a paid order must never be fulfilled from the public
   // low-res stand-in. The caller turns this into a retryable failure.
-  assert.equal(await signPrintAssetUrl("dawn"), null);
+  assert.equal(await signPrintAssetUrl(SAMPLE_SLUG), null);
 });
 
 test("Prodigi body accepts HMAC print-asset URL without master leak", async () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
-  const assetUrl = (await signPrintAssetUrl("dawn", {
+  const assetUrl = (await signPrintAssetUrl(SAMPLE_SLUG, {
     secret: SECRET,
     nowMs: NOW_MS,
   }))!;
   const body = buildProdigiOrderBody({
     sessionId: "cs_test_abcdefgh",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "giclee",
     size: "50x70",
     frame: null,
@@ -189,8 +194,8 @@ test("resolvePrintAssetStream serves catalog master only", async () => {
       };
     },
   };
-  const resolved = await resolvePrintAssetStream("dawn", masters);
-  assert.equal(gotKey, "prints/dawn.jpg");
+  const resolved = await resolvePrintAssetStream(SAMPLE_SLUG, masters);
+  assert.equal(gotKey, SAMPLE_MASTER_KEY);
   assert.equal(resolved.kind, "stream");
   if (resolved.kind === "stream") {
     assert.equal(resolved.contentType, "image/jpeg");
@@ -207,7 +212,7 @@ test("a caller-supplied baseUrl with extra slashes yields a single-slash URL", a
   // "//" produced "…//api/print-asset?…" and the signature check in the
   // Worker compared against a differently-shaped path.
   for (const baseUrl of ["https://x.test", "https://x.test/", "https://x.test//"]) {
-    const url = await signPrintAssetUrl("dawn", {
+    const url = await signPrintAssetUrl(SAMPLE_SLUG, {
       secret: SECRET,
       nowMs: NOW_MS,
       baseUrl,
@@ -220,12 +225,12 @@ test("a caller-supplied baseUrl with extra slashes yields a single-slash URL", a
 test("verifyPrintAssetRequest fails closed at every boundary, in order", async () => {
   const nowMs = NOW_MS;
   const exp = Math.floor(nowMs / 1000) + 60;
-  const signed = await signPrintAssetUrl("dawn", { secret: SECRET, nowMs, ttlSeconds: 60 });
+  const signed = await signPrintAssetUrl(SAMPLE_SLUG, { secret: SECRET, nowMs, ttlSeconds: 60 });
   assert.ok(signed);
   const sig = new URL(signed).searchParams.get("sig")!;
 
   // No secret: nothing is verifiable, so 503 before any parsing.
-  assert.deepEqual(await verifyPrintAssetRequest("dawn", String(exp), sig, { secret: null, nowMs }), {
+  assert.deepEqual(await verifyPrintAssetRequest(SAMPLE_SLUG, String(exp), sig, { secret: null, nowMs }), {
     ok: false,
     status: 503,
     error: "print-asset-unavailable",
@@ -249,35 +254,36 @@ test("verifyPrintAssetRequest fails closed at every boundary, in order", async (
     );
   };
   await bad("not-a-photo", String(exp), sig, "invalid-slug", 400);
-  await bad("dawn", `${exp}.5`, sig, "invalid-exp", 400);
-  await bad("dawn", "notanumber", sig, "invalid-exp", 400);
-  await bad("dawn", "9".repeat(13), sig, "invalid-exp", 400);
-  await bad("dawn", String(exp), "zz".repeat(32), "invalid-sig", 400);
-  await bad("dawn", String(exp), sig.slice(0, 63), "invalid-sig", 400);
+  await bad(SAMPLE_SLUG, `${exp}.5`, sig, "invalid-exp", 400);
+  await bad(SAMPLE_SLUG, "notanumber", sig, "invalid-exp", 400);
+  await bad(SAMPLE_SLUG, "9".repeat(13), sig, "invalid-exp", 400);
+  await bad(SAMPLE_SLUG, String(exp), "zz".repeat(32), "invalid-sig", 400);
+  await bad(SAMPLE_SLUG, String(exp), sig.slice(0, 63), "invalid-sig", 400);
   // A wrong but well-formed signature is a 401, not a 400.
-  await bad("dawn", String(exp), "ab".repeat(32), "bad-signature", 401);
+  await bad(SAMPLE_SLUG, String(exp), "ab".repeat(32), "bad-signature", 401);
 
   // Expired and absurdly-future expiries are distinguished.
   // Signed 10s in the past with a 1s TTL, so exp is genuinely behind now.
-  const expired = await signPrintAssetUrl("dawn", { secret: SECRET, nowMs: nowMs - 10_000, ttlSeconds: 1 });
+  const expired = await signPrintAssetUrl(SAMPLE_SLUG, { secret: SECRET, nowMs: nowMs - 10_000, ttlSeconds: 1 });
   const expiredSig = new URL(expired!).searchParams.get("sig")!;
   const expiredExp = new URL(expired!).searchParams.get("exp")!;
-  await bad("dawn", expiredExp, expiredSig, "expired", 401);
+  await bad(SAMPLE_SLUG, expiredExp, expiredSig, "expired", 401);
   // The window is TTL + 300s (7 days), so "absurd" means past that, not past
   // an hour. 8 days out is rejected before the signature is even compared.
   const eightDays = Math.floor(nowMs / 1000) + 8 * 24 * 60 * 60;
-  await bad("dawn", String(eightDays), sig, "invalid-exp", 400);
+  await bad(SAMPLE_SLUG, String(eightDays), sig, "invalid-exp", 400);
   // One second inside the window is a signature problem, not an exp problem.
-  await bad("dawn", String(Math.floor(nowMs / 1000) + 7 * 24 * 60 * 60 + 299), sig, "bad-signature", 401);
+  await bad(SAMPLE_SLUG, String(Math.floor(nowMs / 1000) + 7 * 24 * 60 * 60 + 299), sig, "bad-signature", 401);
 
-  // A signature for a different slug must not verify for this one.
-  const other = await signPrintAssetUrl("cobblestones", { secret: SECRET, nowMs, ttlSeconds: 60 });
-  const otherSig = new URL(other!).searchParams.get("sig")!;
-  await bad("dawn", String(exp), otherSig, "bad-signature", 401);
+  // A signature for a different slug must not verify for this one. There is
+  // only one catalog slug, so the second payload is computed from the signing
+  // grammar (`v1.{slug}.{exp}`) rather than signed for a second photo.
+  const otherSig = await hmacSha256Hex(`v1.other-slug.${exp}`, SECRET);
+  await bad(SAMPLE_SLUG, String(exp), otherSig, "bad-signature", 401);
 
   // And the happy path still passes.
-  const ok = await verifyPrintAssetRequest("dawn", String(exp), sig, { secret: SECRET, nowMs });
-  assert.deepEqual(ok, { ok: true, slug: "dawn" });
+  const ok = await verifyPrintAssetRequest(SAMPLE_SLUG, String(exp), sig, { secret: SECRET, nowMs });
+  assert.deepEqual(ok, { ok: true, slug: SAMPLE_SLUG });
 });
 
 test("resolvePrintAssetStream separates missing binding, bucket error and missing object", async () => {
@@ -294,12 +300,12 @@ test("resolvePrintAssetStream separates missing binding, bucket error and missin
   assert.equal(unknown.kind === "json" && unknown.status, 400);
 
   // No MASTERS binding at all is 503, not a crash.
-  const unbound = await resolvePrintAssetStream("dawn", undefined);
+  const unbound = await resolvePrintAssetStream(SAMPLE_SLUG, undefined);
   assert.equal(unbound.kind === "json" && unbound.status, 503);
   assert.equal(unbound.kind === "json" && unbound.body.error, "masters-unavailable");
 
   // A throwing bucket is the same 503 as an absent one, and must not escape.
-  const throwing = await resolvePrintAssetStream("dawn", {
+  const throwing = await resolvePrintAssetStream(SAMPLE_SLUG, {
     get: async () => {
       throw new Error("R2 unavailable");
     },
@@ -307,19 +313,19 @@ test("resolvePrintAssetStream separates missing binding, bucket error and missin
   assert.equal(throwing.kind === "json" && throwing.status, 503);
 
   // A null object is 404: the key is a catalog master that is simply absent.
-  const missing = await resolvePrintAssetStream("dawn", { get: async () => null });
+  const missing = await resolvePrintAssetStream(SAMPLE_SLUG, { get: async () => null });
   assert.equal(missing.kind === "json" && missing.status, 404);
   assert.equal(missing.kind === "json" && missing.body.error, "master-not-found");
 
   // The happy path streams the catalog key, not a caller-supplied one.
   const keys: string[] = [];
-  const found = await resolvePrintAssetStream("dawn", {
+  const found = await resolvePrintAssetStream(SAMPLE_SLUG, {
     get: async (key: string) => {
       keys.push(key);
       return { body: bytes(), size: 3 };
     },
   });
-  assert.deepEqual(keys, ["prints/dawn.jpg"]);
+  assert.deepEqual(keys, [SAMPLE_MASTER_KEY]);
   assert.equal(found.kind === "stream", true);
   assert.equal(found.kind === "stream" && found.contentType, "image/jpeg");
   assert.equal(found.kind === "stream" && found.size, 3);
@@ -365,7 +371,7 @@ test("a future exp is accepted exactly up to TTL plus the skew pad, and no furth
   const PAD = 300;
 
   const at = async (exp: number) =>
-    verifyPrintAssetRequest("dawn", String(exp), "0".repeat(64), { secret: SECRET, nowMs });
+    verifyPrintAssetRequest(SAMPLE_SLUG, String(exp), "0".repeat(64), { secret: SECRET, nowMs });
 
   // Inside the bound: rejected on signature, not on the exp window. A wrong
   // signature is the only way to probe the window without forging a valid one.

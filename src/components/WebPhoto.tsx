@@ -1,25 +1,24 @@
 /**
  * Gallery / product preview as a `<picture>`.
  *
- * When the photo has an image_hash and the ladder is on, this offers a WebP
+ * Every published photo is served from the R2 derivative ladder (#245): a WebP
  * `<source>` and a JPEG `<img>` over the full four-rung srcset, so a browser
- * that supports WebP downloads it and one that does not falls back to the
- * JPEG. Without a hash (a placeholder) there is one URL and no `<source>`.
+ * that supports WebP downloads it and one that does not falls back to the JPEG.
+ * There is no placeholder image anymore.
  *
  * `preferred` names the derivative rung to use as the JPEG `src` — the largest
  * thing on the page passes the largest rung, a grid tile passes the middle one.
- * It does not narrow the srcSet; see lib/placeholder-photo.ts for why those are
- * two different questions.
+ * It does not narrow the srcSet; see lib/gallery-image.ts for why those are two
+ * different questions.
  *
- * `sizes` also applies, and only when there is a real srcSet: an <img> with a
- * srcSet and no sizes makes the browser assume 100vw, which is wrong for a
- * 33vw tile. With no ladder there is a single URL and no sizes to declare.
+ * `sizes` applies because there is a real srcSet: an <img> with a srcSet and no
+ * sizes makes the browser assume 100vw, which is wrong for a 33vw tile.
  *
  * The `<picture>` is `display: contents`, so it generates no box and the <img>
  * is laid out exactly as it was before the wrapper existed (full-height tiles
  * depend on the percentage height resolving against the tile's own box).
  */
-import { galleryImage } from "@/lib/placeholder-photo";
+import { galleryImage } from "@/lib/gallery-image";
 import type { WebDerivativeWidth } from "@/lib/derivative-ladder";
 import type { Photo } from "@/lib/photos";
 
@@ -38,19 +37,18 @@ export function WebPhoto({
 }) {
   const image = galleryImage(photo, preferred);
   if (image === null) {
-    // Not a safe path segment: render the alt text rather than request a
-    // file that is not there.
+    // The ladder could not be built (an unusable slug, or no configured base):
+    // render the alt text rather than request a file that is not there.
     return <span className={className}>{photo.alt}</span>;
   }
 
   return (
     <picture className="contents">
-      {image.webpSrcSet ? (
-        <source type="image/webp" srcSet={image.webpSrcSet} sizes={sizes} />
-      ) : null}
+      <source type="image/webp" srcSet={image.webpSrcSet} sizes={sizes} />
       <img
         src={image.src}
-        {...(image.srcSet ? { srcSet: image.srcSet, sizes } : {})}
+        srcSet={image.srcSet}
+        sizes={sizes}
         alt={photo.alt}
         className={className}
         decoding="async"

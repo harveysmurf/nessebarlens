@@ -11,6 +11,7 @@ import {
   decideFulfillment,
   type OrderRecord,
 } from "../src/lib/order-decision.ts";
+import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 /* The remaining defensive branches: the paths taken when a value is absent,
    the wrong type, or not an Error at all. Each was unreachable from the tests
@@ -36,7 +37,7 @@ test("a secret passed as null is the same as no secret at all", async () => {
   // truthy — without the trim it signed URLs with a whitespace key and every
   // legitimate request came back 401 instead of the 503 that means
   // "unconfigured".
-  const signed = await signPrintAssetUrl("dawn", { secret: SECRET });
+  const signed = await signPrintAssetUrl(SAMPLE_SLUG, { secret: SECRET });
   assert.ok(signed, "a signed URL is available for the rest of this test");
   // searchParams is a live view, not a plain object: destructuring it yields
   // undefined for every key. The first run of this test passed for that reason
@@ -45,7 +46,7 @@ test("a secret passed as null is the same as no secret at all", async () => {
   const exp = params.get("exp")!;
   const sig = params.get("sig")!;
   for (const secret of [null, "", "   "]) {
-    const result = await verifyPrintAssetRequest("dawn", exp, sig, { secret });
+    const result = await verifyPrintAssetRequest(SAMPLE_SLUG, exp, sig, { secret });
     assert.equal(result.ok, false, JSON.stringify(secret));
     assert.equal(result.status, 503);
     assert.equal(result.error, "print-asset-unavailable");
@@ -58,7 +59,7 @@ test("a secret passed as null is the same as no secret at all", async () => {
     const saved = process.env.PRINT_ASSET_HMAC_SECRET;
     try {
       delete process.env.PRINT_ASSET_HMAC_SECRET;
-      const result = await verifyPrintAssetRequest("dawn", exp, sig, {
+      const result = await verifyPrintAssetRequest(SAMPLE_SLUG, exp, sig, {
         secret: undefined,
       });
       assert.equal(result.ok, false);
@@ -70,13 +71,13 @@ test("a secret passed as null is the same as no secret at all", async () => {
     }
   }
   // A secret that is only padded still verifies, because it is the same key.
-  const padded = await verifyPrintAssetRequest("dawn", exp, sig, {
+  const padded = await verifyPrintAssetRequest(SAMPLE_SLUG, exp, sig, {
     secret: ` ${SECRET} `,
   });
   assert.equal(padded.ok, true, "a padded secret is the same key once trimmed");
   // And the same URL verifies with the exact secret, so the rejection above is
   // the secret and not the signature.
-  const ok = await verifyPrintAssetRequest("dawn", exp, sig, { secret: SECRET });
+  const ok = await verifyPrintAssetRequest(SAMPLE_SLUG, exp, sig, { secret: SECRET });
   assert.equal(ok.ok, true, ok.ok ? "" : ok.error);
 });
 
@@ -84,10 +85,10 @@ test("expiry is checked against the wall clock when no now is given", async () =
   // The webhook path injects now for determinism; this branch is the one the
   // route uses. An expiry that is already in the past must fail on the real
   // clock, with no nowMs to lean on.
-  const signed = await signPrintAssetUrl("dawn", { secret: SECRET });
+  const signed = await signPrintAssetUrl(SAMPLE_SLUG, { secret: SECRET });
   const params = new URL(signed!).searchParams;
   const expired = await verifyPrintAssetRequest(
-    "dawn",
+    SAMPLE_SLUG,
     "1000000000",
     params.get("sig")!,
     { secret: SECRET },
@@ -145,7 +146,7 @@ test("a non-Error thrown while building the body is reported, not rethrown", asy
   try {
     const result = await createProdigiOrder({
       sessionId: "cs_test_abcdefgh",
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "giclee",
       size: "50x70",
       frame: null,
@@ -180,7 +181,7 @@ test("a non-Error thrown by fetch is a server failure, not a crash", async () =>
   try {
     const result = await createProdigiOrder({
       sessionId: "cs_test_abcdefgh",
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "giclee",
       size: "50x70",
       frame: null,
@@ -210,7 +211,7 @@ test("a physical order with no shippingEur stops as bad-metadata", () => {
     currency: "eur",
     amountTotal: 1500,
     metadata: {
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "giclee",
       size: "30x40",
       frame: "",

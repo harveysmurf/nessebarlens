@@ -8,6 +8,7 @@ import { devOrdersSeed, seededOrdersStore } from "../src/lib/orders-dev-seed.ts"
 import { parseOrderRecord, orderViewState } from "../src/lib/order-decision.ts";
 import { isCheckoutSessionId } from "../src/lib/order-decision.ts";
 import { isProduction } from "../src/lib/config.ts";
+import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const SEED_PATH = "e2e/fixtures/orders-seed.json";
 
@@ -91,7 +92,7 @@ test("the seed is in-memory: a put is visible to get, and nothing persists", asy
     merchantReference: "cs_test_written_here_0000000099",
     terminal: true,
     status: "paid-unfulfilled",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     kind: "unknown",
     format: "unknown",
     size: "",
@@ -260,7 +261,7 @@ test("the seeded store's conditional write and query match the port contract", a
     merchantReference: SESSION,
     terminal: false,
     status: "paid-unfulfilled" as const,
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     kind: "physical",
     format: "giclee" as const,
     size: "30x40",
@@ -342,7 +343,7 @@ test("a record written without a createdAt gets updatedAt, and a missing token r
     merchantReference: SESSION,
     terminal: false,
     status: "paid-unfulfilled" as const,
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     kind: "physical",
     format: "giclee" as const,
     size: "30x40",

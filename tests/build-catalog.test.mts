@@ -18,6 +18,9 @@ const BASE = {
   description: "A description.",
   alt: "A one-line description of the image",
   category: "fine-art",
+  // A published photo must carry both (#245).
+  master_sha256: "a".repeat(64),
+  image_hash: "abcdef12",
 };
 
 function withTmpDir(fn: (dir: string) => void) {

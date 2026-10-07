@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import test from "node:test";
+import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
 /* The checkout success page's decision, and the endpoint that feeds it (#103).
 
@@ -57,9 +58,9 @@ const SESSION = "cs_test_abcdefgh";
 // another host would stop proving anything about the real write path.
 const SITE = "https://nessebarlens.com";
 process.env.NEXT_PUBLIC_SITE_URL = SITE;
-/** The real master key for the "dawn" photo; a paid digital record must match it exactly. */
-const MASTER_KEY = "prints/dawn.jpg";
-const ASSET_URL = `${SITE}/api/print-asset?slug=dawn&expires=1799999999&sig=x`;
+/** The real master key for the SAMPLE_SLUG photo; a paid digital record must match it exactly. */
+const MASTER_KEY = SAMPLE_MASTER_KEY;
+const ASSET_URL = `${SITE}/api/print-asset?slug=${SAMPLE_SLUG}&expires=1799999999&sig=x`;
 const RECIPIENT = {
   name: "Test Buyer",
   line1: "1 Harbor St",
@@ -82,7 +83,7 @@ const DEFAULTS = {
   merchantReference: SESSION,
   terminal: true,
   status: "paid",
-  photoSlug: "dawn",
+  photoSlug: SAMPLE_SLUG,
   format: "digital",
   size: "50x70",
   frame: "",
@@ -211,7 +212,7 @@ test("orderViewState maps each digital status to its own case", () => {
       merchantReference: SESSION,
       terminal: true,
       status: "paid",
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       kind: "digital",
       format: "digital",
       size: "",

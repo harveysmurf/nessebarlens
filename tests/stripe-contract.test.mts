@@ -5,6 +5,7 @@ import { registerHooks } from "node:module";
 import { afterEach, beforeEach, test } from "node:test";
 import Stripe from "stripe";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
+import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 import { decideFulfillment, parseOrderRecord } from "../src/lib/order-decision.ts";
 import {
   paymentIntentForDispute,
@@ -196,6 +197,12 @@ test("the API version pin has a Stripe-shaped value and is passed to the client"
 test("checkout.session.completed: the real route stores the order the fixture describes", async () => {
   const event = fixtures["checkout.session.completed"];
   const session = event.data.object as unknown as StripeCheckoutSession;
+  // The fixture was captured while the catalog carried the placeholder slug
+  // `dawn`; the catalog now holds one published photo, so the metadata must name
+  // a slug the order path resolves or the webhook stores the order as
+  // unknown-photo. Patched here rather than pinned in the JSON so the fixture
+  // stays a faithful capture and the test tracks the real catalog.
+  session.metadata!.photoSlug = SAMPLE_SLUG;
   const store = memoryOrdersStore();
   const { payload, header } = signed(event);
 

@@ -45,35 +45,6 @@ import { PHOTOS } from "../src/generated/catalog.ts";
 /** The S3 user-metadata key that carries the master's SHA-256. */
 const MASTER_METADATA_KEY = "sha256";
 
-/**
- * The transitional placeholder catalog (#239): slugs that are listed but have
- * no full-res master yet, so the gate must not fail the release on them. The
- * list is exactly the photos with no `masterSha256`; a photo that advertises a
- * master is always checked. #245 deletes this list once real photos are live.
- */
-export const ALLOWLISTED_SLUGS = new Set([
-  "alley-cat",
-  "autumn",
-  "boat-hull",
-  "chapel-light",
-  "cobblestones",
-  "craftsman",
-  "dawn",
-  "evening-wall",
-  "fishermen",
-  "fortress",
-  "harbor-mist",
-  "isthmus",
-  "market-day",
-  "net-menders",
-  "salt-air",
-  "seagulls",
-  "shadow-street",
-  "stone-arch",
-  "windmill",
-  "winter-pier",
-]);
-
 /** Case-insensitive read of one S3 user-metadata value; HTTP lowercases keys. */
 export function metadataValue(metadata, name) {
   if (!metadata) return undefined;
@@ -85,22 +56,16 @@ export function metadataValue(metadata, name) {
 
 /**
  * Checks every published photo against the production masters bucket. Returns
- * an array of human-readable failures (`dawn: missing`) — empty means the
+ * an array of human-readable failures (`{slug}: missing`) — empty means the
  * catalog may ship. Every photo is checked so one run reports all problems.
  */
 export async function verifyMasters({
   photos = PHOTOS,
   s3,
-  allowlist = ALLOWLISTED_SLUGS,
-  log = () => {},
 } = {}) {
   const failures = [];
   for (const photo of photos) {
     if (photo.published === false) continue;
-    if (allowlist.has(photo.slug)) {
-      log(`skipped (placeholder allow-list): ${photo.slug}`);
-      continue;
-    }
     // The compiled catalog stores the YAML's `master_sha256` as `masterSha256`.
     if (
       typeof photo.masterSha256 !== "string" ||
@@ -185,23 +150,18 @@ function requiredEnv(names, env) {
   }
 }
 
-/** The published photos that actually need a master checked (not allow-listed). */
-export function photosToVerify(photos = PHOTOS, allowlist = ALLOWLISTED_SLUGS) {
-  return photos.filter(
-    (photo) => photo.published !== false && !allowlist.has(photo.slug),
-  );
+/** The published photos, every one of which now needs a master checked. */
+export function photosToVerify(photos = PHOTOS) {
+  return photos.filter((photo) => photo.published !== false);
 }
 
 export async function main(env = process.env, photos = PHOTOS) {
-  // While every published photo is still an allow-listed placeholder there is
-  // nothing to read, so the read-only token is not required yet: the gate is a
-  // clean no-op rather than a red release for a credential nobody needs. It is
-  // needed the moment the first real photo is published — which is exactly when
-  // `photosToVerify` stops being empty.
+  // An empty catalog (no published photos) has nothing to read, so the
+  // read-only token is not required; the gate is a clean no-op rather than a
+  // red release for a credential nobody needs. With any published photo the
+  // schema guarantees it carries a master_sha256, so the token is required.
   if (photosToVerify(photos).length === 0) {
-    console.log(
-      "verify-masters: no published photo needs a master yet (placeholder allow-list); nothing to verify",
-    );
+    console.log("verify-masters: no published photos; nothing to verify");
     return 0;
   }
   requiredEnv(
@@ -211,7 +171,6 @@ export async function main(env = process.env, photos = PHOTOS) {
   const failures = await verifyMasters({
     photos,
     s3: createMastersS3(env),
-    log: (line) => console.log(line),
   });
   if (failures.length === 0) {
     console.log(`verify-masters: all published masters present and matching`);

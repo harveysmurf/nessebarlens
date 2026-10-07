@@ -7,7 +7,7 @@ import {
 } from "@/lib/ship-to-countries";
 import { getPhoto } from "@/lib/photos";
 import { DIGITAL_PRICE_EUR, eurToCents, formatLabel } from "@/lib/pricing";
-import { placeholderAssetUrl } from "@/lib/prodigi-order";
+import { webDerivativeUrls } from "@/lib/derivatives";
 import { quotePhysical } from "@/lib/prodigi-quote";
 import { prodigiFailureFrom } from "@/lib/prodigi-config";
 import { canSignMasterAsset } from "@/lib/print-asset";
@@ -99,9 +99,10 @@ export async function POST(request: Request) {
   }
 
   const base = siteUrl();
-  // The same helper the Prodigi order body uses, so the image Stripe shows
-  // and the asset the order carries cannot drift apart.
-  const placeholderImage = placeholderAssetUrl(photo.slug);
+  // The image Stripe shows is the photo's public web derivative — the same
+  // 1500px JPEG the gallery serves. Omitted when the CDN base is unconfigured,
+  // rather than pointing at a file that does not exist (#245).
+  const previewImage = webDerivativeUrls(photo)?.src;
 
   let stripe;
   try {
@@ -162,7 +163,7 @@ export async function POST(request: Request) {
             description: isPhysical
               ? `${size}${frame ? ` · ${frame} frame` : ""}`
               : "Digital high-resolution license",
-            images: [placeholderImage],
+            images: previewImage ? [previewImage] : undefined,
           },
         },
       },
