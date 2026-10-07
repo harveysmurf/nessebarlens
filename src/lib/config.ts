@@ -271,10 +271,10 @@ export function getConfig(env: ConfigEnv = process.env): Config {
 /**
  * Everything production needs and this deployment does not have, as a list.
  *
- * A report rather than a throw, because the AC is "missing production config
- * produces one clear error" and the shape a caller wants differs: a route has
- * a 503 body, a deploy check wants a message. productionConfigError() is the
- * message form.
+ * A report rather than a throw, so a caller picks the shape: a route can build
+ * a 503 body from it, a deploy check a message. The validation contract is
+ * exercised by tests/config.test.mts; no production caller reads it yet, so
+ * wire it up wherever a missing-config report is actually needed.
  */
 export function missingProductionConfig(
   env: ConfigEnv = process.env,
@@ -287,9 +287,4 @@ export function missingProductionConfig(
   if (!config.prodigi.keyConfigured) missing.push("PRODIGI_API_KEY");
   if (config.printAsset.secret === null) missing.push("PRINT_ASSET_HMAC_SECRET");
   return missing;
-}
-
-/** The one message an operator gets for a misconfigured production deploy. */
-export function productionConfigError(missing: string[] = missingProductionConfig()): string {
-  return `Missing production config: ${missing.join(", ")}`;
 }
