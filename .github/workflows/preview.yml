@@ -44,6 +44,12 @@ jobs:
       SITE_URL: ${{ secrets.SITE_URL }}
       NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
       NEXT_PUBLIC_WEB_IMAGES_BASE: ${{ secrets.NEXT_PUBLIC_WEB_IMAGES_BASE }}
+      # The derivative ladder is baked into the statically generated gallery at
+      # build time, so the preview serves the real images only if the build sees
+      # the same flag the staging build does. Without it here the preview always
+      # rendered the committed placeholder, which is the build a reviewer checks
+      # before `publish-photos --promote` (#257).
+      NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED: ${{ secrets.NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED }}
     steps:
       # The checkout is for the repository, not for the local action: `$/`
       # loads .github/actions/setup from the running commit, so it does not
