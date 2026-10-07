@@ -119,7 +119,7 @@ Environment variables (names only — values live in the `.env.local` symlink):
 | `PRODIGI_WEBHOOK_TOKEN` | Bearer token Prodigi must send on `POST /api/webhooks/prodigi` (`Authorization: Bearer …`). Prodigi v4 signs nothing, so this is the only callback auth. **Unset ⇒ 503** `prodigi-webhook-unconfigured`; mismatch ⇒ 401. Generate with `openssl rand -hex 32` and configure the same value as the shared secret Prodigi is told to send (or that a reverse-proxy injects). |
 | `RESEND_API_KEY` | Resend API key for customer email (order confirmation, print shipped, unfulfilled apology). **Unset ⇒ emails are skipped** with a structured `email.skipped` log line — never a throw on a paid webhook path. The sending domain (`nessebarlens.com`) must have Resend's **DNS TXT domain verification** before production mail will deliver; until then sandbox/`onboarding@resend.dev` testing is fine locally. |
 | `NEXT_PUBLIC_SITE_URL` | Canonical public origin (used by `src/lib/stripe.ts`). **Required for any production build** — `next.config.ts` fails the build without it, because `NEXT_PUBLIC_*` is inlined at build time and a silent `http://localhost:3000` fallback would ship a checkout that redirects to localhost. `next dev` and `npm test` do not need it. |
-| `NEXT_PUBLIC_WEB_IMAGES_BASE` | Base URL for gallery `<img>` srcset. When set it turns the R2 derivative ladder on; unset serves nothing (`src/lib/derivatives.ts`). Must be `https://images.nessebarlens.com` in `production` and `staging` (previews included), **never** the site origin (#268). |
+| `NEXT_PUBLIC_WEB_IMAGES_BASE` | Base URL for gallery `<img>` srcset; unset serves nothing. Must be `https://images.nessebarlens.com`, see Public image host. |
 | `R2_ACCOUNT_ID`, `R2_ENDPOINT`, `R2_S3_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | R2 S3 creds (unused by Workers — they use bucket bindings) |
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Needed only by `npm run publish-photos` from a laptop (see §6a) |
 | `EU_SHIPPING_EUR` | Flat EU shipping (must match `EU_FLAT_SHIPPING_CENTS`) |
@@ -1402,19 +1402,11 @@ flow.
   `master_sha256` and `image_hash` for `published: true`). The old
   `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` gate was removed in #245, once real
   photos — not an empty bucket — made the base the whole condition.
-- **Public image host (#268).** The base is `https://images.nessebarlens.com` in
-  both the `production` and `staging` GitHub environments (staging also feeds every
-  PR preview); `nessebar-lens-web` is shared, so one host serves all three. It is an
-  R2 custom domain on `nessebar-lens-web`, and a zone Cache Rule for
-  `http.host eq "images.nessebarlens.com"` (eligible for cache, edge and browser TTL
-  respect origin) makes it edge-cached; without the rule responses are
-  `cf-cache-status: DYNAMIC`. The bucket's r2.dev URL stays disabled (development
-  only, rate-limited, a second public path). The base must **not** be the site
-  origin: the Worker has no handler for `/{slug}/{hash8}/{width}.{ext}`, so Next.js
-  answers 404 even though the objects exist. Serving images through the Worker was
-  rejected: Worker responses are not edge-cached and each image would cost a Worker
-  invocation plus an R2 read. The value is baked at build time and shipped as a
-  Worker secret by `scripts/sync-worker-secrets.sh`, so redeploy after changing it.
+- **Public image host (#268).** The base is `https://images.nessebarlens.com` in the `production` and `staging` GitHub environments (previews use `staging`). It is an R2 custom domain on `nessebar-lens-web`, shared by all three.
+  A zone Cache Rule (`http.host eq "images.nessebarlens.com"`, respect origin TTLs) makes Cloudflare cache it. r2.dev is disabled.
+  It must not be the site origin: the Worker doesn't serve `/{slug}/{hash8}/{width}.{ext}` (that was #268).
+  The value is baked at build time, so after changing the secret, redeploy. A preview job that started before the change keeps the old value and needs a new run.
+  To check caching, use GET, not HEAD: `curl -s -o /dev/null -D - <url> | grep cf-cache-status` shows MISS, then HIT. HEAD always shows DYNAMIC.
 - **Quotes are cached; checkout is not.** `/api/quote` is unauthenticated and
   shares Prodigi's rate limit with `/api/checkout`, so a cached-miss loop could
   otherwise 429 Prodigi and break checkout for real customers. `src/lib/quote-cache.ts`
