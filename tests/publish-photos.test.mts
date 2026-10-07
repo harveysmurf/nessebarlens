@@ -112,6 +112,8 @@ test("parseArgs reads the flags", () => {
   assert.deepEqual(parseArgs([]), {
     apply: false,
     promote: false,
+    audit: false,
+    json: false,
     pr: undefined,
     only: undefined,
     replaceImage: undefined,
@@ -120,6 +122,8 @@ test("parseArgs reads the flags", () => {
   assert.deepEqual(parseArgs(["--apply", "--only", "dawn, dusk", "--replace-image", "dawn", "--dir", "drop"]), {
     apply: true,
     promote: false,
+    audit: false,
+    json: false,
     pr: undefined,
     only: ["dawn", "dusk"],
     replaceImage: "dawn",
@@ -128,10 +132,22 @@ test("parseArgs reads the flags", () => {
   assert.deepEqual(parseArgs(["--promote", "--pr", "242", "--dir", "drop"]), {
     apply: false,
     promote: true,
+    audit: false,
+    json: false,
     pr: 242,
     only: undefined,
     replaceImage: undefined,
     dir: "drop",
+  });
+  assert.deepEqual(parseArgs(["--audit", "--json"]), {
+    apply: false,
+    promote: false,
+    audit: true,
+    json: true,
+    pr: undefined,
+    only: undefined,
+    replaceImage: undefined,
+    dir: undefined,
   });
   // A missing or non-numeric --pr is left undefined rather than treated as 0.
   assert.equal(parseArgs(["--promote"]).pr, undefined);
