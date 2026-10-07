@@ -1323,8 +1323,6 @@ The rung list is `WEB_DERIVATIVE_WIDTHS` in `src/lib/derivative-ladder.ts` —
 one array, read by the srcSet the site serves, the web upload plan and the
 tests. Changing the rungs is a one-line edit there.
 
-`npm run ingest` is the one-release deprecated alias for `npm run publish-photos`.
-
 ### `--audit` (#244) — what is in the buckets
 
 ```
