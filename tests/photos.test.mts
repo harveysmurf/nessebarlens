@@ -123,6 +123,7 @@ test("the migrated catalog matches today's slugs, in today's display order", () 
       "chapel-light",
       "stone-arch",
       "evening-wall",
+      "lorem-ipsum",
     ],
     archive: [
       "fishermen",
@@ -149,7 +150,7 @@ test("the migrated catalog matches today's slugs, in today's display order", () 
       category,
     );
   }
-  assert.equal(PHOTOS.length, 20);
+  assert.equal(PHOTOS.length, 21);
 });
 
 test("every photo has real alt text within the schema limit", () => {

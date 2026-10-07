@@ -1,0 +1,10 @@
+title: Lorem Ipsum Sample
+caption: Generated Sample
+description: A generated lorem ipsum placeholder used to exercise publish-photos end to end.
+alt: A generated lorem ipsum placeholder image with a gradient background
+category: fine-art
+order: 99
+# written by publish-photos
+slug: lorem-ipsum
+master_sha256: 75093ce6672fe6c0af3c7c4e505f0c3aafcc9484ddc41a5d004c6dda179eabe8
+image_hash: 75093ce6
