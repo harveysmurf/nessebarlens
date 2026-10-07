@@ -1,0 +1,11 @@
+title: Lorem Ipsum Sample
+alt: A generated gradient sample image reading Lorem Ipsum
+caption: Generated Sample
+description: A generated lorem ipsum sample used to exercise publish-photos and
+  the promote flow end to end.
+category: fine-art
+order: 100
+# written by publish-photos
+slug: lorem-ipsum-sample
+master_sha256: 3f4a6510ef02f727a25d071a2df2b46eea56bd321587d95732b884452efe54d2
+image_hash: 3f4a6510
