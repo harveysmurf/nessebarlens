@@ -498,7 +498,10 @@ on its current version, so a forgotten `--promote` stops the deploy instead of
 shipping a photo that cannot be downloaded or printed. The fix is
 `npm run publish-photos -- --promote --pr <n>` (§6a). While the placeholder
 catalog is live the check skips the transitional slugs through an explicit
-allow-list in `scripts/verify-masters.mjs` that #245 deletes.
+allow-list in `scripts/verify-masters.mjs` that #245 deletes. When every
+published photo is still allow-listed the step is a no-op and does **not** need
+the read-only token — it requires `R2_MASTERS_READ_*` only once the first real
+photo is published, which is the first time it has anything to read.
 
 Production targets the **production Worker**, `nessebar-lens` — the top-level
 bindings in `wrangler.toml`. A preview targets the **staging Worker**,
