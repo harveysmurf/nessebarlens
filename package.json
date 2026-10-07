@@ -22,7 +22,7 @@
     "coverage:report": "node scripts/coverage.mjs --print",
     "preview": "opennextjs-cloudflare build && opennextjs-cloudflare preview",
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
-    "publish-photos": "node scripts/ingest.mjs",
+    "publish-photos": "node scripts/publish-photos-launcher.mjs",
     "orders": "node scripts/list-orders.mjs",
     "preverify:masters": "npm run build:catalog",
     "verify:masters": "node --import ./scripts/register.mjs scripts/verify-masters.mjs",
