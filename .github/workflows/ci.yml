@@ -52,10 +52,13 @@ jobs:
       - name: Typecheck
         run: npm run typecheck
 
-      - name: Test
-        run: npm test
-
-      - name: Coverage floors
+      # #273: one run of the suite, not two. `npm run coverage` drives the
+      # whole test glob under node's V8 coverage and, before it checks any
+      # floor, fails the job on a test failure (scripts/coverage.mjs ->
+      # testRunExitCode). A separate `npm test` step above it executed the
+      # identical files a second time for a verdict this step already owns.
+      # `npm test` stays for a local run without coverage.
+      - name: Test and coverage floors
         run: npm run coverage
 
   # #112: a workflow linter in CI, scoped to the class of bug the issue is
