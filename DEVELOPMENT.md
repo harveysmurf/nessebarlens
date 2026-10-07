@@ -1243,8 +1243,53 @@ from §7) into `ingest/` (repo root, gitignored), both named for the same slug:
   the owner's comments and key order, then opens **one PR** for the run.
 - `--only dawn,dusk` narrows a run; `--replace-image dawn` re-publishes an
   existing slug (the new master's hash must differ).
-- The production masters bucket is **never** written here; that is
-  `npm run publish-photos -- --promote --pr <n>` (#242), after the PR merges.
+- The production masters bucket is **never** written by `--apply`. Its client
+  only has the web and staging buckets, so a `--promote` object is unreachable
+  from this command.
+
+### After the preview: `--promote` (#242)
+
+Once the PR's preview has been checked, the second half runs from the same box,
+with the same `ingest/` folder still in place:
+
+```
+npm run publish-photos -- --promote --pr <n>
+```
+
+It reads the PR's changed `content/photos/*.yaml` **from the PR head** (the PR,
+not `ingest/` and not `main`, is the authority on what to promote) and refuses
+unless the PR is open, targets `main`, was opened by the owner (`gh api user`),
+and changes nothing outside `content/photos/`. For each slug it hashes the local
+`ingest/{slug}.jpg` and refuses unless that SHA-256 is exactly the
+`master_sha256` the YAML recorded, so the promoted bytes are the ones that were
+previewed — **stop before any upload** if one file does not match.
+
+For each master it writes the **unmodified** bytes to
+`nessebar-lens-masters/prints/{slug}.jpg` with `Content-Type: image/jpeg`, user
+metadata `sha256=<master_sha256>` (the header the release check reads, #243) and
+`Cache-Control: private, no-store`. An object already holding the same hash is
+skipped; a different hash is refused unless the PR **modified** an existing
+catalog entry (a `--replace-image`), which overwrites the fixed key and reminds
+you that past buyers' downloads now get the new file. It then `HeadObject`s each
+key and confirms the `sha256` metadata and byte length before running
+`gh pr merge <n> --auto --squash`. Merging deploys staging → smoke tests →
+master check → production.
+
+What to do if `--promote` refuses:
+
+- **`ingest/x.jpg is not the file that was previewed`** — the local JPEG is not
+  the one `--apply` hashed. Restore the exact file that was dropped, or re-run
+  `--apply` to publish the current one and re-check the preview.
+- **`missing ingest/x.jpg`** — the local master is gone; put the original back.
+- **`already holds a different master … pass --replace-image`** — production
+  already serves a different file for that slug. If the new bytes are intended,
+  re-run `--apply --replace-image x` so the PR modifies the entry, then promote.
+- **`changes files outside content/photos/`** — the PR is broader than a photo
+  publish; promote does not merge it. Split the photo change into its own PR.
+
+Nothing is uploaded and auto-merge is not enabled on any refusal, so fixing the
+input and re-running is always safe. The web keys from `--apply` are
+content-addressed, so they are never rewritten by a promote.
 
 Validation runs before any upload and reports every problem: the YAML must pass
 the schema with `master_sha256`/`image_hash` absent; the long edge must be

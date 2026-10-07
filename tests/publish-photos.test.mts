@@ -111,16 +111,31 @@ function deps(overrides = {}) {
 test("parseArgs reads the flags", () => {
   assert.deepEqual(parseArgs([]), {
     apply: false,
+    promote: false,
+    pr: undefined,
     only: undefined,
     replaceImage: undefined,
     dir: undefined,
   });
   assert.deepEqual(parseArgs(["--apply", "--only", "dawn, dusk", "--replace-image", "dawn", "--dir", "drop"]), {
     apply: true,
+    promote: false,
+    pr: undefined,
     only: ["dawn", "dusk"],
     replaceImage: "dawn",
     dir: "drop",
   });
+  assert.deepEqual(parseArgs(["--promote", "--pr", "242", "--dir", "drop"]), {
+    apply: false,
+    promote: true,
+    pr: 242,
+    only: undefined,
+    replaceImage: undefined,
+    dir: "drop",
+  });
+  // A missing or non-numeric --pr is left undefined rather than treated as 0.
+  assert.equal(parseArgs(["--promote"]).pr, undefined);
+  assert.equal(parseArgs(["--promote", "--pr", "nope"]).pr, undefined);
 });
 
 test("pairInputs matches a jpg with its yaml and reports a missing half", () => {
