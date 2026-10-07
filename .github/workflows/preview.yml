@@ -12,7 +12,8 @@ on:
 # `deploy` is that exception — its last step comments the preview URL on the
 # pull request, so it raises `pull-requests: write` on the job below. That
 # override is load-bearing: drop it and the comment step stops working with no
-# other signal.
+# other signal. It also raises `checks: read` for the step that waits on
+# ci.yml's "Lint & test" check run (#266).
 permissions:
   contents: read
 
@@ -33,11 +34,16 @@ jobs:
     # push to it once as a human.
     if: github.event.action != 'closed' && github.actor != 'dependabot[bot]'
     runs-on: ubuntu-24.04
-    timeout-minutes: 25
+    # The first step waits for ci.yml's "Lint & test" to finish (up to 20
+    # minutes of its own), so the old 25-minute budget no longer covers a slow
+    # CI run plus the build and smoke test.
+    timeout-minutes: 40
     environment: staging
     permissions:
       contents: read
       pull-requests: write
+      # The first step reads ci.yml's check runs to wait on their verdict.
+      checks: read
     env:
       CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
       CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
@@ -54,11 +60,59 @@ jobs:
 
       - uses: $/.github/actions/setup
 
-      - name: Lint
-        run: npm run lint
+      # #266: wait for the required CI checks before building anything. This
+      # workflow used to run `lint` and `test` itself, in parallel with ci.yml's
+      # "Lint & test" job, so a commit whose lint failed still started a preview
+      # build and still posted a "Staging preview" comment (with no URL and no
+      # version) on the PR. The verdict now comes from the one place that owns
+      # it -- ci.yml -- instead of being re-derived here; the wait is on the
+      # check, not a second run of it, so lint/typecheck/test/coverage are not
+      # duplicated.
+      - name: Wait for CI to pass
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          # ci.yml and this workflow are both triggered by the same
+          # `pull_request` event, so both address the same merge commit and its
+          # check runs are reachable from this SHA.
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
 
-      - name: Test
-        run: npm test
+          # The newest "Lint & test" check run is the verdict: a re-run leaves
+          # the previous one in place, and `sort_by` puts the newest last.
+          read_state() {
+            gh api "repos/$REPO/commits/$SHA/check-runs?per_page=100" \
+              --jq '([.check_runs[] | select(.name == "Lint & test")]
+                    | sort_by(.started_at // "") | last) as $c
+                    | if $c == null then "missing"
+                      else "\($c.status) \($c.conclusion // "")" end' \
+              2>/dev/null || true
+          }
+
+          deadline=$(( SECONDS + 1200 ))
+          while (( SECONDS < deadline )); do
+            state="$(read_state)"
+            case "$state" in
+              "completed success")
+                echo "CI \"Lint & test\" passed for $SHA"
+                exit 0
+                ;;
+              "completed "*)
+                echo "::error::CI \"Lint & test\" did not pass for $SHA (${state#completed }) -- refusing to build and comment a preview for a commit whose lint is red"
+                exit 1
+                ;;
+              "missing"|"")
+                echo "waiting for CI to publish its \"Lint & test\" check for $SHA..."
+                ;;
+              *)
+                echo "CI \"Lint & test\" is ${state} for $SHA; waiting..."
+                ;;
+            esac
+            sleep 10
+          done
+          echo "::error::timed out after 20 minutes waiting for CI \"Lint & test\" on $SHA"
+          exit 1
 
       # `github.head_ref` is attacker-controlled text: it comes from the PR
       # author's branch name, so interpolating it into `run:` hands the shell

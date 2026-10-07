@@ -463,6 +463,54 @@ test("a preview's version URL is asserted to be a staging version, not read off 
   );
 });
 
+test("the preview waits for the CI lint check instead of re-running lint itself (#266)", () => {
+  // The preview used to run `lint` and `test` in parallel with ci.yml's
+  // "Lint & test", so a commit whose lint failed still started a preview build
+  // and still posted a (URL-less) "Staging preview" comment on the PR. It now
+  // waits on ci.yml's check run and refuses to build when that did not pass.
+  const preview = workflows.find(({ name }) => name === "preview.yml")!;
+  const jobsText = preview.text.slice(preview.text.search(/^jobs:[ \t]*$/m));
+  const deploy = jobsText
+    .split(/\n {2}(?=[a-z][\w-]*:\n)/)
+    .slice(1)
+    .find((block) => block.startsWith("deploy:\n"));
+  assert.ok(deploy, "preview.yml has no deploy job");
+
+  assert.match(
+    deploy,
+    /select\(\.name == "Lint & test"\)/,
+    "preview.yml's deploy must read ci.yml's \"Lint & test\" check run — that wait is what makes the preview depend on passing lint instead of running in parallel with it",
+  );
+  assert.match(
+    deploy,
+    /commits\/\$SHA\/check-runs/,
+    "the wait must go through the check-runs API for the same commit the preview runs on",
+  );
+  assert.match(
+    deploy,
+    /^\s+checks: read$/m,
+    "reading ci.yml's check runs needs checks: read on the deploy job",
+  );
+
+  // The point is to consume CI's verdict, not reproduce it: a second lint here
+  // would run in parallel again and could disagree with the gate it waits on.
+  assert.doesNotMatch(
+    deploy,
+    /npm run lint/,
+    "preview.yml must not re-run lint; ci.yml's \"Lint & test\" is the verdict it waits on",
+  );
+
+  // The wait gates nothing if it runs after the build.
+  const waitIdx = deploy.indexOf("Wait for CI to pass");
+  const buildIdx = deploy.indexOf("Build (OpenNext)");
+  assert.ok(waitIdx >= 0, "preview.yml has no 'Wait for CI to pass' step");
+  assert.ok(buildIdx >= 0, "preview.yml has no 'Build (OpenNext)' step");
+  assert.ok(
+    waitIdx < buildIdx,
+    "the wait for CI lint must run before the build, or the preview builds before its gate",
+  );
+});
+
 test("the preview's own D1 is staging's, which is what makes the isolation real", () => {
   // Half a rule again: `--env staging` on every call is only worth anything if
   // [env.staging] actually points somewhere other than production. If someone
