@@ -40,15 +40,18 @@ const workflowDir = path.join(root, ".github", "workflows");
  * The secret set each Environment is expected to hold, and who reads it.
  *
  * `staging` — sandbox Stripe, sandbox Prodigi, the staging SITE_URL, and the
- * `NEXT_PUBLIC_*` values baked into a staging build. The build matrix job reads
- * it through `environment: ${{ matrix.env }}`, so its secrets are expected in
- * both environments; that is the one place the same name means a different
- * value, and it is the reason these are per-environment lists rather than one
- * global set.
+ * `NEXT_PUBLIC_*` values baked into a staging build. The release build matrix
+ * reads it through `environment: ${{ matrix.env }}` and the PR preview builds
+ * with `environment: staging`, so these secrets are expected in both
+ * environments; that is the one place the same name means a different value, and
+ * it is the reason these are per-environment lists rather than one global set.
  *
- * `production` — the same names with live values, plus
- * `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED`, which is production-only because the
- * derivative ladder is gated by the live site's own decision to expose it.
+ * `production` — the same names with live values.
+ *
+ * `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` is the ladder's on/off switch. It is in
+ * both lists because the release build reads it for staging and production, and
+ * the preview build now forwards it too (#257) so a reviewer sees the real
+ * derivatives rather than the committed placeholder.
  *
  * `repository` — `PRINT_ASSET_HMAC_SECRET` is a repository secret, not an
  * Environment one: it signs print-asset URLs and has to be the *same* value in
