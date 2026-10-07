@@ -72,10 +72,12 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
-          # ci.yml and this workflow are both triggered by the same
-          # `pull_request` event, so both address the same merge commit and its
-          # check runs are reachable from this SHA.
-          SHA: ${{ github.sha }}
+          # The PR's head commit, not github.sha: on a `pull_request` event
+          # github.sha is the ephemeral merge commit, while check runs are
+          # posted against the head commit (`run.head_sha`, which is what the
+          # checks UI lists). Querying github.sha finds nothing and waits until
+          # the timeout, which is how the first cut of this step failed.
+          SHA: ${{ github.event.pull_request.head.sha }}
         run: |
           set -euo pipefail
 
