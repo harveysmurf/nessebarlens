@@ -486,6 +486,20 @@ test("the preview waits for the CI lint check instead of re-running lint itself 
     /commits\/\$SHA\/check-runs/,
     "the wait must go through the check-runs API for the same commit the preview runs on",
   );
+  // The SHA has to be the PR's head commit. On a `pull_request` event
+  // `github.sha` is the ephemeral merge commit, and check runs are not posted
+  // there — this was the first cut's bug: it queried github.sha, found no
+  // "Lint & test" check, and waited out its 20-minute timeout on every PR.
+  assert.match(
+    deploy,
+    /SHA:\s*\$\{\{\s*github\.event\.pull_request\.head\.sha\s*\}\}/,
+    "the wait must read the check runs for github.event.pull_request.head.sha; github.sha is the merge commit and has no check runs",
+  );
+  assert.doesNotMatch(
+    deploy,
+    /SHA:\s*\$\{\{\s*github\.sha\s*\}\}/,
+    "github.sha on a pull_request is the merge commit, where ci.yml's check runs are not posted",
+  );
   assert.match(
     deploy,
     /^\s+checks: read$/m,
