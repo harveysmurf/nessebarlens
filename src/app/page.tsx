@@ -1,25 +1,30 @@
 import Link from "next/link";
 import { WebPhoto } from "@/components/WebPhoto";
-import { featuredPhoto, filmLookClass, getPhoto, isFilmPhoto } from "@/lib/photos";
+import {
+  featuredPhoto,
+  filmLookClass,
+  isFilmPhoto,
+  photosByCategory,
+} from "@/lib/photos";
 
 const CATEGORIES = [
   {
     href: "/fine-art",
-    slug: "cobblestones",
+    category: "fine-art",
     n: "01",
     title: "Fine Art",
     blurb: "Best high-end portfolio gallery captures",
   },
   {
     href: "/archive",
-    slug: "fishermen",
+    category: "archive",
     n: "02",
     title: "Archive",
     blurb: "Everyday street & journalistic moments",
   },
   {
     href: "/film",
-    slug: "windmill",
+    category: "film",
     n: "03",
     title: "Film Photography",
     blurb: "Authentic 35mm & 120 film stock negatives",
@@ -76,20 +81,25 @@ export default function HomePage() {
 
         <div className="grid md:grid-cols-3 gap-8">
           {CATEGORIES.map((cat) => {
-            const photo = getPhoto(cat.slug)!;
+            // The first real photo in the category is the tile image; a category
+            // with no published photo yet renders the tile without an image
+            // rather than pointing at a placeholder that no longer exists (#245).
+            const photo = photosByCategory(cat.category)[0];
             return (
               <Link key={cat.href} href={cat.href} className="group space-y-3 block">
                 <div
                   className={`aspect-[4/3] overflow-hidden rounded-sm ${
-                    isFilmPhoto(photo) ? "bg-stone-900" : "bg-stone-200"
+                    photo && isFilmPhoto(photo) ? "bg-stone-900" : "bg-stone-200"
                   }`}
                 >
-                  <WebPhoto
-                    photo={photo}
-                    preferred={1500}
-                    sizes="(max-width: 768px) 100vw, 33vw"
-                    className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ${filmLookClass(photo.filmLook)}`}
-                  />
+                  {photo ? (
+                    <WebPhoto
+                      photo={photo}
+                      preferred={1500}
+                      sizes="(max-width: 768px) 100vw, 33vw"
+                      className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ${filmLookClass(photo.filmLook)}`}
+                    />
+                  ) : null}
                 </div>
                 <div className="border-b border-stone-200 pb-3 flex justify-between items-baseline gap-3">
                   <div>

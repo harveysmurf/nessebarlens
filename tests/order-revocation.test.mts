@@ -30,6 +30,7 @@ import {
   type StripeSessionLookup,
 } from "../src/lib/order-revocation.ts";
 import type { CancelProdigiOrder } from "../src/lib/prodigi-cancel.ts";
+import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
 const SESSION = "cs_test_abcdefgh";
 const INTENT = "pi_3AbcDefGh12345678";
@@ -48,7 +49,7 @@ function digitalPaidRecord(overrides: Record<string, unknown> = {}): string {
     merchantReference: SESSION,
     terminal: true,
     status: "paid",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "digital",
     size: "",
     frame: "",
@@ -56,7 +57,7 @@ function digitalPaidRecord(overrides: Record<string, unknown> = {}): string {
     amountTotal: 3000,
     currency: "eur",
     reason: null,
-    masterKey: "prints/dawn.jpg",
+    masterKey: SAMPLE_MASTER_KEY,
     recipient: null,
     prodigiOrderId: null,
     prodigiStage: null,
@@ -104,7 +105,7 @@ test("a full refund revokes the download", async () => {
   assert.equal(order.status, "refunded");
   assert.equal(order.masterKey, null, "the record must stop naming the master");
   // photoSlug survives: the refund has to stay auditable.
-  assert.equal(order.photoSlug, "dawn");
+  assert.equal(order.photoSlug, SAMPLE_SLUG);
 });
 
 test("revocation is terminal at the download route, not just in the record", async () => {

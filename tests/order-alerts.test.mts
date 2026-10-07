@@ -20,6 +20,7 @@ import {
   type StripeShippingDetails,
 } from "../src/lib/order-decision.ts";
 import type { CreateProdigiOrder } from "../src/lib/prodigi-order.ts";
+import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const SESSION = "cs_test_abcdefgh";
 const NOW = "2026-09-27T12:00:00.000Z";
@@ -45,7 +46,7 @@ function paidInput(overrides: Record<string, unknown> = {}) {
     currency: "eur" as string | null,
     amountTotal: 3000 as number | null,
     metadata: {
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "digital",
       size: "",
       frame: "",
@@ -67,7 +68,7 @@ function paidInput(overrides: Record<string, unknown> = {}) {
 
 function physicalMeta(extra: Record<string, string> = {}): Record<string, string> {
   return {
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "giclee",
     size: "30x40",
     frame: "",
@@ -113,7 +114,7 @@ test("every terminal pre-Prodigi stop logs one structured alert", async () => {
   const cases: Array<{ reason: string; input: Record<string, unknown> }> = [
     {
       reason: "bad-metadata",
-      input: paidInput({ metadata: { photoSlug: "dawn", format: "nope" } }),
+      input: paidInput({ metadata: { photoSlug: SAMPLE_SLUG, format: "nope" } }),
     },
     {
       reason: "unknown-photo",
@@ -241,7 +242,7 @@ test("a fulfilled order logs nothing", async () => {
         value: {
           orderId: "ord_1",
           stage: "InProgress",
-          assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+          assetUrl: `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`,
         },
       }),
     });
@@ -274,7 +275,7 @@ test("the internal awaiting-prodigi marker is not an alert", () => {
     merchantReference: SESSION,
     terminal: true,
     status: "paid-unfulfilled",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     kind: "physical",
     format: "giclee",
     size: "30x40",

@@ -6,6 +6,7 @@ import {
   type OrderRecord,
   type StripeShippingDetails,
 } from "../src/lib/order-decision.ts";
+import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
 /* The validator that reads ORDERS back. The store is key-value text that
    anything can write, so every field it accepts is re-checked on the way out —
@@ -40,7 +41,7 @@ function unfulfilled(overrides: Record<string, unknown> = {}) {
     merchantReference: SESSION,
     terminal: true,
     status: "paid-unfulfilled",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "giclee",
     size: "30x40",
     frame: "",
@@ -170,7 +171,7 @@ test("a legacy digital record still carrying size/frame/recipient parses as digi
     merchantReference: SESSION,
     terminal: true,
     status: "paid",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "digital",
     size: "50x70",
     frame: "brown",
@@ -178,7 +179,7 @@ test("a legacy digital record still carrying size/frame/recipient parses as digi
     amountTotal: 3000,
     currency: "eur",
     reason: null,
-    masterKey: "prints/dawn.jpg",
+    masterKey: SAMPLE_MASTER_KEY,
     recipient: {
       name: "Legacy Buyer",
       line1: "1 Old Rd",
@@ -208,7 +209,7 @@ test("an unusable print size, or framed with no frame finish, is bad-metadata", 
   // The shape a stale or tampered metadata block produces. The order must
   // still be written — paid-unfulfilled, not dropped — so it stays inspectable.
   const base = {
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "giclee",
     size: "30x40",
     frame: "",
@@ -235,10 +236,10 @@ test("an unusable print size, or framed with no frame finish, is bad-metadata", 
 });
 
 test("an asset URL on a path the site does not serve is rejected", () => {
-  // isSafeAssetUrl allows two paths at any origin (#110 dropped the origin
-  // comparison so records survive a domain move): /placeholders/… and
-  // /api/print-asset. Any other path is not what this order paid for, and
-  // would otherwise be printed in place of the asset.
+  // isSafeAssetUrl allows one path at any origin (#110 dropped the origin
+  // comparison so records survive a domain move): /api/print-asset. Any other
+  // path is not what this order paid for, and would otherwise be printed in
+  // place of the asset. The public-placeholder path is retired (#245).
   for (const assetUrl of [
     "https://nessebarlens.com/archive/dawn.jpg",
     "https://nessebarlens.com/",

@@ -34,6 +34,15 @@ const isLocalWorker = (() => {
   }
 })();
 
+// The catalog's first published slug. Derived rather than hardcoded so the
+// seeded master key and this request cannot drift when the catalog changes:
+// `ci.yml` seeds `prints/{slug}.jpg` from the same `content/photos` listing.
+const CATALOG_SLUG = fs
+  .readdirSync(new URL("../content/photos", import.meta.url))
+  .filter((file) => file.endsWith(".yaml"))
+  .sort()[0]!
+  .replace(/\.yaml$/, "");
+
 test.describe("Worker runtime", () => {
   test.skip(
     !isLocalWorker,
@@ -46,9 +55,9 @@ test.describe("Worker runtime", () => {
     const secret = process.env.PRINT_ASSET_HMAC_SECRET ?? "";
     expect(secret.length, "PRINT_ASSET_HMAC_SECRET must reach the job").toBeGreaterThan(0);
 
-    // The master e2e/fixtures/worker-master.jpg is seeded at prints/dawn.jpg by
-    // the job; "dawn" is the first catalog slug in src/lib/photos.ts.
-    const slug = "dawn";
+    // The master e2e/fixtures/worker-master.jpg is seeded at prints/{slug}.jpg
+    // by the job for this same first catalog slug.
+    const slug = CATALOG_SLUG;
     const exp = Math.floor(Date.now() / 1000) + 3600;
     const sig = createHmac("sha256", secret)
       .update(`v1.${slug}.${exp}`)
@@ -76,7 +85,7 @@ test.describe("Worker runtime", () => {
   }) => {
     const exp = Math.floor(Date.now() / 1000) + 3600;
     const res = await request.get(
-      `/api/print-asset?slug=dawn&exp=${exp}&sig=${"a".repeat(64)}`,
+      `/api/print-asset?slug=${CATALOG_SLUG}&exp=${exp}&sig=${"a".repeat(64)}`,
     );
     expect(res.status()).toBe(401);
   });

@@ -15,6 +15,7 @@ import {
 import { emailCopyFor } from "../src/lib/email-copy.ts";
 import { orderReference } from "../src/lib/order-reference.ts";
 import { parseOrderRecord } from "../src/lib/order-decision.ts";
+import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
 const SESSION = "cs_test_abcdefgh";
 
@@ -246,7 +247,7 @@ test("parseOrderRecord accepts a pre-#117 record with no shipments/emailsSent", 
     merchantReference: SESSION,
     terminal: true,
     status: "paid",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "digital",
     size: "",
     frame: "",
@@ -254,7 +255,7 @@ test("parseOrderRecord accepts a pre-#117 record with no shipments/emailsSent", 
     amountTotal: 3000,
     currency: "eur",
     reason: null,
-    masterKey: "prints/dawn.jpg",
+    masterKey: SAMPLE_MASTER_KEY,
     prodigiOrderId: null,
     prodigiStage: null,
     assetUrl: null,
@@ -274,7 +275,7 @@ test("parseOrderRecord defaults hostile shipments/emailsSent rather than rejecti
     merchantReference: SESSION,
     terminal: true,
     status: "paid",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "digital",
     size: "",
     frame: "",
@@ -282,7 +283,7 @@ test("parseOrderRecord defaults hostile shipments/emailsSent rather than rejecti
     amountTotal: 3000,
     currency: "eur",
     reason: null,
-    masterKey: "prints/dawn.jpg",
+    masterKey: SAMPLE_MASTER_KEY,
     prodigiOrderId: null,
     prodigiStage: null,
     assetUrl: null,

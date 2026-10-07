@@ -91,12 +91,11 @@ export function isPhotoSlug(value: string): boolean {
  * Signed Worker URL for Prodigi. Returns null if the secret is unset or the slug
  * is invalid.
  *
- * The placeholder default in `buildProdigiOrderBody` is not a reachable
- * production path: its only caller (createProdigiOrder) already fails closed
- * when signing returns null, and never reaches it. It stays as a direct-call
- * default for tests. The checkout path cannot get here either way —
- * /api/checkout calls canSignMasterAsset() and answers 503 before creating a
- * Stripe session, so no paid order is fulfilled from a placeholder.
+ * There is no placeholder fallback: since #245 the asset URL is always this
+ * signed URL (or the null above). createProdigiOrder fails closed when signing
+ * returns null, and /api/checkout calls canSignMasterAsset() and answers 503
+ * before creating a Stripe session, so no paid order is ever fulfilled from a
+ * public stand-in.
  */
 export async function signPrintAssetUrl(
   slug: string,

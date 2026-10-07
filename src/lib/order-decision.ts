@@ -937,9 +937,9 @@ function isSafeAssetUrl(url: string): boolean {
   if (referencesMasters(url)) return false;
   try {
     const parsed = new URL(url);
-    // Only the two shapes this site serves. Path-only without this would let
-    // https://evil.example/admin through.
-    if (parsed.pathname.startsWith("/placeholders/")) return true;
+    // Only the shape this site serves. Path-only without this would let
+    // https://evil.example/admin through. The public-placeholder path is gone:
+    // the print asset is always the HMAC /api/print-asset (#245).
     if (parsed.pathname === "/api/print-asset") return true;
     return false;
   } catch {

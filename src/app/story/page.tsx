@@ -1,11 +1,11 @@
 import Link from "next/link";
 import { WebPhoto } from "@/components/WebPhoto";
-import { filmLookClass, getPhoto, isFilmPhoto } from "@/lib/photos";
+import { filmLookClass, isFilmPhoto, photosByCategory } from "@/lib/photos";
 
 const BLOCKS = [
   {
     href: "/fine-art",
-    slug: "dawn",
+    category: "fine-art",
     n: "01",
     title: "Fine Art Collection",
     body: "My highest-grade artistic works. Carefully composed architecture, dramatic atmospheric coastlines, and pristine color grading tailored for museum Giclée prints.",
@@ -14,7 +14,7 @@ const BLOCKS = [
   },
   {
     href: "/archive",
-    slug: "fishermen",
+    category: "archive",
     n: "02",
     title: "Everyday Archive",
     body: "Photojournalistic records of Nessebar's daily soul — fishermen untangling nets at sunrise, autumn cobblers, seasonal storms, and local town life.",
@@ -23,7 +23,7 @@ const BLOCKS = [
   },
   {
     href: "/film",
-    slug: "windmill",
+    category: "film",
     n: "03",
     title: "Film Photography",
     body: "Exclusively analog medium format and 35mm captures. Unfiltered organic grain, authentic light leaks, and Kodak/Ilford film characteristics.",
@@ -51,7 +51,10 @@ export default function StoryPage() {
         </div>
 
         {BLOCKS.map((block, i) => {
-          const photo = getPhoto(block.slug)!;
+          // The first real photo in the category is the block image; a category
+          // with no published photo yet renders without an image rather than
+          // pointing at a placeholder that no longer exists (#245).
+          const photo = photosByCategory(block.category)[0];
           return (
             <div
               key={block.href}
@@ -67,15 +70,17 @@ export default function StoryPage() {
                 <Link
                   href={block.href}
                   className={`aspect-[3/2] overflow-hidden rounded-sm block ${
-                    isFilmPhoto(photo) ? "bg-stone-900 p-1" : "bg-stone-200"
+                    photo && isFilmPhoto(photo) ? "bg-stone-900 p-1" : "bg-stone-200"
                   }`}
                 >
-                  <WebPhoto
-                    photo={photo}
-                    preferred={1500}
-                    sizes="(max-width: 768px) 100vw, 60vw"
-                    className={`w-full h-full object-cover hover:scale-105 transition-transform duration-700 ${filmLookClass(photo.filmLook)}`}
-                  />
+                  {photo ? (
+                    <WebPhoto
+                      photo={photo}
+                      preferred={1500}
+                      sizes="(max-width: 768px) 100vw, 60vw"
+                      className={`w-full h-full object-cover hover:scale-105 transition-transform duration-700 ${filmLookClass(photo.filmLook)}`}
+                    />
+                  ) : null}
                 </Link>
               </div>
               <div

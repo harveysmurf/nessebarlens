@@ -1,7 +1,7 @@
 /**
  * Prodigi order creation. Host comes from PRODIGI_API_BASE (explicit per env).
- * Asset URLs are Worker HMAC /api/print-asset (or public placeholders) — never
- * raw MASTERS keys or r2.dev master paths.
+ * Asset URLs are Worker HMAC /api/print-asset — never raw MASTERS keys or
+ * r2.dev master paths. The public-placeholder alternative is gone (#245).
  */
 
 import { MASTERS_BUCKET, referencesMasters } from "./master-guard";
@@ -20,7 +20,6 @@ import {
   type ProdigiResult,
 } from "./prodigi-config";
 import { prodigiConfig, prodigiWebhookToken } from "./config";
-import { PLACEHOLDER_VERSION } from "./placeholder-photo";
 import { signPrintAssetUrl } from "./print-asset";
 import { resolveSku, type PhysicalFormat } from "./sku-map";
 import { siteUrl } from "./config";
@@ -104,19 +103,6 @@ export type CreateProdigiOrder = (input: {
 }) => Promise<ProdigiOrderResult>;
 
 /**
- * Public stand-in. Still used for the Stripe session's display image, where a
- * low-resolution preview is the correct thing to show.
- */
-export function placeholderAssetUrl(photoSlug: string): string {
-  // The same `?v=` the gallery uses, from the same constant, so a placeholder
-  // bump cannot leave the Stripe session image serving a stale CDN copy. The
-  // version is imported rather than the function: that function returns null
-  // for an unsafe slug, and this must keep returning a URL for whatever the
-  // catalog handed us rather than throwing mid-order.
-  return `${siteUrl()}/placeholders/${photoSlug}.jpg?v=${PLACEHOLDER_VERSION}`;
-}
-
-/**
  * Hosts where the Prodigi idempotency key stays the bare session id (#193).
  *
  * Existing production orders must keep their key: re-keying production would
@@ -169,12 +155,14 @@ export function buildProdigiOrderBody(input: {
   size: PrintSize;
   frame: FrameFinish | null;
   recipient: OrderRecipient;
-  assetUrl?: string;
+  /** The HMAC /api/print-asset URL Prodigi fetches. Required: there is no
+   * public-placeholder fallback anymore (#245). */
+  assetUrl: string;
   /** PRODIGI_WEBHOOK_TOKEN. Unset or blank ⇒ the body carries no callbackUrl. */
   webhookToken?: string;
 }): ProdigiOrderRequest {
   const entry = resolveSku(input.format, input.size, input.frame);
-  const assetUrl = input.assetUrl ?? placeholderAssetUrl(input.photoSlug);
+  const assetUrl = input.assetUrl;
   if (!HTTPS_URL_PATTERN.test(assetUrl)) {
     throw new Error("asset url must be https");
   }

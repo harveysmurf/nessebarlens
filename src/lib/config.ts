@@ -25,7 +25,6 @@
  */
 
 import {
-  envFlag,
   envIntInRange,
   envString,
   envStringStrippedSlash,
@@ -89,9 +88,6 @@ export type Config = {
     tokenTtlSeconds: number;
     maxDownloads: number;
   };
-  flags: {
-    webDerivativesEnabled: boolean;
-  };
 };
 
 /**
@@ -117,15 +113,6 @@ export function webImagesBase(
   if (url.protocol !== "https:") return undefined;
 
   return stripTrailingSlashes(`${url.origin}${url.pathname}`);
-}
-
-/**
- * The ladder is off unless explicitly enabled; the base URL being configured
- * does not turn it on. Both buckets were empty while the base was set in every
- * environment, so "base is set" cannot mean "files exist".
- */
-export function webDerivativesEnabled(env: ConfigEnv = process.env): boolean {
-  return envFlag("NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED", env);
 }
 
 /**
@@ -277,9 +264,6 @@ export function getConfig(env: ConfigEnv = process.env): Config {
         DOWNLOAD_TOKEN_MAX_DOWNLOADS,
         1,
       ),
-    },
-    flags: {
-      webDerivativesEnabled: envFlag("NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED", env),
     },
   };
 }

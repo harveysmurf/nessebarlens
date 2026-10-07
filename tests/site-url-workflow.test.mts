@@ -51,17 +51,13 @@ test("every workflow that builds gets NEXT_PUBLIC_SITE_URL from secrets", () => 
 });
 
 test("every workflow that builds gets the derivative-ladder env from secrets", () => {
-  // The gallery is statically generated, so the ladder base and its on/off flag
-  // are baked at build time. A build that dropped the flag would render every
-  // tile from the committed placeholder, which is the state a reviewer of a PR
-  // preview is meant to check before `publish-photos --promote` (#257).
+  // The gallery is statically generated, so the ladder base is baked at build
+  // time. A build that dropped it would render every tile without a real
+  // derivative URL (#245).
   for (const name of BUILDING) {
     const workflow = workflows.find((w) => w.name === name);
     assert.ok(workflow, `${name} is gone; update BUILDING if the build moved`);
-    for (const env of [
-      "NEXT_PUBLIC_WEB_IMAGES_BASE",
-      "NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED",
-    ]) {
+    for (const env of ["NEXT_PUBLIC_WEB_IMAGES_BASE"]) {
       assert.match(
         workflow.text,
         new RegExp(`${env}:\\s*\\$\\{\\{\\s*secrets\\.${env}\\s*\\}\\}`),

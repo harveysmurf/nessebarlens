@@ -13,13 +13,19 @@ import {
   validatePhotoFile,
 } from "../src/lib/photo-schema.ts";
 
-const VALID = {
+const REQUIRED = {
   title: "A Title",
   caption: "A Caption",
   description: "A description.",
   alt: "A one-line description of the image",
   category: "fine-art",
 };
+
+/** The two values `publish-photos` writes; required for a published photo. */
+const HASHES = { master_sha256: "a".repeat(64), image_hash: "abcdef12" };
+
+/** A valid, published photo. */
+const VALID = { ...REQUIRED, ...HASHES };
 
 function validate(data: unknown, filename = "photo") {
   return validatePhotoFile(filename, data);
@@ -31,8 +37,8 @@ function problems(data: unknown, filename = "photo"): string[] {
   return result.ok ? [] : result.problems;
 }
 
-test("a minimal file validates and applies defaults", () => {
-  const result = validate({ ...VALID });
+test("an unpublished file needs no hashes and applies defaults", () => {
+  const result = validate({ ...REQUIRED, published: false });
   assert.equal(result.ok, true);
   if (!result.ok) return;
   assert.equal(result.photo.slug, "photo");
@@ -47,7 +53,25 @@ test("a minimal file validates and applies defaults", () => {
   assert.equal(result.photo.heroCaption, undefined);
   assert.equal(result.photo.masterSha256, undefined);
   assert.equal(result.photo.imageHash, undefined);
-  assert.equal(result.photo.published, true);
+  assert.equal(result.photo.published, false);
+});
+
+test("a published photo without master_sha256 or image_hash fails", () => {
+  const missingBoth = problems({ ...REQUIRED });
+  assert.ok(
+    missingBoth.some((p) => p.includes("master_sha256: required")),
+    missingBoth.join("; "),
+  );
+  assert.ok(
+    missingBoth.some((p) => p.includes("image_hash: required")),
+    missingBoth.join("; "),
+  );
+  const noMaster = problems({ ...REQUIRED, image_hash: "abcdef12" });
+  assert.ok(
+    noMaster.some((p) => p.includes("master_sha256: required")),
+    noMaster.join("; "),
+  );
+  assert.equal(validate({ ...REQUIRED, ...HASHES }).ok, true);
 });
 
 test("a fully-specified file validates and keeps every field", () => {
@@ -226,7 +250,7 @@ test("published is optional, defaults true, and must be a boolean", () => {
   assert.ok(found.some((p) => p.startsWith("published:")), found.join("; "));
 });
 
-test("master_sha256 is optional 64-char lowercase hex", () => {
+test("master_sha256 must be 64-char lowercase hex", () => {
   assert.equal(validate({ ...VALID, master_sha256: "0".repeat(64) }).ok, true);
   const upper = problems({ ...VALID, master_sha256: "A".repeat(64) });
   assert.ok(
@@ -242,7 +266,7 @@ test("master_sha256 is optional 64-char lowercase hex", () => {
   );
 });
 
-test("image_hash is optional 8-char lowercase hex", () => {
+test("image_hash must be 8-char lowercase hex", () => {
   assert.equal(validate({ ...VALID, image_hash: "0123abcd" }).ok, true);
   const upper = problems({ ...VALID, image_hash: "ABCDEF12" });
   assert.ok(

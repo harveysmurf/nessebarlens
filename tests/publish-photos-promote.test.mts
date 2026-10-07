@@ -175,7 +175,7 @@ function deps(overrides = {}) {
 // Pure decisions
 // ---------------------------------------------------------------------------
 
-test("selectPromoteFiles keeps content/photos YAML, allows placeholders, flags the rest", () => {
+test("selectPromoteFiles keeps content/photos YAML and flags everything else", () => {
   const { outside, yamls } = selectPromoteFiles([
     { path: "content/photos/dawn.yaml", changeType: "ADDED" },
     { path: "content/photos/dusk.yml", changeType: "MODIFIED" },
@@ -190,20 +190,8 @@ test("selectPromoteFiles keeps content/photos YAML, allows placeholders, flags t
       { path: "content/photos/dusk.yml", slug: "dusk", changeType: "MODIFIED" },
     ],
   );
-  // The committed fallback placeholder is part of a publish PR (#257).
-  assert.deepEqual(outside, ["src/lib/foo.ts"]);
-});
-
-test("selectPromoteFiles refuses deleted or non-JPEG placeholder files", () => {
-  const { outside } = selectPromoteFiles([
-    { path: "content/photos/dawn.yaml", changeType: "ADDED" },
-    { path: "public/placeholders/dawn.svg", changeType: "ADDED" },
-    { path: "public/placeholders/gone.jpg", changeType: "DELETED" },
-  ]);
-  assert.deepEqual(outside, [
-    "public/placeholders/dawn.svg",
-    "public/placeholders/gone.jpg",
-  ]);
+  // The placeholder is gone (#245): a publish PR is content/photos only.
+  assert.deepEqual(outside, ["public/placeholders/dawn.jpg", "src/lib/foo.ts"]);
 });
 
 test("verifyPromotePr refuses closed, mis-based, non-owner and out-of-scope PRs", () => {
@@ -381,7 +369,7 @@ test("a missing local master is refused before any upload", async () => {
   }
 });
 
-test("a PR touching files outside content/photos and placeholders is refused", async () => {
+test("a PR touching files outside content/photos is refused", async () => {
   const dir = makeProject();
   try {
     await writeMaster(path.join(dir, "ingest/dawn.jpg"));
@@ -400,13 +388,13 @@ test("a PR touching files outside content/photos and placeholders is refused", a
     const result = await runPromote({ cwd: dir, promote: true, pr: 255 }, deps({ s3, exec }));
     assert.equal(result.status, 1);
     assert.equal(s3.calls.length, 0);
-    assert.match(result.fatals!.join("\n"), /outside content\/photos\/ and public\/placeholders\//);
+    assert.match(result.fatals!.join("\n"), /outside content\/photos\//);
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
 });
 
-test("a PR carrying the committed placeholder is promoted normally", async () => {
+test("a catalog-only publish PR is promoted normally", async () => {
   const dir = makeProject();
   try {
     await writeMaster(path.join(dir, "ingest/dawn.jpg"));
@@ -414,10 +402,7 @@ test("a PR carrying the committed placeholder is promoted normally", async () =>
     const s3 = fakePromoteS3();
     const exec = fakeGh({
       pull: pull({
-        files: [
-          { path: "content/photos/dawn.yaml", changeType: "ADDED" },
-          { path: "public/placeholders/dawn.jpg", changeType: "ADDED" },
-        ],
+        files: [{ path: "content/photos/dawn.yaml", changeType: "ADDED" }],
       }),
       yamlByPath: { "content/photos/dawn.yaml": catalogYaml("dawn", sha) },
     });

@@ -22,6 +22,7 @@ import {
 import { prodigiWebhookToken } from "../src/lib/config.ts";
 import { sessionOriginCheck } from "../src/lib/stripe-event.ts";
 import type { OrderRecipient } from "../src/lib/prodigi-order.ts";
+import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const SANDBOX = "https://api.sandbox.prodigi.com";
 const TOKEN = "s3cret-callback-token-0123456789abcdef";
@@ -40,7 +41,7 @@ const RECIPIENT: OrderRecipient = {
 
 const INPUT = {
   sessionId: "cs_test_abcdefgh",
-  photoSlug: "dawn",
+  photoSlug: SAMPLE_SLUG,
   format: "giclee" as const,
   size: "30x40" as const,
   frame: null,
@@ -144,7 +145,7 @@ test("the posted body carries the namespaced key and the bare merchantReference"
   await withEnv("https://staging.nessebarlens.com", async () => {
     const body = buildProdigiOrderBody({
       ...INPUT,
-      assetUrl: "https://staging.nessebarlens.com/api/print-asset?slug=dawn&exp=1&sig=abc",
+      assetUrl: `https://staging.nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1&sig=abc`,
       webhookToken: prodigiWebhookToken(),
     });
     assert.equal(
@@ -162,7 +163,7 @@ test("the callback URL is on the same host as the asset URL", async () => {
   // being one origin by construction.
   for (const site of ["https://nessebarlens.com", "https://staging.nessebarlens.com"]) {
     await withEnv(site, async () => {
-      const assetUrl = `${site}/api/print-asset?slug=dawn&exp=1&sig=abc`;
+      const assetUrl = `${site}/api/print-asset?slug=${SAMPLE_SLUG}&exp=1&sig=abc`;
       const body = buildProdigiOrderBody({
         ...INPUT,
         assetUrl,
@@ -189,7 +190,7 @@ test("AlreadyExists adopts the order Prodigi holds, not the one we built", async
             {
               assets: [
                 {
-                  url: "https://nessebarlens.com/api/print-asset?slug=dawn&exp=1791736976&sig=adopted",
+                  url: `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1791736976&sig=adopted`,
                 },
               ],
             },
@@ -261,7 +262,7 @@ test("an order with no callback on a token-configured account is foreign", async
             {
               assets: [
                 {
-                  url: "https://staging.nessebarlens.com/api/print-asset?slug=dawn&exp=1&sig=abc",
+                  url: `https://staging.nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1&sig=abc`,
                 },
               ],
             },
@@ -296,7 +297,7 @@ test("with no token configured, a missing callback is not evidence of anything",
               {
                 assets: [
                   {
-                    url: "https://staging.nessebarlens.com/api/print-asset?slug=dawn&exp=1&sig=abc",
+                    url: `https://staging.nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1&sig=abc`,
                   },
                 ],
               },
@@ -321,7 +322,7 @@ test("isForeignOrder reads origin, not resemblance", () => {
     id: "ord_1",
     stage: "in-production",
     callbackUrl: "https://nessebarlens.com/api/webhooks/prodigi?token=t",
-    assetUrl: "https://nessebarlens.com/api/print-asset?slug=dawn&exp=1&sig=a",
+    assetUrl: `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1&sig=a`,
   };
   const local = {
     localAssetUrl: ours.assetUrl,
@@ -556,7 +557,7 @@ test("an adopted order with our asset but no stage is adopted with a null stage"
         json({
           callbackUrl: `https://nessebarlens.com/api/webhooks/prodigi?token=${TOKEN}`,
           items: [
-            { assets: [{ url: "https://nessebarlens.com/api/print-asset?slug=dawn&sig=z" }] },
+            { assets: [{ url: `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&sig=z` }] },
           ],
         }),
     });

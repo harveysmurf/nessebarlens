@@ -24,8 +24,6 @@ import sharp from "sharp";
 import {
   DERIVATIVE_JPEG_QUALITY,
   DERIVATIVE_WEBP_QUALITY,
-  PLACEHOLDER_JPEG_QUALITY,
-  PLACEHOLDER_MAX_EDGE,
   STAGING_MASTER_JPEG_QUALITY,
   STAGING_MASTER_MAX_EDGE,
 } from "../src/lib/derivative-ladder.ts";
@@ -84,26 +82,5 @@ export async function renderStagingMaster(bytes) {
       withoutEnlargement: true,
     })
     .jpeg({ quality: STAGING_MASTER_JPEG_QUALITY, mozjpeg: true })
-    .toBuffer();
-}
-
-/**
- * The committed fallback (#257): the same srgb + orientation + metadata-stripped
- * pipeline, bounded by PLACEHOLDER_MAX_EDGE, written to
- * `public/placeholders/{slug}.jpg`. It is what the gallery shows with the ladder
- * off and what checkout hands Stripe as the product image, so it must be the
- * actual photo rather than a generic graphic.
- */
-export async function renderPlaceholder(bytes) {
-  return sharp(bytes)
-    .rotate()
-    .toColorspace("srgb")
-    .resize({
-      width: PLACEHOLDER_MAX_EDGE,
-      height: PLACEHOLDER_MAX_EDGE,
-      fit: "inside",
-      withoutEnlargement: true,
-    })
-    .jpeg({ quality: PLACEHOLDER_JPEG_QUALITY, mozjpeg: true })
     .toBuffer();
 }

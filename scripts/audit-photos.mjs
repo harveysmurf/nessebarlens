@@ -185,9 +185,8 @@ export function auditFindings({
 
   for (const entry of catalog) {
     if (entry.published === false) continue;
-    // A photo with no `image_hash` has no ladder yet — the placeholder phase.
-    // Reporting its absent objects would drown the real findings, and #245
-    // removes that phase. Only a photo that advertises a ladder is checked.
+    // A published photo always carries an `image_hash` (schema-enforced #245),
+    // so this guard is defensive; without a hash there is no ladder to check.
     if (typeof entry.imageHash !== "string") continue;
     for (const width of WEB_DERIVATIVE_WIDTHS) {
       for (const format of WEB_DERIVATIVE_FORMATS) {

@@ -53,11 +53,6 @@ const workflowDir = path.join(root, ".github", "workflows");
  * masters bucket from the `production` job, which only runs on `main`; staging
  * serves its own bucket and is not gated.
  *
- * `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` is the ladder's on/off switch. It is in
- * both lists because the release build reads it for staging and production, and
- * the preview build now forwards it too (#257) so a reviewer sees the real
- * derivatives rather than the committed placeholder.
- *
  * `repository` — `PRINT_ASSET_HMAC_SECRET` is a repository secret, not an
  * Environment one: it signs print-asset URLs and has to be the *same* value in
  * every environment, since a signature made with one key and checked with
@@ -70,7 +65,6 @@ const EXPECTED: Record<string, ReadonlySet<string>> = {
     "CLOUDFLARE_ACCOUNT_ID",
     "CLOUDFLARE_API_TOKEN",
     "NEXT_PUBLIC_SITE_URL",
-    "NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED",
     "NEXT_PUBLIC_WEB_IMAGES_BASE",
     "PRINT_ASSET_HMAC_SECRET",
     "PRODIGI_API_KEY",
@@ -86,7 +80,6 @@ const EXPECTED: Record<string, ReadonlySet<string>> = {
     "CLOUDFLARE_ACCOUNT_ID",
     "CLOUDFLARE_API_TOKEN",
     "NEXT_PUBLIC_SITE_URL",
-    "NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED",
     "NEXT_PUBLIC_WEB_IMAGES_BASE",
     "PRINT_ASSET_HMAC_SECRET",
     "PRODIGI_API_KEY",

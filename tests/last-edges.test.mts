@@ -7,6 +7,7 @@ import {
   parseRecipient,
   type StripeShippingDetails,
 } from "../src/lib/order-decision.ts";
+import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 /* The last edges the report could still name. Each is a branch production takes
    and no test had: an address Stripe can send without a country, a framed
@@ -42,7 +43,7 @@ function physicalInput(overrides: Record<string, unknown> = {}) {
     currency: "eur",
     amountTotal: 1999,
     metadata: {
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "giclee",
       size: "30x40",
       frame: "",
@@ -78,7 +79,7 @@ test("a framed physical order keeps the frame finish all the way to Prodigi", as
   let seen: Record<string, unknown> | null = null;
   const result = await fulfillCheckoutSession({
     ...physicalInput({ metadata: {
-        photoSlug: "dawn",
+        photoSlug: SAMPLE_SLUG,
         format: "framed",
         size: "30x40",
         frame: "black",
@@ -95,7 +96,7 @@ test("a framed physical order keeps the frame finish all the way to Prodigi", as
         value: {
           orderId: "ord_framed_1",
           stage: null,
-          assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+          assetUrl: `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`,
         },
       };
     },
@@ -114,7 +115,7 @@ test("a physical order whose shipping quote is missing is bad-metadata, not a mi
     ...physicalInput({
       amountTotal: 1500,
       metadata: {
-        photoSlug: "dawn",
+        photoSlug: SAMPLE_SLUG,
         format: "giclee",
         size: "30x40",
         frame: "",

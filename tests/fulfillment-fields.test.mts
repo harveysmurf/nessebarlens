@@ -7,6 +7,7 @@ import {
   type OrderRecord,
   type StripeShippingDetails,
 } from "../src/lib/order-decision.ts";
+import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
 /* Every scalar in a stored record is re-checked on the way out of KV. These
    are the guards that had no case at all: a record that fails one of them is
@@ -39,7 +40,7 @@ function unfulfilled(overrides: Record<string, unknown> = {}) {
     merchantReference: SESSION,
     terminal: true,
     status: "paid-unfulfilled",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "giclee",
     size: "30x40",
     frame: "",
@@ -156,7 +157,7 @@ test("a paid digital record must carry the master key its slug implies", () => {
     merchantReference: SESSION,
     terminal: true,
     status: "paid",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "digital",
     size: "",
     frame: "",
@@ -164,7 +165,7 @@ test("a paid digital record must carry the master key its slug implies", () => {
     amountTotal: 3000,
     currency: "eur",
     reason: null,
-    masterKey: "prints/dawn.jpg",
+    masterKey: SAMPLE_MASTER_KEY,
     prodigiOrderId: null,
     prodigiStage: null,
     assetUrl: null,
@@ -196,12 +197,12 @@ test("a paid physical record must carry a Prodigi id, an asset URL and a recipie
     masterKey: null,
     prodigiOrderId: "ord_sandbox_1",
     prodigiStage: "InProgress",
-    assetUrl: "https://nessebarlens.com/placeholders/dawn.jpg",
+    assetUrl: `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`,
     ...overrides,
   });
   assert.ok(parseOrderRecord(JSON.stringify(physical())));
   for (const patch of [
-    { masterKey: "prints/dawn.jpg" },
+    { masterKey: SAMPLE_MASTER_KEY },
     { prodigiOrderId: null },
     { prodigiOrderId: "" },
     { prodigiOrderId: 7 },
@@ -253,7 +254,7 @@ test("a physical order with no quoteEur falls back to merchandiseEur", () => {
     currency: "eur",
     amountTotal: 1999,
     metadata: {
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "giclee",
       size: "30x40",
       frame: "",

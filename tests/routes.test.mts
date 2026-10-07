@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { registerHooks } from "node:module";
 import { afterEach, beforeEach, test } from "node:test";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
+import { SAMPLE_PHOTO, SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
 /* The route handlers, called the way Next calls them: a Request in, a
    Response out. They own the status codes and the guard order, which is the
@@ -326,7 +327,7 @@ test("print-asset: with a secret configured, an expired signature is a 401", asy
   });
   try {
     const response = await printAsset.GET(
-      new Request(`${SITE}/api/print-asset?slug=dawn&exp=1&sig=${"0".repeat(64)}`),
+      new Request(`${SITE}/api/print-asset?slug=${SAMPLE_SLUG}&exp=1&sig=${"0".repeat(64)}`),
     );
     assert.equal(response.status, 401, "expired");
     assert.equal((await body(response)).error, "expired");
@@ -346,7 +347,7 @@ test("print-asset: no configured secret is a 503 and no bucket is never a redire
   const restore = withBindings({ prodigiKeyConfigured: false });
   try {
     const response = await printAsset.GET(
-      new Request(`${SITE}/api/print-asset?slug=dawn&exp=1&sig=${"0".repeat(64)}`),
+      new Request(`${SITE}/api/print-asset?slug=${SAMPLE_SLUG}&exp=1&sig=${"0".repeat(64)}`),
     );
     assert.equal(response.status, 503, "unconfigured, whatever the signature says");
     assert.equal(response.headers.get("Cache-Control"), "private, no-store");
@@ -365,7 +366,7 @@ test("print-asset: no configured secret is a 503, not a 401", async () => {
   const restore = withBindings({ prodigiKeyConfigured: false });
   try {
     const response = await printAsset.GET(
-      new Request(`${SITE}/api/print-asset?slug=dawn&exp=1&sig=${"0".repeat(64)}`),
+      new Request(`${SITE}/api/print-asset?slug=${SAMPLE_SLUG}&exp=1&sig=${"0".repeat(64)}`),
     );
     // 503 says "this deployment is not configured"; 401 would say "your
     // request is wrong", and a client cannot act on the difference.
@@ -380,7 +381,7 @@ test("print-asset: no configured secret is a 503, not a 401", async () => {
 test("print-asset: a verified slug with no bucket is a 404, never a redirect", async () => {
   const secret = "route-test-print-asset-secret-32-chars";
   const { signPrintAssetUrl } = await import("../src/lib/print-asset.ts");
-  const signed = await signPrintAssetUrl("dawn", { secret, baseUrl: SITE });
+  const signed = await signPrintAssetUrl(SAMPLE_SLUG, { secret, baseUrl: SITE });
   assert.ok(signed);
   const restore = withBindings({ printAssetSecret: secret, prodigiKeyConfigured: false });
   try {
@@ -404,7 +405,7 @@ test("download: a session id on its own no longer grants a download (#111)", asy
     merchantReference: "cs_test_abcdefgh",
     terminal: true,
     status: "paid",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "digital",
     size: "",
     frame: "",
@@ -412,7 +413,7 @@ test("download: a session id on its own no longer grants a download (#111)", asy
     amountTotal: 1500,
     currency: "eur",
     reason: null,
-    masterKey: masterKeyForSlug("dawn"),
+    masterKey: masterKeyForSlug(SAMPLE_SLUG),
     recipient: null,
     prodigiOrderId: null,
     prodigiStage: null,
@@ -535,7 +536,7 @@ test("download: a store that throws is a 503, and a foreign record is corrupt", 
       merchantReference: "cs_test_different",
       terminal: true,
       status: "paid",
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "digital",
       size: "",
       frame: "",
@@ -609,7 +610,7 @@ test("checkout: a bad body is a 400 and a missing slug never reaches Stripe", as
     assert.equal((await body(noSlug)).error, "photoSlug required");
 
     const unconfigured = await checkout.POST(
-      jsonRequest(`${SITE}/api/checkout`, { photoSlug: "dawn", format: "digital" }),
+      jsonRequest(`${SITE}/api/checkout`, { photoSlug: SAMPLE_SLUG, format: "digital" }),
     );
     assert.equal(unconfigured.status, 503, "no Stripe key is a 503, not a 400");
     const unknown = await checkout.POST(
@@ -634,8 +635,8 @@ test("checkout: an unset site url is a 503 before Stripe or Prodigi is called", 
   }) as typeof fetch;
   try {
     for (const payload of [
-      { photoSlug: "dawn", format: "digital" },
-      { photoSlug: "dawn", format: "giclee", size: "30x40" },
+      { photoSlug: SAMPLE_SLUG, format: "digital" },
+      { photoSlug: SAMPLE_SLUG, format: "giclee", size: "30x40" },
     ]) {
       const res = await checkout.POST(
         jsonRequest(`${SITE}/api/checkout`, payload),
@@ -1095,7 +1096,7 @@ test("webhook: shipping comes from collected_information when Stripe sends both"
         currency: "eur",
         amount_total: 1999,
         metadata: {
-          photoSlug: "dawn",
+          photoSlug: SAMPLE_SLUG,
           format: "giclee",
           size: "30x40",
           frame: "",
@@ -1188,7 +1189,7 @@ test("checkout: a created session returns the Stripe URL and the quote", async (
   const restore = withBindings({ prodigiKeyConfigured: false });
   try {
     const response = await checkout.POST(
-      jsonRequest(`${SITE}/api/checkout`, { photoSlug: "dawn", format: "digital" }),
+      jsonRequest(`${SITE}/api/checkout`, { photoSlug: SAMPLE_SLUG, format: "digital" }),
     );
     assert.equal(response.status, 200);
     const created = await body(response);
@@ -1218,7 +1219,7 @@ test("checkout: a Stripe rejection is a 502 that names Stripe's own code", async
   const restore = withBindings({ prodigiKeyConfigured: false });
   try {
     const response = await checkout.POST(
-      jsonRequest(`${SITE}/api/checkout`, { photoSlug: "dawn", format: "digital" }),
+      jsonRequest(`${SITE}/api/checkout`, { photoSlug: SAMPLE_SLUG, format: "digital" }),
     );
     assert.equal(response.status, 502);
     const failed = await body(response);
@@ -1259,7 +1260,7 @@ test("checkout: a transport failure with no Stripe code still logs one", async (
   const restore = withBindings({ prodigiKeyConfigured: false });
   try {
     const response = await checkout.POST(
-      jsonRequest(`${SITE}/api/checkout`, { photoSlug: "dawn", format: "digital" }),
+      jsonRequest(`${SITE}/api/checkout`, { photoSlug: SAMPLE_SLUG, format: "digital" }),
     );
     assert.equal(response.status, 502);
     assert.deepEqual(await body(response), {
@@ -1304,7 +1305,7 @@ function bucket() {
 test("print-asset: a verified request streams the master as image/jpeg", async () => {
   const secret = "route-test-print-asset-secret-32-chars";
   const { signPrintAssetUrl } = await import("../src/lib/print-asset.ts");
-  const signed = await signPrintAssetUrl("dawn", { secret, baseUrl: SITE });
+  const signed = await signPrintAssetUrl(SAMPLE_SLUG, { secret, baseUrl: SITE });
   const restore = withBindings({
     printAssetSecret: secret,
     MASTERS: bucket(),
@@ -1329,7 +1330,7 @@ test("print-asset: a verified request streams the master as image/jpeg", async (
 test("print-asset: a bucket that throws is a 503, an absent master a 404", async () => {
   const secret = "route-test-print-asset-secret-32-chars";
   const { signPrintAssetUrl } = await import("../src/lib/print-asset.ts");
-  const signed = await signPrintAssetUrl("dawn", { secret, baseUrl: SITE });
+  const signed = await signPrintAssetUrl(SAMPLE_SLUG, { secret, baseUrl: SITE });
   const throwing = {
     async get(): Promise<never> {
       throw new Error("R2 down");
@@ -1369,7 +1370,7 @@ test("download: a paid digital order streams the master as an attachment", async
     merchantReference: "cs_test_abcdefgh",
     terminal: true,
     status: "paid",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "digital",
     size: "",
     frame: "",
@@ -1377,7 +1378,7 @@ test("download: a paid digital order streams the master as an attachment", async
     amountTotal: 1500,
     currency: "eur",
     reason: null,
-    masterKey: masterKeyForSlug("dawn"),
+    masterKey: masterKeyForSlug(SAMPLE_SLUG),
     recipient: null,
     prodigiOrderId: null,
     prodigiStage: null,
@@ -1398,7 +1399,7 @@ test("download: a paid digital order streams the master as an attachment", async
     assert.equal(response.status, 200);
     assert.equal(
       response.headers.get("Content-Disposition"),
-      'attachment; filename="dawn.jpg"',
+      `attachment; filename="${SAMPLE_SLUG}.jpg"`,
     );
     assert.equal(response.headers.get("Content-Type"), "image/jpeg");
     assert.equal(response.headers.get("X-Content-Type-Options"), "nosniff");
@@ -1424,7 +1425,7 @@ test("download: a master that is not a JPEG is served with its own content type"
     merchantReference: "cs_test_pngmaster",
     terminal: true,
     status: "paid",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "digital",
     size: "",
     frame: "",
@@ -1432,7 +1433,7 @@ test("download: a master that is not a JPEG is served with its own content type"
     amountTotal: 1500,
     currency: "eur",
     reason: null,
-    masterKey: masterKeyForSlug("dawn"),
+    masterKey: masterKeyForSlug(SAMPLE_SLUG),
     recipient: null,
     prodigiOrderId: null,
     prodigiStage: null,
@@ -1488,14 +1489,14 @@ test("download: a revoked order cannot download, even with a live token (#111)",
   // token were ever treated as sufficient on its own, this would serve a
   // refunded buyer's file.
   const { masterKeyForSlug } = await import("../src/lib/master-key.ts");
-  assert.ok(masterKeyForSlug("dawn"));
+  assert.ok(masterKeyForSlug(SAMPLE_SLUG));
   const paid = JSON.stringify({
     v: 1,
     sessionId: "cs_test_abcdefgh",
     merchantReference: "cs_test_abcdefgh",
     terminal: true,
     status: "paid",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "digital",
     size: "",
     frame: "",
@@ -1503,7 +1504,7 @@ test("download: a revoked order cannot download, even with a live token (#111)",
     amountTotal: 1500,
     currency: "eur",
     reason: null,
-    masterKey: masterKeyForSlug("dawn"),
+    masterKey: masterKeyForSlug(SAMPLE_SLUG),
     recipient: null,
     prodigiOrderId: null,
     prodigiStage: null,
@@ -1551,7 +1552,7 @@ test("download: a token is spent by the downloads it grants (#111)", async () =>
       merchantReference: "cs_test_abcdefgh",
       terminal: true,
       status: "paid",
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "digital",
       size: "",
       frame: "",
@@ -1559,7 +1560,7 @@ test("download: a token is spent by the downloads it grants (#111)", async () =>
       amountTotal: 1500,
       currency: "eur",
       reason: null,
-      masterKey: masterKeyForSlug("dawn"),
+      masterKey: masterKeyForSlug(SAMPLE_SLUG),
       recipient: null,
       prodigiOrderId: null,
       prodigiStage: null,
@@ -1599,7 +1600,7 @@ test("download: an expired token is 410 even with downloads left (#111)", async 
       merchantReference: "cs_test_abcdefgh",
       terminal: true,
       status: "paid",
-      photoSlug: "dawn",
+      photoSlug: SAMPLE_SLUG,
       format: "digital",
       size: "",
       frame: "",
@@ -1607,7 +1608,7 @@ test("download: an expired token is 410 even with downloads left (#111)", async 
       amountTotal: 1500,
       currency: "eur",
       reason: null,
-      masterKey: "prints/dawn.jpg",
+      masterKey: SAMPLE_MASTER_KEY,
       recipient: null,
       prodigiOrderId: null,
       prodigiStage: null,
@@ -1641,7 +1642,7 @@ test("download: a physical order is 403 and a missing master is a 404", async ()
     merchantReference: "cs_test_abcdefgh",
     terminal: true,
     status: "paid",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "giclee",
     size: "30x40",
     frame: "",
@@ -1652,7 +1653,7 @@ test("download: a physical order is 403 and a missing master is a 404", async ()
     masterKey: null,
     prodigiOrderId: "ord_1",
     prodigiStage: null,
-    assetUrl: `${SITE}/placeholders/dawn.jpg`,
+    assetUrl: `${SITE}/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`,
     updatedAt: "2026-09-27T12:00:00.000Z",
     recipient: {
       name: "Test Buyer",
@@ -1694,7 +1695,7 @@ test("download: a physical order is 403 and a missing master is a 404", async ()
     merchantReference: "cs_test_abcdefgh",
     terminal: true,
     status: "paid",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "digital",
     size: "",
     frame: "",
@@ -1702,7 +1703,7 @@ test("download: a physical order is 403 and a missing master is a 404", async ()
     amountTotal: 1500,
     currency: "eur",
     reason: null,
-    masterKey: "prints/dawn.jpg",
+    masterKey: SAMPLE_MASTER_KEY,
     recipient: null,
     prodigiOrderId: null,
     prodigiStage: null,
@@ -1894,7 +1895,7 @@ test("checkout: a physical order with no signing secret is refused before paymen
     try {
       const response = await checkout.POST(
         jsonRequest(`${SITE}/api/checkout`, {
-          photoSlug: "dawn",
+          photoSlug: SAMPLE_SLUG,
           format: "giclee",
           size: "30x40",
           frame: null,
@@ -1936,7 +1937,7 @@ test("checkout: a digital order is unaffected by the signing guard", async () =>
     )) as typeof fetch;
   try {
     const response = await checkout.POST(
-      jsonRequest(`${SITE}/api/checkout`, { photoSlug: "dawn", format: "digital" }),
+      jsonRequest(`${SITE}/api/checkout`, { photoSlug: SAMPLE_SLUG, format: "digital" }),
     );
     assert.equal(response.status, 200);
   } finally {
@@ -1957,6 +1958,9 @@ test("checkout: a physical order quotes, locks the country, and ships a rate", a
   process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
   process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
   process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
+  // A configured CDN base is what makes the checkout session carry the photo's
+  // web derivative as its display image instead of omitting `images` (#245).
+  process.env.NEXT_PUBLIC_WEB_IMAGES_BASE = "https://images.test";
   let sessionParams: Record<string, unknown> | null = null;
   globalThis.fetch = (async (url: unknown, init?: { body?: string }) => {
     if (String(url).includes("stripe.com")) {
@@ -1983,7 +1987,7 @@ test("checkout: a physical order quotes, locks the country, and ships a rate", a
   try {
     const response = await checkout.POST(
       jsonRequest(`${SITE}/api/checkout`, {
-        photoSlug: "dawn",
+        photoSlug: SAMPLE_SLUG,
         format: "giclee",
         size: "30x40",
         destinationCountryCode: "BG",
@@ -2005,17 +2009,14 @@ test("checkout: a physical order quotes, locks the country, and ships a rate", a
     assert.equal(params["metadata[quoteEur]"], "11.4");
     assert.equal("metadata[merchandiseEur]" in params, false);
     assert.equal(params["metadata[sku]"], "GLOBAL-FAP-12X16");
-    assert.equal(params["metadata[photoSlug]"], "dawn");
+    assert.equal(params["metadata[photoSlug]"], SAMPLE_SLUG);
     assert.equal(params["shipping_address_collection[allowed_countries][0]"], "BG");
-    // The image Stripe shows is the same URL the order body carries, built
-    // by the one helper. It was asserted nowhere, so the two spellings of it
-    // could have drifted without any test noticing.
-    const { PLACEHOLDER_VERSION } = await import(
-      "../src/lib/placeholder-photo.ts"
-    );
+    // The image Stripe shows is the photo's public web derivative — the 1500px
+    // JPEG the gallery serves — not a placeholder (#245). Asserted explicitly
+    // against the key grammar so a change to it cannot pass unnoticed.
     assert.equal(
       params["line_items[0][price_data][product_data][images][0]"],
-      `${SITE}/placeholders/dawn.jpg?v=${PLACEHOLDER_VERSION}`,
+      `https://images.test/${SAMPLE_SLUG}/${SAMPLE_PHOTO.imageHash}/1500.jpg`,
     );
     assert.equal(params["shipping_options[0][shipping_rate_data][fixed_amount][amount]"], "499");
     // Stated in the create params rather than left to the Stripe dashboard
@@ -2029,6 +2030,7 @@ test("checkout: a physical order quotes, locks the country, and ships a rate", a
       "STRIPE_SECRET_KEY",
       "PRODIGI_API_BASE",
       "PRODIGI_SANDBOX_API_KEY",
+      "NEXT_PUBLIC_WEB_IMAGES_BASE",
     ] as const) {
       if (saved[key] === undefined) delete process.env[key];
       else process.env[key] = saved[key];
@@ -2047,7 +2049,7 @@ test("checkout: an unconfigured quote, a Stripe failure and a session with no UR
     globalThis.fetch = (async () => { throw new Error("not reached"); }) as typeof fetch;
     const unquoted = await checkout.POST(
       jsonRequest(`${SITE}/api/checkout`, {
-        photoSlug: "dawn",
+        photoSlug: SAMPLE_SLUG,
         format: "giclee",
         size: "30x40",
       }),
@@ -2073,7 +2075,7 @@ test("checkout: an unconfigured quote, a Stripe failure and a session with no UR
     }) as typeof fetch;
     const failed = await checkout.POST(
       jsonRequest(`${SITE}/api/checkout`, {
-        photoSlug: "dawn",
+        photoSlug: SAMPLE_SLUG,
         format: "giclee",
         size: "30x40",
       }),
@@ -2092,7 +2094,7 @@ test("checkout: an unconfigured quote, a Stripe failure and a session with no UR
     }) as typeof fetch;
     const noUrl = await checkout.POST(
       jsonRequest(`${SITE}/api/checkout`, {
-        photoSlug: "dawn",
+        photoSlug: SAMPLE_SLUG,
         format: "giclee",
         size: "30x40",
       }),
@@ -2203,7 +2205,7 @@ test("checkout: a non-Error throw from the quote layer is a 502", async () => {
   try {
     const response = await checkout.POST(
       jsonRequest(`${SITE}/api/checkout`, {
-        photoSlug: "dawn",
+        photoSlug: SAMPLE_SLUG,
         format: "giclee",
         size: "30x40",
       }),
@@ -2240,7 +2242,7 @@ test("webhook: a digital event with no shipping and no customer details still fi
         currency: "eur",
         amount_total: 1500,
         metadata: {
-          photoSlug: "dawn",
+          photoSlug: SAMPLE_SLUG,
           format: "digital",
           size: "",
           frame: "",
@@ -2272,7 +2274,7 @@ test("webhook: a digital event with no shipping and no customer details still fi
       masterKey: string;
       recipient: unknown;
     };
-    assert.equal(stored.masterKey, masterKeyForSlug("dawn"));
+    assert.equal(stored.masterKey, masterKeyForSlug(SAMPLE_SLUG));
     assert.equal(stored.recipient, null);
   } finally {
     restore();
@@ -2292,7 +2294,7 @@ test("webhook: the legacy shipping_details field is used when collected_informat
         currency: "eur",
         amount_total: 1999,
         metadata: {
-          photoSlug: "dawn",
+          photoSlug: SAMPLE_SLUG,
           format: "giclee",
           size: "30x40",
           frame: "",
@@ -2427,7 +2429,7 @@ test("checkout: a framed order names the finish in the line item", async () => {
   try {
     const response = await checkout.POST(
       jsonRequest(`${SITE}/api/checkout`, {
-        photoSlug: "dawn",
+        photoSlug: SAMPLE_SLUG,
         format: "framed",
         size: "30x40",
         frame: "black",
@@ -2462,7 +2464,7 @@ test("webhook: a customer phone is carried into the stored record", async () => 
         currency: "eur",
         amount_total: 1500,
         metadata: {
-          photoSlug: "dawn",
+          photoSlug: SAMPLE_SLUG,
           format: "digital",
           size: "",
           frame: "",
@@ -2612,7 +2614,7 @@ test("webhook: a store that throws mid-fulfilment is a 500, not a lost order", a
         currency: "eur",
         amount_total: 1500,
         metadata: {
-          photoSlug: "dawn",
+          photoSlug: SAMPLE_SLUG,
           format: "digital",
           size: "",
           frame: "",
@@ -2673,7 +2675,7 @@ function paidDigitalRecord(sessionId: string): string {
     merchantReference: sessionId,
     terminal: true,
     status: "paid",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "digital",
     size: "",
     frame: "",
@@ -2681,7 +2683,7 @@ function paidDigitalRecord(sessionId: string): string {
     amountTotal: 3000,
     currency: "eur",
     reason: null,
-    masterKey: "prints/dawn.jpg",
+    masterKey: SAMPLE_MASTER_KEY,
     recipient: null,
     prodigiOrderId: null,
     prodigiStage: null,
@@ -2758,7 +2760,7 @@ test("webhook: a full refund revokes the order", async () => {
     const record = JSON.parse((await kv.getOrder(REFUND_SESSION))!) as Record<string, unknown>;
     assert.equal(record.status, "refunded");
     assert.equal(record.masterKey, null);
-    assert.equal(record.photoSlug, "dawn", "the refund stays auditable");
+    assert.equal(record.photoSlug, SAMPLE_SLUG, "the refund stays auditable");
   } finally {
     globalThis.fetch = originalFetch;
     if (saved.STRIPE_SECRET_KEY === undefined) delete process.env.STRIPE_SECRET_KEY;

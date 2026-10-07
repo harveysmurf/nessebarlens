@@ -178,15 +178,6 @@ export const STAGING_MASTER_JPEG_QUALITY = 80;
 export const WEB_DERIVATIVE_CACHE_CONTROL =
   "public, max-age=31536000, immutable";
 
-/**
- * The gallery/checkout fallback image: a small JPEG of the photo, long edge at
- * most this, metadata stripped, written by `publish-photos --apply` into
- * `public/placeholders/{slug}.jpg` (#257). It is the one image the site serves
- * with no R2 at all, so it ships in the repo rather than a bucket.
- */
-export const PLACEHOLDER_MAX_EDGE = 1600;
-export const PLACEHOLDER_JPEG_QUALITY = 80;
-
 export type MasterUpload = {
   slug: string;
   /** Where the original bytes are written: `prints/{slug}.jpg` in MASTERS. */
@@ -317,11 +308,10 @@ export type UploadTarget = {
  * any bytes move: the web bucket must be the public one, and the masters
  * bucket must be one of the two we maintain.
  *
- * There is no `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED` refusal here. Guarding a
- * live-served rung mattered when a key was `{slug}/{rung}.jpg` and a
- * half-written ladder was a 404; keys are content-addressed now
- * (`{slug}/{hash8}/…`), so an upload cannot change what a live page shows — a
- * changed image is a new URL.
+ * There is no upload-gate refusal here. Guarding a live-served rung mattered
+ * when a key was `{slug}/{rung}.jpg` and a half-written ladder was a 404; keys
+ * are content-addressed now (`{slug}/{hash8}/…`), so an upload cannot change
+ * what a live page shows — a changed image is a new URL.
  */
 export function assertUploadIsSafe(target: UploadTarget): void {
   if (target.webBucket !== WEB_BUCKET_NAME) {

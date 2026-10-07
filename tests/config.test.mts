@@ -32,7 +32,6 @@ import {
   siteUrl,
   stripeSecretKey,
   usablePrintAssetSecret,
-  webDerivativesEnabled,
   webImagesBase,
 } from "../src/lib/config.ts";
 
@@ -56,7 +55,6 @@ const ALL_KEYS = [
   "PRODIGI_SANDBOX_API_KEY",
   "PRINT_ASSET_HMAC_SECRET",
   "NEXT_PUBLIC_WEB_IMAGES_BASE",
-  "NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED",
 ] as const;
 
 /** Nothing in the ambient environment: what "unconfigured" actually means. */
@@ -113,7 +111,6 @@ test("a fully configured deployment reports nothing missing", () => withCleanEnv
     // deployment with none of these set still gets the documented 30 days / 5
     // downloads, so an unset var can never mean "unlimited".
     download: { tokenTtlSeconds: 30 * 86_400, maxDownloads: 5 },
-    flags: { webDerivativesEnabled: false },
   });
 }));
 
@@ -271,18 +268,6 @@ test("the readers default to the deployment's own environment", () => {
   });
   withEnv({ NEXT_PUBLIC_WEB_IMAGES_BASE: "https://cdn.example/bucket" }, () => {
     assert.equal(webImagesBase(), "https://cdn.example/bucket");
-  });
-  withEnv({ NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED: "true" }, () => {
-    assert.equal(webDerivativesEnabled(), true);
-    // An explicit env is layered over process.env, not instead of it: envString
-    // falls back, so `{}` still sees the enabled flag above.
-    assert.equal(getConfig({}).flags.webDerivativesEnabled, true);
-    assert.equal(getConfig({ NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED: "" }).flags.webDerivativesEnabled, true);
-    assert.equal(
-      getConfig({ NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED: "true" }).flags
-        .webDerivativesEnabled,
-      true,
-    );
   });
   withEnv({ PRINT_ASSET_HMAC_SECRET: undefined, NEXT_PUBLIC_SITE_URL: undefined }, () => {
     assert.equal(missingProductionConfig().includes("NEXT_PUBLIC_SITE_URL"), true);

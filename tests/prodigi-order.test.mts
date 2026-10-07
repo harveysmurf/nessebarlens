@@ -1,20 +1,15 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { PRODIGI_SHIPPING_METHOD, classifyProdigiStatus } from "../src/lib/prodigi-config.ts";
-import {
-  PLACEHOLDER_VERSION,
-  placeholderPhotoSrc,
-} from "../src/lib/placeholder-photo.ts";
 import { PHOTOS } from "../src/lib/photos.ts";
 import { signPrintAssetUrl } from "../src/lib/print-asset.ts";
-import { siteUrl } from "../src/lib/config.ts";
 import {
   assertNoMasterLeak,
   buildProdigiOrderBody,
   createProdigiOrder,
-  placeholderAssetUrl,
   type OrderRecipient,
 } from "../src/lib/prodigi-order.ts";
+import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
 const RECIPIENT: OrderRecipient = {
   name: "Test Buyer",
@@ -28,39 +23,21 @@ const RECIPIENT: OrderRecipient = {
   phone: null,
 };
 
-test("placeholder asset URL is public https under /placeholders", () => {
-  process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
-  const url = placeholderAssetUrl("dawn");
-  assert.equal(
-    url,
-    `https://nessebarlens.com/placeholders/dawn.jpg?v=${PLACEHOLDER_VERSION}`,
-  );
-  assert.match(url, /^https:\/\//);
-  assert.equal(url.includes("prints/"), false);
-  assert.equal(url.includes("masters"), false);
-});
+// The HMAC /api/print-asset shape a physical order carries after #245; the
+// public placeholder path is retired and buildProdigiOrderBody now requires
+// this URL rather than making one up.
+const ASSET_URL = `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`;
 
-// This one used to carry no ?v= while placeholderPhotoSrc carried ?v=3, so a
-// placeholder bump left the Stripe session image on a stale CDN copy. Assert
-// the link explicitly, because both URLs being individually correct is exactly
-// the state that let the drift sit there.
-test("placeholder asset URL carries the same version as the gallery", () => {
-  process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
-  assert.equal(
-    placeholderAssetUrl("dawn"),
-    `${siteUrl()}${placeholderPhotoSrc("dawn")}`,
-  );
-});
-
-test("Prodigi order body uses SKU + placeholder and never leaks masters", () => {
+test("Prodigi order body uses SKU + the signed asset URL and never leaks masters", () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   const body = buildProdigiOrderBody({
     sessionId: "cs_test_abcdefgh",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "giclee",
     size: "50x70",
     frame: null,
     recipient: RECIPIENT,
+    assetUrl: ASSET_URL,
   });
   assert.equal(body.idempotencyKey, "cs_test_abcdefgh");
   assert.equal(body.merchantReference, "cs_test_abcdefgh");
@@ -72,10 +49,7 @@ test("Prodigi order body uses SKU + placeholder and never leaks masters", () => 
   assert.equal(body.shippingMethod, PRODIGI_SHIPPING_METHOD);
   assert.equal(body.items[0].sku, "GLOBAL-FAP-20X28");
   assert.equal(body.items[0].sizing, "fillPrintArea");
-  assert.equal(
-    body.items[0].assets[0].url,
-    `https://nessebarlens.com/placeholders/dawn.jpg?v=${PLACEHOLDER_VERSION}`,
-  );
+  assert.equal(body.items[0].assets[0].url, ASSET_URL);
   assert.equal(body.recipient.address.countryCode, "BG");
   assert.equal(body.recipient.email, "buyer@example.com");
   assertNoMasterLeak(body);
@@ -89,6 +63,7 @@ test("the callback URL carries the webhook token, URL-encoded", () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   const body = buildProdigiOrderBody({
     ...ORDER_INPUT,
+    assetUrl: ASSET_URL,
     webhookToken: "  tok/en+with&odd=chars  ",
   });
   assert.equal(
@@ -105,20 +80,21 @@ test("the callback URL carries the webhook token, URL-encoded", () => {
 test("a blank webhook token omits the callback URL instead of sending a 401 one", () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   for (const webhookToken of [undefined, "", "   "]) {
-    const body = buildProdigiOrderBody({ ...ORDER_INPUT, webhookToken });
+    const body = buildProdigiOrderBody({ ...ORDER_INPUT, assetUrl: ASSET_URL, webhookToken });
     assert.equal("callbackUrl" in body, false, JSON.stringify(webhookToken));
   }
 });
 
-test("a generated asset URL is on the site origin; the read path no longer checks it (#110)", () => {
+test("the asset URL must be on the site origin; the read path no longer checks it (#110)", () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   const body = buildProdigiOrderBody({
     sessionId: "cs_test_abcdefgh",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "giclee",
     size: "50x70",
     frame: null,
     recipient: RECIPIENT,
+    assetUrl: ASSET_URL,
   });
   // The read path validates shape only so a record survives a domain move, which
   // makes generation the only place same-origin is knowable. Pinned here so
@@ -131,12 +107,12 @@ test("a generated asset URL is on the site origin; the read path no longer check
     () =>
       buildProdigiOrderBody({
         sessionId: "cs_test_abcdefgh",
-        photoSlug: "dawn",
+        photoSlug: SAMPLE_SLUG,
         format: "giclee",
         size: "50x70",
         frame: null,
         recipient: RECIPIENT,
-        assetUrl: "https://old-domain.example/api/print-asset?slug=dawn",
+        assetUrl: `https://old-domain.example/api/print-asset?slug=${SAMPLE_SLUG}`,
       }),
     /site origin/,
   );
@@ -146,29 +122,28 @@ test("framed order includes color attribute", () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   const body = buildProdigiOrderBody({
     sessionId: "cs_test_abcdefgh",
-    photoSlug: "dawn",
+    photoSlug: SAMPLE_SLUG,
     format: "framed",
     size: "30x40",
     frame: "brown",
     recipient: RECIPIENT,
+    assetUrl: ASSET_URL,
   });
   assert.equal(body.items[0].sku, "GLOBAL-CFPM-12X16");
   assert.deepEqual(body.items[0].attributes, { color: "brown" });
 });
 
 test("assertNoMasterLeak rejects master keys and masters bucket names", () => {
-  assert.throws(() => assertNoMasterLeak({ url: "prints/dawn.jpg" }));
+  assert.throws(() => assertNoMasterLeak({ url: SAMPLE_MASTER_KEY }));
   assert.throws(() =>
     assertNoMasterLeak({ bucket: "nessebar-lens-masters" }),
   );
   assert.doesNotThrow(() =>
-    assertNoMasterLeak({
-      url: "https://nessebarlens.com/placeholders/dawn.jpg",
-    }),
+    assertNoMasterLeak({ url: ASSET_URL }),
   );
   assert.doesNotThrow(() =>
     assertNoMasterLeak({
-      url: "https://nessebarlens.com/api/print-asset?slug=dawn&exp=1&sig=abc",
+      url: `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1&sig=abc`,
     }),
   );
 });
@@ -228,7 +203,7 @@ function json(body: unknown, status = 200): Response {
 
 const ORDER_INPUT = {
   sessionId: "cs_test_abcdefgh",
-  photoSlug: "dawn",
+  photoSlug: SAMPLE_SLUG,
   format: "giclee" as const,
   size: "50x70" as const,
   frame: null,
@@ -650,11 +625,11 @@ test("an unrecognised Prodigi host is the same retryable unconfigured failure", 
 test("the order asset path signs, or returns null — never a placeholder", async () => {
   await withProdigiEnv(async () => {
     process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
-    const signed = await signPrintAssetUrl("dawn");
+    const signed = await signPrintAssetUrl(SAMPLE_SLUG);
     assert.equal(signed?.includes("/api/print-asset?"), true);
   });
   await withProdigiEnv(async () => {
-    assert.equal(await signPrintAssetUrl("dawn"), null);
+    assert.equal(await signPrintAssetUrl(SAMPLE_SLUG), null);
   });
   await withProdigiEnv(async () => {
     // An unknown slug signs to null even with a secret configured. There is no

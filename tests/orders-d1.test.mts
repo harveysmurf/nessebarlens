@@ -12,6 +12,10 @@ import { clampOrderListLimit } from "../src/lib/orders-store.ts";
 import { sqliteD1 } from "./sqlite-d1.mts";
 import type { OrderRecord } from "../src/lib/order-decision.ts";
 import type { DownloadTokenIndex, DownloadTokenRecord } from "../src/lib/download-token.ts";
+import {
+  SAMPLE_MASTER_KEY,
+  SAMPLE_SLUG,
+} from "./fixtures/sample-photo.mts";
 
 const BASE_ORDER: OrderRecord = {
   v: 1,
@@ -19,7 +23,7 @@ const BASE_ORDER: OrderRecord = {
   merchantReference: "cs_test_abcdefgh",
   terminal: true,
   status: "paid",
-  photoSlug: "dawn",
+  photoSlug: SAMPLE_SLUG,
   format: "digital",
   size: "",
   frame: "",
@@ -27,7 +31,7 @@ const BASE_ORDER: OrderRecord = {
   amountTotal: 3000,
   currency: "eur",
   reason: null,
-  masterKey: "prints/dawn.jpg",
+  masterKey: SAMPLE_MASTER_KEY,
   recipient: null,
   prodigiOrderId: null,
   prodigiStage: null,

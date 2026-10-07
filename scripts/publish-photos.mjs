@@ -2,8 +2,7 @@
 /**
  * Publish dropped photos end to end: validate a `{slug}.jpg` + `{slug}.yaml`
  * pair, upload the public web ladder (#240) and the staging master (#212),
- * write the catalog YAML and the committed fallback placeholder (#257), and
- * open one PR for the run.
+ * write the catalog YAML, and open one PR for the run.
  *
  *   npm run publish-photos                       # dry run: validate + print the plan
  *   npm run publish-photos -- --apply            # upload, write YAML, open PR
@@ -19,9 +18,6 @@
  * Input is one JPEG and one YAML per slug. The `--apply` uploader has no client
  * for the production masters bucket: it may only write the public web bucket
  * and the staging masters bucket, and `assertUploadIsSafe` names exactly those.
- * `--apply` also commits `public/placeholders/{slug}.jpg`, the one image the
- * site serves with no R2 at all (the ladder-off gallery tile and checkout's
- * product image), so a publish PR carries its fallback without a manual step.
  *
  * `--promote --pr <n>` is the second half (#242). It reads the PR's changed
  * `content/photos/*.yaml` from the PR head, confirms the PR is the owner's and
@@ -70,7 +66,6 @@ import {
   derivativeContentType,
   masterDimensions,
   renderDerivative,
-  renderPlaceholder,
   renderStagingMaster,
 } from "./derivative-image.mjs";
 import { runAudit } from "./audit-photos.mjs";
@@ -78,7 +73,6 @@ import { runAudit } from "./audit-photos.mjs";
 const ROOT = path.join(import.meta.dirname, "..");
 const DEFAULT_DIR = "ingest";
 const CATALOG_DIR = "content/photos";
-const PLACEHOLDERS_DIR = "public/placeholders";
 const GENERATED_KEYS = ["master_sha256", "image_hash"];
 /** A re-ingest overwrites the staging master's same key; a week is enough. */
 const STAGING_MASTER_CACHE_CONTROL = "public, max-age=604800";
@@ -212,7 +206,7 @@ export function validatePhoto({
     }
   }
 
-  const schema = validatePhotoFile(slug, data);
+  const schema = validatePhotoFile(slug, data, { requirePublishedHashes: false });
   if (!schema.ok) {
     for (const problem of schema.problems) errors.push(`${slug}.yaml: ${problem}`);
   }
@@ -304,7 +298,6 @@ export function prBody(plans, branchDate) {
     "",
     `The preview reads **staging masters (2500 px)** from \`${STAGING_MASTERS_BUCKET_NAME}\`;`,
     "the production masters bucket is not written by this PR.",
-    `Each photo also commits its fallback \`${PLACEHOLDERS_DIR}/{slug}.jpg\` (#257).`,
     "",
     `Next: check the preview, then \`npm run publish-photos -- --promote --pr <n>\` (#242),`,
     "which uploads the full-res masters and enables auto-merge.",
@@ -319,16 +312,16 @@ export function prBody(plans, branchDate) {
 // ---------------------------------------------------------------------------
 
 /**
- * The folders a publish PR is allowed to touch: the catalog entry and the
- * committed fallback placeholder (#257). Anything else means the PR is not a
- * photo publish and `--promote` must not auto-merge it.
+ * The only folder a publish PR is allowed to touch: the catalog entry. Anything
+ * else means the PR is not a photo publish and `--promote` must not auto-merge
+ * it.
  */
-export const PROMOTE_ALLOWED_DIRS = [CATALOG_DIR, PLACEHOLDERS_DIR];
+export const PROMOTE_ALLOWED_DIRS = [CATALOG_DIR];
 
 /**
  * Splits a PR's `files` (gh's `pr view --json files` shape, `{path, changeType}`)
  * into the `content/photos/*.yaml` it changed and anything it touched outside
- * the allowed folders. The PR head is the authority on what to promote, not
+ * the allowed folder. The PR head is the authority on what to promote, not
  * `ingest/`.
  */
 export function selectPromoteFiles(files) {
@@ -337,7 +330,6 @@ export function selectPromoteFiles(files) {
   for (const file of files ?? []) {
     const filePath = file.path ?? file.filename ?? "";
     const changeType = String(file.changeType ?? file.status ?? "").toUpperCase();
-    const deleted = changeType === "DELETED" || changeType === "REMOVED";
 
     if (filePath.startsWith(`${CATALOG_DIR}/`)) {
       if (/\.ya?ml$/.test(filePath)) {
@@ -351,13 +343,6 @@ export function selectPromoteFiles(files) {
       continue;
     }
 
-    if (filePath.startsWith(`${PLACEHOLDERS_DIR}/`)) {
-      // A publish only adds the fallback JPEG. A deletion or any other
-      // extension under here is not a photo publish, so it is refused.
-      if (deleted || !filePath.endsWith(".jpg")) outside.push(filePath);
-      continue;
-    }
-
     outside.push(filePath);
   }
   return { outside, yamls };
@@ -366,8 +351,7 @@ export function selectPromoteFiles(files) {
 /**
  * A PR is promotable only when it is open, targets `main`, was opened by the
  * currently authenticated owner (only their local masters are trusted), and
- * changes nothing outside the allowed folders (`content/photos/` plus the
- * committed `public/placeholders/`). A deleted catalog entry cannot be
+ * changes nothing outside `content/photos/`. A deleted catalog entry cannot be
  * promoted. Returns every problem, not just the first.
  */
 export function verifyPromotePr(pull, currentUser) {
@@ -716,7 +700,6 @@ export async function runPublish(options, deps = {}) {
       webObjects: planWebObjects(pair.slug, hash8),
       stagingKey: masterKeyFromSlug(pair.slug),
       yamlPath: path.join(catalogDir, `${pair.slug}.yaml`),
-      placeholderPath: path.join(cwd, PLACEHOLDERS_DIR, `${pair.slug}.jpg`),
     });
   }
 
@@ -739,7 +722,6 @@ export async function runPublish(options, deps = {}) {
     }
     log(`  ${STAGING_MASTERS_BUCKET_NAME}/${plan.stagingKey}  staging master`);
     log(`  write ${path.relative(cwd, plan.yamlPath) || plan.yamlPath}`);
-    log(`  write ${path.relative(cwd, plan.placeholderPath) || plan.placeholderPath}  fallback placeholder`);
   }
 
   if (fatals.length > 0) {
@@ -756,11 +738,8 @@ export async function runPublish(options, deps = {}) {
 
   // Refuse a dirty tree before any bytes move: only the files this run writes
   // (plus the gitignored drop folder) may differ, so a stray edit under
-  // content/photos/ or public/placeholders/ is never swept into the commit.
-  const written = plans.flatMap((plan) => [
-    path.relative(cwd, plan.yamlPath),
-    path.relative(cwd, plan.placeholderPath),
-  ]);
+  // content/photos/ is never swept into the commit.
+  const written = plans.flatMap((plan) => [path.relative(cwd, plan.yamlPath)]);
   const status = await exec("git", ["status", "--porcelain"], { cwd });
   const dirty = status.stdout
     .split("\n")
@@ -822,21 +801,12 @@ export async function runPublish(options, deps = {}) {
       renderCatalogYaml(plan.yamlText, plan.slug, plan.masterSha256, plan.hash8),
     );
     log(`  wrote ${path.relative(cwd, plan.yamlPath)}`);
-
-    // The fallback the gallery and checkout serve with no R2 (#257). Written
-    // here so every publish PR carries the one file the preview needs. A
-    // --replace-image reuses the same /placeholders/{slug}.jpg URL, so a stale
-    // copy can outlive the replace in a browser cache; that is only a
-    // pre-cutover concern, since #245 removes the placeholder path entirely.
-    await mkdir(path.dirname(plan.placeholderPath), { recursive: true });
-    await writeFile(plan.placeholderPath, await renderPlaceholder(plan.bytes));
-    log(`  wrote ${path.relative(cwd, plan.placeholderPath)}`);
   }
 
   const gitSteps = [
     ["git", ["fetch", "origin"]],
     ["git", ["checkout", "-b", branch, "origin/main"]],
-    ["git", ["add", "--", CATALOG_DIR, PLACEHOLDERS_DIR]],
+    ["git", ["add", "--", CATALOG_DIR]],
     ["git", ["commit", "-m", commitMessage]],
     ["git", ["push", "-u", "origin", branch]],
   ];
@@ -875,7 +845,7 @@ function finishByHand(log, branch, commitMessage, body, slugs, failed) {
   log(`error: ${failed.stderr.trim() || "a git/gh step failed"}`);
   log("the uploads are harmless (nothing points at them until merge). Finish by hand:");
   log(`  git fetch origin && git checkout -b ${branch} origin/main`);
-  log(`  git add -- ${CATALOG_DIR} ${PLACEHOLDERS_DIR}`);
+  log(`  git add -- ${CATALOG_DIR}`);
   log(`  git commit -m "${commitMessage}"`);
   log(`  git push -u origin ${branch}`);
   log(`  gh pr create --base main --head ${branch} --title "${commitMessage}" --body - <<'EOF'`);

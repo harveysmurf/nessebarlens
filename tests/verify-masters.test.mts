@@ -9,9 +9,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { MASTERS_BUCKET_NAME } from "../src/lib/derivative-ladder.ts";
-import { PHOTOS } from "../src/generated/catalog.ts";
 import {
-  ALLOWLISTED_SLUGS,
   createMastersS3,
   main,
   metadataValue,
@@ -108,17 +106,6 @@ test("a published photo without master_sha256 fails", async () => {
   assert.deepEqual(s3.calls, []);
 });
 
-test("an allow-listed placeholder is skipped", async () => {
-  const s3 = fakeS3({});
-  const failures = await verifyMasters({
-    photos: [PHOTO({ slug: "dawn", masterSha256: undefined })],
-    s3,
-    allowlist: new Set(["dawn"]),
-  });
-  assert.deepEqual(failures, []);
-  assert.deepEqual(s3.calls, []);
-});
-
 test("a hash mismatch, an empty object and a head failure are each reported", async () => {
   const s3 = fakeS3({
     "prints/dawn.jpg": { sha256: SHA_B, contentLength: 10 },
@@ -137,30 +124,11 @@ test("a hash mismatch, an empty object and a head failure are each reported", as
       PHOTO({ slug: "noon" }),
     ],
     s3: failing,
-    allowlist: new Set(),
   });
   assert.equal(failures.length, 3);
   assert.match(failures[0]!, /dawn: sha256 mismatch \(catalog aaaaaaaa…, bucket bbbbbbbb…\)/);
   assert.match(failures[1]!, /dusk: empty object/);
   assert.match(failures[2]!, /noon: head failed: boom/);
-});
-
-test("the allow-list is exactly the placeholder photos, and all of them are real slugs", () => {
-  // The exception is only for a photo with no master to check. A slug that
-  // advertises a master_sha256 but sits on the allow-list would suppress the
-  // very failure the gate exists to catch (the #241 lorem-ipsum sample did).
-  const slugs = new Set(PHOTOS.map((photo) => photo.slug));
-  for (const photo of PHOTOS) {
-    if (!ALLOWLISTED_SLUGS.has(photo.slug)) continue;
-    assert.equal(
-      photo.masterSha256,
-      undefined,
-      `${photo.slug} is allow-listed but the catalog gives it a master_sha256`,
-    );
-  }
-  for (const slug of ALLOWLISTED_SLUGS) {
-    assert.ok(slugs.has(slug), `allow-list names ${slug}, which is not in the catalog`);
-  }
 });
 
 test("metadataValue reads the sha256 key case-insensitively", () => {
@@ -180,29 +148,24 @@ test("the read-only uploader refuses any bucket but the production masters bucke
     () => s3.head("nessebar-lens-masters-staging", "prints/dawn.jpg"),
     /refusing to read nessebar-lens-masters-staging/,
   );
-  assert.ok(ALLOWLISTED_SLUGS.has("dawn"));
 });
 
-test("photosToVerify drops unpublished and allow-listed photos", () => {
+test("photosToVerify keeps every published photo and drops the unpublished", () => {
   const photos = [
     { slug: "dawn", published: true, masterSha256: SHA_A },
     { slug: "draft", published: false, masterSha256: SHA_A },
     { slug: "cobblestones", published: true, masterSha256: SHA_A },
   ];
   assert.deepEqual(
-    photosToVerify(photos, new Set(["cobblestones"])).map((p) => p.slug),
-    ["dawn"],
+    photosToVerify(photos).map((p) => p.slug),
+    ["dawn", "cobblestones"],
   );
 });
 
-test("main is a no-op with no credentials while every photo is allow-listed", async () => {
-  // The placeholder phase must not need the read-only token: an empty check
-  // returns 0 before requiredEnv, so the release is green without a credential
-  // that has nothing to read.
-  assert.deepEqual(
-    photosToVerify([{ slug: "dawn", published: true, masterSha256: undefined }]).map((p) => p.slug),
-    [],
-  );
+test("main is a no-op with an empty catalog", async () => {
+  // No published photos means nothing to read, so the read-only token is not
+  // required and the release is green.
+  assert.deepEqual(photosToVerify([]).map((p) => p.slug), []);
   assert.equal(await main({}, []), 0);
 });
 

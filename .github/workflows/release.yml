@@ -54,8 +54,8 @@ jobs:
   # artifact was the alternative and it does not work: `src/app/layout.tsx`
   # builds `metadataBase` from `configuredSiteUrl()` at module scope, so the
   # origin is baked into the prerendered HTML's canonical and og:url, and
-  # NEXT_PUBLIC_WEB_IMAGES_BASE and NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED are the
-  # same shape. A shared artifact would put nessebarlens.com on staging.
+  # NEXT_PUBLIC_WEB_IMAGES_BASE is the same shape. A shared artifact would put
+  # nessebarlens.com on staging.
   #
   # Measured, not assumed: a production build puts its own origin in 28 files
   # under .open-next/ and the staging origin in none, and a staging build the
@@ -90,7 +90,6 @@ jobs:
       SITE_URL: ${{ secrets.SITE_URL }}
       NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
       NEXT_PUBLIC_WEB_IMAGES_BASE: ${{ secrets.NEXT_PUBLIC_WEB_IMAGES_BASE }}
-      NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED: ${{ secrets.NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED }}
       # Recorded into the artifact so the deploy job checks the tree it
       # downloaded against the tree that produced it, not just against a
       # string. An artifact is a zip round-trip, and a zip can change a tree.
@@ -143,7 +142,6 @@ jobs:
       SITE_URL: ${{ secrets.SITE_URL }}
       NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
       NEXT_PUBLIC_WEB_IMAGES_BASE: ${{ secrets.NEXT_PUBLIC_WEB_IMAGES_BASE }}
-      NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED: ${{ secrets.NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED }}
       EXPECTED_ORIGIN: https://staging.nessebarlens.com
       # The other environment's origin. Checked for absence, so a staging tree
       # that somehow carries the production origin cannot be deployed under
@@ -233,7 +231,6 @@ jobs:
       SITE_URL: ${{ secrets.SITE_URL }}
       NEXT_PUBLIC_SITE_URL: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
       NEXT_PUBLIC_WEB_IMAGES_BASE: ${{ secrets.NEXT_PUBLIC_WEB_IMAGES_BASE }}
-      NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED: ${{ secrets.NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED }}
       EXPECTED_ORIGIN: https://nessebarlens.com
       FORBIDDEN_ORIGIN: https://staging.nessebarlens.com
     outputs:

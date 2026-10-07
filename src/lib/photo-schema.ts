@@ -209,10 +209,17 @@ function readHex(
  * than stopping at the first, so a single run reports the whole file. The
  * filename is the slug the file declares — a `slug:` that disagrees with it is
  * an error, not a rename.
+ *
+ * `requirePublishedHashes` (default true) enforces that a published photo
+ * carries `master_sha256` and `image_hash`, the two values the persisted catalog
+ * must have (#245). `publish-photos` passes false: it validates the owner's
+ * drop-folder YAML *before* it writes those two keys, so requiring them there
+ * would reject every new photo.
  */
 export function validatePhotoFile(
   filename: string,
   data: unknown,
+  { requirePublishedHashes = true }: { requirePublishedHashes?: boolean } = {},
 ): PhotoValidation {
   if (!isMapping(data)) {
     return { ok: false, problems: ["file: expected a YAML mapping"] };
@@ -248,6 +255,19 @@ export function validatePhotoFile(
     HEX_8_PATTERN,
     problems,
   );
+
+  // A published photo is served from the real ladder, so the two values the
+  // publish script writes are required, not optional: without them the gallery
+  // and the release check have no master to point at (#245). An absent field is
+  // named here; a malformed one was already reported by readHex above.
+  if (published && requirePublishedHashes) {
+    if (data.master_sha256 === undefined) {
+      problems.push("master_sha256: required for a published photo");
+    }
+    if (data.image_hash === undefined) {
+      problems.push("image_hash: required for a published photo");
+    }
+  }
 
   if (problems.length > 0) {
     return { ok: false, problems };
