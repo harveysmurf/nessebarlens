@@ -191,6 +191,26 @@ test("release.yml production deploy needs a job that calls ci.yml", () => {
      only one that can use them. The required job runs no third party and needs
      no secret. */
 
+test("lint-and-test runs the suite once, under coverage, not twice (#273)", () => {
+  const ci = workflows.find((w) => w.name === "ci.yml");
+  assert.ok(ci, "ci.yml is gone");
+
+  const job = ci.text.match(/^ {2}lint-and-test:\n((?:(?: {4}|\t).*\n|\n)*)/m);
+  assert.ok(job, "ci.yml has no lint-and-test job");
+  const body = job[1];
+
+  assert.match(
+    body,
+    /run: npm run coverage/,
+    "lint-and-test must gate coverage; coverage.mjs runs the suite under V8 and fails the job on a test failure before it checks the floors",
+  );
+  assert.doesNotMatch(
+    body,
+    /run: npm test\b/,
+    "lint-and-test must not also run `npm test`: the same files would execute a second time in the same job for a verdict coverage.mjs already owns (#273)",
+  );
+});
+
 test("the E2E flow is its own job in ci.yml, not a step in lint-and-test", () => {
   const ci = workflows.find((w) => w.name === "ci.yml");
   assert.ok(ci, "ci.yml is gone");
