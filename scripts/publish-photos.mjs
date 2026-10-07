@@ -8,11 +8,21 @@
  *   npm run publish-photos -- --apply            # upload, write YAML, open PR
  *   npm run publish-photos -- --apply --only dawn,dusk
  *   npm run publish-photos -- --apply --replace-image dawn
+ *   npm run publish-photos -- --promote --pr 42  # upload the masters, auto-merge
  *
  * Drop folder defaults to the gitignored `ingest/`; `--dir <path>` overrides.
- * Input is one JPEG and one YAML per slug. The production masters bucket is
- * never written here — that is `--promote` (#242): this command's uploader has
- * no client for it, and `assertUploadIsSafe` names the two buckets it may use.
+ * Input is one JPEG and one YAML per slug. The `--apply` uploader has no client
+ * for the production masters bucket: it may only write the public web bucket
+ * and the staging masters bucket, and `assertUploadIsSafe` names exactly those.
+ *
+ * `--promote --pr <n>` is the second half (#242). It reads the PR's changed
+ * `content/photos/*.yaml` from the PR head, confirms the PR is the owner's and
+ * open against `main`, then hashes each local `ingest/{slug}.jpg` and refuses
+ * unless it is byte-for-byte the master that was previewed. It is the one
+ * place the production masters bucket is written: unmodified bytes at
+ * `prints/{slug}.jpg` with user metadata `sha256=<master_sha256>`, which the
+ * release check (#243) reads. Its uploader has no client for the web or
+ * staging buckets, so those are never touched here.
  *
  * The web keys are content-addressed and the staging master is a 2500 px
  * downscale, so a re-run is idempotent; web objects that already exist are
@@ -33,6 +43,7 @@ import { HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s
 import { parse as parseYaml, parseDocument, Pair, Scalar } from "yaml";
 
 import {
+  MASTERS_BUCKET_NAME,
   PHOTO_SLUG_PATTERN,
   STAGING_MASTERS_BUCKET_NAME,
   WEB_BUCKET_NAME,
@@ -59,6 +70,13 @@ const CATALOG_DIR = "content/photos";
 const GENERATED_KEYS = ["master_sha256", "image_hash"];
 /** A re-ingest overwrites the staging master's same key; a week is enough. */
 const STAGING_MASTER_CACHE_CONTROL = "public, max-age=604800";
+/**
+ * Masters are downloaded by buyers' signed links, never served from a shared
+ * cache, so the promoted object must not be cached at all (#242).
+ */
+const PROMOTE_MASTER_CACHE_CONTROL = "private, no-store";
+/** The S3 user-metadata key that carries the master's SHA-256. */
+const MASTER_METADATA_KEY = "sha256";
 const MIN_LONG_EDGE = 3500;
 const WARN_LONG_EDGE = 6000;
 
@@ -77,8 +95,12 @@ export function parseArgs(argv) {
   const only = onlyRaw
     ? onlyRaw.split(",").map((s) => s.trim()).filter(Boolean)
     : undefined;
+  const prRaw = valueOf("--pr");
+  const pr = prRaw === undefined ? undefined : Number(prRaw);
   return {
     apply: has("--apply"),
+    promote: has("--promote"),
+    pr: Number.isInteger(pr) && pr > 0 ? pr : undefined,
     only: only && only.length > 0 ? only : undefined,
     replaceImage: valueOf("--replace-image"),
     dir: valueOf("--dir"),
@@ -277,6 +299,157 @@ export function prBody(plans, branchDate) {
 }
 
 // ---------------------------------------------------------------------------
+// Promote decisions (#242)
+// ---------------------------------------------------------------------------
+
+/**
+ * Splits a PR's `files` (gh's `pr view --json files` shape, `{path, changeType}`)
+ * into the `content/photos/*.yaml` it changed and anything it touched outside
+ * that folder. The PR head is the authority on what to promote, not `ingest/`.
+ */
+export function selectPromoteFiles(files) {
+  const outside = [];
+  const yamls = [];
+  for (const file of files ?? []) {
+    const filePath = file.path ?? file.filename ?? "";
+    if (!filePath.startsWith(`${CATALOG_DIR}/`)) {
+      outside.push(filePath);
+      continue;
+    }
+    if (!/\.ya?ml$/.test(filePath)) continue;
+    yamls.push({
+      path: filePath,
+      slug: path.basename(filePath).replace(/\.ya?ml$/, ""),
+      changeType: String(file.changeType ?? file.status ?? "").toUpperCase(),
+    });
+  }
+  return { outside, yamls };
+}
+
+/**
+ * A PR is promotable only when it is open, targets `main`, was opened by the
+ * currently authenticated owner (only their local masters are trusted), and
+ * changes nothing outside `content/photos/`. A deleted catalog entry cannot be
+ * promoted. Returns every problem, not just the first.
+ */
+export function verifyPromotePr(pull, currentUser) {
+  const errors = [];
+  const number = pull.number;
+  if (String(pull.state).toUpperCase() !== "OPEN") {
+    errors.push(`PR #${number} is not open (state: ${pull.state})`);
+  }
+  if (pull.baseRefName !== "main") {
+    errors.push(`PR #${number} targets ${pull.baseRefName ?? "?"}, not main`);
+  }
+  const author =
+    pull.author && typeof pull.author === "object"
+      ? pull.author.login
+      : pull.author;
+  // GitHub logins are case-insensitive. A missing authenticated user is
+  // reported by the caller (gh api user failed), so it is not guessed at here.
+  if (
+    typeof currentUser === "string" &&
+    author?.toLowerCase() !== currentUser.toLowerCase()
+  ) {
+    errors.push(
+      `PR #${number} was opened by ${author ?? "unknown"}, not the owner (${currentUser})`,
+    );
+  }
+  const { outside, yamls } = selectPromoteFiles(pull.files);
+  if (outside.length > 0) {
+    errors.push(
+      `PR #${number} changes files outside ${CATALOG_DIR}/: ${outside.join(", ")}`,
+    );
+  }
+  const live = [];
+  for (const yaml of yamls) {
+    if (yaml.changeType === "DELETED" || yaml.changeType === "REMOVED") {
+      errors.push(`PR #${number} deletes ${yaml.path}`);
+    } else {
+      live.push(yaml);
+    }
+  }
+  if (live.length === 0 && errors.length === 0) {
+    errors.push(`PR #${number} changes no ${CATALOG_DIR}/*.yaml`);
+  }
+  return { errors, yamls: live };
+}
+
+/** Case-insensitive read of one S3 user-metadata value; HTTP lowercases keys. */
+export function metadataValue(metadata, name) {
+  if (!metadata) return undefined;
+  for (const [key, value] of Object.entries(metadata)) {
+    if (key.toLowerCase() === name.toLowerCase()) return String(value);
+  }
+  return undefined;
+}
+
+/**
+ * What to do with one master. Absent → upload. Already stored with the same
+ * sha256 → skip (a re-run is idempotent). A different sha256 is refused, unless
+ * the PR modified an existing catalog entry (a `--replace-image`), in which
+ * case the fixed `prints/{slug}.jpg` key is deliberately overwritten.
+ */
+export function planPromoteAction({ existing, masterSha256, isReplace }) {
+  if (!existing) return { action: "upload" };
+  const stored = metadataValue(existing.metadata, MASTER_METADATA_KEY);
+  if (stored === masterSha256) return { action: "skip" };
+  if (isReplace) return { action: "replace" };
+  return {
+    action: "refuse",
+    reason:
+      `already holds a different master (sha256 ${stored ?? "unset"}); ` +
+      `re-run publish-photos with --replace-image to overwrite it`,
+  };
+}
+
+/** owner/repo from a PR URL, so the contents-API endpoints can be built. */
+export function repoFromPrUrl(url) {
+  const match = /^https?:\/\/github\.com\/([^/]+)\/([^/]+)\/pull\/\d+/.exec(
+    url ?? "",
+  );
+  return match ? { owner: match[1], repo: match[2] } : null;
+}
+
+/**
+ * Whether a modified catalog entry is a `--replace-image`: its head
+ * `master_sha256` differs from the one on the base branch. A caption-only edit
+ * (same hash) is not a replacement, so it can never overwrite a different
+ * production master. An unreadable base is treated as not-a-replacement — the
+ * safe direction.
+ */
+export function isReplacement({
+  changeType,
+  baseMasterSha256,
+  headMasterSha256,
+}) {
+  return (
+    changeType === "MODIFIED" &&
+    typeof baseMasterSha256 === "string" &&
+    baseMasterSha256 !== headMasterSha256
+  );
+}
+
+/**
+ * Reads one file from a PR's tree via the contents API. Returns the raw text,
+ * or { ok: false } with the gh error. `ref` is the PR head or base ref.
+ */
+async function readPrFile(exec, cwd, repo, filePath, ref) {
+  const endpoint =
+    `repos/${repo.owner}/${repo.repo}/contents/${filePath}` +
+    `?ref=${encodeURIComponent(ref)}`;
+  const file = await exec(
+    "gh",
+    ["api", endpoint, "-H", "Accept: application/vnd.github.raw"],
+    { cwd },
+  );
+  if (file.status !== 0) {
+    return { ok: false, error: file.stderr.trim() || "gh api failed" };
+  }
+  return { ok: true, text: file.stdout };
+}
+
+// ---------------------------------------------------------------------------
 // Real dependencies
 // ---------------------------------------------------------------------------
 
@@ -334,6 +507,66 @@ export function createS3(env) {
           Body: body,
           ContentType: contentType,
           CacheControl: cacheControl,
+        }),
+      );
+    },
+  };
+}
+
+/**
+ * The promote uploader, whose only writable bucket is the production masters
+ * bucket. A call for the web or staging bucket throws before a request is made,
+ * so `--promote` can never touch what `--apply` wrote (#242).
+ *
+ * `head` returns the two fields the read-back needs — the user metadata and the
+ * byte length — or null for a missing object, rather than the SDK's envelope.
+ */
+export function createPromoteS3(env) {
+  const client = new S3Client({
+    region: "auto",
+    endpoint: env.R2_S3_ENDPOINT ?? env.R2_ENDPOINT,
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: env.R2_ACCESS_KEY_ID,
+      secretAccessKey: env.R2_SECRET_ACCESS_KEY,
+    },
+  });
+  const allowed = new Set([MASTERS_BUCKET_NAME]);
+  const assertAllowed = (bucket) => {
+    if (!allowed.has(bucket)) {
+      throw new Error(
+        `refusing to write ${bucket}: publish-photos --promote only writes ${MASTERS_BUCKET_NAME}`,
+      );
+    }
+  };
+  return {
+    async head(bucket, key) {
+      assertAllowed(bucket);
+      try {
+        const object = await client.send(
+          new HeadObjectCommand({ Bucket: bucket, Key: key }),
+        );
+        return {
+          metadata: object.Metadata ?? {},
+          contentLength: object.ContentLength,
+        };
+      } catch (error) {
+        if (error?.name === "NotFound" || error?.$metadata?.httpStatusCode === 404) {
+          return null;
+        }
+        throw error;
+      }
+    },
+    async put({ bucket, key, body, contentType, cacheControl, metadata }) {
+      assertAllowed(bucket);
+      await client.send(
+        new PutObjectCommand({
+          Bucket: bucket,
+          Key: key,
+          Body: body,
+          ContentType: contentType,
+          CacheControl: cacheControl,
+          Metadata: metadata,
         }),
       );
     },
@@ -594,6 +827,258 @@ function finishByHand(log, branch, commitMessage, body, slugs, failed) {
   return { status: 1, branch, body, slugs };
 }
 
+/**
+ * `--promote --pr <n>`: promote the masters for a PR's photos to production.
+ *
+ * The PR's changed `content/photos/*.yaml` (read from the PR head) is the
+ * authority on what to promote; each local `ingest/{slug}.jpg` must hash to the
+ * `master_sha256` it recorded, or the whole run is refused before any upload.
+ * Every key is read back before auto-merge is enabled. All side effects go
+ * through `deps`; returns { status }.
+ */
+export async function runPromote(options, deps = {}) {
+  const cwd = options.cwd ?? ROOT;
+  const dir = path.resolve(cwd, options.dir ?? DEFAULT_DIR);
+  const log = deps.log ?? ((line) => console.log(line));
+  const env = deps.env ?? process.env;
+  const exec = deps.exec ?? runCommand;
+  const s3 = deps.s3 ?? createPromoteS3(env);
+
+  const pr = options.pr;
+  if (!Number.isInteger(pr) || pr <= 0) {
+    log("error: --promote needs --pr <n>");
+    return { status: 1, fatals: ["--promote needs --pr <n>"] };
+  }
+
+  const view = await exec(
+    "gh",
+    [
+      "pr",
+      "view",
+      String(pr),
+      "--json",
+      "state,baseRefName,headRefName,author,url,files",
+    ],
+    { cwd },
+  );
+  if (view.status !== 0) {
+    const why = view.stderr.trim() || "gh pr view failed";
+    log(`error: ${why}`);
+    return { status: 1, fatals: [why] };
+  }
+  let pull;
+  try {
+    pull = JSON.parse(view.stdout);
+  } catch (error) {
+    log(`error: could not parse gh pr view output: ${error.message}`);
+    return { status: 1, fatals: ["unparseable gh pr view output"] };
+  }
+  pull.number = pr;
+
+  const who = await exec("gh", ["api", "user", "--jq", ".login"], { cwd });
+  const currentUser = who.stdout.trim();
+  const repo = repoFromPrUrl(pull.url);
+  const { errors: prErrors, yamls } = verifyPromotePr(
+    pull,
+    who.status === 0 ? currentUser : undefined,
+  );
+
+  const fatals = [...prErrors];
+  if (who.status !== 0) {
+    fatals.push(
+      `could not determine the authenticated user: ${who.stderr.trim() || "gh api user failed"}`,
+    );
+  }
+  if (!repo) {
+    fatals.push(`could not read the repo from the PR URL: ${pull.url ?? "(none)"}`);
+  }
+
+  const entries = [];
+  if (repo) {
+    for (const yaml of yamls) {
+      const head = await readPrFile(exec, cwd, repo, yaml.path, pull.headRefName);
+      if (!head.ok) {
+        fatals.push(
+          `could not read ${yaml.path} at ${pull.headRefName}: ${head.error}`,
+        );
+        continue;
+      }
+      let data;
+      try {
+        data = parseYaml(head.text);
+      } catch (error) {
+        fatals.push(`${yaml.path}: ${error.message}`);
+        continue;
+      }
+      const expected =
+        data && typeof data === "object" ? data.master_sha256 : undefined;
+      if (typeof expected !== "string" || !/^[0-9a-f]{64}$/.test(expected)) {
+        fatals.push(
+          `${yaml.path}: master_sha256 is missing or malformed; ` +
+            `run publish-photos --apply first`,
+        );
+        continue;
+      }
+
+      // A replacement must be a genuinely new master, not a caption-only edit:
+      // compare the head hash against the base branch's. An unreadable base is
+      // treated as not-a-replacement, which refuses rather than overwrites.
+      let baseMasterSha256;
+      if (yaml.changeType === "MODIFIED") {
+        const base = await readPrFile(exec, cwd, repo, yaml.path, pull.baseRefName);
+        if (base.ok) {
+          try {
+            baseMasterSha256 = parseYaml(base.text)?.master_sha256;
+          } catch {
+            baseMasterSha256 = undefined;
+          }
+        }
+      }
+
+      const jpeg = path.join(dir, `${yaml.slug}.jpg`);
+      let bytes;
+      try {
+        bytes = await readFile(jpeg);
+      } catch {
+        fatals.push(`missing ${path.relative(cwd, jpeg) || jpeg}`);
+        continue;
+      }
+      const actual = await sha256Hex(bytes);
+      if (actual !== expected) {
+        fatals.push(
+          `${path.relative(cwd, jpeg) || jpeg} is not the file that was previewed`,
+        );
+        continue;
+      }
+      entries.push({
+        slug: yaml.slug,
+        key: masterKeyFromSlug(yaml.slug),
+        masterSha256: expected,
+        length: bytes.length,
+        bytes,
+        isReplace: isReplacement({
+          changeType: yaml.changeType,
+          baseMasterSha256,
+          headMasterSha256: expected,
+        }),
+      });
+    }
+  }
+
+  if (fatals.length === 0 && entries.length === 0) {
+    fatals.push(`PR #${pr} has no promotable photos`);
+  }
+  if (fatals.length > 0) {
+    log("");
+    for (const problem of fatals) log(`error: ${problem}`);
+    if (entries.length > 0) log(`refused before any upload (${entries.length} photo(s) were ready).`);
+    else log("nothing was uploaded and auto-merge was not enabled.");
+    return { status: 1, fatals };
+  }
+
+  requiredEnv(["R2_S3_ENDPOINT", "R2_ENDPOINT"], env);
+  requiredEnv(["R2_ACCESS_KEY_ID"], env);
+  requiredEnv(["R2_SECRET_ACCESS_KEY"], env);
+
+  // Preflight every key before a byte moves: a batch is never half-written.
+  let actions;
+  try {
+    actions = [];
+    for (const entry of entries) {
+      const existing = await s3.head(MASTERS_BUCKET_NAME, entry.key);
+      const plan = planPromoteAction({
+        existing,
+        masterSha256: entry.masterSha256,
+        isReplace: entry.isReplace,
+      });
+      actions.push({ ...entry, ...plan });
+    }
+  } catch (error) {
+    log(`error: ${error?.message ?? error}`);
+    return { status: 1, fatals: [String(error?.message ?? error)] };
+  }
+  const refused = actions.filter((action) => action.action === "refuse");
+  if (refused.length > 0) {
+    log("");
+    for (const action of refused) {
+      log(`error: ${MASTERS_BUCKET_NAME}/${action.key} ${action.reason}`);
+    }
+    log("nothing was uploaded and auto-merge was not enabled.");
+    return { status: 1, fatals: refused.map((a) => `${a.key}: ${a.reason}`) };
+  }
+
+  try {
+    for (const action of actions) {
+      log("");
+      log(`${action.slug}: master_sha256 ${action.masterSha256.slice(0, 8)}`);
+      log(`  ${MASTERS_BUCKET_NAME}/${action.key}  ${action.action}`);
+      if (action.action === "skip") {
+        log("  skip (already holds this master)");
+        continue;
+      }
+      await s3.put({
+        bucket: MASTERS_BUCKET_NAME,
+        key: action.key,
+        body: action.bytes,
+        contentType: "image/jpeg",
+        cacheControl: PROMOTE_MASTER_CACHE_CONTROL,
+        metadata: { [MASTER_METADATA_KEY]: action.masterSha256 },
+      });
+      if (action.action === "replace") {
+        log("  replacement: past buyers' downloads now get the new file");
+      }
+    }
+  } catch (error) {
+    log(`error: upload failed: ${error?.message ?? error}`);
+    log("auto-merge was not enabled; inspect the bucket before re-running.");
+    return {
+      status: 1,
+      fatals: [String(error?.message ?? error)],
+    };
+  }
+
+  // Read back every key: the sha256 metadata and byte length must match the
+  // local file before the PR is allowed to merge. A read-back that throws is
+  // treated as a mismatch rather than escaping with a stack trace.
+  const mismatches = [];
+  for (const action of actions) {
+    let head;
+    try {
+      head = await s3.head(MASTERS_BUCKET_NAME, action.key);
+    } catch (error) {
+      mismatches.push(`${action.key}: read-back failed: ${error?.message ?? error}`);
+      continue;
+    }
+    const stored = metadataValue(head?.metadata, MASTER_METADATA_KEY);
+    if (stored !== action.masterSha256 || head?.contentLength !== action.length) {
+      mismatches.push(
+        `${action.key}: read-back ${stored ?? "unset"} / ` +
+          `${head?.contentLength ?? "?"} bytes does not match ` +
+          `${action.masterSha256} / ${action.length} bytes`,
+      );
+    }
+  }
+  if (mismatches.length > 0) {
+    log("");
+    for (const problem of mismatches) log(`error: ${problem}`);
+    log("auto-merge was not enabled; inspect the bucket before re-running.");
+    return { status: 1, fatals: mismatches };
+  }
+
+  const merge = await exec("gh", ["pr", "merge", String(pr), "--auto", "--squash"], {
+    cwd,
+  });
+  if (merge.status !== 0) {
+    const why = merge.stderr.trim() || "gh pr merge failed";
+    log(`error: ${why}`);
+    return { status: 1, fatals: [why] };
+  }
+  log("");
+  log(`PR #${pr} will auto-merge (squash) once the required checks pass.`);
+  log("The release then deploys staging → smoke tests → master check → production.");
+  return { status: 0, pr, actions };
+}
+
 // ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
@@ -605,7 +1090,9 @@ async function main() {
   } catch {
     // No .env.local is fine; the values may be exported in the shell.
   }
-  const result = await runPublish({ ...options, cwd: ROOT });
+  const result = options.promote
+    ? await runPromote({ ...options, cwd: ROOT })
+    : await runPublish({ ...options, cwd: ROOT });
   if (result.status !== 0) process.exitCode = result.status;
 }
 
