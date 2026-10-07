@@ -257,6 +257,20 @@ jobs:
           bash scripts/artifact-manifest.sh check .open-next .open-next/MANIFEST.sha256
           bash scripts/assert-artifact-origin.sh .open-next "$EXPECTED_ORIGIN" "$FORBIDDEN_ORIGIN"
 
+      # #243: the catalog must not list a photo whose full-res master is missing
+      # from, or differs from, what was promoted. This runs before any production
+      # change (migrations, deploy), so a forgotten `--promote` fails the release
+      # with production still on its current version — no rollback needed,
+      # because nothing changed. The token is read-only (Object Read on
+      # nessebar-lens-masters) and lives only in this Environment; it never
+      # reaches a pull_request-triggered job.
+      - name: Verify production masters
+        env:
+          R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+          R2_MASTERS_READ_ACCESS_KEY_ID: ${{ secrets.R2_MASTERS_READ_ACCESS_KEY_ID }}
+          R2_MASTERS_READ_SECRET_ACCESS_KEY: ${{ secrets.R2_MASTERS_READ_SECRET_ACCESS_KEY }}
+        run: npm run verify:masters
+
       # Recorded before the deploy, because afterwards the newest version *is*
       # the bad one and there is nothing to roll back to. `deployments list`
       # rather than `versions list`: the rollback target has to be a version

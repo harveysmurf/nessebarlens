@@ -771,3 +771,74 @@ test("release.yml treats a Dependabot merge like any other (#225 step 5)", () =>
   assert.match(header, /^ {2}workflow_dispatch:/m);
   assert.doesNotMatch(text, /dependabot/i, "release.yml special-cases Dependabot");
 });
+
+const MASTERS_READ_SECRETS = [
+  "R2_MASTERS_READ_ACCESS_KEY_ID",
+  "R2_MASTERS_READ_SECRET_ACCESS_KEY",
+  "R2_S3_ENDPOINT",
+];
+
+test("release.yml's production leg verifies masters before any production change (#243)", () => {
+  const production = jobBlock(workflowText("release.yml"), "production");
+  const order = [
+    "Verify the downloaded build",
+    "Verify production masters",
+    "Apply D1 migrations (production)",
+    "Deploy production (OpenNext)",
+    "Smoke test production",
+  ];
+  const positions = order.map((name) => {
+    const at = production.indexOf(`- name: ${name}`);
+    assert.ok(at >= 0, `${name} step not found in the production job`);
+    return at;
+  });
+  for (let i = 1; i < positions.length; i += 1) {
+    assert.ok(positions[i]! > positions[i - 1]!, `${order[i]} must run after ${order[i - 1]}`);
+  }
+  // The gate reads the read-only token through the step env and runs the script.
+  const step = production.slice(positions[1], positions[2]);
+  assert.match(step, /npm run verify:masters/);
+  for (const secret of MASTERS_READ_SECRETS) {
+    assert.match(step, new RegExp(`secrets\\.${secret}\\b`));
+  }
+});
+
+test("the masters read-only secrets live only in release.yml's production job (#243)", () => {
+  for (const secret of MASTERS_READ_SECRETS) {
+    const readers = workflows
+      .filter(({ text }) => new RegExp(`secrets\\.${secret}\\b`).test(text))
+      .map(({ name }) => name);
+    assert.deepEqual(
+      readers,
+      ["release.yml"],
+      `${secret} is read by ${readers.join(", ")}; it belongs only to release.yml`,
+    );
+    // Exactly one occurrence in release.yml: the production job's verify step.
+    // A second would be a second reader this test does not account for.
+    const text = workflowText("release.yml");
+    assert.equal(
+      [...text.matchAll(new RegExp(`secrets\\.${secret}\\b`, "g"))].length,
+      1,
+      `${secret} appears more than once in release.yml`,
+    );
+    const staging = jobBlock(text, "staging");
+    assert.doesNotMatch(staging, new RegExp(`secrets\\.${secret}\\b`), `staging reads ${secret}`);
+  }
+});
+
+test("no pull_request-triggered workflow reads the masters read-only secrets (#243)", () => {
+  // The read token reaches the masters bucket; a pull_request job runs
+  // unreviewed code, so it must never hold it. release.yml is push-only, which
+  // is the mechanism the issue relies on.
+  for (const { name, text } of workflows) {
+    if (!/^ {2}pull_request:/m.test(text)) continue;
+    for (const secret of MASTERS_READ_SECRETS) {
+      assert.doesNotMatch(
+        text,
+        new RegExp(`secrets\\.${secret}\\b`),
+        `${name} reads ${secret} on a pull_request trigger`,
+      );
+    }
+  }
+  assert.match(workflowText("release.yml"), /^ {2}push:\s*\n {4}branches: \[main\]/m);
+});

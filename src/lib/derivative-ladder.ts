@@ -109,6 +109,13 @@ export async function imageHash(bytes: Uint8Array): Promise<string> {
   return (await sha256Hex(bytes)).slice(0, 8);
 }
 
+/**
+ * A master's SHA-256 as the catalog stores it: 64 lowercase hex. Owned here so
+ * `publish-photos` and `verify-masters` (#243) validate the same grammar, and a
+ * different casing cannot slip past one of them.
+ */
+export const MASTER_SHA256_PATTERN = /^[0-9a-f]{64}$/;
+
 /** A master below MASTER_MIN_WIDTH cannot fill the ladder; refuse it early. */
 export function assertMasterIsUsable(width: number): void {
   if (!Number.isInteger(width) || width < MASTER_MIN_WIDTH) {

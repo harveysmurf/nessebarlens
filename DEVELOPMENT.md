@@ -488,6 +488,18 @@ other way, describing a version the deploy then replaces.
 `--secrets-file` has no window at all, and it is the same mechanism previews use,
 so there is one thing to reason about rather than two.
 
+Before any of that, the `production` job runs **`Verify production masters`**
+(`npm run verify:masters`, #243) after the downloaded build is verified and
+before the D1 migrations. It `HeadObject`s
+`nessebar-lens-masters/prints/{slug}.jpg` for every published photo and compares
+the object's `sha256` metadata against the catalog's `master_sha256`; a photo
+whose master is missing, empty, or stale fails the release with production still
+on its current version, so a forgotten `--promote` stops the deploy instead of
+shipping a photo that cannot be downloaded or printed. The fix is
+`npm run publish-photos -- --promote --pr <n>` (§6a). While the placeholder
+catalog is live the check skips the transitional slugs through an explicit
+allow-list in `scripts/verify-masters.mjs` that #245 deletes.
+
 Production targets the **production Worker**, `nessebar-lens` — the top-level
 bindings in `wrangler.toml`. A preview targets the **staging Worker**,
 `nessebar-lens-staging`, as a version of it (#202); before that it was a version
@@ -1124,7 +1136,7 @@ settings.
 | Scope | Expected secrets |
 |---|---|
 | `staging` | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_WEB_DERIVATIVES_ENABLED`, `NEXT_PUBLIC_WEB_IMAGES_BASE`, `PRINT_ASSET_HMAC_SECRET`, `PRODIGI_API_KEY`, `PRODIGI_SANDBOX_API_KEY`, `PRODIGI_WEBHOOK_TOKEN`, `RECONCILE_SECRET`, `RESEND_API_KEY`, `SITE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
-| `production` | the same fourteen, with live values |
+| `production` | the same fourteen, with live values, plus the read-only masters token: `R2_MASTERS_READ_ACCESS_KEY_ID`, `R2_MASTERS_READ_SECRET_ACCESS_KEY`, `R2_S3_ENDPOINT` (#243) |
 | repository | `PRINT_ASSET_HMAC_SECRET` only |
 
 `release.yml`'s build matrix declares `environment: ${{ matrix.env }}` and so
@@ -1136,14 +1148,22 @@ URLs and has to be the same value everywhere: a signature made with one key and
 checked with another is the failure the indirection exists to avoid. The
 hosted-checkout job is the one place both scopes are read side by side.
 
+The three production `R2_*` rows are the release gate's read-only token (#243):
+`R2_MASTERS_READ_ACCESS_KEY_ID` / `R2_MASTERS_READ_SECRET_ACCESS_KEY` are scoped
+to Object Read on `nessebar-lens-masters` only, and `R2_S3_ENDPOINT` is where
+they connect. They are in no other environment, and `release.yml` is push-only,
+so a `pull_request` job never holds them. `scripts/verify-masters.mjs` is the
+only reader.
+
 Not in the table, and asserted to stay out (`#205` item 6): `CF_ACCOUNT_ID` and
 `CF_API_TOKEN`, the pre-Workers names for the Cloudflare token, which
 `scripts/sync-worker-secrets.sh` still accepts as a fallback but no workflow
 passes; and `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`,
-`R2_S3_ENDPOINT`, `R2_ACCOUNT_ID` — the S3-compatibility keys. The site reaches
+`R2_ACCOUNT_ID` — the **write-capable** S3-compatibility keys. The site reaches
 R2 through the Workers *binding*, not the S3 API, so those were a second
 long-lived credential for the same data with no code behind it. The R2 key has
-to be revoked at Cloudflare as well as deleted from the Environment.
+to be revoked at Cloudflare as well as deleted from the Environment. (The
+read-only token above is a deliberate exception, distinct from these.)
 
 ### Rotating a credential
 

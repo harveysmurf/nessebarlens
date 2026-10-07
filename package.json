@@ -25,6 +25,8 @@
     "publish-photos": "node scripts/ingest.mjs",
     "ingest": "node scripts/ingest.mjs",
     "orders": "node scripts/list-orders.mjs",
+    "preverify:masters": "npm run build:catalog",
+    "verify:masters": "node --import ./scripts/register.mjs scripts/verify-masters.mjs",
     "migrate:orders": "node --import ./scripts/register.mjs scripts/migrate-orders-kv-to-d1.mjs",
     "orders:kv:remove": "node --import ./scripts/register.mjs scripts/remove-orders-kv.mjs",
     "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
