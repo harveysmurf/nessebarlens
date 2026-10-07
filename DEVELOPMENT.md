@@ -1334,6 +1334,34 @@ tests. Changing the rungs is a one-line edit there.
 
 `npm run ingest` is the one-release deprecated alias for `npm run publish-photos`.
 
+### `--audit` (#244) — what is in the buckets
+
+```
+npm run publish-photos -- --audit
+npm run publish-photos -- --audit --json
+```
+
+Nothing is ever deleted automatically: a replaced image, an unpublished photo
+and an `--apply` whose PR was dropped all leave their objects behind, because a
+past buyer's download may still reference them. `--audit` is the read-only
+report that says what to clean up by hand. It lists all three buckets
+(`ListObjectsV2`, paginated) and compares them to `content/photos/*.yaml`,
+grouping the findings:
+
+- **Orphaned web images** — `{slug}/{hash8}/…` objects whose hash is not the
+  catalog's current `image_hash` for that slug.
+- **Masters of unpublished photos** — in both masters buckets; informational,
+  they are what past orders still fetch.
+- **Missing objects** — a published photo that advertises a ladder but lacks one
+  of its eight web images, its staging master or its production master.
+- **Unknown keys** — anything matching no known pattern.
+
+`--json` prints each category with its count, total size in bytes and items.
+The command has **no write path**: its S3 client exposes only `list` and `head`
+and refuses any bucket outside the three we own. It reads the same
+`R2_S3_ENDPOINT` / `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` as the publish
+flow.
+
 ---
 
 ## 7. Data flow & invariants

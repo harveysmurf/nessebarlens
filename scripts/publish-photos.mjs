@@ -10,6 +10,10 @@
  *   npm run publish-photos -- --apply --only dawn,dusk
  *   npm run publish-photos -- --apply --replace-image dawn
  *   npm run publish-photos -- --promote --pr 42  # upload the masters, auto-merge
+ *   npm run publish-photos -- --audit            # read-only bucket vs catalog report (#244)
+ *
+ * `--audit` is handled in scripts/audit-photos.mjs; it never writes. The rest
+ * of this header describes the publish and promote paths.
  *
  * Drop folder defaults to the gitignored `ingest/`; `--dir <path>` overrides.
  * Input is one JPEG and one YAML per slug. The `--apply` uploader has no client
@@ -69,6 +73,7 @@ import {
   renderPlaceholder,
   renderStagingMaster,
 } from "./derivative-image.mjs";
+import { runAudit } from "./audit-photos.mjs";
 
 const ROOT = path.join(import.meta.dirname, "..");
 const DEFAULT_DIR = "ingest";
@@ -107,6 +112,8 @@ export function parseArgs(argv) {
   return {
     apply: has("--apply"),
     promote: has("--promote"),
+    audit: has("--audit"),
+    json: has("--json"),
     pr: Number.isInteger(pr) && pr > 0 ? pr : undefined,
     only: only && only.length > 0 ? only : undefined,
     replaceImage: valueOf("--replace-image"),
@@ -1140,9 +1147,11 @@ async function main() {
   } catch {
     // No .env.local is fine; the values may be exported in the shell.
   }
-  const result = options.promote
-    ? await runPromote({ ...options, cwd: ROOT })
-    : await runPublish({ ...options, cwd: ROOT });
+  const result = options.audit
+    ? await runAudit({ cwd: ROOT, json: options.json })
+    : options.promote
+      ? await runPromote({ ...options, cwd: ROOT })
+      : await runPublish({ ...options, cwd: ROOT });
   if (result.status !== 0) process.exitCode = result.status;
 }
 
