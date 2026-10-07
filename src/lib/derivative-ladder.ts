@@ -52,9 +52,9 @@ export const MASTER_KEY_PATTERN = new RegExp(
 
 /**
  * The rung list, in one place. Adding a rung is a one-line change here and
- * nothing else: the srcSet, the ingest plan and the tests all read it.
- * Ascending, unique, positive — assertRungList() rejects anything else rather
- * than generating a ladder the srcSet cannot express.
+ * nothing else: the srcSet, the ingest plan and the tests all read it. Kept a
+ * literal, ascending, unique and positive, so it cannot be a runtime value the
+ * srcSet and the generator could disagree about.
  */
 export const WEB_DERIVATIVE_WIDTHS = [400, 750, 1500, 2000] as const;
 export type WebDerivativeWidth = (typeof WEB_DERIVATIVE_WIDTHS)[number];
@@ -65,14 +65,6 @@ export const WEB_DEFAULT_WIDTH: WebDerivativeWidth = 1500;
 /** Output formats every rung is written in. No AVIF. */
 export const WEB_DERIVATIVE_FORMATS = ["jpg", "webp"] as const;
 export type WebDerivativeFormat = (typeof WEB_DERIVATIVE_FORMATS)[number];
-
-/**
- * A master narrower than this is refused: the top rung is 2000, so anything
- * under it could never fill the largest public image. Derived from the rung
- * list, not spelled again, so the two cannot drift.
- */
-export const MASTER_MIN_WIDTH: number =
-  WEB_DERIVATIVE_WIDTHS[WEB_DERIVATIVE_WIDTHS.length - 1]!;
 
 /**
  * The one place a web derivative's object key is spelled:
@@ -104,26 +96,12 @@ export async function sha256Hex(bytes: Uint8Array): Promise<string> {
   return hex;
 }
 
-/** The first 8 hex chars of the master's SHA-256, which names its derivatives. */
-export async function imageHash(bytes: Uint8Array): Promise<string> {
-  return (await sha256Hex(bytes)).slice(0, 8);
-}
-
 /**
  * A master's SHA-256 as the catalog stores it: 64 lowercase hex. Owned here so
  * `publish-photos` and `verify-masters` (#243) validate the same grammar, and a
  * different casing cannot slip past one of them.
  */
 export const MASTER_SHA256_PATTERN = /^[0-9a-f]{64}$/;
-
-/** A master below MASTER_MIN_WIDTH cannot fill the ladder; refuse it early. */
-export function assertMasterIsUsable(width: number): void {
-  if (!Number.isInteger(width) || width < MASTER_MIN_WIDTH) {
-    throw new Error(
-      `master is ${width}px wide; the floor is ${MASTER_MIN_WIDTH}px (the top rung)`,
-    );
-  }
-}
 
 /** True only for a well-formed `prints/{slug}.jpg` master key. */
 export function isMasterKey(key: string): boolean {
@@ -135,22 +113,6 @@ export function slugFromMasterKey(key: string): string | null {
   return isMasterKey(key)
     ? key.slice(MASTER_KEY_PREFIX.length, -".jpg".length)
     : null;
-}
-
-/** Strictly ascending positive integers, or the ladder is not expressible. */
-export function assertRungList(widths: readonly number[]): void {
-  if (widths.length === 0) throw new Error("derivative rung list is empty");
-  for (let i = 0; i < widths.length; i += 1) {
-    const w = widths[i]!;
-    if (!Number.isInteger(w) || w <= 0) {
-      throw new Error(`derivative rung ${i} is not a positive integer: ${w}`);
-    }
-    if (i > 0 && w <= widths[i - 1]!) {
-      throw new Error(
-        `derivative rungs must strictly ascend: ${widths.join(", ")}`,
-      );
-    }
-  }
 }
 
 /**
@@ -178,40 +140,6 @@ export const STAGING_MASTER_JPEG_QUALITY = 80;
 export const WEB_DERIVATIVE_CACHE_CONTROL =
   "public, max-age=31536000, immutable";
 
-export type MasterUpload = {
-  slug: string;
-  /** Where the original bytes are written: `prints/{slug}.jpg` in MASTERS. */
-  key: string;
-};
-
-export type DerivativeJob = {
-  slug: string;
-  /** The dropped file this object comes from, by name — `alley-cat.jpg`. */
-  sourceName: string;
-  /** The master's content hash, the path segment that makes the URL immutable. */
-  hash: string;
-  /** The rung this object is stored as, in the width the srcSet advertises. */
-  rung: number;
-  /** Pixels to resize to — the rung, capped at the master's own width. */
-  pixels: number;
-  /** jpg or webp. */
-  format: WebDerivativeFormat;
-  /** Where it is written: `{slug}/{hash8}/{rung}.{ext}` in WEB. */
-  key: string;
-};
-
-export type IngestPlan = {
-  /** One per accepted dropped file, written to the private masters bucket. */
-  masters: MasterUpload[];
-  jobs: DerivativeJob[];
-  /** Dropped file names that are not `{slug}.jpg`. */
-  ignoredNames: string[];
-  /** Per-slug notes a dry run should show, e.g. clamped rungs. */
-  notes: string[];
-};
-
-export type DroppedMaster = { name: string; width: number; hash: string };
-
 /**
  * The slug a dropped file declares, or null if the name cannot be one.
  *
@@ -234,67 +162,6 @@ export function slugFromDroppedName(name: string): string | null {
  */
 export function masterKeyFromSlug(slug: string): string {
   return `${MASTER_KEY_PREFIX}${slug}.jpg`;
-}
-
-/**
- * One master upload plus one job per rung per dropped file, decided without
- * reading or writing anything — which is why the rules are testable at all.
- * `width` is the only thing that decides whether a rung is clamped.
- */
-export function planDerivatives(
-  drops: DroppedMaster[],
-  rungs: readonly number[],
-): IngestPlan {
-  assertRungList(rungs);
-
-  const masters: MasterUpload[] = [];
-  const jobs: DerivativeJob[] = [];
-  const ignoredNames: string[] = [];
-  const notes: string[] = [];
-  const seen = new Set<string>();
-
-  for (const drop of drops) {
-    const slug = slugFromDroppedName(drop.name);
-    if (slug === null) {
-      ignoredNames.push(drop.name);
-      continue;
-    }
-    if (seen.has(slug)) {
-      throw new Error(`two dropped masters declare the slug ${slug}`);
-    }
-    seen.add(slug);
-    if (!Number.isInteger(drop.width) || drop.width <= 0) {
-      throw new Error(
-        `master ${drop.name} has no usable width: ${drop.width}`,
-      );
-    }
-
-    masters.push({ slug, key: masterKeyFromSlug(slug) });
-
-    let clamped = 0;
-    for (const rung of rungs) {
-      const pixels = Math.min(rung, drop.width);
-      if (pixels < rung) clamped += 1;
-      for (const format of WEB_DERIVATIVE_FORMATS) {
-        jobs.push({
-          slug,
-          sourceName: drop.name,
-          hash: drop.hash,
-          rung,
-          pixels,
-          format,
-          key: webDerivativeKey(slug, drop.hash, rung, format),
-        });
-      }
-    }
-    if (clamped > 0) {
-      notes.push(
-        `${slug}: master is ${drop.width}px wide, ${clamped} rung(s) stored at their own width`,
-      );
-    }
-  }
-
-  return { masters, jobs, ignoredNames, notes };
 }
 
 export type UploadTarget = {
