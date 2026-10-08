@@ -1,3 +1,14 @@
+import { Eur, eurToCents } from "./money";
+
+/**
+ * The EUR grammar and the cents conversion are money.ts's; these two names
+ * stay on `pricing` because that is where every caller already imports them
+ * from. The re-export is the one named exception to "a module only exports
+ * what it defines" in tests/single-source-grammar.test.mts, so a second path
+ * to a declaration anywhere else still fails there.
+ */
+export { eurToCents, parseEurAmount } from "./money";
+
 export type PrintFormat = "giclee" | "framed" | "canvas" | "digital";
 export type PrintSize = "30x40" | "50x70" | "70x100";
 export type FrameFinish = "black" | "white" | "brown";
@@ -8,27 +19,15 @@ export const DIGITAL_PRICE_EUR = 30;
 /** Customer merchandise = Prodigi unitCost × this margin. */
 export const PRODIGI_MARGIN = 1.2;
 
-export function merchandiseFromUnitCost(unitCostEur: number): number {
-  return Math.round(unitCostEur * PRODIGI_MARGIN * 100) / 100;
-}
-
-export function eurToCents(eur: number): number {
-  return Math.round(eur * 100);
-}
-
 /**
- * Parse a decimal EUR string as it arrives over the wire (Prodigi quotes,
- * stored order metadata). Returns null for anything that is not a plain
- * non-negative amount with at most two decimals.
- *
- * This grammar is written down once. Two copies already drifted: a stored-record
- * copy capping the integer part at six digits and a Prodigi copy that did not
- * made a >6-digit amount readable from a quote and rejected from a record, and
- * which one you got depended on which module you were in.
+ * The margin is applied to whole cents, not to a float: the unit cost is a
+ * parsed EUR amount, so it has cents already, and the only rounding left is
+ * the one that folds the scaled cents back into an integer. The result goes
+ * back to the float EUR the quote and Stripe metadata speak.
  */
-export function parseEurAmount(raw: string | null | undefined): number | null {
-  if (!raw || !/^(?:0|[1-9]\d{0,5})(?:\.\d{1,2})?$/.test(raw)) return null;
-  return Number(raw);
+export function merchandiseFromUnitCost(unitCostEur: number): number {
+  const unitCost = Eur.fromCents(eurToCents(unitCostEur));
+  return unitCost.multiplyBy(PRODIGI_MARGIN).cents() / 100;
 }
 
 // Typed as Record<union, string> rather than switch: adding a member to

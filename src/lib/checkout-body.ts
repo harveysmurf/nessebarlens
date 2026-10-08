@@ -5,15 +5,17 @@ import {
 } from "./ship-to-countries";
 import type { FrameFinish, PrintSize } from "./pricing";
 import {
+  parsePrintSpecification,
+  type PrintSpecificationReason,
+} from "./print-spec";
+import {
   type PhysicalFormat,
   FRAME_FINISHES,
   PHYSICAL_FORMATS,
   PRINT_SIZES,
   SELLABLE_FORMATS,
   formatListLabel,
-  isFrameFinishValue,
   isPhysicalFormat,
-  isPrintSize,
   isSellableFormat,
 } from "./sku-map";
 
@@ -48,31 +50,36 @@ const FRAME_LABEL = formatListLabel(FRAME_FINISHES);
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
 /**
- * The frame rules, which checkout and quote share exactly: framed requires a
- * known finish, every other physical format must omit it. The two bodies
- * diverge on everything else -- digital exists only in checkout, and their
- * size and format messages are worded for their own endpoint -- so this is
- * the only part factored out. Its two error strings are part of the API
- * contract; tests/checkout-body.test.mts pins them for both parsers.
+ * The factory's reasons, mapped to the wording this endpoint answers with.
+ * The frame pair is shared verbatim by both parsers below: it is one rule and
+ * tests/checkout-body.test.mts compares the two bodies case for case, so two
+ * spellings would be a divergence the test could only catch by diffing them.
+ * Size and digital are worded per endpoint -- which is exactly why the
+ * factory returns a reason rather than text a buyer would read.
  */
-function parseFrame(
-  format: PhysicalFormat,
-  frame: unknown,
-): Parsed<FrameFinish | null> {
-  if (format === "framed") {
-    if (!isFrameFinishValue(frame)) {
-      return { ok: false, error: `frame required for framed (${FRAME_LABEL})` };
-    }
-    return { ok: true, value: frame };
-  }
-  if (frame !== null && frame !== undefined) {
-    return {
-      ok: false,
-      error: "frame only allowed when format is framed",
-    };
-  }
-  return { ok: true, value: null };
-}
+const DIGITAL_SPEC_ERRORS = {
+  "digital-rejects-size": "digital rejects size",
+  "digital-rejects-frame": "digital rejects frame",
+};
+
+const FRAME_SPEC_ERRORS = {
+  "frame-required": `frame required for framed (${FRAME_LABEL})`,
+  "frame-not-allowed": "frame only allowed when format is framed",
+};
+
+const CHECKOUT_SPEC_ERRORS: Record<PrintSpecificationReason, string> = {
+  ...DIGITAL_SPEC_ERRORS,
+  ...FRAME_SPEC_ERRORS,
+  "size-required": `size required for physical formats (${SIZE_LABEL})`,
+};
+
+const QUOTE_SPEC_ERRORS: Record<PrintSpecificationReason, string> = {
+  // A quote body is refused as digital before the factory runs, so the two
+  // digital entries exist for exhaustiveness and not for a buyer to read.
+  ...DIGITAL_SPEC_ERRORS,
+  ...FRAME_SPEC_ERRORS,
+  "size-required": `size required (${SIZE_LABEL})`,
+};
 
 /**
  * Returns a tagged result rather than string | null | { error }. A bare union
@@ -137,15 +144,10 @@ export function parseCheckoutBody(
   if (!isSellableFormat(format)) {
     return { error: `format must be ${FORMAT_LABEL}` };
   }
-  const fmt = format;
 
-  if (fmt === "digital") {
-    if (size !== null && size !== undefined) {
-      return { error: "digital rejects size" };
-    }
-    if (frame !== null && frame !== undefined) {
-      return { error: "digital rejects frame" };
-    }
+  const spec = parsePrintSpecification(format, size, frame);
+  if (!spec.ok) return { error: CHECKOUT_SPEC_ERRORS[spec.reason] };
+  if (spec.value.kind === "digital") {
     return {
       photoSlug,
       format: "digital",
@@ -153,18 +155,11 @@ export function parseCheckoutBody(
     };
   }
 
-  if (!isPrintSize(size)) {
-    return { error: `size required for physical formats (${SIZE_LABEL})` };
-  }
-
-  const parsedFrame = parseFrame(fmt, frame);
-  if (!parsedFrame.ok) return { error: parsedFrame.error };
-
   return {
     photoSlug,
-    format: fmt,
-    size,
-    frame: parsedFrame.value,
+    format: spec.value.format,
+    size: spec.value.size,
+    frame: spec.value.frame,
     destinationCountryCode,
   };
 }
@@ -198,18 +193,14 @@ export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {
   if (!isPhysicalFormat(format)) {
     return { error: `format must be ${formatListLabel(PHYSICAL_FORMATS)}` };
   }
-  if (!isPrintSize(size)) {
-    return { error: `size required (${SIZE_LABEL})` };
-  }
 
-  const fmt = format;
-  const parsedFrame = parseFrame(fmt, frame);
-  if (!parsedFrame.ok) return { error: parsedFrame.error };
+  const spec = parsePrintSpecification(format, size, frame);
+  if (!spec.ok) return { error: QUOTE_SPEC_ERRORS[spec.reason] };
 
   return {
-    format: fmt,
-    size,
-    frame: parsedFrame.value,
+    format: spec.value.format,
+    size: spec.value.size,
+    frame: spec.value.frame,
     destinationCountryCode,
   };
 }
