@@ -34,7 +34,7 @@ import {
   type PhysicalFormat,
 } from "./sku-map";
 import { isEmailKind, type EmailKind } from "./email";
-import { isRetryableProdigiReason } from "./prodigi-config";
+import { isRetryableProdigiReason } from "./prodigi-policy";
 
 export type OrderStatus =
   | "paid"

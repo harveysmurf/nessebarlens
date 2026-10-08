@@ -1,4 +1,9 @@
 import { envString, envStringStrippedSlash } from "./env";
+// The retry predicate and the reason union are domain policy and live in
+// `prodigi-policy.ts`. This module owns only the configuration read and the
+// HTTP-status classification that produce them, and imports the reason type
+// rather than owning it.
+import type { ProdigiFailureReason } from "./prodigi-policy";
 
 export const PRODIGI_SANDBOX_API_BASE = "https://api.sandbox.prodigi.com";
 export const PRODIGI_LIVE_API_BASE = "https://api.prodigi.com";
@@ -139,59 +144,6 @@ const UNCONFIGURED_KEY_NAMES = [
   "PRODIGI_SANDBOX_API_KEY",
   "PRODIGI_API_KEY",
 ] as const;
-
-/**
- * Why a Prodigi call could not be made or completed.
- *
- * The retry decision (`kind`) and the diagnosis (`reason`) are deliberately
- * separate axes. Auth and rate-limit failures share the same *retry* behaviour
- * but are different operational problems, so they get different reasons — the
- * stored record has to say which one it was, or "prodigi-error" tells nobody
- * whether to rotate a key or back off.
- */
-export type ProdigiFailureReason =
-  /** 401/403 — our key is wrong, revoked, or pointed at the wrong host. */
-  | "prodigi-auth-error"
-  /** 429 — we are being throttled; retrying later is correct. */
-  | "prodigi-rate-limit"
-  /** 5xx — Prodigi is down or erroring. */
-  | "prodigi-unavailable"
-  /**
-   * Prodigi accepted the connection and then went quiet past our deadline
-   * (#104). Distinct from prodigi-unavailable because the answer differs: an
-   * unreachable Prodigi is worth retrying later, whereas a timeout may mean the
-   * order was created and the response lost — which is exactly what the
-   * idempotency key on sessionId is for, so a redelivery is safe and is the
-   * only way the customer gets their print.
-   */
-  | "prodigi-timeout"
-  /** 4xx that is our fault and will never succeed on retry (bad request body). */
-  | "prodigi-validation-error"
-  /** 2xx with no order id in the body — a contract change, not a status code. */
-  | "prodigi-error"
-  /**
-   * We hold paid money but cannot sign the master URL, so there is no asset to
-   * send. Distinct from prodigi-unavailable: Prodigi was never contacted.
-   */
-  | "prodigi-asset-unconfigured"
-  /**
-   * This deployment has no usable Prodigi API key, or PRODIGI_API_BASE is not
-   * an allowed host. Prodigi was never contacted. Retryable: the key is
-   * deployment config, and a redeploy inside Stripe's redelivery window
-   * (~3 days) is enough to place the order.
-   */
-  | "prodigi-unconfigured"
-  /**
-   * Prodigi already holds an order for this idempotency key, and it was built by
-   * a *different* deployment: its asset URL or callback URL is on another
-   * origin than ours (#193). Environments share one Prodigi namespace, so the
-   * first POST defines the order forever and we would otherwise record a signed
-   * URL and a callback Prodigi never received. Non-retryable by construction —
-   * retrying re-sends the same key and gets the same foreign order back — so
-   * the customer is refunded by a human instead of waiting out a redelivery
-   * that cannot succeed.
-   */
-  | "prodigi-order-foreign";
 
 /**
  * How a failed Prodigi call is retried. The value is the failure's own shape,
@@ -348,29 +300,6 @@ export function classifyProdigiStatus(status: number): {
     return { kind: "server", reason: "prodigi-unavailable" };
   }
   return { kind: "client", reason: "prodigi-validation-error" };
-}
-
-/**
- * Failures we still intend to retry, so the stored order stays eligible for a
- * redelivery instead of being short-circuited as a duplicate.
- */
-const RETRYABLE_PRODIGI_REASONS: ReadonlySet<ProdigiFailureReason> =
-  new Set<ProdigiFailureReason>([
-    "prodigi-auth-error",
-    "prodigi-rate-limit",
-    "prodigi-unavailable",
-    "prodigi-timeout",
-    "prodigi-asset-unconfigured",
-    "prodigi-unconfigured",
-  ]);
-
-export function isRetryableProdigiReason(
-  reason: string | null,
-): reason is ProdigiFailureReason {
-  return (
-    reason !== null &&
-    RETRYABLE_PRODIGI_REASONS.has(reason as ProdigiFailureReason)
-  );
 }
 
 /**

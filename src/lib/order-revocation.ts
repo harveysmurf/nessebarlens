@@ -32,7 +32,8 @@ import {
   type RevokedStatus,
 } from "./order-decision";
 import { cancelProdigiOrder, type CancelProdigiOrder } from "./prodigi-cancel";
-import { getStripe } from "./stripe";
+import { stripeSessionLookup } from "./stripe-gateway";
+import { isChargeId, isPaymentIntentId, isStripeNotFound } from "./stripe-ids";
 
 /** The slice of the Stripe client this module needs. Injected by the tests. */
 export type StripeSessionLookup = {
@@ -43,77 +44,17 @@ export type StripeSessionLookup = {
   findPaymentIntentForCharge: (chargeId: string) => Promise<string | null>;
 };
 
-const PAYMENT_INTENT_PATTERN = /^pi_[A-Za-z0-9_]{8,128}$/;
-
-export function isPaymentIntentId(value: unknown): value is string {
-  return typeof value === "string" && PAYMENT_INTENT_PATTERN.test(value);
-}
-
-const CHARGE_ID_PATTERN = /^ch_[A-Za-z0-9_]{8,128}$/;
-
-export function isChargeId(value: unknown): value is string {
-  return typeof value === "string" && CHARGE_ID_PATTERN.test(value);
-}
-
-/**
- * Is this Stripe error the "that resource does not exist" answer?
- *
- * Structural on purpose rather than `instanceof Stripe.StripeInvalidRequestError`:
- * the stripe package is a runtime dependency of this module already, but the
- * webhook's error classification is a property worth being able to test without
- * constructing Stripe errors, and Stripe errors carry the status on the object.
- * A 404 status and the invalid-request type are both definitive not-found; a
- * 5xx, a rate limit and a connection error are all transient and must rethrow.
- */
-export function isStripeNotFound(e: unknown): boolean {
-  if (typeof e !== "object" || e === null) return false;
-  const { statusCode, type, code } = e as {
-    statusCode?: unknown;
-    type?: unknown;
-    code?: unknown;
-  };
-  if (statusCode === 404) return true;
-  if (type === "StripeInvalidRequestError" && statusCode === undefined)
-    return true;
-  return code === "resource_missing";
-}
+// The pure id/error predicates live in `stripe-ids.ts` so the Stripe adapter can
+// share them without this module and the adapter importing each other. They stay
+// re-exported here because the revocation tests and the webhook route know them
+// by this path.
+export { isChargeId, isPaymentIntentId, isStripeNotFound };
 
 export function defaultStripeLookup(): StripeSessionLookup {
-  return {
-    findSessionIdByPaymentIntent: async (paymentIntent) => {
-      const stripe = getStripe();
-      const sessions = await stripe.checkout.sessions.list({
-        payment_intent: paymentIntent,
-        limit: 1,
-      });
-      return sessions.data[0]?.id ?? null;
-    },
-    findPaymentIntentForCharge: async (chargeId) => {
-      const stripe = getStripe();
-      try {
-        const charge = await stripe.charges.retrieve(chargeId);
-        return isPaymentIntentId(charge.payment_intent)
-          ? charge.payment_intent
-          : null;
-      } catch (e) {
-        // "No such charge" is a legitimate answer — the charge is not ours, or
-        // is gone. A 5xx/timeout/network failure is not: that is our outage,
-        // and treating it as "not ours" drops a real dispute on the floor.
-        // Only the definitive not-found classes are swallowed.
-        if (isStripeNotFound(e)) {
-          console.error(
-            JSON.stringify({
-              event: "order.dispute-charge-not-found",
-              charge: chargeId,
-              detail: e instanceof Error ? e.message : "unknown",
-            }),
-          );
-          return null;
-        }
-        throw e;
-      }
-    },
-  };
+  // The Stripe client construction moved to the adapter (`stripe-gateway.ts`)
+  // so this module no longer reaches into the SDK. Kept as a named export
+  // because the revocation tests and the webhook route call it by this name.
+  return stripeSessionLookup();
 }
 
 export type RevocationOutcome =

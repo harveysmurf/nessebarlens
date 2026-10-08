@@ -28,7 +28,7 @@ import {
   createProdigiOrder,
   type CreateProdigiOrder,
 } from "./prodigi-order";
-import { isRetryableProdigiReason } from "./prodigi-config";
+import { isRetryableProdigiReason } from "./prodigi-policy";
 import {
   AWAITING_PRODIGI_REASON,
   decideFulfillment,
