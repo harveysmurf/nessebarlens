@@ -1,16 +1,18 @@
 import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";
+import { physicalSpecification } from "./print-spec";
 import type { PhysicalFormat } from "./sku-map";
 import type { ShipToCountryCode } from "./ship-to-countries";
 
 /**
  * The client half of the request contract, so it can be unit-tested instead of
- * only exercised in the browser. Both bodies encode the same rules
- * parseQuoteBody/parseCheckoutBody enforce server-side -- framed carries a
- * finish, other physical formats omit it, digital omits size and frame -- and
- * these builders are the only place the client spells them. The component
- * keeps the fetch/state wiring and supplies the raw form state; a stale frame
- * selection is dropped rather than sent, which is why the finish is normalised
- * here rather than passed straight through.
+ * only exercised in the browser. Both bodies carry the same rules
+ * parseQuoteBody/parseCheckoutBody enforce server-side, and neither spells
+ * them: a selection becomes body fields by building the PrintSpecification
+ * the server parses, so the frame rule has one home instead of one per side.
+ * The component keeps the fetch/state wiring and supplies the raw form state;
+ * a stale frame selection is dropped rather than sent, which is why the
+ * builders read the normalised selection back off the specification rather
+ * than pass the selection through.
  */
 
 export type QuoteRequest = {
@@ -28,16 +30,6 @@ export type CheckoutRequest = {
   destinationCountryCode: ShipToCountryCode | null;
 };
 
-/**
- * The frame field is only meaningful for framed; sending a finish alongside
- * giclee or canvas is exactly what parseFrame rejects with "frame only allowed
- * when format is framed", so the builder nulls it rather than letting a stale
- * selection reach the API. Shared by both bodies because the rule is one rule.
- */
-function frameFor(format: PrintFormat, frame: FrameFinish): FrameFinish | null {
-  return format === "framed" ? frame : null;
-}
-
 /** Digital has no Prodigi quote, so the format is physical by construction. */
 export function quoteRequest(
   format: PhysicalFormat,
@@ -45,12 +37,21 @@ export function quoteRequest(
   frame: FrameFinish,
   destinationCountryCode: ShipToCountryCode,
 ): QuoteRequest {
-  return { format, size, frame: frameFor(format, frame), destinationCountryCode };
+  const spec = physicalSpecification(format, size, frame);
+  return {
+    format: spec.format,
+    size: spec.size,
+    frame: spec.frame,
+    destinationCountryCode,
+  };
 }
 
 /**
  * Digital is a download, so it needs neither a size nor a shipping country;
  * both are dropped to null so the parser sees the same shape it validates.
+ * That drop is the specification's digital arm, which carries no fields to
+ * read back. A physical selection goes through the specification so its frame
+ * is projected, not re-decided here.
  */
 export function checkoutRequest(
   photoSlug: string,
@@ -68,11 +69,12 @@ export function checkoutRequest(
       destinationCountryCode: null,
     };
   }
+  const spec = physicalSpecification(format, size, frame);
   return {
     photoSlug,
-    format,
-    size,
-    frame: frameFor(format, frame),
+    format: spec.format,
+    size: spec.size,
+    frame: spec.frame,
     destinationCountryCode,
   };
 }

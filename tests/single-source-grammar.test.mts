@@ -209,6 +209,10 @@ test("the owned grammars are declared exactly once, in their owning module", () 
     "/^[0-9a-f]{64}$/i": "src/lib/crypto-hex.ts",
     "/^[A-Z]{2}$/": "src/lib/ship-to-countries.ts",
     "/^https:\\/\\//i": "src/lib/url-patterns.ts",
+    // Owned by money.ts, the module parseEur reads with it: pricing.ts
+    // re-exports the parse rather than restating the grammar, so this stays
+    // the only declaration of "what a EUR amount looks like on the wire".
+    "/^(?:0|[1-9]\\d{0,5})(?:\\.\\d{1,2})?$/": "src/lib/money.ts",
   };
   const found = regexLiterals();
   for (const [source, owner] of Object.entries(owners)) {
@@ -602,6 +606,15 @@ test("no module re-exports a symbol it does not define", () => {
   // modules that had no other reason to change. This walks the AST for
   // `export ... from "./other"` and names the one case that is allowed: an
   // index.ts barrel, which exists to re-export on purpose.
+  //
+  // The one other named exception: money.ts owns the EUR grammar and the
+  // cents conversion, and pricing.ts keeps the import path every caller
+  // already uses so those names move without a sweep across the tree. It is a
+  // map of file -> the single module that file may re-export from, so a
+  // second path out of any other file still fails below.
+  const ALLOWED: Record<string, readonly string[]> = {
+    "src/lib/pricing.ts": ["./money"],
+  };
   const offenders: string[] = [];
   for (const file of allSourceFiles()) {
     const rel = relative(file);
@@ -620,6 +633,13 @@ test("no module re-exports a symbol it does not define", () => {
       ) {
         continue;
       }
+      const specifier = statement.moduleSpecifier;
+      if (
+        ts.isStringLiteral(specifier) &&
+        (ALLOWED[rel] ?? []).includes(specifier.text)
+      ) {
+        continue;
+      }
       // `export type * from` is a wholesale alias for a module's whole
       // surface and counts the same as naming symbols one at a time.
       const named = statement.exportClause?.kind ?? ts.SyntaxKind.NamedExports;
@@ -632,6 +652,15 @@ test("no module re-exports a symbol it does not define", () => {
     offenders,
     [],
     `re-exported symbols have no owner in the file that names them: ${offenders.join(", ")}`,
+  );
+  // Non-vacuous in the direction the exception points: if pricing.ts stopped
+  // re-exporting from money.ts, the allowance above would be a hole instead of
+  // a description of one deliberate second path.
+  const pricing = fs.readFileSync(path.join(root, "src/lib/pricing.ts"), "utf8");
+  assert.match(
+    pricing,
+    /export \{[^}]*parseEurAmount[^}]*\} from "\.\/money"/,
+    "pricing.ts no longer re-exports parseEurAmount from money.ts",
   );
 });
 
