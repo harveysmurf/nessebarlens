@@ -34,6 +34,7 @@ import {
   type PhysicalFormat,
 } from "./sku-map";
 import { isEmailKind, type EmailKind } from "./email";
+import { isRetryableProdigiReason } from "./prodigi-config";
 
 export type OrderStatus =
   | "paid"
@@ -344,6 +345,65 @@ export function isUnfulfilledOutcome(record: OrderRecord): boolean {
   return (
     record.status === "paid-unfulfilled" &&
     record.reason !== AWAITING_PRODIGI_REASON
+  );
+}
+
+/**
+ * The record a Prodigi failure leaves behind: same order, the failure's own
+ * reason, and no Prodigi ids or asset (this attempt placed nothing). `terminal`
+ * is derived from the reason, never inherited, so the two failure branches in
+ * fulfillment.ts — the retryable `server|timeout|unconfigured` arm and the
+ * terminal client arm — cannot disagree about what a stored reason means.
+ *
+ * Pure: the caller does the Prodigi call and the store write; this only decides
+ * the shape of the record those effects persist.
+ */
+export function withProdigiFailure(
+  record: OrderRecord,
+  failure: { reason: string },
+): OrderRecord {
+  return {
+    ...record,
+    terminal: !isRetryableProdigiReason(failure.reason),
+    reason: failure.reason,
+    prodigiOrderId: null,
+    prodigiStage: null,
+    assetUrl: null,
+  };
+}
+
+/**
+ * The record a placed Prodigi order leaves behind: finished, paid, and naming
+ * the id, stage and asset the provider returned. From here a redelivery of the
+ * same session is a plain duplicate.
+ */
+export function withProdigiSuccess(
+  record: OrderRecord,
+  result: { orderId: string; stage: string | null; assetUrl: string },
+): OrderRecord {
+  return {
+    ...record,
+    terminal: true,
+    status: "paid",
+    reason: null,
+    masterKey: null,
+    prodigiOrderId: result.orderId,
+    prodigiStage: result.stage,
+    assetUrl: result.assetUrl,
+  };
+}
+
+/**
+ * Whether a stored record is a redelivery we should try again rather than a
+ * duplicate: still paid-unfulfilled, not terminal, and carrying a retryable
+ * Prodigi reason. The single predicate the webhook uses to tell "Stripe is
+ * retrying us" from "this order is done".
+ */
+export function shouldRetry(record: OrderRecord): boolean {
+  return (
+    record.status === "paid-unfulfilled" &&
+    !record.terminal &&
+    isRetryableProdigiReason(record.reason)
   );
 }
 

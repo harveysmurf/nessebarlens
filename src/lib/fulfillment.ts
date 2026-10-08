@@ -33,6 +33,9 @@ import {
   AWAITING_PRODIGI_REASON,
   decideFulfillment,
   isUnfulfilledOutcome,
+  shouldRetry,
+  withProdigiFailure,
+  withProdigiSuccess,
   type FulfillmentInput,
   type OrderRecord,
 } from "./order-decision";
@@ -249,11 +252,7 @@ export async function fulfillCheckoutSession(
     existingRaw !== null
       ? readOrderRecord(existingRaw, decision.record.sessionId, "webhook")
       : null;
-  const isRetry =
-    retryRecord !== null &&
-    retryRecord.status === "paid-unfulfilled" &&
-    !retryRecord.terminal &&
-    isRetryableProdigiReason(retryRecord.reason);
+  const isRetry = retryRecord !== null && shouldRetry(retryRecord);
 
   if (existingRaw !== null && !isRetry) {
     // Mint here too, not only on the write path: a redelivery after a partial
@@ -363,16 +362,7 @@ export async function fulfillCheckoutSession(
         // the order with its specific reason, log loudly for a human, and answer
         // 5xx so Stripe keeps redelivering for ~3 days — long enough to fix the
         // key or the HMAC secret and still land the order.
-        record = {
-          ...record,
-          // Same derivation as the client branch below, so the two can never
-          // disagree about what a stored reason means.
-          terminal: !isRetryableProdigiReason(result.reason),
-          reason: result.reason,
-          prodigiOrderId: null,
-          prodigiStage: null,
-          assetUrl: null,
-        };
+        record = withProdigiFailure(record, result);
         // Retryable failures stay terminal:false — no apology email yet; a
         // redelivery or the reconciler may still land the order. Claim/send
         // only runs on the terminal write paths below.
@@ -388,40 +378,17 @@ export async function fulfillCheckoutSession(
       }
 
       if (!result.ok) {
-        record = {
-          ...record,
-          // Keep the specific cause. A single "prodigi-error" for an auth
-          // failure, a rate limit and a malformed body makes the stored record
-          // useless for telling "rotate the key" from "back off" from "we sent
-          // something Prodigi does not accept".
-          //
-          // And derive `terminal` from that reason rather than inheriting it: on
-          // a first attempt the shell happens to say terminal:true, but a
-          // redelivery of a retryable failure spreads a record that says false,
-          // so inheriting left a non-retryable validation error stored as
-          // "still retryable" — the invariant "terminal ⇔ no further automatic
-          // action" broken, and a reconciler or operator view (#116) that trusts
-          // `terminal` would misreport the order. One function, so a reason
-          // added to the retryable set cannot be stored with the wrong flag.
-          terminal: !isRetryableProdigiReason(result.reason),
-          reason: result.reason,
-          prodigiOrderId: null,
-          prodigiStage: null,
-          assetUrl: null,
-        };
+        // The specific cause is kept — an auth failure, a rate limit and a
+        // malformed body are different operator problems, and one "prodigi-error"
+        // would tell nobody which to act on. `terminal` is derived from that same
+        // reason inside the helper, never inherited: a redelivery of a retryable
+        // failure would otherwise spread terminal:false onto a non-retryable
+        // validation error, breaking "terminal ⇔ no further automatic action".
+        record = withProdigiFailure(record, result);
       } else {
-        record = {
-          ...record,
-          // The retry landed, so this session is finished: from here on a
-          // redelivery is a plain duplicate.
-          terminal: true,
-          status: "paid",
-          reason: null,
-          masterKey: null,
-          prodigiOrderId: result.value.orderId,
-          prodigiStage: result.value.stage,
-          assetUrl: result.value.assetUrl,
-        };
+        // The retry landed, so this session is finished: from here on a
+        // redelivery is a plain duplicate.
+        record = withProdigiSuccess(record, result.value);
       }
     }
   }
