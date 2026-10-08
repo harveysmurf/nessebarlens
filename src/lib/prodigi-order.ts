@@ -16,9 +16,9 @@ import {
   prodigiTimeoutSignal,
   prodigiUrl,
   type ProdigiFailureKind,
-  type ProdigiFailureReason,
   type ProdigiResult,
 } from "./prodigi-config";
+import type { ProdigiFailureReason } from "./prodigi-policy";
 import { prodigiConfig, prodigiWebhookToken } from "./config";
 import { signPrintAssetUrl } from "./print-asset";
 import { resolveSku, type PhysicalFormat } from "./sku-map";

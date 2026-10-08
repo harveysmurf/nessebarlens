@@ -7,13 +7,13 @@ import {
   PRODIGI_LIVE_API_BASE,
   PRODIGI_SANDBOX_API_BASE,
   classifyProdigiStatus,
-  isRetryableProdigiReason,
   prodigiApiBaseIfAllowed,
   prodigiFailureFrom,
   prodigiKeyConfigured,
   prodigiUrl,
   readProdigiConfig,
 } from "../src/lib/prodigi-config.ts";
+import { isRetryableProdigiReason } from "../src/lib/prodigi-policy.ts";
 
 /**
  * Every variable prodigi-config reads. Its readers layer the passed env over

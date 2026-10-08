@@ -6,11 +6,11 @@ import { memoryOrdersStore } from "./fake-orders-store.mts";
 
 import {
   isProdigiTimeout,
-  isRetryableProdigiReason,
   PRODIGI_ORDER_TIMEOUT_MS,
   PRODIGI_QUOTE_TIMEOUT_MS,
   prodigiTimeoutSignal,
 } from "../src/lib/prodigi-config.ts";
+import { isRetryableProdigiReason } from "../src/lib/prodigi-policy.ts";
 import { type OrderRecipient } from "../src/lib/prodigi-order.ts";
 import { quotePhysical } from "../src/lib/prodigi-quote.ts";
 import { createProdigiOrder } from "../src/lib/prodigi-order.ts";

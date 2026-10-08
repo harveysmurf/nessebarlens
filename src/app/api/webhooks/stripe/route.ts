@@ -11,11 +11,12 @@ import {
   ORDERS_STORE_UNAVAILABLE_ERROR,
   ORDERS_STORE_UNAVAILABLE_STATUS,
 } from "@/lib/orders-store";
+import { sessionOriginCheck } from "@/lib/stripe-event";
+import { paymentGateway } from "@/lib/container";
 import {
-  readStripeEvent,
-  sessionOriginCheck,
-  type StripeCheckoutSession,
-} from "@/lib/stripe-event";
+  fulfillmentInputFromSession,
+  type PaymentEvent,
+} from "@/lib/payment-gateway";
 import { readWorkerBindings } from "@/lib/worker-bindings";
 import type { OrdersStore } from "@/lib/orders-store";
 
@@ -23,20 +24,11 @@ export const dynamic = "force-dynamic";
 // OpenNext runs this inside the Worker via nodejs_compat. Not a separate Node server.
 export const runtime = "nodejs";
 
-const CHECKOUT_EVENTS = new Set([
-  "checkout.session.completed",
-  "checkout.session.async_payment_succeeded",
-]);
-
-/** The two money-events that take an order away from a customer. */
-const REVOCATION_EVENTS = new Set(["charge.refunded", "charge.dispute.created"]);
-
-/** The subset of a Charge this handler reads. */
-type StripeCharge = {
-  payment_intent?: string | null;
-  amount?: number | null;
-  amount_refunded?: number | null;
-};
+/** Either of the two money-events that take an order away from a customer. */
+type RevocationEvent = Extract<
+  PaymentEvent,
+  { kind: "charge-refunded" | "dispute-created" }
+>;
 
 /**
  * A partial refund does not revoke anything.
@@ -47,11 +39,12 @@ type StripeCharge = {
  * silent — the alternative failure mode is an operator assuming partials were
  * considered and finding they were not.
  */
-function partialRefundAmounts(
-  charge: StripeCharge,
-): { amount: number; amountRefunded: number } | null {
+function partialRefundAmounts(charge: {
+  amount: number | null;
+  amountRefunded: number | null;
+}): { amount: number; amountRefunded: number } | null {
   const amount = charge.amount;
-  const refunded = charge.amount_refunded;
+  const refunded = charge.amountRefunded;
   // Amounts missing entirely is treated as "not partial": an event we cannot
   // read the numbers off is not evidence of a partial refund, and guessing
   // either way revokes or spares a purchase on a coin toss.
@@ -82,16 +75,17 @@ export async function POST(request: Request) {
     );
   }
 
-  let event;
-  try {
-    event = await readStripeEvent(rawBody, signature, bindings.webhookSecret);
-  } catch {
+  const verified = await paymentGateway().verifyAndParseWebhook({
+    rawBody,
+    signature,
+    secret: bindings.webhookSecret,
+  });
+  if (!verified.ok) {
     return NextResponse.json({ error: "invalid-signature" }, { status: 400 });
   }
+  const event = verified.event;
 
-  const isCheckout = CHECKOUT_EVENTS.has(event.type);
-  const isRevocation = REVOCATION_EVENTS.has(event.type);
-  if (!isCheckout && !isRevocation) {
+  if (event.kind === "other") {
     return NextResponse.json({ received: true, ignored: event.type });
   }
 
@@ -103,39 +97,43 @@ export async function POST(request: Request) {
     );
   }
 
-  try {
-    // Resolution happens inside this try on purpose. A dispute needs two hops
-    // and either can fail transiently; a throw from either must answer 5xx so
-    // Stripe redelivers, exactly like the refund path's single hop.
-    if (isRevocation) {
+  if (event.kind === "charge-refunded" || event.kind === "dispute-created") {
+    try {
+      // Resolution happens inside this try on purpose. A dispute needs two hops
+      // and either can fail transiently; a throw from either must answer 5xx so
+      // Stripe redelivers, exactly like the refund path's single hop.
+      //
       // await, not a bare return: a promise returned from inside a try block
       // settles after the block has already exited, so without this the catch
       // below never sees a rejected lookup and the error escapes as an
       // unhandled rejection instead of becoming a 500.
-      return await handleRevocation(event.type, event.data.object, bindings.ORDERS_DB);
+      return await handleRevocation(event, bindings.ORDERS_DB);
+    } catch (e) {
+      // Lookup threw. Same reasoning as the store catch below: a revoked buyer
+      // must not keep the master file because Stripe was briefly unreachable,
+      // so this is a redelivery, not a drop.
+      console.error("stripe webhook revocation lookup failed", e);
+      return NextResponse.json({ error: "revocation-lookup-failed" }, { status: 500 });
     }
-  } catch (e) {
-    // Lookup threw. Same reasoning as the store catch below: a revoked buyer must
-    // not keep the master file because Stripe was briefly unreachable, so this
-    // is a redelivery, not a drop.
-    console.error("stripe webhook revocation lookup failed", e);
-    return NextResponse.json({ error: "revocation-lookup-failed" }, { status: 500 });
   }
 
-  const session = event.data.object as StripeCheckoutSession;
+  const session = event.session;
 
   // Stripe test mode delivers every session to every endpoint, so this handler
   // also sees purchases made by another environment (#193). Answering 200
   // without writing an order is the whole point: the other deployment owns that
   // payment, and writing it here is what let two builds fight over one Prodigi
   // order. 200, not 4xx — the event is delivered correctly, just not ours.
-  const origin = sessionOriginCheck(session, siteUrl());
+  const origin = sessionOriginCheck(
+    { success_url: session.successUrl },
+    siteUrl(),
+  );
   if (origin === "foreign") {
     console.warn(
       JSON.stringify({
         event: "stripe.webhook.foreign-session",
-        sessionId: session.id ?? null,
-        sessionOrigin: session.success_url,
+        sessionId: session.id,
+        sessionOrigin: session.successUrl,
         siteOrigin: siteUrl(),
       }),
     );
@@ -145,22 +143,10 @@ export async function POST(request: Request) {
     });
   }
 
-  const shippingDetails =
-    session.collected_information?.shipping_details ??
-    session.shipping_details ??
-    null;
-
   try {
     const result = await fulfillCheckoutSession({
       store: bindings.ORDERS_DB,
-      sessionId: session.id ?? "",
-      paymentStatus: session.payment_status ?? null,
-      currency: session.currency ?? null,
-      amountTotal: session.amount_total ?? null,
-      metadata: session.metadata ?? null,
-      shippingDetails,
-      customerEmail: session.customer_details?.email ?? null,
-      customerPhone: session.customer_details?.phone ?? null,
+      ...fulfillmentInputFromSession(session),
       prodigiKeyConfigured: bindings.prodigiKeyConfigured,
       now: new Date().toISOString(),
       // Read here rather than inside fulfillment, which takes its
@@ -187,32 +173,30 @@ export async function POST(request: Request) {
   }
 }
 
-async function handleRevocation(
-  type: string,
-  object: unknown,
-  store: OrdersStore,
-) {
+async function handleRevocation(event: RevocationEvent, store: OrdersStore) {
   // Both branches resolve to a payment intent; the dispute needs one extra hop
-  // because its object names a Charge, not a PaymentIntent.
+  // because its event names a Charge, not a PaymentIntent.
   let paymentIntent: string | null | undefined;
-  if (type === "charge.refunded") {
-    const charge = object as StripeCharge;
-    const partial = partialRefundAmounts(charge);
+  if (event.kind === "charge-refunded") {
+    const partial = partialRefundAmounts({
+      amount: event.amount,
+      amountRefunded: event.amountRefunded,
+    });
     if (partial) {
       console.error(
         JSON.stringify({
           event: "order.partial-refund",
-          paymentIntent: charge.payment_intent ?? null,
+          paymentIntent: event.paymentIntent,
           amount: partial.amount,
           amountRefunded: partial.amountRefunded,
         }),
       );
       return NextResponse.json({ received: true, ignored: "partial-refund" });
     }
-    paymentIntent = charge.payment_intent;
+    paymentIntent = event.paymentIntent;
   } else {
     paymentIntent = await paymentIntentForDispute(
-      object as { charge?: string | null },
+      { charge: event.dispute.charge },
       defaultStripeLookup(),
     );
   }
@@ -220,7 +204,7 @@ async function handleRevocation(
   try {
     const result = await revokeOrderByPaymentIntent({
       store,
-      status: type === "charge.refunded" ? "refunded" : "disputed",
+      status: event.kind === "charge-refunded" ? "refunded" : "disputed",
       paymentIntent,
       now: new Date().toISOString(),
     });

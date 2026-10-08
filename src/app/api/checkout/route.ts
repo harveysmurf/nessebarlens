@@ -6,13 +6,17 @@ import {
   type ShipToCountryCode,
 } from "@/lib/ship-to-countries";
 import { getPhoto } from "@/lib/photos";
-import { DIGITAL_PRICE_EUR, eurToCents, formatLabel } from "@/lib/pricing";
+import {
+  DIGITAL_PRICE_EUR,
+  type FrameFinish,
+  type PrintSize,
+} from "@/lib/pricing";
 import { webDerivativeUrls } from "@/lib/derivatives";
-import { quotePhysical } from "@/lib/prodigi-quote";
 import { prodigiFailureFrom } from "@/lib/prodigi-config";
 import { canSignMasterAsset } from "@/lib/print-asset";
-import { getStripe } from "@/lib/stripe";
 import { isConfiguredSiteUrl, siteUrl } from "@/lib/config";
+import { paymentGateway, printProvider } from "@/lib/container";
+import type { CheckoutIntent } from "@/lib/payment-gateway";
 
 export async function POST(request: Request) {
   const body = await readJsonBody(request);
@@ -52,6 +56,11 @@ export async function POST(request: Request) {
   let size = "";
   let frame = "";
   let destinationCountryCode: ShipToCountryCode | null = null;
+  // The typed spec for the payment intent, set only in the physical arm (the
+  // union narrows there without a cast; the metadata strings above stay the
+  // wire-format values).
+  let intentSize: PrintSize | null = null;
+  let intentFrame: FrameFinish | null = null;
 
   if (parsed.format !== "digital") {
     // `parsed` is now the physical arm: size/frame/destinationCountryCode are
@@ -59,7 +68,7 @@ export async function POST(request: Request) {
     // ShipToCountryCode | null.
     destinationCountryCode =
       parsed.destinationCountryCode ?? DEFAULT_SHIPPING_COUNTRY;
-    const result = await quotePhysical({
+    const result = await printProvider().quote({
       format: parsed.format,
       size: parsed.size,
       frame: parsed.frame,
@@ -80,6 +89,8 @@ export async function POST(request: Request) {
     sku = result.value.sku;
     size = parsed.size;
     frame = parsed.frame ?? "";
+    intentSize = parsed.size;
+    intentFrame = parsed.frame ?? null;
 
     // Fail closed before taking the money. A physical order is fulfilled from
     // an HMAC-signed /api/print-asset URL; without a usable
@@ -104,16 +115,6 @@ export async function POST(request: Request) {
   // rather than pointing at a file that does not exist (#245).
   const previewImage = webDerivativeUrls(photo)?.src;
 
-  let stripe;
-  try {
-    stripe = getStripe();
-  } catch {
-    return NextResponse.json(
-      { error: "Stripe is not configured" },
-      { status: 503 },
-    );
-  }
-
   const metadata: Record<string, string> = {
     photoSlug: photo.slug,
     format: parsed.format,
@@ -132,94 +133,48 @@ export async function POST(request: Request) {
     metadata.destinationCountryCode = destinationCountryCode;
   }
 
-  const sessionParams: Parameters<typeof stripe.checkout.sessions.create>[0] = {
-    mode: "payment",
-    // Adaptive Pricing off, stated here rather than left to the dashboard
-    // toggle. With it on, Stripe shows the buyer a converted local amount,
-    // while `amount_total` on the session stays in the integration currency
-    // (eur) — the behaviour the webhook's `amount-mismatch` check relies on.
-    // That guarantee is an API-version property, so it is asserted in
-    // tests/adaptive-pricing.test.mts and would fail loudly if the Stripe
-    // SDK upgrade changed the version the amount semantics depend on.
-    adaptive_pricing: { enabled: false },
-    success_url: `${base}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
-    cancel_url: `${base}/checkout/cancel?slug=${encodeURIComponent(photo.slug)}`,
-    // The line item is built inline rather than from a Stripe price_… ID on
-    // purpose. Every price here is per-photo and per-quote (a Prodigi quote
-    // for the chosen format/size/frame/destination), so there is no fixed
-    // catalogue to map onto a Price created in the dashboard. Stripe's
-    // account-setup guide tells you to create a non-recurring product and
-    // paste its price ID; that step does not apply to this route, and
-    // adding one would create an object nothing reads. `mode: "payment"`
-    // plus the returned `session.url` is the whole hosted-checkout flow.
-    line_items: [
-      {
-        quantity: 1,
-        price_data: {
-          currency: "eur",
-          unit_amount: eurToCents(quoteEur),
-          product_data: {
-            name: `${photo.title} — ${formatLabel(parsed.format)}`,
-            description: isPhysical
-              ? `${size}${frame ? ` · ${frame} frame` : ""}`
-              : "Digital high-resolution license",
-            images: previewImage ? [previewImage] : undefined,
-          },
-        },
-      },
-    ],
+  // Everything the provider needs, in domain terms. The Stripe request shape
+  // (line items, adaptive pricing, shipping options) is the adapter's job —
+  // this route no longer names a `Stripe.*` type or builds a session inline.
+  const intent: CheckoutIntent = {
+    title: photo.title,
+    format: parsed.format,
+    size: intentSize,
+    frame: intentFrame,
+    previewImage: previewImage ?? null,
+    quoteEur,
+    shippingEur,
+    destinationCountryCode,
+    successUrl: `${base}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+    cancelUrl: `${base}/checkout/cancel?slug=${encodeURIComponent(photo.slug)}`,
     metadata,
   };
 
-  if (isPhysical && destinationCountryCode) {
-    // Lock Stripe address to the quoted destination so the fixed shipping
-    // amount matches Prodigi's rate for that country.
-    sessionParams.shipping_address_collection = {
-      allowed_countries: [destinationCountryCode],
-    };
-    sessionParams.shipping_options = [
-      {
-        shipping_rate_data: {
-          type: "fixed_amount",
-          fixed_amount: {
-            amount: eurToCents(shippingEur),
-            currency: "eur",
-          },
-          display_name: "Shipping",
-        },
-      },
-    ];
-  }
-
-  let session;
-  try {
-    session = await stripe.checkout.sessions.create(sessionParams);
-  } catch (e) {
-    // The log, not the body, is where this stays diagnosable: the SDK's error
-    // carries its own `code` (`api_key_invalid`, `account_inactive`, ...) and
-    // the three causes stay apart here, where the log reader is us. It also
-    // carries the message for a connection failure, where there is no code at
-    // all. The object is logged whole rather than through a code-or-"unknown"
-    // ternary: the SDK wraps anything fetch threw, so a throw that reached this
-    // catch without a `code` property could not happen, and an arm for it would
-    // be a fallback nothing can test.
-    console.error("stripe.checkout.sessions.create", e);
+  const created = await paymentGateway().createCheckout(intent);
+  if (!created.ok) {
+    // The adapter logs the raw provider error itself, so the SDK's `code`
+    // survives in the log without ever reaching this unauthenticated body.
+    if (created.reason === "unconfigured") {
+      return NextResponse.json(
+        { error: "Stripe is not configured" },
+        { status: 503 },
+      );
+    }
+    if (created.reason === "no-url") {
+      return NextResponse.json(
+        { error: "Stripe session missing URL" },
+        { status: 502 },
+      );
+    }
     return NextResponse.json(
       { error: "Could not create Checkout Session", code: "checkout-unavailable" },
       { status: 502 },
     );
   }
 
-  if (!session.url) {
-    return NextResponse.json(
-      { error: "Stripe session missing URL" },
-      { status: 502 },
-    );
-  }
-
   return NextResponse.json({
-    url: session.url,
-    sessionId: session.id,
+    url: created.value.url,
+    sessionId: created.value.sessionId,
     quoteEur,
     ...(isPhysical
       ? { merchandiseEur: quoteEur, shippingEur, sku }
