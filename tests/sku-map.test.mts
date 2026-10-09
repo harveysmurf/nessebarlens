@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import { PRODIGI_SHIPPING_METHOD } from "../src/infrastructure/prodigi/prodigi-config.ts";
-import type { FrameFinish } from "../src/domain/pricing/pricing.ts";
+import type { FrameFinish, PrintSize } from "../src/domain/pricing/pricing.ts";
 import {
   CANVAS_WRAP,
   FRAME_COLOR,
@@ -47,6 +47,16 @@ test("allPhysicalSkus returns exactly the 9 pinned SKUs", () => {
   assert.deepEqual(
     entries.map((e) => e.sku).sort(),
     [...PINNED_SKUS].sort(),
+  );
+});
+
+test("resolveSku refuses a pair the table does not offer", () => {
+  // Typed callers only pass pairs the table defines, so this guard is the
+  // backstop for a format-specific catalogue that dropped a size: without it a
+  // missing pair would resolve to another product's SKU rather than fail.
+  assert.throws(
+    () => resolveSku("giclee", "99x99" as PrintSize),
+    /no print product for giclee\/99x99/,
   );
 });
 
