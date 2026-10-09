@@ -1,4 +1,5 @@
 import { Eur, eurToCents } from "./money";
+import { PRINT_PRODUCTS, type PrintSize } from "./print-products";
 
 /**
  * The EUR grammar and the cents conversion are money.ts's; these two names
@@ -10,7 +11,9 @@ import { Eur, eurToCents } from "./money";
 export { eurToCents, parseEurAmount } from "./money";
 
 export type PrintFormat = "giclee" | "framed" | "canvas" | "digital";
-export type PrintSize = "30x40" | "50x70" | "70x100";
+// PrintSize is the print table's size column; re-exported here because that is
+// where every caller already imports it from (print-products.ts owns it).
+export type { PrintSize };
 export type FrameFinish = "black" | "white" | "brown";
 
 /** Merchandise-only EUR. Shipping is separate (Stripe shipping_options). */
@@ -40,11 +43,24 @@ const FORMAT_LABELS: Record<PrintFormat, string> = {
   digital: "High-Res Digital Download",
 };
 
-const SIZE_LABELS: Record<PrintSize, string> = {
-  "30x40": '30 × 40 cm (12 × 16") — Standard',
-  "50x70": '50 × 70 cm (20 × 28") — Medium',
-  "70x100": '70 × 100 cm (28 × 40") — Gallery',
-};
+/** "30x40" → "30 × 40"; used for both the cm and the inch half. */
+function sizeWords(size: string): string {
+  const [a, b] = size.split("x");
+  return `${a} × ${b}`;
+}
+
+/**
+ * Label per size, derived from the table so a size cannot be offered without
+ * words. The tier words ("Standard"/"Medium"/"Gallery") are gone: the area
+ * order already tells the buyer which is larger, and a tier name that is not
+ * in the table is a second vocabulary to maintain.
+ */
+const SIZE_LABELS: Record<PrintSize, string> = Object.fromEntries(
+  PRINT_PRODUCTS.map((product) => [
+    product.size,
+    `${sizeWords(product.size)} cm (${sizeWords(product.sizeIn)}")`,
+  ]),
+) as Record<PrintSize, string>;
 
 export function formatLabel(format: PrintFormat): string {
   return FORMAT_LABELS[format];

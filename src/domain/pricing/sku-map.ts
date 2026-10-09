@@ -1,15 +1,22 @@
 /**
- * Prodigi SKU map — single source for format+size → SKU.
- * Verified 2026-09-27 against api.sandbox.prodigi.com GET /v4.0/products/{sku}.
- * Every UI format×size resolving to a pinned SKU is enforced by
- * tests/sku-map.test.mts.
+ * Prodigi SKU map — the format+size → SKU view of the pinned product table.
+ *
+ * SKUs, sizes and inch suffixes come from PRINT_PRODUCTS (print-products.ts),
+ * which the captured Prodigi fixture is contract-tested against; this module
+ * only adds the request attributes each format carries. Every UI format×size
+ * resolving to a pinned SKU is enforced by tests/sku-map.test.mts.
  */
 
 import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";
+import {
+  findProduct,
+  PRINT_PRODUCTS,
+  type ProdigiSizeIn,
+} from "./print-products";
 
 export type PhysicalFormat = Exclude<PrintFormat, "digital">;
 
-export type ProdigiSizeIn = "12x16" | "20x28" | "28x40";
+export type { ProdigiSizeIn };
 
 export type SkuEntry = {
   sku: string;
@@ -19,18 +26,11 @@ export type SkuEntry = {
   attributes: Record<string, string>;
 };
 
-/** cm size shown in UI → Prodigi inch SKU suffix. */
-export const SIZE_TO_INCH: Record<PrintSize, ProdigiSizeIn> = {
-  "30x40": "12x16",
-  "50x70": "20x28",
-  "70x100": "28x40",
-};
-
-const FORMAT_PREFIX: Record<PhysicalFormat, string> = {
-  giclee: "GLOBAL-FAP",
-  framed: "GLOBAL-CFPM",
-  canvas: "GLOBAL-CAN",
-};
+/** cm size shown in UI → Prodigi inch SKU suffix, derived from the table. */
+export const SIZE_TO_INCH: Record<PrintSize, ProdigiSizeIn> =
+  Object.fromEntries(
+    PRINT_PRODUCTS.map((product) => [product.size, product.sizeIn]),
+  ) as Record<PrintSize, ProdigiSizeIn>;
 
 /** UI frame finish → Prodigi CFPM `color` attribute. */
 export const FRAME_COLOR: Record<FrameFinish, string> = {
@@ -77,7 +77,10 @@ export function formatListLabel(
   return values.join(separator);
 }
 
-export const PRINT_SIZES: PrintSize[] = ["30x40", "50x70", "70x100"];
+/** The distinct cm sizes in the table, in catalog order (derived, not listed). */
+export const PRINT_SIZES: PrintSize[] = [
+  ...new Set(PRINT_PRODUCTS.map((product) => product.size as PrintSize)),
+];
 
 // Membership tests for the allow-lists above, owned here because this module
 // owns the lists. Callers must not cast their way to one —
@@ -107,8 +110,17 @@ export function resolveSku(
   size: PrintSize,
   frame: FrameFinish | null = null,
 ): SkuEntry {
-  const sizeIn = SIZE_TO_INCH[size];
-  const sku = `${FORMAT_PREFIX[format]}-${sizeIn.toUpperCase()}`;
+  const product = findProduct(format, size);
+  if (!product) {
+    // The typed callers only pass pairs from PRINT_SIZES, which the table
+    // defines, so this is a programming error rather than a customer path.
+    throw new Error(`no print product for ${format}/${size}`);
+  }
+  // The table's own type is the entry shape (sizeIn: string); the derived
+  // ProdigiSizeIn union is a projection of the same table, so the literal is
+  // already a member. The cast restates the invariant the table encodes.
+  const sizeIn = product.sizeIn as ProdigiSizeIn;
+  const sku = product.sku;
   const attributes: Record<string, string> = {};
   if (format === "framed") {
     if (!frame || !(frame in FRAME_COLOR)) {

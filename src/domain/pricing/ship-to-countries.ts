@@ -1,16 +1,17 @@
 /**
  * Ship-to countries for physical prints.
  *
- * Source (generated 2026-09-27):
- * 1. Intersection of Prodigi sandbox `variants[].shipsTo` across the 9 pinned
- *    SKUs (GLOBAL-FAP/CFPM/CAN × 12x16/20x28/28x40) → 231 codes.
+ * Generated from tests/fixtures/prodigi/products.json by
+ * scripts/generate-ship-to-countries.mjs (#296):
+ * 1. Intersection of the captured variants' `shipsTo` across the nine pinned
+ *    SKUs.
  * 2. Filtered to Stripe Checkout `ShippingAddressCollection.AllowedCountry`
- *    (stripe SDK Sessions.d.ts) → 220 codes.
- * 3. Dropped Prodigi-only (not in Stripe enum): AN, AS, CU, FM, IR, KP, MH, MP, PW, SY, VI.
+ *    (the `stripe` SDK's Sessions.d.ts).
  *
- * Re-generate: fetch each SKU from api.sandbox.prodigi.com/v4.0/products/{sku},
- * intersect shipsTo, filter against Stripe AllowedCountry.
+ * Re-generate with `node scripts/generate-ship-to-countries.mjs`; `--check`
+ * compares without writing.
  */
+// BEGIN GENERATED (scripts/generate-ship-to-countries.mjs)
 export const SHIP_TO_COUNTRIES = [
   { code: "AF", name: "Afghanistan" },
   { code: "AX", name: "Åland Islands" },
@@ -233,6 +234,7 @@ export const SHIP_TO_COUNTRIES = [
   { code: "ZM", name: "Zambia" },
   { code: "ZW", name: "Zimbabwe" },
 ] as const;
+// END GENERATED
 
 export type ShipToCountryCode = (typeof SHIP_TO_COUNTRIES)[number]["code"];
 

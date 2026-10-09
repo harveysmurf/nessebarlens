@@ -43,7 +43,7 @@ test("every print size has a label with both unit systems", () => {
     assert.match(label, /cm \(/);
     assert.match(label, /"/);
   }
-  assert.equal(sizeLabel(PRINT_SIZES[0]!), '30 × 40 cm (12 × 16") — Standard');
+  assert.equal(sizeLabel(PRINT_SIZES[0]!), '30 × 40 cm (12 × 16")');
 });
 
 test("parseEurAmount accepts plain decimal amounts and rejects the rest", () => {

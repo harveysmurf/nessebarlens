@@ -17,6 +17,11 @@
 
 import type { FrameFinish, PrintFormat, PrintSize } from "../pricing/pricing";
 import {
+  findProduct,
+  PRINT_PRODUCTS,
+  type PrintProductEntry,
+} from "../pricing/print-products";
+import {
   isFrameFinishValue,
   isPrintSize,
   type PhysicalFormat,
@@ -45,6 +50,7 @@ export type PrintSpecificationReason =
   | "digital-rejects-size"
   | "digital-rejects-frame"
   | "size-required"
+  | "size-not-offered-for-format"
   | "frame-required"
   | "frame-not-allowed";
 
@@ -108,16 +114,19 @@ export function parsePrintSpecification(
   format: PhysicalFormat,
   size: unknown,
   frame: unknown,
+  products?: readonly PrintProductEntry[],
 ): PhysicalPrintResult;
 export function parsePrintSpecification(
   format: PrintFormat,
   size: unknown,
   frame: unknown,
+  products?: readonly PrintProductEntry[],
 ): PrintSpecificationResult;
 export function parsePrintSpecification(
   format: PrintFormat,
   size: unknown,
   frame: unknown,
+  products: readonly PrintProductEntry[] = PRINT_PRODUCTS,
 ): PrintSpecificationResult {
   if (format === "digital") {
     if (size !== null && size !== undefined) {
@@ -131,6 +140,14 @@ export function parsePrintSpecification(
 
   if (!isPrintSize(size)) {
     return { ok: false, reason: "size-required" };
+  }
+
+  // A size the table carries for some other format is not a size this format
+  // offers: the pair is the identity, not the size alone. With today's nine
+  // this cannot fire, but the check is what lets a format-specific catalogue
+  // grow without silently selling a size Prodigi has no SKU for.
+  if (!findProduct(format, size, products)) {
+    return { ok: false, reason: "size-not-offered-for-format" };
   }
 
   if (format === "framed") {

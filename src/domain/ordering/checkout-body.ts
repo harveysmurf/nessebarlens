@@ -71,6 +71,7 @@ const CHECKOUT_SPEC_ERRORS: Record<PrintSpecificationReason, string> = {
   ...DIGITAL_SPEC_ERRORS,
   ...FRAME_SPEC_ERRORS,
   "size-required": `size required for physical formats (${SIZE_LABEL})`,
+  "size-not-offered-for-format": `size not offered for this format (${SIZE_LABEL})`,
 };
 
 const QUOTE_SPEC_ERRORS: Record<PrintSpecificationReason, string> = {
@@ -79,6 +80,7 @@ const QUOTE_SPEC_ERRORS: Record<PrintSpecificationReason, string> = {
   ...DIGITAL_SPEC_ERRORS,
   ...FRAME_SPEC_ERRORS,
   "size-required": `size required (${SIZE_LABEL})`,
+  "size-not-offered-for-format": `size not offered (${SIZE_LABEL})`,
 };
 
 /**
