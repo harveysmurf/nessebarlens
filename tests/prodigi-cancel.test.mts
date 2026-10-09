@@ -59,10 +59,13 @@ async function withFetch<T>(
   }
 }
 
-test("the cancel url is the order's own cancel endpoint", () => {
+test("the cancel url is the order's own cancel action", () => {
+  // v4 puts cancel under /actions/cancel. The old /cancel path answered
+  // EndpointDoesNotExist (HTTP 404) against the sandbox, so cancellations were
+  // silent no-ops (#298).
   assert.equal(
     prodigiCancelUrl("ord_abc123", "https://api.sandbox.prodigi.com"),
-    "https://api.sandbox.prodigi.com/v4.0/orders/ord_abc123/cancel",
+    "https://api.sandbox.prodigi.com/v4.0/orders/ord_abc123/actions/cancel",
   );
 });
 
@@ -96,7 +99,7 @@ test("a successful cancel posts the key and reports the status", async () => {
       (async (url: unknown, init?: { method?: string; headers?: Record<string, string> }) => {
         assert.equal(
           String(url),
-          "https://api.sandbox.prodigi.com/v4.0/orders/ord_abc123/cancel",
+          "https://api.sandbox.prodigi.com/v4.0/orders/ord_abc123/actions/cancel",
         );
         assert.equal(init?.method, "POST");
         assert.equal(init?.headers?.["X-API-Key"], "sandbox-key");
