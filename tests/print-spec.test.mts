@@ -92,6 +92,33 @@ test("the other physical formats refuse a finish rather than drop it", () => {
   }
 });
 
+test("a size offered only by another format is refused with its own reason", () => {
+  // The pinned nine contain every pair, so the branch is unreachable from the
+  // real catalogue; the injected table is what proves it. Giclée offers no
+  // 70x100 here, so it is the pair — not the size — that is refused.
+  const table = [
+    {
+      format: "giclee",
+      size: "30x40",
+      sizeIn: "12x16",
+      sku: "GLOBAL-FAP-12X16",
+      printAreaPx: { short: 3600, long: 4800 },
+      printAreaDpi: 300,
+    },
+  ] as const;
+  assert.deepEqual(
+    parsePrintSpecification("giclee", "70x100", null, table),
+    { ok: false, reason: "size-not-offered-for-format" },
+  );
+  assert.deepEqual(
+    parsePrintSpecification("giclee", "30x40", null, table),
+    {
+      ok: true,
+      value: { kind: "physical", format: "giclee", size: "30x40", frame: null },
+    },
+  );
+});
+
 test("a physical format yields a physical result, without a second check", () => {
   // The overload's contract: a caller that has already proved its format
   // physical reads the physical arm straight off the result.
