@@ -5,7 +5,7 @@ import {
   parseOrderRecord,
   type OrderRecord,
   type StripeShippingDetails,
-} from "../src/lib/order-decision.ts";
+} from "../src/domain/ordering/order-decision.ts";
 import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
 /* The validator that reads ORDERS back. The store is key-value text that

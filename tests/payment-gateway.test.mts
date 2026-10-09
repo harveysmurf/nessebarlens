@@ -10,8 +10,8 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { paymentGateway, reconcileStripe } from "../src/lib/container.ts";
-import { hmacSha256Hex } from "../src/lib/crypto-hex.ts";
+import { paymentGateway, reconcileStripe } from "../src/infrastructure/container.ts";
+import { hmacSha256Hex } from "../src/domain/pricing/crypto-hex.ts";
 
 function withStripeKey(): { restore: () => void } {
   const saved = process.env.STRIPE_SECRET_KEY;

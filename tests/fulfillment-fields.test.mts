@@ -6,7 +6,7 @@ import {
   parseRecipient,
   type OrderRecord,
   type StripeShippingDetails,
-} from "../src/lib/order-decision.ts";
+} from "../src/domain/ordering/order-decision.ts";
 import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
 /* Every scalar in a stored record is re-checked on the way out of KV. These

@@ -8,7 +8,7 @@
  * production content. `PHOTOS[0]` keeps the tests green for any non-empty
  * catalog.
  */
-import { PHOTOS } from "../../src/lib/photos.ts";
+import { PHOTOS } from "../../src/domain/catalog/photos.ts";
 
 export const SAMPLE_PHOTO = PHOTOS[0];
 

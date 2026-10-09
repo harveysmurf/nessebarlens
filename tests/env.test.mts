@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { envFlag, envIntInRange, envString, envStringStrippedSlash, stripTrailingSlashes } from "../src/lib/env.ts";
-import { readProdigiConfig } from "../src/lib/prodigi-config.ts";
+import { envFlag, envIntInRange, envString, envStringStrippedSlash, stripTrailingSlashes } from "../src/infrastructure/config/env.ts";
+import { readProdigiConfig } from "../src/infrastructure/prodigi/prodigi-config.ts";
 
 function withEnv<T>(name: string, value: string | undefined, fn: () => T): T {
   const saved = process.env[name];

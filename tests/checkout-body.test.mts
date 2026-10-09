@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseCheckoutBody, parseQuoteBody } from "../src/lib/checkout-body.ts";
+import { parseCheckoutBody, parseQuoteBody } from "../src/domain/ordering/checkout-body.ts";
 import {
   FRAME_FINISHES,
   PHYSICAL_FORMATS,
@@ -8,7 +8,7 @@ import {
   SELLABLE_FORMATS,
   allPhysicalSkus,
   formatListLabel,
-} from "../src/lib/sku-map.ts";
+} from "../src/domain/pricing/sku-map.ts";
 
 const SLUG = { photoSlug: "saint-spiridov" };
 

@@ -13,9 +13,9 @@ import {
   parseDownloadTokenRecord,
   readDownloadToken,
   redeemDownloadToken,
-} from "../src/lib/download-token.ts";
-import { getConfig } from "../src/lib/config.ts";
-import { ORDERS_STORE_UNAVAILABLE_ERROR } from "../src/lib/orders-store.ts";
+} from "../src/application/fulfillment/download-token.ts";
+import { getConfig } from "../src/infrastructure/config/config.ts";
+import { ORDERS_STORE_UNAVAILABLE_ERROR } from "../src/infrastructure/cloudflare/orders-store.ts";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
 
 /* Download tokens (#111 / #116).
@@ -251,7 +251,7 @@ test("readDownloadToken degrades to null rather than throwing when the store doe
   // into a 500 the customer sees as a broken site: `null` is "no token", which
   // the route already answers as a 404 invalid-token and the page answers as
   // digital-no-token.
-  const { readDownloadToken } = await import("../src/lib/download-token.ts");
+  const { readDownloadToken } = await import("../src/application/fulfillment/download-token.ts");
   const { memoryOrdersStore } = await import("./fake-orders-store.mts");
   const base = memoryOrdersStore();
   const throwing = {

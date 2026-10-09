@@ -6,8 +6,8 @@ import {
   SHIP_TO_COUNTRIES,
   SHIP_TO_COUNTRY_CODES,
   STRIPE_SHIP_TO_COUNTRIES,
-} from "../src/lib/ship-to-countries.ts";
-import { parseCheckoutBody, parseQuoteBody } from "../src/lib/checkout-body.ts";
+} from "../src/domain/pricing/ship-to-countries.ts";
+import { parseCheckoutBody, parseQuoteBody } from "../src/domain/ordering/checkout-body.ts";
 
 test("ship-to list is Prodigi∩Stripe sized and defaults to BG", () => {
   assert.equal(DEFAULT_SHIPPING_COUNTRY, "BG");

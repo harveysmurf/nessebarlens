@@ -17,10 +17,10 @@ import {
   type PaymentCheckoutSession,
   type PaymentEvent,
   type PaymentGateway,
-} from "../src/lib/payment-gateway.ts";
-import type { PrintProvider } from "../src/lib/print-provider.ts";
-import { parseOrderRecord } from "../src/lib/order-decision.ts";
-import { fulfillCheckoutSession } from "../src/lib/fulfillment.ts";
+} from "../src/application/checkout/payment-gateway.ts";
+import type { PrintProvider } from "../src/infrastructure/prodigi/print-provider.ts";
+import { parseOrderRecord } from "../src/domain/ordering/order-decision.ts";
+import { fulfillCheckoutSession } from "../src/application/fulfillment/fulfillment.ts";
 
 const SESSION = "cs_test_fakegateway01";
 const NOW = "2026-10-08T12:00:00.000Z";

@@ -20,7 +20,7 @@ import { fileURLToPath } from "node:url";
 import Stripe from "stripe";
 import { testModeKey } from "./verify-stripe-integration.mjs";
 
-/** Must equal STRIPE_API_VERSION in src/lib/stripe.ts; the contract test checks. */
+/** Must equal STRIPE_API_VERSION in src/infrastructure/stripe/stripe.ts; the contract test checks. */
 export const STRIPE_API_VERSION = "2026-09-30.endive";
 
 // The sk_test_ guard is shared with the live check rather than copied.

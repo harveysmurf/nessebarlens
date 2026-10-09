@@ -32,11 +32,11 @@ import { sqlWithBinds } from "./sql-binds.mjs";
 // where a key is classified, and a migration that skips a token the site will
 // still honour (or imports one the site will refuse) is a silent divergence:
 // the script would report success and the row would not be usable.
-import { isCheckoutSessionId } from "../src/lib/order-decision.ts";
+import { isCheckoutSessionId } from "../src/domain/ordering/order-decision";
 import {
   DOWNLOAD_TOKEN_MAX_DOWNLOADS,
   isDownloadToken,
-} from "../src/lib/download-token.ts";
+} from "../src/application/fulfillment/download-token";
 
 export const DATABASE_NAME = "nessebar-lens-orders";
 export const KV_BINDING = "ORDERS";

@@ -7,11 +7,11 @@
 
 import assert from "node:assert/strict";
 import test from "node:test";
-import { d1OrdersStore, listOrdersQuery } from "../src/lib/orders-d1.ts";
-import { clampOrderListLimit } from "../src/lib/orders-store.ts";
+import { d1OrdersStore, listOrdersQuery } from "../src/infrastructure/cloudflare/orders-d1.ts";
+import { clampOrderListLimit } from "../src/infrastructure/cloudflare/orders-store.ts";
 import { sqliteD1 } from "./sqlite-d1.mts";
-import type { OrderRecord } from "../src/lib/order-decision.ts";
-import type { DownloadTokenIndex, DownloadTokenRecord } from "../src/lib/download-token.ts";
+import type { OrderRecord } from "../src/domain/ordering/order-decision.ts";
+import type { DownloadTokenIndex, DownloadTokenRecord } from "../src/application/fulfillment/download-token.ts";
 import {
   SAMPLE_MASTER_KEY,
   SAMPLE_SLUG,

@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
-import { DIGITAL_PRICE_EUR } from "@/lib/pricing";
-import { PHOTOS } from "@/lib/photos";
+import { DIGITAL_PRICE_EUR } from "@/domain/pricing/pricing";
+import { PHOTOS } from "@/domain/catalog/photos";
 import {
   selectCardMethod,
   fillCard,

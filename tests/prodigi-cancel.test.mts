@@ -18,7 +18,7 @@ import {
   cancelProdigiOrder,
   isSafeProdigiOrderId,
   prodigiCancelUrl,
-} from "../src/lib/prodigi-cancel.ts";
+} from "../src/infrastructure/prodigi/prodigi-cancel.ts";
 
 process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
 

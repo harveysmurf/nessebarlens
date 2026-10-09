@@ -6,7 +6,7 @@ import {
   withProdigiFailure,
   withProdigiSuccess,
   type OrderRecord,
-} from "../src/lib/order-decision.ts";
+} from "../src/domain/ordering/order-decision.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const NOW = "2026-10-08T12:00:00.000Z";

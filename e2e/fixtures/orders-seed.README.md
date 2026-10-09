@@ -18,7 +18,7 @@ the stored shape fails the normal test suite rather than silently rendering the
 wrong page state.
 
 **Why the values are JSON strings.** A KV value is the exact bytes
-`fulfillment.ts` writes under the session id, and `src/lib/orders-dev-seed.ts`
+`fulfillment.ts` writes under the session id, and `src/infrastructure/cloudflare/orders-dev-seed.ts`
 rejects a nested object rather than re-serialising it — so a fixture cannot
 quietly differ from what would really be stored.
 

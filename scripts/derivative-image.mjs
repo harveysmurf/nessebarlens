@@ -26,7 +26,7 @@ import {
   DERIVATIVE_WEBP_QUALITY,
   STAGING_MASTER_JPEG_QUALITY,
   STAGING_MASTER_MAX_EDGE,
-} from "../src/lib/derivative-ladder.ts";
+} from "../src/domain/catalog/derivative-ladder";
 
 /** The Content-Type for a derivative's format. */
 export function derivativeContentType(format) {

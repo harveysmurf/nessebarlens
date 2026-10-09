@@ -5,7 +5,7 @@ import {
   INVALID_JSON_ERROR,
   INVALID_JSON_STATUS,
   readJsonBody,
-} from "../src/lib/json-body.ts";
+} from "../src/infrastructure/config/json-body.ts";
 
 /* quote and checkout used to each hand-roll `try { await request.json() } catch`
    and each answer with its own 400 "Invalid JSON". The helper owns that grammar

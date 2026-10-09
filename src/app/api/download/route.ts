@@ -1,16 +1,16 @@
 import { NextResponse } from "next/server";
-import { resolveDownload } from "@/lib/order-decision";
-import { readOrderRecord } from "@/lib/order-corrupt";
+import { resolveDownload } from "@/domain/ordering/order-decision";
+import { readOrderRecord } from "@/domain/ordering/order-corrupt";
 import {
   ORDERS_STORE_UNAVAILABLE_ERROR,
   ORDERS_STORE_UNAVAILABLE_STATUS,
-} from "@/lib/orders-store";
+} from "@/infrastructure/cloudflare/orders-store";
 import {
   NO_REFERRER_HEADERS,
   NO_STORE_HEADERS,
-} from "@/lib/private-headers";
-import { redeemDownloadToken } from "@/lib/download-token";
-import { readWorkerBindings } from "@/lib/worker-bindings";
+} from "@/infrastructure/config/private-headers";
+import { redeemDownloadToken } from "@/application/fulfillment/download-token";
+import { readWorkerBindings } from "@/infrastructure/cloudflare/worker-bindings";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

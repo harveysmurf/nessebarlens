@@ -32,7 +32,7 @@ globals.__buzzBindings = bindings;
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
-    if (specifier === "@/lib/worker-bindings") {
+    if (specifier === "@/infrastructure/cloudflare/worker-bindings") {
       return { url: FAKE, format: "module", shortCircuit: true };
     }
     return nextResolve(specifier, context);
@@ -178,7 +178,7 @@ async function seedToken(
   sessionId: string,
   overrides: Record<string, unknown> = {},
 ) {
-  const { ensureDownloadToken } = await import("../src/lib/download-token.ts");
+  const { ensureDownloadToken } = await import("../src/application/fulfillment/download-token.ts");
   const record = await ensureDownloadToken({
     store,
     sessionId,
@@ -380,7 +380,7 @@ test("print-asset: no configured secret is a 503, not a 401", async () => {
 
 test("print-asset: a verified slug with no bucket is a 404, never a redirect", async () => {
   const secret = "route-test-print-asset-secret-32-chars";
-  const { signPrintAssetUrl } = await import("../src/lib/print-asset.ts");
+  const { signPrintAssetUrl } = await import("../src/application/fulfillment/print-asset.ts");
   const signed = await signPrintAssetUrl(SAMPLE_SLUG, { secret, baseUrl: SITE });
   assert.ok(signed);
   const restore = withBindings({ printAssetSecret: secret, prodigiKeyConfigured: false });
@@ -395,7 +395,7 @@ test("print-asset: a verified slug with no bucket is a 404, never a redirect", a
 });
 
 test("download: a session id on its own no longer grants a download (#111)", async () => {
-  const { masterKeyForSlug } = await import("../src/lib/master-key.ts");
+  const { masterKeyForSlug } = await import("../src/domain/catalog/master-key.ts");
   // A fully paid, fully valid digital order — the credential is the only thing
   // missing. If the route ever accepted the session id again, this would serve
   // the file.
@@ -1284,7 +1284,7 @@ test("checkout: a transport failure with no Stripe code still logs one", async (
 
 /** A Stripe-style signature header for `payload` under `secret`. */
 async function sign(payload: string, secret: string): Promise<string> {
-  const { hmacSha256Hex } = await import("../src/lib/crypto-hex.ts");
+  const { hmacSha256Hex } = await import("../src/domain/pricing/crypto-hex.ts");
   const timestamp = Math.floor(Date.now() / 1000);
   // Stripe signs "<timestamp>.<raw body>", which is the detail most hand-rolled
   // webhook tests get wrong.
@@ -1304,7 +1304,7 @@ function bucket() {
 
 test("print-asset: a verified request streams the master as image/jpeg", async () => {
   const secret = "route-test-print-asset-secret-32-chars";
-  const { signPrintAssetUrl } = await import("../src/lib/print-asset.ts");
+  const { signPrintAssetUrl } = await import("../src/application/fulfillment/print-asset.ts");
   const signed = await signPrintAssetUrl(SAMPLE_SLUG, { secret, baseUrl: SITE });
   const restore = withBindings({
     printAssetSecret: secret,
@@ -1329,7 +1329,7 @@ test("print-asset: a verified request streams the master as image/jpeg", async (
 
 test("print-asset: a bucket that throws is a 503, an absent master a 404", async () => {
   const secret = "route-test-print-asset-secret-32-chars";
-  const { signPrintAssetUrl } = await import("../src/lib/print-asset.ts");
+  const { signPrintAssetUrl } = await import("../src/application/fulfillment/print-asset.ts");
   const signed = await signPrintAssetUrl(SAMPLE_SLUG, { secret, baseUrl: SITE });
   const throwing = {
     async get(): Promise<never> {
@@ -1363,7 +1363,7 @@ test("print-asset: a bucket that throws is a 503, an absent master a 404", async
 });
 
 test("download: a paid digital order streams the master as an attachment", async () => {
-  const { masterKeyForSlug } = await import("../src/lib/master-key.ts");
+  const { masterKeyForSlug } = await import("../src/domain/catalog/master-key.ts");
   const record = JSON.stringify({
     v: 1,
     sessionId: "cs_test_abcdefgh",
@@ -1418,7 +1418,7 @@ test("download: a master that is not a JPEG is served with its own content type"
   // undefined and every master was announced as image/jpeg. A PNG master is
   // the case that shows it, and it is asserted here at the HTTP boundary
   // because that is where the wrong header reaches the customer.
-  const { masterKeyForSlug } = await import("../src/lib/master-key.ts");
+  const { masterKeyForSlug } = await import("../src/domain/catalog/master-key.ts");
   const record = JSON.stringify({
     v: 1,
     sessionId: "cs_test_pngmaster",
@@ -1488,7 +1488,7 @@ test("download: a revoked order cannot download, even with a live token (#111)",
   // resolveDownload — the one place that knows about refunds and disputes. If a
   // token were ever treated as sufficient on its own, this would serve a
   // refunded buyer's file.
-  const { masterKeyForSlug } = await import("../src/lib/master-key.ts");
+  const { masterKeyForSlug } = await import("../src/domain/catalog/master-key.ts");
   assert.ok(masterKeyForSlug(SAMPLE_SLUG));
   const paid = JSON.stringify({
     v: 1,
@@ -1544,7 +1544,7 @@ test("download: a revoked order cannot download, even with a live token (#111)",
 });
 
 test("download: a token is spent by the downloads it grants (#111)", async () => {
-  const { masterKeyForSlug } = await import("../src/lib/master-key.ts");
+  const { masterKeyForSlug } = await import("../src/domain/catalog/master-key.ts");
   const orders = memoryKv({
     cs_test_abcdefgh: JSON.stringify({
       v: 1,
@@ -2253,7 +2253,7 @@ test("webhook: a digital event with no shipping and no customer details still fi
   });
   const signature = await sign(event, secret);
   const kv = memoryKv();
-  const { masterKeyForSlug } = await import("../src/lib/master-key.ts");
+  const { masterKeyForSlug } = await import("../src/domain/catalog/master-key.ts");
   const restore = withBindings({
     webhookSecret: secret,
     ORDERS_DB: kv,

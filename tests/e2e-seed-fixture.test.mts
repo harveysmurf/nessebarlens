@@ -4,10 +4,10 @@ import { mkdtempSync, writeFileSync } from "node:fs";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { devOrdersSeed, seededOrdersStore } from "../src/lib/orders-dev-seed.ts";
-import { parseOrderRecord, orderViewState } from "../src/lib/order-decision.ts";
-import { isCheckoutSessionId } from "../src/lib/order-decision.ts";
-import { isProduction } from "../src/lib/config.ts";
+import { devOrdersSeed, seededOrdersStore } from "../src/infrastructure/cloudflare/orders-dev-seed.ts";
+import { parseOrderRecord, orderViewState } from "../src/domain/ordering/order-decision.ts";
+import { isCheckoutSessionId } from "../src/domain/ordering/order-decision.ts";
+import { isProduction } from "../src/infrastructure/config/config.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const SEED_PATH = "e2e/fixtures/orders-seed.json";
@@ -31,7 +31,7 @@ test("the seed refuses to run under NODE_ENV=production", () => {
 });
 
 test("readWorkerBindings returns the seed only when there is no real binding", async () => {
-  const { readWorkerBindings, isOrdersStore } = await import("../src/lib/worker-bindings.ts");
+  const { readWorkerBindings, isOrdersStore } = await import("../src/infrastructure/cloudflare/worker-bindings.ts");
   const readEnv = async () => ({});
 
   assert.equal((await readWorkerBindings({ readEnv })).ORDERS_DB, undefined);
@@ -58,7 +58,7 @@ test("readWorkerBindings returns the seed only when there is no real binding", a
 });
 
 test("readWorkerBindings propagates the production refusal rather than swallowing it", async () => {
-  const { readWorkerBindings } = await import("../src/lib/worker-bindings.ts");
+  const { readWorkerBindings } = await import("../src/infrastructure/cloudflare/worker-bindings.ts");
   await assert.rejects(
     () => readWorkerBindings({ readEnv: async () => ({ ...PRODUCTION }) }),
     /refusing to use ORDERS_DEV_SEED/,
@@ -78,7 +78,7 @@ test("a missing or malformed seed file fails loudly", () => {
 });
 
 test("the store shape passes the same guard a real binding must pass", async () => {
-  const { isOrdersStore } = await import("../src/lib/worker-bindings.ts");
+  const { isOrdersStore } = await import("../src/infrastructure/cloudflare/worker-bindings.ts");
   const store = seededOrdersStore(SEED_PATH);
   assert.equal(isOrdersStore(store), true);
 });
@@ -150,7 +150,7 @@ test("every seeded record parses and yields the state its fixture claims", async
 
 test("the paid digital fixture carries a master key the catalog actually has", async () => {
   const raw = JSON.parse(readFileSync(SEED_PATH, "utf8")) as Record<string, string>;
-  const { masterKeyForSlug } = await import("../src/lib/master-key.ts");
+  const { masterKeyForSlug } = await import("../src/domain/catalog/master-key.ts");
   for (const [sessionId, value] of Object.entries(raw)) {
     if (sessionId.startsWith("d")) continue;
     const order = parseOrderRecord(value);
@@ -164,8 +164,8 @@ test("the paid digital fixture carries a master key the catalog actually has", a
 
 test("the seeded token is the one the paid digital order resolves to (#111)", async () => {
   const raw = JSON.parse(readFileSync(SEED_PATH, "utf8")) as Record<string, string>;
-  const { downloadLinkForSession } = await import("../src/lib/download-token.ts");
-  const { parseDownloadTokenRecord } = await import("../src/lib/download-token.ts");
+  const { downloadLinkForSession } = await import("../src/application/fulfillment/download-token.ts");
+  const { parseDownloadTokenRecord } = await import("../src/application/fulfillment/download-token.ts");
   const store = seededOrdersStore(SEED_PATH);
   const paid = "cs_test_e2edigitalpaid00000001";
 

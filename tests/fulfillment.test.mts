@@ -5,7 +5,7 @@ import test from "node:test";
 import Stripe from "stripe";
 import {
   fulfillCheckoutSession,
-} from "../src/lib/fulfillment.ts";
+} from "../src/application/fulfillment/fulfillment.ts";
 import {
   decideFulfillment,
   expectedAmountCents,
@@ -14,17 +14,17 @@ import {
   resolveDownload,
   type OrderRecord,
   type StripeShippingDetails,
-} from "../src/lib/order-decision.ts";
-import { masterKeyForSlug, type MastersBucket } from "../src/lib/master-key.ts";
-import { getPhoto } from "../src/lib/photos.ts";
-import { FRAME_FINISHES, PHYSICAL_FORMATS, PRINT_SIZES } from "../src/lib/sku-map.ts";
-import { readStripeEvent } from "../src/lib/stripe-event.ts";
-import { eurToCents } from "../src/lib/pricing.ts";
-import type { CreateProdigiOrder } from "../src/lib/prodigi-order.ts";
+} from "../src/domain/ordering/order-decision.ts";
+import { masterKeyForSlug, type MastersBucket } from "../src/domain/catalog/master-key.ts";
+import { getPhoto } from "../src/domain/catalog/photos.ts";
+import { FRAME_FINISHES, PHYSICAL_FORMATS, PRINT_SIZES } from "../src/domain/pricing/sku-map.ts";
+import { readStripeEvent } from "../src/infrastructure/stripe/stripe-event.ts";
+import { eurToCents } from "../src/domain/pricing/pricing.ts";
+import type { CreateProdigiOrder } from "../src/infrastructure/prodigi/prodigi-order.ts";
 import {
   downloadLinkForSession,
   readDownloadToken,
-} from "../src/lib/download-token.ts";
+} from "../src/application/fulfillment/download-token.ts";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
 import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
@@ -964,13 +964,13 @@ test("web crypto verifies when constructEvent cannot run, and a bad signature do
 test("webhook + download routes still do not call Prodigi; order module is the only fetch site", () => {
   const root = path.join(import.meta.dirname, "..");
   for (const rel of [
-    "src/lib/fulfillment.ts",
-    "src/lib/order-decision.ts",
-    "src/lib/master-key.ts",
-    "src/lib/print-asset.ts",
-    "src/lib/crypto-hex.ts",
-    "src/lib/stripe-event.ts",
-    "src/lib/worker-bindings.ts",
+    "src/application/fulfillment/fulfillment.ts",
+    "src/domain/ordering/order-decision.ts",
+    "src/domain/catalog/master-key.ts",
+    "src/application/fulfillment/print-asset.ts",
+    "src/domain/pricing/crypto-hex.ts",
+    "src/infrastructure/stripe/stripe-event.ts",
+    "src/infrastructure/cloudflare/worker-bindings.ts",
     "src/app/api/webhooks/stripe/route.ts",
     "src/app/api/download/route.ts",
     "src/app/api/print-asset/route.ts",
@@ -980,13 +980,13 @@ test("webhook + download routes still do not call Prodigi; order module is the o
     assert.equal(src.includes("api.sandbox.prodigi.com"), false, rel);
     assert.equal(src.includes("api.prodigi.com"), false, rel);
   }
-  const order = fs.readFileSync(path.join(root, "src/lib/prodigi-order.ts"), "utf8");
+  const order = fs.readFileSync(path.join(root, "src/infrastructure/prodigi/prodigi-order.ts"), "utf8");
   assert.equal(order.includes("prodigiUrl"), true);
   assert.equal(order.includes("prodigiConfig"), true);
   assert.equal(order.includes("assertNoMasterLeak"), true);
   assert.equal(order.includes("signPrintAssetUrl"), true);
   const config = fs.readFileSync(
-    path.join(root, "src/lib/prodigi-config.ts"),
+    path.join(root, "src/infrastructure/prodigi/prodigi-config.ts"),
     "utf8",
   );
   assert.equal(config.includes("https://api.sandbox.prodigi.com"), true);
@@ -997,7 +997,7 @@ test("webhook + download routes still do not call Prodigi; order module is the o
 
 test("stripe client uses fetch http client for Workers", () => {
   const src = fs.readFileSync(
-    path.join(import.meta.dirname, "..", "src/lib/stripe.ts"),
+    path.join(import.meta.dirname, "..", "src/infrastructure/stripe/stripe.ts"),
     "utf8",
   );
   assert.equal(src.includes("Stripe.createFetchHttpClient()"), true);
@@ -1081,21 +1081,21 @@ test("fulfillment metadata validation tracks the sku-map lists", () => {
 });
 
 test("the fulfillment pair reuses the pricing/sku-map types instead of redeclaring them", () => {
-  const root = path.join(import.meta.dirname, "..", "src/lib");
-  const decision = fs.readFileSync(path.join(root, "order-decision.ts"), "utf8");
-  const effects = fs.readFileSync(path.join(root, "fulfillment.ts"), "utf8");
+  const root = path.join(import.meta.dirname, "..");
+  const decision = fs.readFileSync(path.join(root, "src/domain/ordering/order-decision.ts"), "utf8");
+  const effects = fs.readFileSync(path.join(root, "src/application/fulfillment/fulfillment.ts"), "utf8");
   const both = decision + effects;
 
   // The unions must be imported from their owners, not restated: a private copy
   // would leave the order validator behind when a format is added. The two
   // halves narrow differently — order-decision builds the discriminated union,
   // fulfillment narrows it back down on the way to Prodigi — so the names have
-  // to arrive from ./pricing (the label/format unions) or sku-map's predicates
+  // to arrive from pricing (the label/format unions) or sku-map's predicates
   // (the allow-lists).
-  const pricingImports = [...both.matchAll(/import (type )?\{([^}]*)\} from "\.\/pricing"/g)]
+  const pricingImports = [...both.matchAll(/import (type )?\{([^}]*)\} from "[^"]*\/pricing\/pricing"/g)]
     .map((m) => m[2]!)
     .join(",");
-  assert.ok(pricingImports.length > 0, "the pair must import from ./pricing");
+  assert.ok(pricingImports.length > 0, "the pair must import from pricing.ts");
   for (const name of ["FrameFinish", "PrintFormat"]) {
     assert.ok(
       pricingImports.includes(name),

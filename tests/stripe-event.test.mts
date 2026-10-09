@@ -4,8 +4,8 @@ import test from "node:test";
 import {
   readStripeEvent,
   verifyStripeSignatureWebCrypto,
-} from "../src/lib/stripe-event.ts";
-import { hmacSha256Hex } from "../src/lib/crypto-hex.ts";
+} from "../src/infrastructure/stripe/stripe-event.ts";
+import { hmacSha256Hex } from "../src/domain/pricing/crypto-hex.ts";
 
 const SECRET = "whsec_test_secret_for_signature_checks";
 const PAYLOAD = JSON.stringify({ id: "evt_1", object: "event", type: "payment_intent.succeeded" });

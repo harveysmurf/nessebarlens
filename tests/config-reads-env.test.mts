@@ -200,7 +200,7 @@ test("the walk is not vacuous — prodigi-config.ts has no default env parameter
   // and whose `env = process.env` defaults made every reader callable with no
   // argument. Pin the shape directly so a re-added default fails here rather
   // than depending on someone re-adding it to the allowlist above.
-  const file = path.join(srcDir, "lib", "prodigi-config.ts");
+  const file = path.join(srcDir, "infrastructure", "prodigi", "prodigi-config.ts");
   const source = ts.createSourceFile(
     file,
     fs.readFileSync(file, "utf8"),

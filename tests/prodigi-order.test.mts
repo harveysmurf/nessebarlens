@@ -1,14 +1,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PRODIGI_SHIPPING_METHOD, classifyProdigiStatus } from "../src/lib/prodigi-config.ts";
-import { PHOTOS } from "../src/lib/photos.ts";
-import { signPrintAssetUrl } from "../src/lib/print-asset.ts";
+import { PRODIGI_SHIPPING_METHOD, classifyProdigiStatus } from "../src/infrastructure/prodigi/prodigi-config.ts";
+import { PHOTOS } from "../src/domain/catalog/photos.ts";
+import { signPrintAssetUrl } from "../src/application/fulfillment/print-asset.ts";
 import {
   assertNoMasterLeak,
   buildProdigiOrderBody,
   createProdigiOrder,
   type OrderRecipient,
-} from "../src/lib/prodigi-order.ts";
+} from "../src/infrastructure/prodigi/prodigi-order.ts";
 import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
 const RECIPIENT: OrderRecipient = {

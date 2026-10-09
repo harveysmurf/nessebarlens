@@ -6,7 +6,7 @@ import {
   readMasterObject,
   type MasterObject,
   type MastersBucket,
-} from "../src/lib/master-key.ts";
+} from "../src/domain/catalog/master-key.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
@@ -74,7 +74,7 @@ test("MasterObject is derived from R2ObjectBody, not re-spelled by hand", () => 
   // for a top-level `contentType` again. (tsconfig excludes tests/, so a
   // @ts-expect-error here would never be checked — the source is the guard.)
   const masterKey = fs.readFileSync(
-    path.join(root, "src/lib/master-key.ts"),
+    path.join(root, "src/domain/catalog/master-key.ts"),
     "utf8",
   );
   assert.match(
@@ -92,7 +92,7 @@ test("MasterObject is derived from R2ObjectBody, not re-spelled by hand", () => 
 
   // And the one place that used it now reads the real path.
   const download = fs.readFileSync(
-    path.join(root, "src/lib/order-decision.ts"),
+    path.join(root, "src/domain/ordering/order-decision.ts"),
     "utf8",
   );
   assert.match(

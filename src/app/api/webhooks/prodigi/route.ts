@@ -14,14 +14,14 @@
  */
 
 import { NextResponse } from "next/server";
-import { timingSafeEqualString } from "@/lib/crypto-hex";
-import { sendEmailFromApiKey } from "@/lib/email";
+import { timingSafeEqualString } from "@/domain/pricing/crypto-hex";
+import { sendEmailFromApiKey } from "@/domain/ordering/email";
 import {
   ORDERS_STORE_UNAVAILABLE_ERROR,
   ORDERS_STORE_UNAVAILABLE_STATUS,
-} from "@/lib/orders-store";
-import { handleProdigiCallback } from "@/lib/prodigi-callback";
-import { readWorkerBindings } from "@/lib/worker-bindings";
+} from "@/infrastructure/cloudflare/orders-store";
+import { handleProdigiCallback } from "@/infrastructure/prodigi/prodigi-callback";
+import { readWorkerBindings } from "@/infrastructure/cloudflare/worker-bindings";
 
 export const dynamic = "force-dynamic";
 // OpenNext runs this inside the Worker via nodejs_compat. Not a separate Node server.

@@ -52,8 +52,8 @@ import {
   masterKeyFromSlug,
   slugFromMasterKey,
   webDerivativeKey,
-} from "../src/lib/derivative-ladder.ts";
-import { validatePhotoFile } from "../src/lib/photo-schema.ts";
+} from "../src/domain/catalog/derivative-ladder";
+import { validatePhotoFile } from "../src/domain/catalog/photo-schema";
 
 const ROOT = path.join(import.meta.dirname, "..");
 const CATALOG_DIR = "content/photos";

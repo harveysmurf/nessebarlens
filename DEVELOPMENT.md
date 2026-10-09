@@ -118,7 +118,7 @@ Environment variables (names only — values live in the `.env.local` symlink):
 | `PRINT_ASSET_HMAC_SECRET` | ≥32-char HMAC secret for `/api/print-asset` (Prodigi). **Required for physical checkout, not optional** — `/api/checkout` calls `canSignMasterAsset()` and answers **503** rather than take the money for a print it cannot fulfill, and `/api/print-asset` answers 503 `print-asset-unavailable` when unset. A short or whitespace-only value is treated as unset. |
 | `PRODIGI_WEBHOOK_TOKEN` | Bearer token Prodigi must send on `POST /api/webhooks/prodigi` (`Authorization: Bearer …`). Prodigi v4 signs nothing, so this is the only callback auth. **Unset ⇒ 503** `prodigi-webhook-unconfigured`; mismatch ⇒ 401. Generate with `openssl rand -hex 32` and configure the same value as the shared secret Prodigi is told to send (or that a reverse-proxy injects). |
 | `RESEND_API_KEY` | Resend API key for customer email (order confirmation, print shipped, unfulfilled apology). **Unset ⇒ emails are skipped** with a structured `email.skipped` log line — never a throw on a paid webhook path. The sending domain (`nessebarlens.com`) must have Resend's **DNS TXT domain verification** before production mail will deliver; until then sandbox/`onboarding@resend.dev` testing is fine locally. |
-| `NEXT_PUBLIC_SITE_URL` | Canonical public origin (used by `src/lib/stripe.ts`). **Required for any production build** — `next.config.ts` fails the build without it, because `NEXT_PUBLIC_*` is inlined at build time and a silent `http://localhost:3000` fallback would ship a checkout that redirects to localhost. `next dev` and `npm test` do not need it. |
+| `NEXT_PUBLIC_SITE_URL` | Canonical public origin (used by `src/infrastructure/stripe/stripe.ts`). **Required for any production build** — `next.config.ts` fails the build without it, because `NEXT_PUBLIC_*` is inlined at build time and a silent `http://localhost:3000` fallback would ship a checkout that redirects to localhost. `next dev` and `npm test` do not need it. |
 | `NEXT_PUBLIC_WEB_IMAGES_BASE` | Base URL for gallery `<img>` srcset; unset serves nothing. Must be `https://images.nessebarlens.com`, see Public image host. |
 | `R2_ACCOUNT_ID`, `R2_ENDPOINT`, `R2_S3_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | R2 S3 creds (unused by Workers — they use bucket bindings) |
 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | Needed only by `npm run publish-photos` from a laptop (see §6a) |
@@ -146,8 +146,8 @@ imports.
 - CI (see §6) blocks deploy on a failing test run.
 - `tests/stripe-contract.test.mts` runs recorded Stripe webhook fixtures through the
   installed SDK with no secrets (#225); see "Dependency updates".
-- Add a test whenever you change `src/lib/order-decision.ts`,
-  `src/lib/fulfillment.ts`, `pricing.ts`, or any quote/order logic.
+- Add a test whenever you change `src/domain/ordering/order-decision.ts`,
+  `src/application/fulfillment/fulfillment.ts`, `pricing.ts`, or any quote/order logic.
 
 ### Preview smoke test
 
@@ -243,7 +243,7 @@ The success page's three states are **seeded** rather than reached through the
 webhook: the D1 a dev server gets from
 `initOpenNextCloudflareForDev` is genuinely empty, so a dev server can only ever
 render "processing". `playwright.config.ts` sets `ORDERS_DEV_SEED` to
-`e2e/fixtures/orders-seed.json`, which `src/lib/orders-dev-seed.ts` serves
+`e2e/fixtures/orders-seed.json`, which `src/infrastructure/cloudflare/orders-dev-seed.ts` serves
 in-memory. The seed takes precedence over the dev namespace when the flag is
 set, and that module refuses to run under `NODE_ENV=production`, so fabricated
 orders can never reach a deployed build. The webhook's own round trip is a
@@ -269,7 +269,7 @@ ORDERS_DEV_SEED=e2e/fixtures/orders-seed.json npm run dev
 ### Live Stripe API verification (#101, #134)
 
 `scripts/verify-stripe-integration.mjs` checks the two API shapes the
-refund/dispute revocation path (`src/lib/order-revocation.ts`) is written
+refund/dispute revocation path (`src/application/fulfillment/order-revocation.ts`) is written
 against and that no stub can prove: that
 `checkout.sessions.list({payment_intent})` returns the session a payment came
 from, and that a dispute names a Charge id whose `payment_intent` leads back to
@@ -790,7 +790,7 @@ event stream. Two consequences, both live:
 - The Stripe webhook in one environment receives deliveries created in another,
   because Stripe test mode has one event stream.
 
-Code now handles `AlreadyExists` explicitly (`src/lib/prodigi-order.ts`): the
+Code now handles `AlreadyExists` explicitly (`src/infrastructure/prodigi/prodigi-order.ts`): the
 existing order is read back from `GET /v4.0/orders/{id}`, its own stage and asset
 URL are recorded, and an order whose asset or callback is on a different origin
 fails `prodigi-order-foreign` rather than claiming a URL Prodigi does not hold.
@@ -1072,7 +1072,7 @@ which groups that half covers is the table below.
 |---|---|---|---|
 | `deploy` | `wrangler`, `@opennextjs/cloudflare` | `E2E Worker runtime` (**required**; secret-free OpenNext build + `wrangler dev` + Playwright + smoke, #204) + rehearsal | Human. Never auto-merged |
 | `framework` | `next`, `react`, `react-dom` | `E2E Worker runtime` + rehearsal | Human. Never auto-merged |
-| `payments` | `stripe` | `tests/stripe-contract.test.mts` + the compile-time contract in `src/lib/stripe-event.ts` + the pinned `STRIPE_API_VERSION` + rehearsal | Human. Never auto-merged |
+| `payments` | `stripe` | `tests/stripe-contract.test.mts` + the compile-time contract in `src/infrastructure/stripe/stripe-event.ts` + the pinned `STRIPE_API_VERSION` + rehearsal | Human. Never auto-merged |
 | `actions` | GitHub Actions | workflow audit + `tests/workflow-hardening.test.mts` | Auto-merge, patch/minor |
 | `dev-tooling` | everything else | lint, typecheck, test, coverage, E2E jobs | Auto-merge, patch/minor |
 | ungrouped | security updates (Dependabot never groups them) | whatever ran | Held, checklist posted |
@@ -1319,7 +1319,7 @@ are content-addressed (`{slug}/{hash8}/…`), so re-running skips identical
 objects, and the derivatives can be served
 `Cache-Control: public, max-age=31536000, immutable`.
 
-The rung list is `WEB_DERIVATIVE_WIDTHS` in `src/lib/derivative-ladder.ts` —
+The rung list is `WEB_DERIVATIVE_WIDTHS` in `src/domain/catalog/derivative-ladder.ts` —
 one array, read by the srcSet the site serves, the web upload plan and the
 tests. Changing the rungs is a one-line edit there.
 
@@ -1357,7 +1357,7 @@ flow.
 
 - **The catalog is YAML, compiled at build time.** One file per photo lives in
   `content/photos/<slug>.yaml`; `scripts/build-catalog.mjs` validates every file
-  against `src/lib/photo-schema.ts` and writes the git-ignored
+  against `src/domain/catalog/photo-schema.ts` and writes the git-ignored
   `src/generated/catalog.ts`. Workers have no filesystem, and `getPhoto()` is
   read at request time by the checkout route and fulfillment, so the YAML cannot
   be parsed at runtime — it is compiled ahead of it. Every path that builds,
@@ -1365,7 +1365,7 @@ flow.
   `package.json`, and an explicit `Build catalog` step before
   `opennextjs-cloudflare build` in `ci.yml`, `release.yml`, `preview.yml`), so no
   path can build against a stale or missing catalog.
-- **One definition of a photo file.** `src/lib/photo-schema.ts` is the schema:
+- **One definition of a photo file.** `src/domain/catalog/photo-schema.ts` is the schema:
   the field rules, the fixed categories and the film looks, exported as the
   `PhotoFile` type and the `validatePhotoFile` runtime validator. Unknown keys
   are an error, not ignored, so a typo like `catgory` fails the build loudly.
@@ -1374,12 +1374,12 @@ flow.
   photo may set `featured`; `published` defaults true. A photo with
   `published: false` is absent from the generated catalog, so every listing,
   `generateStaticParams` and `getPhoto` (and therefore checkout) leave it out.
-- **`src/lib/photos.ts` is the runtime view.** It keeps its public API
+- **`src/domain/catalog/photos.ts` is the runtime view.** It keeps its public API
   (`PHOTOS`, `getPhoto`, `photosByCategory`, `categoryHref`, `filmLookClass`,
   `featuredPhoto`, the `Photo` type), now backed by the generated file.
   `categoryLabel` is derived from the category (one `Record`) and `imageKey` is
   derived as `prints/{slug}.jpg` — the only form `masterKeyForSlug` accepts
-  (`src/lib/master-key.ts`). The only master-key list is that derived
+  (`src/domain/catalog/master-key.ts`). The only master-key list is that derived
   `imageKey`, surfaced via `masterKeyForSlug()`.
 - **The homepage hero is the featured photo.** `featuredPhoto()` returns the one
   photo with `featured: true`, or else the first published fine-art photo in
@@ -1407,7 +1407,7 @@ flow.
   To check caching, use GET, not HEAD: `curl -s -o /dev/null -D - <url> | grep cf-cache-status` shows MISS, then HIT. HEAD always shows DYNAMIC.
 - **Quotes are cached; checkout is not.** `/api/quote` is unauthenticated and
   shares Prodigi's rate limit with `/api/checkout`, so a cached-miss loop could
-  otherwise 429 Prodigi and break checkout for real customers. `src/lib/quote-cache.ts`
+  otherwise 429 Prodigi and break checkout for real customers. `src/application/checkout/quote-cache.ts`
   caches the two public numbers (`merchandiseEur`, `shippingEur`) per
   `(SKU, attributes, destinationCountry)` for 30 minutes in `caches.default`.
 Three invariants: (1) `sku` and `unitCostEur` never enter the cached
@@ -1430,12 +1430,12 @@ Three invariants: (1) `sku` and `unitCostEur` never enter the cached
   (`success_url` / `cancel_url`); no code path confirms a PaymentIntent. Stripe
   sandbox emails about a missing `return_url` are expected after manual
   `paymentIntents.confirm` probes — ignore them.
-- **Stripe webhooks** are verified with Web Crypto (`src/lib/stripe-event.ts`), and
+- **Stripe webhooks** are verified with Web Crypto (`src/infrastructure/stripe/stripe-event.ts`), and
   master keys are read from `photos.ts` (commit `cdac0eb`).
 - **Fulfillment is recorded, not executed.** The rules live in
-  `src/lib/order-decision.ts` (pure: what a session means, what a stored record
+  `src/domain/ordering/order-decision.ts` (pure: what a session means, what a stored record
   says, whether a customer may download) and the effects in
-  `src/lib/fulfillment.ts`, which writes the
+  `src/application/fulfillment/fulfillment.ts`, which writes the
   order to D1 `ORDERS_DB`. A *retryable* failure (Prodigi 401/403/429/5xx, an
   unconfigured key or asset secret) is written `terminal: false` and the webhook
   answers 5xx so Stripe redelivers for ~3 days; a terminal one answers 200. The
@@ -1536,7 +1536,7 @@ the guard to keep the honest copy honest.
 
 - Brand rename "Stefan Todorov" → "Nessebar Lens" is done (commit `18886c3`); keep
   "Old Town Nessebar" as the place name.
-- Prodigi order creation is wired end to end: a pinned 9-SKU map (`src/lib/sku-map.ts`),
+- Prodigi order creation is wired end to end: a pinned 9-SKU map (`src/domain/pricing/sku-map.ts`),
   live quote + order calls, and a HMAC-signed master asset URL. Sandbox and live
   are selected by an explicit `PRODIGI_API_BASE`, never inferred from the key.
 - Real photographs land in the R2 `MASTERS`/`WEB` buckets through the publish
@@ -1549,7 +1549,7 @@ the guard to keep the honest copy honest.
   misconfigured (`kind: "unconfigured"` — unset Prodigi key, or a
   `PRODIGI_API_BASE` outside the two allowed hosts); 502 means Prodigi
   (`kind: "timeout" | "client" | "server"`). The mapping lives in one function,
-  `prodigiFailureFrom` in `src/lib/prodigi-config.ts`, and it reads only the
+  `prodigiFailureFrom` in `src/infrastructure/prodigi/prodigi-config.ts`, and it reads only the
   `kind` — never the message text — so a new failure cannot slip into the wrong
   status. `tests/prodigi-config.test.mts` pins the kind→status mapping; that is
   the file to extend when the module gains a kind.

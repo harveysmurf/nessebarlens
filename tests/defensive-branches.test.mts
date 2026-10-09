@@ -3,14 +3,14 @@ import test from "node:test";
 import {
   createProdigiOrder,
   type OrderRecipient,
-} from "../src/lib/prodigi-order.ts";
-import { verifyPrintAssetRequest } from "../src/lib/print-asset.ts";
-import { signPrintAssetUrl } from "../src/lib/print-asset.ts";
-import { parseQuoteBody } from "../src/lib/checkout-body.ts";
+} from "../src/infrastructure/prodigi/prodigi-order.ts";
+import { verifyPrintAssetRequest } from "../src/application/fulfillment/print-asset.ts";
+import { signPrintAssetUrl } from "../src/application/fulfillment/print-asset.ts";
+import { parseQuoteBody } from "../src/domain/ordering/checkout-body.ts";
 import {
   decideFulfillment,
   type OrderRecord,
-} from "../src/lib/order-decision.ts";
+} from "../src/domain/ordering/order-decision.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 /* The remaining defensive branches: the paths taken when a value is absent,

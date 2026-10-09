@@ -6,7 +6,7 @@ import {
   isOrdersStore,
   readCloudflareEnv,
   readWorkerBindings,
-} from "../src/lib/worker-bindings.ts";
+} from "../src/infrastructure/cloudflare/worker-bindings.ts";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
 
 const prepare = () => ({ bind() { return this; }, first: async () => null, run: async () => ({ meta: { changes: 0 }, results: [] }), all: async () => ({ results: [] }) });

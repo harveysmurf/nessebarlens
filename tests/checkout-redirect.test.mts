@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { checkoutUrl, errorMessage } from "../src/lib/api-payloads.ts";
+import { checkoutUrl, errorMessage } from "../src/application/checkout/api-payloads.ts";
 
 test("a non-ok response surfaces the server's own error string", () => {
   // `checkoutUrl` rejects a non-https url, but the buyer's message must still

@@ -11,10 +11,10 @@ import {
   RESEND_FROM_ADDRESS,
   RESEND_TIMEOUT_MS,
   sendEmailFromApiKey,
-} from "../src/lib/email.ts";
-import { emailCopyFor } from "../src/lib/email-copy.ts";
-import { orderReference } from "../src/lib/order-reference.ts";
-import { parseOrderRecord } from "../src/lib/order-decision.ts";
+} from "../src/domain/ordering/email.ts";
+import { emailCopyFor } from "../src/domain/ordering/email-copy.ts";
+import { orderReference } from "../src/domain/ordering/order-reference.ts";
+import { parseOrderRecord } from "../src/domain/ordering/order-decision.ts";
 import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
 const SESSION = "cs_test_abcdefgh";

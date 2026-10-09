@@ -16,9 +16,9 @@ import {
   shipmentsFromProdigiOrder,
   fetchProdigiOrder,
   type FetchProdigiOrder,
-} from "../src/lib/prodigi-callback.ts";
-import { emailCopyFor } from "../src/lib/email-copy.ts";
-import { parseOrderRecord } from "../src/lib/order-decision.ts";
+} from "../src/infrastructure/prodigi/prodigi-callback.ts";
+import { emailCopyFor } from "../src/domain/ordering/email-copy.ts";
+import { parseOrderRecord } from "../src/domain/ordering/order-decision.ts";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
 
 

@@ -12,7 +12,7 @@
  * one the reader needs.
  *
  * The spawn passes `--import ./scripts/register.mjs` because publish-photos
- * imports src/lib/photo-schema.ts, whose own imports are extensionless. The
+ * imports src/domain/catalog/photo-schema.ts, whose own imports are extensionless. The
  * version check above is what makes that safe on an old Node.
  */
 

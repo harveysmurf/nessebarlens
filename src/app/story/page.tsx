@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { WebPhoto } from "@/components/WebPhoto";
-import { filmLookClass, isFilmPhoto, photosByCategory } from "@/lib/photos";
+import { filmLookClass, isFilmPhoto, photosByCategory } from "@/domain/catalog/photos";
 
 const BLOCKS = [
   {

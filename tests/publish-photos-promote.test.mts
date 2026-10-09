@@ -16,7 +16,7 @@ import {
   STAGING_MASTERS_BUCKET_NAME,
   WEB_BUCKET_NAME,
   sha256Hex,
-} from "../src/lib/derivative-ladder.ts";
+} from "../src/domain/catalog/derivative-ladder.ts";
 import {
   createPromoteS3,
   metadataValue,

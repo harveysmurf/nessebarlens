@@ -7,10 +7,10 @@ import {
   getPhoto,
   isFilmPhoto,
   photosByCategory,
-} from "../src/lib/photos.ts";
-import type { PhotoCategory } from "../src/lib/photo-schema.ts";
-import { PHOTO_SLUG_PATTERN, isMasterKey } from "../src/lib/derivative-ladder.ts";
-import { masterKeyForSlug } from "../src/lib/master-key.ts";
+} from "../src/domain/catalog/photos.ts";
+import type { PhotoCategory } from "../src/domain/catalog/photo-schema.ts";
+import { PHOTO_SLUG_PATTERN, isMasterKey } from "../src/domain/catalog/derivative-ladder.ts";
+import { masterKeyForSlug } from "../src/domain/catalog/master-key.ts";
 
 const CATEGORIES: PhotoCategory[] = ["fine-art", "archive", "film"];
 

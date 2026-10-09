@@ -11,7 +11,7 @@ import {
   FILM_LOOKS,
   PHOTO_CATEGORIES,
   validatePhotoFile,
-} from "../src/lib/photo-schema.ts";
+} from "../src/domain/catalog/photo-schema.ts";
 
 const REQUIRED = {
   title: "A Title",
