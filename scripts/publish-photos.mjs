@@ -618,8 +618,9 @@ export function readCatalogForSync(photosDir) {
 
 /**
  * Parses { master_width, master_height, orientation } from raw YAML data, or
- * undefined when the trio is absent. A half-written set (one or two of three) is
- * reported as a problem rather than silently dropped — that is a publish bug.
+ * undefined when the trio is absent or malformed. A half-written set returns
+ * undefined (treated as "no facts" by syncDecision, which re-measures), rather
+ * than being silently dropped as valid — the backfill overwrites all three keys.
  */
 function parseMasterFactsSafe(data) {
   if (!data || typeof data !== "object") return undefined;
@@ -674,9 +675,12 @@ export async function syncCatalogFacts(options, deps = {}) {
   }
 
   const published = entries.filter((e) => e.published);
-  const mismatch = [];
-  const measured = [];
 
+  // First pass: HeadObject every photo and decide. No writes happen here — a
+  // mismatch anywhere must refuse before a single YAML is modified, so partial
+  // state is impossible (#297).
+  const decisions = [];
+  const mismatch = [];
   for (const entry of published) {
     const key = masterKeyFromSlug(entry.slug);
     const head = await s3.head(MASTERS_BUCKET_NAME, key);
@@ -685,27 +689,12 @@ export async function syncCatalogFacts(options, deps = {}) {
       catalogFacts: entry.catalogFacts,
       head,
     });
-
+    decisions.push({ entry, decision });
     if (decision === "mismatch") {
-      mismatch.push(`  ${entry.slug}: catalog sha256 does not match ${MASTERS_BUCKET_NAME}/${key}`);
-      continue;
+      mismatch.push(
+        `  ${entry.slug}: catalog sha256 does not match ${MASTERS_BUCKET_NAME}/${key}`,
+      );
     }
-    if (decision === "unpromoted") {
-      log(`  warn: ${entry.slug}: master not yet promoted to ${MASTERS_BUCKET_NAME}; run --promote first`);
-      continue;
-    }
-    if (decision === "in-sync") {
-      log(`  skip: ${entry.slug} (${entry.catalogFacts.width}×${entry.catalogFacts.height} ${entry.catalogFacts.orientation})`);
-      continue;
-    }
-
-    // decision === "measure"
-    const bytes = await s3.getObject(MASTERS_BUCKET_NAME, key);
-    const facts = await measure(bytes);
-    const updated = patchCatalogFactsYaml(entry.yamlText, facts);
-    await writeYaml(entry.yamlPath, updated);
-    measured.push({ slug: entry.slug, facts });
-    log(`  backfilled: ${entry.slug} ${facts.width}×${facts.height} ${facts.orientation}`);
   }
 
   if (mismatch.length > 0) {
@@ -715,8 +704,35 @@ export async function syncCatalogFacts(options, deps = {}) {
     return { status: 1, fatals: mismatch };
   }
 
+  // Second pass: only measure and write. Mismatches already refused above, so
+  // every remaining entry is in-sync, unpromoted, or needs measuring.
+  const measured = [];
+  for (const { entry, decision } of decisions) {
+    if (decision === "unpromoted") {
+      log(
+        `  warn: ${entry.slug}: master not yet promoted to ${MASTERS_BUCKET_NAME}; run --promote first`,
+      );
+      continue;
+    }
+    if (decision === "in-sync") {
+      log(
+        `  skip: ${entry.slug} (${entry.catalogFacts.width}×${entry.catalogFacts.height} ${entry.catalogFacts.orientation})`,
+      );
+      continue;
+    }
+
+    // decision === "measure"
+    const key = masterKeyFromSlug(entry.slug);
+    const bytes = await s3.getObject(MASTERS_BUCKET_NAME, key);
+    const facts = await measure(bytes);
+    const updated = patchCatalogFactsYaml(entry.yamlText, facts);
+    await writeYaml(entry.yamlPath, updated);
+    measured.push({ slug: entry.slug, facts });
+    log(`  backfilled: ${entry.slug} ${facts.width}×${facts.height} ${facts.orientation}`);
+  }
+
   log("");
-  log(`${measured.length} photo(s) backfilled, ${published.length - measured.length - mismatch.length} already in sync.`);
+  log(`${measured.length} photo(s) backfilled, ${published.length - measured.length} already in sync.`);
   return { status: 0, measured, total: published.length };
 }
 

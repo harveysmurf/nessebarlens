@@ -42,7 +42,7 @@ export type PhotoFile = {
   masterSha256?: string;
   imageHash?: string;
   /** Oriented pixel size and orientation, measured from the master file (#295/#297). */
-  master: MasterFacts;
+  master?: MasterFacts;
 };
 
 export type PhotoValidation =
@@ -223,12 +223,17 @@ const MASTER_FACTS_MESSAGE: Record<MasterFactsReason, string> = {
     "orientation does not match master_width and master_height",
 };
 
-/**
+  /**
  * The master facts, if the file carries any of the three keys. A set that is
  * present must be complete and consistent: a half-written trio is a publish
  * bug, not a missing value, so it fails rather than being ignored. `undefined`
  * means the file has none of the three keys — allowed for drafts (unpublished)
  * but rejected for a published photo once #297 has backfilled the catalog.
+ *
+ * For a published photo the facts are enforced by `requireMasterFacts` (default
+ * true): validation produces a problem when they are absent, so the returned
+ * `photo.master` is `MasterFacts` at the type level while the raw value can be
+ * `undefined` for drafts validated with `requireMasterFacts: false`.
  */
 function readMasterFacts(
   data: Record<string, unknown>,
@@ -358,7 +363,7 @@ export function validatePhotoFile(
       published,
       masterSha256,
       imageHash,
-      master: master!,
+      master,
     },
   };
 }

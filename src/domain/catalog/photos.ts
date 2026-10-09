@@ -55,7 +55,9 @@ function toPhoto(file: PhotoFile): Photo {
     filmLook: file.filmLook,
     featured: file.featured,
     imageHash: file.imageHash,
-    master: file.master,
+    // The generated catalog only contains published photos, which build-catalog
+    // validates with requireMasterFacts: true — so master is guaranteed here.
+    master: file.master!,
   };
 }
 

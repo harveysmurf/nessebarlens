@@ -799,6 +799,53 @@ test("syncCatalogFacts refuses on a sha mismatch and writes nothing", async () =
   }
 });
 
+test("syncCatalogFacts refuses before writing when a later photo mismatches (#297 two-pass)", async () => {
+  const dir = makeProject();
+  try {
+    // dawn: sha matches → "measure" (would write)
+    writeFileSync(
+      path.join(dir, "content/photos/dawn.yaml"),
+      ["slug: dawn", "title: Dawn", "caption: c", "description: d", "alt: a", "category: fine-art",
+       "master_sha256: " + SHA_A, "image_hash: aaaaaaaa"].join("\n") + "\n",
+    );
+    // dusk: sha mismatches → "mismatch" (should NOT write, and should NOT download)
+    writeFileSync(
+      path.join(dir, "content/photos/dusk.yaml"),
+      ["slug: dusk", "title: Dusk", "caption: c", "description: d", "alt: a", "category: fine-art",
+       "master_sha256: " + SHA_A, "image_hash: aaaaaaaa"].join("\n") + "\n",
+    );
+
+    let written = false;
+    let downloaded = false;
+    const s3 = {
+      async head(_bucket, key) {
+        // dawn's master exists with matching sha; dusk's has a different sha.
+        return { metadata: { sha256: key.endsWith("dusk.jpg") ? SHA_B : SHA_A }, contentLength: 100 };
+      },
+      async getObject() {
+        downloaded = true;
+        return Buffer.from("jpeg-bytes");
+      },
+    };
+    const measures = await syncCatalogFacts(
+      { cwd: dir },
+      {
+        log: () => {},
+        env: {},
+        s3,
+        measure: async () => FACTS,
+        writeYaml: async () => { written = true; },
+      },
+    );
+    assert.equal(measures.status, 1);
+    assert.match(measures.fatals[0], /dusk.*sha256/);
+    assert.equal(written, false, "no YAML written when any photo mismatches");
+    assert.equal(downloaded, false, "no master downloaded when a mismatch exists");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
 test("syncCatalogFacts warns on unpromoted masters and continues", async () => {
   const dir = makeProject();
   try {
