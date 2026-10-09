@@ -11,5 +11,6 @@ alt: Seagulls flying above fishing boats on the calm waters of Old Town
 category: film
 film_look: grayscale
 # written by publish-photos
+# Recovery PR: run guarded master promotion after PR #290 merged before promotion.
 master_sha256: 967f47eb7ec6397c9237e9db35fa5fa3d6aaf7b8f9306a1f93682d0e06fd12b3
 image_hash: 967f47eb
