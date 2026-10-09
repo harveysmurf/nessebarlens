@@ -110,7 +110,7 @@ const actual = {
   functions: mean(gated, "functions"),
 };
 
-  console.log(`gated: bounded-context tree + src/app/api (${gated.length} files, mean over files)`);
+console.log(`gated: bounded-context tree + src/app/api (${gated.length} files, mean over files)`);
 for (const name of ["lines", "branches", "functions"]) {
   console.log(
     `  ${name.padEnd(10)} ${actual[name].toFixed(2).padStart(6)}%  floor ${FLOOR[name]}%`,

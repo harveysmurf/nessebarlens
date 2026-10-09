@@ -1,7 +1,7 @@
 /**
  * The one place environment and Worker bindings are read.
  *
- * Every other module in src/lib takes its configuration as an argument, so
+ * Every other module in src/application and src/domain takes its configuration as an argument, so
  * "which env var backs this?" has exactly one answer and the answer lives in
  * one file. Two things stay deliberately outside:
  *
