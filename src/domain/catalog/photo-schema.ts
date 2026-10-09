@@ -1,5 +1,10 @@
 import { HEX_64_PATTERN } from "../pricing/crypto-hex";
 import { PHOTO_SLUG_PATTERN } from "./derivative-ladder";
+import {
+  type MasterFacts,
+  type MasterFactsReason,
+  parseMasterFacts,
+} from "./master-facts";
 
 /**
  * The one definition of a photo file, checked at build time by
@@ -36,6 +41,8 @@ export type PhotoFile = {
   published: boolean;
   masterSha256?: string;
   imageHash?: string;
+  /** Oriented pixel size and orientation, written by publish-photos (#295). */
+  master?: MasterFacts;
 };
 
 export type PhotoValidation =
@@ -59,6 +66,9 @@ const KNOWN_KEYS = new Set([
   "published",
   "master_sha256",
   "image_hash",
+  "master_width",
+  "master_height",
+  "orientation",
 ]);
 
 const ALT_MAX = 200;
@@ -204,6 +214,44 @@ function readHex(
   return value;
 }
 
+const MASTER_FACTS_MESSAGE: Record<MasterFactsReason, string> = {
+  "not-positive-integer":
+    "master_width and master_height must be positive integers",
+  "unknown-orientation":
+    "orientation must be one of landscape, portrait, square",
+  "orientation-mismatch":
+    "orientation does not match master_width and master_height",
+};
+
+/**
+ * The master facts, if the file carries any of the three keys. They are
+ * optional while #297 backfills the published photos, but a set that is present
+ * must be complete and consistent: a half-written trio is a publish bug, not a
+ * missing value, so it fails rather than being ignored. `undefined` means the
+ * file has none of the three keys.
+ */
+function readMasterFacts(
+  data: Record<string, unknown>,
+  problems: string[],
+): MasterFacts | undefined {
+  const present =
+    data.master_width !== undefined ||
+    data.master_height !== undefined ||
+    data.orientation !== undefined;
+  if (!present) return undefined;
+
+  const result = parseMasterFacts({
+    width: data.master_width,
+    height: data.master_height,
+    orientation: data.orientation,
+  });
+  if (!result.ok) {
+    problems.push(MASTER_FACTS_MESSAGE[result.reason]);
+    return undefined;
+  }
+  return result.facts;
+}
+
 /**
  * Validates one photo file against every rule, collecting all problems rather
  * than stopping at the first, so a single run reports the whole file. The
@@ -255,6 +303,7 @@ export function validatePhotoFile(
     HEX_8_PATTERN,
     problems,
   );
+  const master = readMasterFacts(data, problems);
 
   // A published photo is served from the real ladder, so the two values the
   // publish script writes are required, not optional: without them the gallery
@@ -291,6 +340,7 @@ export function validatePhotoFile(
       published,
       masterSha256,
       imageHash,
+      master,
     },
   };
 }

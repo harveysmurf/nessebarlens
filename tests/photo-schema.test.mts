@@ -279,6 +279,62 @@ test("image_hash must be 8-char lowercase hex", () => {
   assert.ok(wrongType.some((p) => p.startsWith("image_hash:")), wrongType.join("; "));
 });
 
+test("master facts are optional and default to undefined", () => {
+  const result = validate({ ...VALID });
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.photo.master, undefined);
+});
+
+test("a complete set of master facts is accepted and kept", () => {
+  const result = validate({
+    ...VALID,
+    master_width: 4901,
+    master_height: 3351,
+    orientation: "landscape",
+  });
+  assert.equal(result.ok, true);
+  if (result.ok) {
+    assert.deepEqual(result.photo.master, {
+      width: 4901,
+      height: 3351,
+      orientation: "landscape",
+    });
+  }
+});
+
+test("a malformed set of master facts is refused, keyed to its reason", () => {
+  const notInteger = problems({ ...VALID, master_width: 0, master_height: 100, orientation: "landscape" });
+  assert.ok(
+    notInteger.some((p) => p.includes("positive integers")),
+    notInteger.join("; "),
+  );
+
+  const unknown = problems({ ...VALID, master_width: 100, master_height: 100, orientation: "diagonal" });
+  assert.ok(
+    unknown.some((p) => p.includes("one of landscape, portrait, square")),
+    unknown.join("; "),
+  );
+
+  const mismatch = problems({ ...VALID, master_width: 4000, master_height: 3000, orientation: "portrait" });
+  assert.ok(
+    mismatch.some((p) => p.includes("does not match")),
+    mismatch.join("; "),
+  );
+});
+
+test("a half-written set of master facts is refused rather than ignored", () => {
+  const onlyWidth = problems({ ...VALID, master_width: 4901 });
+  assert.ok(
+    onlyWidth.some((p) => p.includes("positive integers")),
+    onlyWidth.join("; "),
+  );
+  const noOrientation = problems({ ...VALID, master_width: 4901, master_height: 3351 });
+  assert.ok(
+    noOrientation.some((p) => p.includes("one of landscape, portrait, square")),
+    noOrientation.join("; "),
+  );
+});
+
 test("one run reports every problem in the file, not only the first", () => {
   const found = problems({
     catgory: "film",
