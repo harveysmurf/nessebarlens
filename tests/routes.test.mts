@@ -381,7 +381,8 @@ test("print-asset: no configured secret is a 503, not a 401", async () => {
 test("print-asset: a verified slug with no bucket is a 404, never a redirect", async () => {
   const secret = "route-test-print-asset-secret-32-chars";
   const { signPrintAssetUrl } = await import("../src/application/fulfillment/print-asset.ts");
-  const signed = await signPrintAssetUrl(SAMPLE_SLUG, { secret, baseUrl: SITE });
+  const { ConfiguredAssetUrlSigner } = await import("../src/infrastructure/print-asset/asset-url-signer.ts");
+  const signed = await signPrintAssetUrl(SAMPLE_SLUG, new ConfiguredAssetUrlSigner(), { secret, baseUrl: SITE });
   assert.ok(signed);
   const restore = withBindings({ printAssetSecret: secret, prodigiKeyConfigured: false });
   try {
@@ -1305,7 +1306,8 @@ function bucket() {
 test("print-asset: a verified request streams the master as image/jpeg", async () => {
   const secret = "route-test-print-asset-secret-32-chars";
   const { signPrintAssetUrl } = await import("../src/application/fulfillment/print-asset.ts");
-  const signed = await signPrintAssetUrl(SAMPLE_SLUG, { secret, baseUrl: SITE });
+  const { ConfiguredAssetUrlSigner } = await import("../src/infrastructure/print-asset/asset-url-signer.ts");
+  const signed = await signPrintAssetUrl(SAMPLE_SLUG, new ConfiguredAssetUrlSigner(), { secret, baseUrl: SITE });
   const restore = withBindings({
     printAssetSecret: secret,
     MASTERS: bucket(),
@@ -1330,7 +1332,8 @@ test("print-asset: a verified request streams the master as image/jpeg", async (
 test("print-asset: a bucket that throws is a 503, an absent master a 404", async () => {
   const secret = "route-test-print-asset-secret-32-chars";
   const { signPrintAssetUrl } = await import("../src/application/fulfillment/print-asset.ts");
-  const signed = await signPrintAssetUrl(SAMPLE_SLUG, { secret, baseUrl: SITE });
+  const { ConfiguredAssetUrlSigner } = await import("../src/infrastructure/print-asset/asset-url-signer.ts");
+  const signed = await signPrintAssetUrl(SAMPLE_SLUG, new ConfiguredAssetUrlSigner(), { secret, baseUrl: SITE });
   const throwing = {
     async get(): Promise<never> {
       throw new Error("R2 down");

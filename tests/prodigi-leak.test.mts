@@ -4,8 +4,8 @@ import { PHOTOS } from "../src/domain/catalog/photos.ts";
 import {
   assertNoMasterLeak,
   buildProdigiOrderBody,
-  type OrderRecipient,
 } from "../src/infrastructure/prodigi/prodigi-order.ts";
+import type { OrderRecipient } from "../src/domain/ordering/order-recipient.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 /* What may not leave the Worker. A master JPEG key in the Prodigi payload

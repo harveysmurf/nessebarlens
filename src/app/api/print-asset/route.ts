@@ -3,6 +3,7 @@ import {
   resolvePrintAssetStream,
   verifyPrintAssetRequest,
 } from "@/application/fulfillment/print-asset";
+import { assetUrlSigner } from "@/infrastructure/container";
 import { NO_STORE_HEADERS } from "@/infrastructure/config/private-headers";
 import { readWorkerBindings } from "@/infrastructure/cloudflare/worker-bindings";
 
@@ -20,13 +21,13 @@ export async function GET(request: Request) {
   const sig = url.searchParams.get("sig") ?? "";
 
   const bindings = await readWorkerBindings();
-  // No `?? printAssetSecret()` fallback: envString already ends in a
-  // process.env read, so bindings.printAssetSecret is undefined only when the
-  // secret is absent from BOTH sources -- the bare reader would return null
-  // there too. tests/print-asset.test.mts holds that equivalence.
-  const secret = bindings.printAssetSecret;
 
-  const verified = await verifyPrintAssetRequest(slug, exp, sig, { secret });
+  const verified = await verifyPrintAssetRequest(
+    slug,
+    exp,
+    sig,
+    assetUrlSigner(),
+  );
   if (!verified.ok) {
     return NextResponse.json(
       { error: verified.error },

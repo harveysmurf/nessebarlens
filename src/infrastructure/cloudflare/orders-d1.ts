@@ -21,13 +21,13 @@ import {
 import {
   parseDownloadTokenRecord,
   type DownloadTokenRecord,
-} from "../../application/fulfillment/download-token";
+} from "../../domain/ordering/download-token";
 import {
   clampOrderListLimit,
   type OrderStatusFilter,
   type OrdersStore,
-} from "./orders-store";
-import { DOWNLOAD_TOKEN_MAX_DOWNLOADS } from "../../application/fulfillment/download-token";
+} from "../../domain/ordering/orders-store";
+import { DOWNLOAD_TOKEN_MAX_DOWNLOADS } from "../../domain/ordering/download-token";
 
 type OrderRow = {
   record: string;

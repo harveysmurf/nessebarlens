@@ -1,21 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
-  PRINT_ASSET_TTL_SECONDS,
   resolvePrintAssetStream,
   signPrintAssetUrl,
   verifyPrintAssetRequest,
 } from "../src/application/fulfillment/print-asset.ts";
-import {
-  PRINT_ASSET_SECRET_MIN_LENGTH,
-  printAssetSecret,
-} from "../src/infrastructure/config/config.ts";
+import { PRINT_ASSET_TTL_SECONDS } from "../src/domain/ordering/asset-url-signer.ts";
+import { ConfiguredAssetUrlSigner } from "../src/infrastructure/print-asset/asset-url-signer.ts";
+import { printAssetSecret } from "../src/infrastructure/config/config.ts";
+import { PRINT_ASSET_SECRET_MIN_LENGTH } from "../src/domain/ordering/print-asset.ts";
 import { readWorkerBindings } from "../src/infrastructure/cloudflare/worker-bindings.ts";
 import {
   assertNoMasterLeak,
   buildProdigiOrderBody,
-  type OrderRecipient,
 } from "../src/infrastructure/prodigi/prodigi-order.ts";
+import type { OrderRecipient } from "../src/domain/ordering/order-recipient.ts";
 import { hmacSha256Hex } from "../src/domain/pricing/crypto-hex.ts";
 import {
   SAMPLE_MASTER_KEY,
@@ -24,6 +23,7 @@ import {
 
 const SECRET = "test-print-asset-hmac-secret-32b-min!!";
 const NOW_MS = Date.parse("2026-09-28T12:00:00.000Z");
+const SIGNER = new ConfiguredAssetUrlSigner();
 
 const RECIPIENT: OrderRecipient = {
   name: "Test Buyer",
@@ -72,7 +72,7 @@ test("readWorkerBindings and printAssetSecret never disagree", async () => {
 
 test("sign + verify round-trip; expiry and bad sig fail", async () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
-  const url = await signPrintAssetUrl(SAMPLE_SLUG, {
+  const url = await signPrintAssetUrl(SAMPLE_SLUG, SIGNER, {
     secret: SECRET,
     nowMs: NOW_MS,
   });
@@ -86,20 +86,20 @@ test("sign + verify round-trip; expiry and bad sig fail", async () => {
   const exp = parsed.searchParams.get("exp")!;
   const sig = parsed.searchParams.get("sig")!;
 
-  const ok = await verifyPrintAssetRequest(slug, exp, sig, {
+  const ok = await verifyPrintAssetRequest(slug, exp, sig, SIGNER, {
     secret: SECRET,
     nowMs: NOW_MS,
   });
   assert.deepEqual(ok, { ok: true, slug: SAMPLE_SLUG });
 
-  const expired = await verifyPrintAssetRequest(slug, exp, sig, {
+  const expired = await verifyPrintAssetRequest(slug, exp, sig, SIGNER, {
     secret: SECRET,
     nowMs: NOW_MS + (PRINT_ASSET_TTL_SECONDS + 1) * 1000,
   });
   assert.equal(expired.ok, false);
   if (!expired.ok) assert.equal(expired.error, "expired");
 
-  const bad = await verifyPrintAssetRequest(slug, exp, "0".repeat(64), {
+  const bad = await verifyPrintAssetRequest(slug, exp, "0".repeat(64), SIGNER, {
     secret: SECRET,
     nowMs: NOW_MS,
   });
@@ -108,7 +108,7 @@ test("sign + verify round-trip; expiry and bad sig fail", async () => {
 });
 
 test("signed URL has no .jpg extension (Prodigi tolerance unknown; content-type is jpeg)", async () => {
-  const url = await signPrintAssetUrl(SAMPLE_SLUG, {
+  const url = await signPrintAssetUrl(SAMPLE_SLUG, SIGNER, {
     secret: SECRET,
     nowMs: NOW_MS,
   });
@@ -125,19 +125,19 @@ test("signer and verifier resolve the configured secret identically", async () =
   // checks another.
   process.env.PRINT_ASSET_HMAC_SECRET = `  ${SECRET}  `;
   const nowMs = 1_700_000_000_000;
-  const url = (await signPrintAssetUrl(SAMPLE_SLUG, { nowMs }))!;
+  const url = (await signPrintAssetUrl(SAMPLE_SLUG, SIGNER, { nowMs }))!;
   assert.ok(url, "configured secret must produce a signature");
   const query = new URL(url).searchParams;
-  const verified = await verifyPrintAssetRequest(SAMPLE_SLUG, query.get("exp")!, query.get("sig")!, {
+  const verified = await verifyPrintAssetRequest(SAMPLE_SLUG, query.get("exp")!, query.get("sig")!, SIGNER, {
     nowMs,
   });
   assert.equal(verified.ok, true, JSON.stringify(verified));
 
   // A whitespace-only secret is unusable on both sides, identically.
   process.env.PRINT_ASSET_HMAC_SECRET = " ".repeat(32);
-  assert.equal(await signPrintAssetUrl(SAMPLE_SLUG, { nowMs }), null);
+  assert.equal(await signPrintAssetUrl(SAMPLE_SLUG, SIGNER, { nowMs }), null);
   assert.deepEqual(
-    await verifyPrintAssetRequest(SAMPLE_SLUG, query.get("exp")!, query.get("sig")!, { nowMs }),
+    await verifyPrintAssetRequest(SAMPLE_SLUG, query.get("exp")!, query.get("sig")!, SIGNER, { nowMs }),
     { ok: false, status: 503, error: "print-asset-unavailable" },
   );
   delete process.env.PRINT_ASSET_HMAC_SECRET;
@@ -146,15 +146,15 @@ test("signer and verifier resolve the configured secret identically", async () =
 test("sign returns null without secret, and the order asset path has no placeholder left", async () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   delete process.env.PRINT_ASSET_HMAC_SECRET;
-  assert.equal(await signPrintAssetUrl(SAMPLE_SLUG, { secret: null }), null);
+  assert.equal(await signPrintAssetUrl(SAMPLE_SLUG, SIGNER, { secret: null }), null);
   // Null, not a fallback: a paid order must never be fulfilled from the public
   // low-res stand-in. The caller turns this into a retryable failure.
-  assert.equal(await signPrintAssetUrl(SAMPLE_SLUG), null);
+  assert.equal(await signPrintAssetUrl(SAMPLE_SLUG, SIGNER), null);
 });
 
 test("Prodigi body accepts HMAC print-asset URL without master leak", async () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
-  const assetUrl = (await signPrintAssetUrl(SAMPLE_SLUG, {
+  const assetUrl = (await signPrintAssetUrl(SAMPLE_SLUG, SIGNER, {
     secret: SECRET,
     nowMs: NOW_MS,
   }))!;
@@ -212,7 +212,7 @@ test("a caller-supplied baseUrl with extra slashes yields a single-slash URL", a
   // "//" produced "…//api/print-asset?…" and the signature check in the
   // Worker compared against a differently-shaped path.
   for (const baseUrl of ["https://x.test", "https://x.test/", "https://x.test//"]) {
-    const url = await signPrintAssetUrl(SAMPLE_SLUG, {
+    const url = await signPrintAssetUrl(SAMPLE_SLUG, SIGNER, {
       secret: SECRET,
       nowMs: NOW_MS,
       baseUrl,
@@ -225,12 +225,12 @@ test("a caller-supplied baseUrl with extra slashes yields a single-slash URL", a
 test("verifyPrintAssetRequest fails closed at every boundary, in order", async () => {
   const nowMs = NOW_MS;
   const exp = Math.floor(nowMs / 1000) + 60;
-  const signed = await signPrintAssetUrl(SAMPLE_SLUG, { secret: SECRET, nowMs, ttlSeconds: 60 });
+  const signed = await signPrintAssetUrl(SAMPLE_SLUG, SIGNER, { secret: SECRET, nowMs, ttlSeconds: 60 });
   assert.ok(signed);
   const sig = new URL(signed).searchParams.get("sig")!;
 
   // No secret: nothing is verifiable, so 503 before any parsing.
-  assert.deepEqual(await verifyPrintAssetRequest(SAMPLE_SLUG, String(exp), sig, { secret: null, nowMs }), {
+  assert.deepEqual(await verifyPrintAssetRequest(SAMPLE_SLUG, String(exp), sig, SIGNER, { secret: null, nowMs }), {
     ok: false,
     status: 503,
     error: "print-asset-unavailable",
@@ -243,7 +243,7 @@ test("verifyPrintAssetRequest fails closed at every boundary, in order", async (
     error: string,
     status: number,
   ) => {
-    const result = await verifyPrintAssetRequest(slug, expRaw, signature, { secret: SECRET, nowMs });
+    const result = await verifyPrintAssetRequest(slug, expRaw, signature, SIGNER, { secret: SECRET, nowMs });
     const actual = result.ok
       ? `ok:true (${JSON.stringify(result)})`
       : `${result.status} ${result.error}`;
@@ -264,7 +264,7 @@ test("verifyPrintAssetRequest fails closed at every boundary, in order", async (
 
   // Expired and absurdly-future expiries are distinguished.
   // Signed 10s in the past with a 1s TTL, so exp is genuinely behind now.
-  const expired = await signPrintAssetUrl(SAMPLE_SLUG, { secret: SECRET, nowMs: nowMs - 10_000, ttlSeconds: 1 });
+  const expired = await signPrintAssetUrl(SAMPLE_SLUG, SIGNER, { secret: SECRET, nowMs: nowMs - 10_000, ttlSeconds: 1 });
   const expiredSig = new URL(expired!).searchParams.get("sig")!;
   const expiredExp = new URL(expired!).searchParams.get("exp")!;
   await bad(SAMPLE_SLUG, expiredExp, expiredSig, "expired", 401);
@@ -282,7 +282,7 @@ test("verifyPrintAssetRequest fails closed at every boundary, in order", async (
   await bad(SAMPLE_SLUG, String(exp), otherSig, "bad-signature", 401);
 
   // And the happy path still passes.
-  const ok = await verifyPrintAssetRequest(SAMPLE_SLUG, String(exp), sig, { secret: SECRET, nowMs });
+  const ok = await verifyPrintAssetRequest(SAMPLE_SLUG, String(exp), sig, SIGNER, { secret: SECRET, nowMs });
   assert.deepEqual(ok, { ok: true, slug: SAMPLE_SLUG });
 });
 
@@ -371,7 +371,7 @@ test("a future exp is accepted exactly up to TTL plus the skew pad, and no furth
   const PAD = 300;
 
   const at = async (exp: number) =>
-    verifyPrintAssetRequest(SAMPLE_SLUG, String(exp), "0".repeat(64), { secret: SECRET, nowMs });
+    verifyPrintAssetRequest(SAMPLE_SLUG, String(exp), "0".repeat(64), SIGNER, { secret: SECRET, nowMs });
 
   // Inside the bound: rejected on signature, not on the exp window. A wrong
   // signature is the only way to probe the window without forging a valid one.

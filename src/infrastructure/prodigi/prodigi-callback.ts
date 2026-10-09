@@ -57,13 +57,15 @@ import { readOrderRecord } from "../../domain/ordering/order-corrupt";
 import { isSafeProdigiOrderId } from "./prodigi-cancel";
 import {
   detailSuffix,
+  prodigiUrl,
+} from "./prodigi-config";
+import {
   isProdigiTimeout,
   PRODIGI_ORDER_TIMEOUT_MS,
   prodigiTimeoutSignal,
-  prodigiUrl,
-} from "./prodigi-config";
+} from "../../domain/ordering/prodigi-timeout";
 import { prodigiConfig, siteUrl } from "../config/config";
-import type { OrdersStore } from "../cloudflare/orders-store";
+import type { OrdersStore } from "../../domain/ordering/orders-store";
 
 /** CloudEvent fields we require. Everything else is ignored. */
 export type ProdigiCloudEvent = {

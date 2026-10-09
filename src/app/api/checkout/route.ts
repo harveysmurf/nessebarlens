@@ -15,7 +15,7 @@ import { webDerivativeUrls } from "@/infrastructure/media/derivatives";
 import { prodigiFailureFrom } from "@/infrastructure/prodigi/prodigi-config";
 import { canSignMasterAsset } from "@/application/fulfillment/print-asset";
 import { isConfiguredSiteUrl, siteUrl } from "@/infrastructure/config/config";
-import { paymentGateway, printProvider } from "@/infrastructure/container";
+import { assetUrlSigner, paymentGateway, printProvider } from "@/infrastructure/container";
 import type { CheckoutIntent } from "@/application/checkout/payment-gateway";
 
 export async function POST(request: Request) {
@@ -99,7 +99,7 @@ export async function POST(request: Request) {
     // pays for a 70x100 giclee and Prodigi receives a 1600x1200 thumbnail, with
     // nothing recording that it happened. Refusing here means the customer is
     // never charged, so there is no refund path to build.
-    if (!(await canSignMasterAsset(photo.slug))) {
+    if (!(await canSignMasterAsset(photo.slug, assetUrlSigner()))) {
       return NextResponse.json(
         { error: "Print fulfillment is not configured" },
         { status: 503 },

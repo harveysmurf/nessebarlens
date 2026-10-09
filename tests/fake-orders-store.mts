@@ -16,13 +16,13 @@ import {
   parseDownloadTokenRecord,
   type DownloadTokenIndex,
   type DownloadTokenRecord,
-} from "../src/application/fulfillment/download-token.ts";
+} from "../src/domain/ordering/download-token.ts";
 import {
   clampOrderListLimit,
   type OrderStatusFilter,
   type OrdersStore,
-} from "../src/infrastructure/cloudflare/orders-store.ts";
-import { DOWNLOAD_TOKEN_MAX_DOWNLOADS } from "../src/application/fulfillment/download-token.ts";
+} from "../src/domain/ordering/orders-store.ts";
+import { DOWNLOAD_TOKEN_MAX_DOWNLOADS } from "../src/domain/ordering/download-token.ts";
 
 export type MemoryOrdersStore = OrdersStore & {
   /** Session ids written by putOrder / transitionOrder, for assertions. */

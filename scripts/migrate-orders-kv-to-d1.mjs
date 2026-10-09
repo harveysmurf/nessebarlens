@@ -36,7 +36,7 @@ import { isCheckoutSessionId } from "../src/domain/ordering/order-decision";
 import {
   DOWNLOAD_TOKEN_MAX_DOWNLOADS,
   isDownloadToken,
-} from "../src/application/fulfillment/download-token";
+} from "../src/domain/ordering/download-token";
 
 export const DATABASE_NAME = "nessebar-lens-orders";
 export const KV_BINDING = "ORDERS";

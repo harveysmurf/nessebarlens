@@ -23,7 +23,7 @@
  * and skips cancel.
  */
 
-import { type OrdersStore } from "../../infrastructure/cloudflare/orders-store";
+import type { OrdersStore } from "../../domain/ordering/orders-store";
 import { describeCorruptOrder, reportCorruptOrder } from "../../domain/ordering/order-corrupt";
 import {
   isRevoked,
@@ -31,31 +31,8 @@ import {
   type OrderRecord,
   type RevokedStatus,
 } from "../../domain/ordering/order-decision";
-import { cancelProdigiOrder, type CancelProdigiOrder } from "../../infrastructure/prodigi/prodigi-cancel";
-import { stripeSessionLookup } from "../../infrastructure/stripe/stripe-gateway";
-import { isChargeId, isPaymentIntentId, isStripeNotFound } from "../../infrastructure/stripe/stripe-ids";
-
-/** The slice of the Stripe client this module needs. Injected by the tests. */
-export type StripeSessionLookup = {
-  findSessionIdByPaymentIntent: (
-    paymentIntent: string,
-  ) => Promise<string | null>;
-  /** Dispute objects name a Charge id; the payment intent is one hop away. */
-  findPaymentIntentForCharge: (chargeId: string) => Promise<string | null>;
-};
-
-// The pure id/error predicates live in `stripe-ids.ts` so the Stripe adapter can
-// share them without this module and the adapter importing each other. They stay
-// re-exported here because the revocation tests and the webhook route know them
-// by this path.
-export { isChargeId, isPaymentIntentId, isStripeNotFound };
-
-export function defaultStripeLookup(): StripeSessionLookup {
-  // The Stripe client construction moved to the adapter (`stripe-gateway.ts`)
-  // so this module no longer reaches into the SDK. Kept as a named export
-  // because the revocation tests and the webhook route call it by this name.
-  return stripeSessionLookup();
-}
+import type { CancelProdigiOrder } from "../../domain/ordering/print-provider";
+import type { StripeSessionLookup } from "../../domain/ordering/stripe-session-lookup";
 
 export type RevocationOutcome =
   /** Nothing to do, or done. 200 either way — never make Stripe redeliver. */
@@ -68,8 +45,8 @@ export type RevokeInput = {
   status: RevokedStatus;
   paymentIntent: string | null | undefined;
   now: string;
-  stripe?: StripeSessionLookup;
-  cancel?: CancelProdigiOrder;
+  stripe: StripeSessionLookup;
+  cancel: CancelProdigiOrder;
 };
 
 /**
@@ -82,14 +59,14 @@ export async function revokeOrderByPaymentIntent(
   input: RevokeInput,
 ): Promise<RevocationOutcome> {
   const paymentIntent = input.paymentIntent;
-  if (!isPaymentIntentId(paymentIntent)) {
+  if (typeof paymentIntent !== "string" || !input.stripe.isPaymentReference(paymentIntent)) {
     return {
       httpStatus: 200,
       body: { received: true, ignored: "no-payment-intent" },
     };
   }
 
-  const lookup = input.stripe ?? defaultStripeLookup();
+  const lookup = input.stripe;
 
   let sessionId: string | null;
   try {
@@ -189,7 +166,7 @@ export async function revokeOrderByPaymentIntent(
 
   const cancellation =
     order.kind === "physical" && order.prodigiOrderId
-      ? await (input.cancel ?? cancelProdigiOrder)({
+      ? await input.cancel({
           prodigiOrderId: order.prodigiOrderId,
           sessionId,
         })
@@ -237,11 +214,12 @@ export async function paymentIntentForDispute(
   const charge = dispute.charge;
   if (!charge) return null;
   if (typeof charge !== "string") {
-    return isPaymentIntentId(charge.payment_intent)
-      ? charge.payment_intent
+    const pi = charge.payment_intent;
+    return typeof pi === "string" && lookup.isPaymentReference(pi)
+      ? pi
       : null;
   }
-  if (!isChargeId(charge)) return null;
+  if (!lookup.isChargeReference(charge)) return null;
   // Deliberately no catch here. A charge that resolves to no payment intent is
   // a different thing from a lookup that failed: the first means the charge is
   // not ours (200, ignore), the second means Stripe was unreachable and the

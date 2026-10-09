@@ -1,13 +1,23 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { fulfillCheckoutSession } from "../src/application/fulfillment/fulfillment.ts";
-import type { OrdersStore } from "../src/infrastructure/cloudflare/orders-store.ts";
+import type { OrdersStore } from "../src/domain/ordering/orders-store.ts";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
 import {
   parseRecipient,
   type StripeShippingDetails,
 } from "../src/domain/ordering/order-decision.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
+import type { AssetUrlSigner } from "../src/domain/ordering/asset-url-signer.ts";
+import { ConfiguredAssetUrlSigner } from "../src/infrastructure/print-asset/asset-url-signer.ts";
+import { createProdigiOrder } from "../src/infrastructure/prodigi/prodigi-order.ts";
+
+const SITE_URL = "https://nessebarlens.com";
+const ASSET_URL = `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`;
+const okSigner: AssetUrlSigner = {
+  sign: async () => ASSET_URL,
+  verify: async () => ({ ok: true, slug: SAMPLE_SLUG }),
+};
 
 /* The last edges the report could still name. Each is a branch production takes
    and no test had: an address Stripe can send without a country, a framed
@@ -89,6 +99,8 @@ test("a framed physical order keeps the frame finish all the way to Prodigi", as
         sku: "GLOBAL-FAP-12X16",
       } }),
     store: emptyStore(),
+    assetUrlSigner: okSigner,
+    siteUrl: SITE_URL,
     async createOrder(input) {
       seen = input as unknown as Record<string, unknown>;
       return {
@@ -124,6 +136,8 @@ test("a physical order whose shipping quote is missing is bad-metadata, not a mi
       },
     }),
     store: emptyStore(),
+    assetUrlSigner: okSigner,
+    siteUrl: SITE_URL,
     async createOrder() {
       throw new Error("Prodigi must not be called without a shipping quote");
     },
@@ -163,6 +177,9 @@ test("the real Prodigi client is what runs when no order factory is injected", a
     const result = await fulfillCheckoutSession({
       ...physicalInput(),
       store: emptyStore(),
+      createOrder: createProdigiOrder,
+      assetUrlSigner: new ConfiguredAssetUrlSigner(),
+      siteUrl: SITE_URL,
     });
     assert.equal(result.httpStatus, 200);
     assert.equal(result.body.status, "paid");

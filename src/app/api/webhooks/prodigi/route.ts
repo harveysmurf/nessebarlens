@@ -19,7 +19,7 @@ import { sendEmailFromApiKey } from "@/domain/ordering/email";
 import {
   ORDERS_STORE_UNAVAILABLE_ERROR,
   ORDERS_STORE_UNAVAILABLE_STATUS,
-} from "@/infrastructure/cloudflare/orders-store";
+} from "@/domain/ordering/orders-store";
 import { handleProdigiCallback } from "@/infrastructure/prodigi/prodigi-callback";
 import { readWorkerBindings } from "@/infrastructure/cloudflare/worker-bindings";
 

@@ -2,10 +2,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   createProdigiOrder,
-  type OrderRecipient,
 } from "../src/infrastructure/prodigi/prodigi-order.ts";
+import type { OrderRecipient } from "../src/domain/ordering/order-recipient.ts";
 import { verifyPrintAssetRequest } from "../src/application/fulfillment/print-asset.ts";
 import { signPrintAssetUrl } from "../src/application/fulfillment/print-asset.ts";
+import { ConfiguredAssetUrlSigner } from "../src/infrastructure/print-asset/asset-url-signer.ts";
 import { parseQuoteBody } from "../src/domain/ordering/checkout-body.ts";
 import {
   decideFulfillment,
@@ -18,6 +19,8 @@ import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
    and reachable from production. */
 
 const SECRET = "test-print-asset-hmac-secret-32b-min!!";
+const SIGNER = new ConfiguredAssetUrlSigner();
+const ASSET_URL = `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`;
 const RECIPIENT: OrderRecipient = {
   name: "Test Buyer",
   line1: "1 Harbor St",
@@ -37,7 +40,7 @@ test("a secret passed as null is the same as no secret at all", async () => {
   // truthy — without the trim it signed URLs with a whitespace key and every
   // legitimate request came back 401 instead of the 503 that means
   // "unconfigured".
-  const signed = await signPrintAssetUrl(SAMPLE_SLUG, { secret: SECRET });
+  const signed = await signPrintAssetUrl(SAMPLE_SLUG, SIGNER, { secret: SECRET });
   assert.ok(signed, "a signed URL is available for the rest of this test");
   // searchParams is a live view, not a plain object: destructuring it yields
   // undefined for every key. The first run of this test passed for that reason
@@ -46,7 +49,7 @@ test("a secret passed as null is the same as no secret at all", async () => {
   const exp = params.get("exp")!;
   const sig = params.get("sig")!;
   for (const secret of [null, "", "   "]) {
-    const result = await verifyPrintAssetRequest(SAMPLE_SLUG, exp, sig, { secret });
+    const result = await verifyPrintAssetRequest(SAMPLE_SLUG, exp, sig, SIGNER, { secret });
     assert.equal(result.ok, false, JSON.stringify(secret));
     assert.equal(result.status, 503);
     assert.equal(result.error, "print-asset-unavailable");
@@ -59,7 +62,7 @@ test("a secret passed as null is the same as no secret at all", async () => {
     const saved = process.env.PRINT_ASSET_HMAC_SECRET;
     try {
       delete process.env.PRINT_ASSET_HMAC_SECRET;
-      const result = await verifyPrintAssetRequest(SAMPLE_SLUG, exp, sig, {
+      const result = await verifyPrintAssetRequest(SAMPLE_SLUG, exp, sig, SIGNER, {
         secret: undefined,
       });
       assert.equal(result.ok, false);
@@ -71,13 +74,13 @@ test("a secret passed as null is the same as no secret at all", async () => {
     }
   }
   // A secret that is only padded still verifies, because it is the same key.
-  const padded = await verifyPrintAssetRequest(SAMPLE_SLUG, exp, sig, {
+  const padded = await verifyPrintAssetRequest(SAMPLE_SLUG, exp, sig, SIGNER, {
     secret: ` ${SECRET} `,
   });
   assert.equal(padded.ok, true, "a padded secret is the same key once trimmed");
   // And the same URL verifies with the exact secret, so the rejection above is
   // the secret and not the signature.
-  const ok = await verifyPrintAssetRequest(SAMPLE_SLUG, exp, sig, { secret: SECRET });
+  const ok = await verifyPrintAssetRequest(SAMPLE_SLUG, exp, sig, SIGNER, { secret: SECRET });
   assert.equal(ok.ok, true, ok.ok ? "" : ok.error);
 });
 
@@ -85,12 +88,13 @@ test("expiry is checked against the wall clock when no now is given", async () =
   // The webhook path injects now for determinism; this branch is the one the
   // route uses. An expiry that is already in the past must fail on the real
   // clock, with no nowMs to lean on.
-  const signed = await signPrintAssetUrl(SAMPLE_SLUG, { secret: SECRET });
+  const signed = await signPrintAssetUrl(SAMPLE_SLUG, SIGNER, { secret: SECRET });
   const params = new URL(signed!).searchParams;
   const expired = await verifyPrintAssetRequest(
     SAMPLE_SLUG,
     "1000000000",
     params.get("sig")!,
+    SIGNER,
     { secret: SECRET },
   );
   assert.equal(expired.ok, false);
@@ -151,6 +155,7 @@ test("a non-Error thrown while building the body is reported, not rethrown", asy
       size: "50x70",
       frame: null,
       recipient: hostile,
+      assetUrl: ASSET_URL,
     });
     assert.equal(result.ok, false);
     assert.equal(result.ok === false && result.kind, "client");
@@ -186,6 +191,7 @@ test("a non-Error thrown by fetch is a server failure, not a crash", async () =>
       size: "50x70",
       frame: null,
       recipient: RECIPIENT,
+      assetUrl: ASSET_URL,
     });
     assert.equal(result.ok, false);
     assert.equal(result.ok === false && result.kind, "server");

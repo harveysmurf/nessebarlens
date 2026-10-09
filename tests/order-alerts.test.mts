@@ -19,11 +19,18 @@ import {
   type OrderRecord,
   type StripeShippingDetails,
 } from "../src/domain/ordering/order-decision.ts";
-import type { CreateProdigiOrder } from "../src/infrastructure/prodigi/prodigi-order.ts";
+import type { CreateProdigiOrder } from "../src/domain/ordering/print-provider.ts";
+import type { AssetUrlSigner } from "../src/domain/ordering/asset-url-signer.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const SESSION = "cs_test_abcdefgh";
 const NOW = "2026-09-27T12:00:00.000Z";
+const SITE_URL = "https://nessebarlens.com";
+const ASSET_URL = `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`;
+const okSigner: AssetUrlSigner = {
+  sign: async () => ASSET_URL,
+  verify: async () => ({ ok: true, slug: SAMPLE_SLUG }),
+};
 
 process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
 
@@ -57,6 +64,8 @@ function paidInput(overrides: Record<string, unknown> = {}) {
     customerPhone: null as string | null,
     prodigiKeyConfigured: false,
     now: NOW,
+    assetUrlSigner: okSigner,
+    siteUrl: SITE_URL,
     // The port, not a binding: every case here starts from an empty store, and
     // a case that needs one with a record seeds it through the `store` override
     // below. A get/put-shaped fake would fail the bindings shape guard and be

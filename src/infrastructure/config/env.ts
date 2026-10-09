@@ -5,6 +5,8 @@
  * source in the signer and the other source in the verifier.
  */
 
+import { stripTrailingSlashes } from "../../domain/pricing/url-patterns";
+
 function trimmed(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   const out = value.trim();
@@ -59,14 +61,6 @@ export function envIntInRange(
   return Number.isSafeInteger(parsed) && parsed >= min ? parsed : fallback;
 }
 
-/**
- * Strips every trailing slash so callers can concatenate "/path" safely.
- * Every slash, not just one: the single-slash version silently left a
- * doubled slash in a caller-supplied base and produced "//api/…" URLs.
- */
-export function stripTrailingSlashes(value: string): string {
-  return value.replace(/\/+$/, "");
-}
 export function envStringStrippedSlash(
   name: string,
   env: Record<string, unknown> = process.env,

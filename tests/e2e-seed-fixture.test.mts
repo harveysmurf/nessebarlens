@@ -165,7 +165,7 @@ test("the paid digital fixture carries a master key the catalog actually has", a
 test("the seeded token is the one the paid digital order resolves to (#111)", async () => {
   const raw = JSON.parse(readFileSync(SEED_PATH, "utf8")) as Record<string, string>;
   const { downloadLinkForSession } = await import("../src/application/fulfillment/download-token.ts");
-  const { parseDownloadTokenRecord } = await import("../src/application/fulfillment/download-token.ts");
+  const { parseDownloadTokenRecord } = await import("../src/domain/ordering/download-token.ts");
   const store = seededOrdersStore(SEED_PATH);
   const paid = "cs_test_e2edigitalpaid00000001";
 

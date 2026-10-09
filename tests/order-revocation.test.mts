@@ -22,14 +22,17 @@ import {
   resolveDownload,
 } from "../src/domain/ordering/order-decision.ts";
 import {
+  paymentIntentForDispute,
+  revokeOrderByPaymentIntent,
+} from "../src/application/fulfillment/order-revocation.ts";
+import {
   isChargeId,
   isPaymentIntentId,
   isStripeNotFound,
-  paymentIntentForDispute,
-  revokeOrderByPaymentIntent,
-  type StripeSessionLookup,
-} from "../src/application/fulfillment/order-revocation.ts";
-import type { CancelProdigiOrder } from "../src/infrastructure/prodigi/prodigi-cancel.ts";
+} from "../src/infrastructure/stripe/stripe-ids.ts";
+import type { StripeSessionLookup } from "../src/domain/ordering/stripe-session-lookup.ts";
+import type { CancelProdigiOrder } from "../src/domain/ordering/print-provider.ts";
+import { cancelProdigiOrder } from "../src/infrastructure/prodigi/prodigi-cancel.ts";
 import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
 const SESSION = "cs_test_abcdefgh";
@@ -71,6 +74,9 @@ function lookup(overrides: Partial<StripeSessionLookup> = {}): StripeSessionLook
   return {
     findSessionIdByPaymentIntent: async () => SESSION,
     findPaymentIntentForCharge: async () => INTENT,
+    isPaymentReference: isPaymentIntentId,
+    isChargeReference: isChargeId,
+    isNotFound: isStripeNotFound,
     ...overrides,
   };
 }
@@ -383,6 +389,9 @@ test("a dispute resolves its payment intent through the charge hop", async () =>
       seen.push(id);
       return INTENT;
     },
+    isPaymentReference: isPaymentIntentId,
+    isChargeReference: isChargeId,
+    isNotFound: isStripeNotFound,
   });
   assert.equal(found, INTENT);
   assert.deepEqual(seen, ["ch_3AbcDefGh"]);
@@ -410,6 +419,9 @@ test("a transient dispute charge lookup propagates instead of resolving to null"
       findPaymentIntentForCharge: async () => {
         throw new Error("stripe 500");
       },
+      isPaymentReference: isPaymentIntentId,
+      isChargeReference: isChargeId,
+      isNotFound: isStripeNotFound,
     }),
     /stripe 500/,
   );
@@ -529,8 +541,8 @@ test("the default lookup asks Stripe for the session the payment came from", asy
     throw new Error(`unexpected fetch: ${target}`);
   }) as typeof fetch;
   try {
-    const { defaultStripeLookup } = await import("../src/application/fulfillment/order-revocation.ts");
-    const live = defaultStripeLookup();
+    const { stripeSessionLookup } = await import("../src/infrastructure/stripe/stripe-gateway.ts");
+    const live = stripeSessionLookup();
     assert.equal(await live.findSessionIdByPaymentIntent(INTENT), SESSION);
     assert.ok(
       seen.some((line) => line.includes("/checkout/sessions")),
@@ -544,9 +556,9 @@ test("the default lookup asks Stripe for the session the payment came from", asy
   }
 });
 
-test("a physical refund uses the real cancel when none is injected", async () => {
-  // The default must be the production path, not a no-op: this pins that a
-  // physical revocation without an injected cancel still reaches Prodigi.
+test("a physical refund uses the real cancel when the container injects it", async () => {
+  // The container wires `prodigiCancel()`; this pins that a physical
+  // revocation with the real cancel reaches Prodigi rather than a no-op.
   const saved = { ...process.env };
   delete process.env.PRODIGI_API_BASE;
   delete process.env.PRODIGI_SANDBOX_API_KEY;
@@ -579,6 +591,7 @@ test("a physical refund uses the real cancel when none is injected", async () =>
       paymentIntent: INTENT,
       now: NOW,
       stripe: lookup(),
+      cancel: cancelProdigiOrder,
     }).then((result) => {
       // Unconfigured Prodigi, so the cancel fails — and the revocation still
       // stands, which is the whole point of writing before cancelling.

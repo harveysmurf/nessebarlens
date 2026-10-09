@@ -27,15 +27,7 @@
  * the stored order must not change because the mail provider hiccuped.
  */
 
-// documented tech debt: prodigiTimeoutSignal and isProdigiTimeout live in
-// infra/prodigi-config and are read here by the pure decision half. Tracked
-// for extraction under the module-boundaries guard (#4).
-/* eslint-disable import/no-restricted-paths */
-import {
-  isProdigiTimeout,
-  prodigiTimeoutSignal,
-} from "../../infrastructure/prodigi/prodigi-config";
-/* eslint-enable import/no-restricted-paths */
+import { isProdigiTimeout, prodigiTimeoutSignal } from "./prodigi-timeout";
 
 /**
  * The three customer-facing kinds. Confirmation and unfulfilled are emitted

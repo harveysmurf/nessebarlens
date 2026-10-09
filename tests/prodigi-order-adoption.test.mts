@@ -19,9 +19,9 @@ import {
   isForeignOrder,
   prodigiIdempotencyKey,
 } from "../src/infrastructure/prodigi/prodigi-order.ts";
-import { prodigiWebhookToken } from "../src/infrastructure/config/config.ts";
-import { sessionOriginCheck } from "../src/infrastructure/stripe/stripe-event.ts";
-import type { OrderRecipient } from "../src/infrastructure/prodigi/prodigi-order.ts";
+import { prodigiWebhookToken, siteUrl } from "../src/infrastructure/config/config.ts";
+import { classifyUrlOrigin } from "../src/domain/ordering/session-origin.ts";
+import type { OrderRecipient } from "../src/domain/ordering/order-recipient.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const SANDBOX = "https://api.sandbox.prodigi.com";
@@ -47,6 +47,18 @@ const INPUT = {
   frame: null,
   recipient: RECIPIENT,
 };
+
+/**
+ * The asset URL the application would sign for the deployment the test is
+ * currently pretending to be. The caller signs it now, so it must be on the
+ * same origin as `siteUrl()` for the foreign-order check to mean anything.
+ */
+function input() {
+  return {
+    ...INPUT,
+    assetUrl: `${siteUrl()}/api/print-asset?slug=${SAMPLE_SLUG}&exp=1&sig=${"a".repeat(64)}`,
+  };
+}
 
 type FetchCall = { url: string; init: RequestInit };
 
@@ -198,7 +210,7 @@ test("AlreadyExists adopts the order Prodigi holds, not the one we built", async
         }),
     });
     try {
-      const result = await silently(() => createProdigiOrder(INPUT));
+      const result = await silently(() => createProdigiOrder(input()));
       // POST then the lookup — no third call, and no second POST.
       assert.equal(stub.calls.length, 2);
       assert.equal(stub.calls[1]!.url, `${SANDBOX}/v4.0/orders/ord_1177041`);
@@ -233,7 +245,7 @@ test("an adopted order on a foreign origin fails instead of claiming success", a
         }),
     });
     try {
-      const result = await silently(() => createProdigiOrder(INPUT));
+      const result = await silently(() => createProdigiOrder(input()));
       assert.equal(result.ok, false);
       assert.ok(!result.ok && result.reason === "prodigi-order-foreign");
       // Non-retryable: a redelivery re-sends the same key and gets this order
@@ -270,7 +282,7 @@ test("an order with no callback on a token-configured account is foreign", async
         }),
     });
     try {
-      const result = await silently(() => createProdigiOrder(INPUT));
+      const result = await silently(() => createProdigiOrder(input()));
       assert.ok(!result.ok);
       assert.ok(!result.ok && result.reason === "prodigi-order-foreign");
     } finally {
@@ -305,7 +317,7 @@ test("with no token configured, a missing callback is not evidence of anything",
           }),
       });
       try {
-        const result = await silently(() => createProdigiOrder(INPUT));
+        const result = await silently(() => createProdigiOrder(input()));
         assert.ok(result.ok);
         assert.equal(result.value.orderId, "ord_10");
         assert.equal(result.value.reusedExisting, true);
@@ -371,7 +383,7 @@ test("a fresh order is unaffected: no lookup, no reuse flag", async () => {
       get: () => json({}),
     });
     try {
-      const result = await createProdigiOrder(INPUT);
+      const result = await createProdigiOrder(input());
       assert.ok(result.ok);
       assert.equal(result.value.orderId, "ord_1");
       assert.equal(result.value.reusedExisting, undefined);
@@ -389,7 +401,7 @@ test("a failed lookup keeps the failure retryable rather than claiming success",
       get: () => json({ message: "boom" }, 503),
     });
     try {
-      const result = await silently(() => createProdigiOrder(INPUT));
+      const result = await silently(() => createProdigiOrder(input()));
       assert.ok(!result.ok);
       // A Prodigi we could not read is worth retrying; the redelivery re-sends
       // the same key, which is what makes that safe.
@@ -401,26 +413,26 @@ test("a failed lookup keeps the failure retryable rather than claiming success",
   });
 });
 
-test("sessionOriginCheck reads success_url, and refuses to guess", () => {
+test("classifyUrlOrigin reads success_url, and refuses to guess", () => {
   const ours = "https://nessebarlens.com";
   assert.equal(
-    sessionOriginCheck(
-      { success_url: "https://nessebarlens.com/checkout/success?session_id=cs_1" },
+    classifyUrlOrigin(
+      "https://nessebarlens.com/checkout/success?session_id=cs_1",
       ours,
     ),
     "ours",
   );
   // Port and case differ, but the origin is the deployment's.
   assert.equal(
-    sessionOriginCheck(
-      { success_url: "https://nessebarlens.com:443/checkout/success?x=1" },
+    classifyUrlOrigin(
+      "https://nessebarlens.com:443/checkout/success?x=1",
       ours,
     ),
     "ours",
   );
   assert.equal(
-    sessionOriginCheck(
-      { success_url: "https://staging.nessebarlens.com/checkout/success" },
+    classifyUrlOrigin(
+      "https://staging.nessebarlens.com/checkout/success",
       ours,
     ),
     "foreign",
@@ -428,42 +440,41 @@ test("sessionOriginCheck reads success_url, and refuses to guess", () => {
   // A look-alike host is foreign, not ours: this is the check that decides
   // whether we may write an order at all.
   assert.equal(
-    sessionOriginCheck(
-      { success_url: "https://nessebarlens.com.evil.test/checkout/success" },
+    classifyUrlOrigin(
+      "https://nessebarlens.com.evil.test/checkout/success",
       ours,
     ),
     "foreign",
   );
   // No success_url is not evidence of a foreign session. Refusing here would
   // drop a customer's paid print, so it is accepted.
-  assert.equal(sessionOriginCheck({}, ours), "unknown");
-  assert.equal(sessionOriginCheck({ success_url: "   " }, ours), "unknown");
-  assert.equal(sessionOriginCheck({ success_url: null }, ours), "unknown");
+  assert.equal(classifyUrlOrigin(undefined, ours), "unknown");
+  assert.equal(classifyUrlOrigin("   ", ours), "unknown");
+  assert.equal(classifyUrlOrigin(null, ours), "unknown");
   // Stripe's own placeholder template still parses.
   assert.equal(
-    sessionOriginCheck(
-      { success_url: "https://nessebarlens.com/c?session_id={CHECKOUT_SESSION_ID}" },
+    classifyUrlOrigin(
+      "https://nessebarlens.com/c?session_id={CHECKOUT_SESSION_ID}",
       ours,
     ),
     "ours",
   );
   // Unparseable is unknown, not a rejection.
-  assert.equal(sessionOriginCheck({ success_url: "not a url" }, ours), "unknown");
+  assert.equal(classifyUrlOrigin("not a url", ours), "unknown");
   // An unparseable configured origin cannot classify anything either.
   assert.equal(
-    sessionOriginCheck({ success_url: "https://nessebarlens.com/x" }, "nope"),
+    classifyUrlOrigin("https://nessebarlens.com/x", "nope"),
     "unknown",
   );
 });
 
-test("sessionOriginCheck: www and the apex are one deployment, nothing else folds", () => {
-  const success = (host: string) => ({
-    success_url: `https://${host}/checkout/success?session_id=cs_1`,
-  });
+test("classifyUrlOrigin: www and the apex are one deployment, nothing else folds", () => {
+  const success = (host: string) =>
+    `https://${host}/checkout/success?session_id=cs_1`;
   // A checkout started on www while the site url is the apex (or vice versa)
   // is still our session; dropping it would lose a paid print.
-  assert.equal(sessionOriginCheck(success("www.nessebarlens.com"), "https://nessebarlens.com"), "ours");
-  assert.equal(sessionOriginCheck(success("nessebarlens.com"), "https://www.nessebarlens.com"), "ours");
+  assert.equal(classifyUrlOrigin(success("www.nessebarlens.com"), "https://nessebarlens.com"), "ours");
+  assert.equal(classifyUrlOrigin(success("nessebarlens.com"), "https://www.nessebarlens.com"), "ours");
   // Look-alikes and other subdomains stay foreign; comparison is on parsed hosts.
   for (const host of [
     "staging.nessebarlens.com",
@@ -475,18 +486,18 @@ test("sessionOriginCheck: www and the apex are one deployment, nothing else fold
     "nessebarlens.com@evil.com",
   ]) {
     assert.equal(
-      sessionOriginCheck(success(host), "https://nessebarlens.com"),
+      classifyUrlOrigin(success(host), "https://nessebarlens.com"),
       "foreign",
       host,
     );
   }
   // The scheme and port are part of the origin.
   assert.equal(
-    sessionOriginCheck({ success_url: "http://nessebarlens.com/x" }, "https://nessebarlens.com"),
+    classifyUrlOrigin("http://nessebarlens.com/x", "https://nessebarlens.com"),
     "foreign",
   );
   assert.equal(
-    sessionOriginCheck({ success_url: "https://nessebarlens.com:8443/x" }, "https://nessebarlens.com"),
+    classifyUrlOrigin("https://nessebarlens.com:8443/x", "https://nessebarlens.com"),
     "foreign",
   );
 });
@@ -506,7 +517,7 @@ test("a failed lookup that times out or cannot connect is retryable", async () =
         },
       });
       try {
-        const result = await silently(() => createProdigiOrder(INPUT));
+        const result = await silently(() => createProdigiOrder(input()));
         assert.ok(!result.ok);
         assert.ok(!result.ok && result.reason === reason);
       } finally {
@@ -540,7 +551,7 @@ test("an unreadable or sparse lookup body is never adopted as ours", async () =>
         get,
       });
       try {
-        const result = await silently(() => createProdigiOrder(INPUT));
+        const result = await silently(() => createProdigiOrder(input()));
         assert.ok(!result.ok && result.reason === "prodigi-order-foreign");
       } finally {
         stub.restore();
@@ -562,7 +573,7 @@ test("an adopted order with our asset but no stage is adopted with a null stage"
         }),
     });
     try {
-      const result = await silently(() => createProdigiOrder(INPUT));
+      const result = await silently(() => createProdigiOrder(input()));
       assert.ok(result.ok);
       // Falls back to the id Prodigi gave on the POST when the body omits it.
       assert.equal(result.value.orderId, "ord_5");

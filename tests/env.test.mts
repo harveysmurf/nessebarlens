@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { envFlag, envIntInRange, envString, envStringStrippedSlash, stripTrailingSlashes } from "../src/infrastructure/config/env.ts";
+import { envFlag, envIntInRange, envString, envStringStrippedSlash } from "../src/infrastructure/config/env.ts";
+import { stripTrailingSlashes } from "../src/domain/pricing/url-patterns.ts";
 import { readProdigiConfig } from "../src/infrastructure/prodigi/prodigi-config.ts";
 
 function withEnv<T>(name: string, value: string | undefined, fn: () => T): T {

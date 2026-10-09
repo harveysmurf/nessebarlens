@@ -1,8 +1,5 @@
 import { envString, envStringStrippedSlash } from "../config/env";
-// The retry predicate and the reason union are domain policy and live in
-// `prodigi-policy.ts`. This module owns only the configuration read and the
-// HTTP-status classification that produce them, and imports the reason type
-// rather than owning it.
+import type { ProdigiFailureBranch } from "../../domain/ordering/prodigi-result";
 import type { ProdigiFailureReason } from "../../domain/ordering/prodigi-policy";
 
 export const PRODIGI_SANDBOX_API_BASE = "https://api.sandbox.prodigi.com";
@@ -63,68 +60,7 @@ export function detailSuffix(raw: string): string {
   return detail ? `: ${detail}` : "";
 }
 
-/**
- * How long each Prodigi call may take before we give up on it (#104).
- *
- * Without a bound, a hung Prodigi connection hangs our request with it: the
- * customer's spinner never resolves, and the Stripe webhook can outrun Stripe's
- * response window, which makes Stripe mark the delivery failed and pile up
- * concurrent fulfilment attempts for one paid session.
- *
- * Two numbers because two different deadlines apply. The quote is on a customer
- * spinner, so 8s is what a person will wait before the page shows an error. The
- * order is inside the webhook, so it gets the longer 15s and must still finish
- * inside Stripe's window — a timeout there is stored retryable and answered 5xx,
- * so a redelivery places the order rather than losing it.
- *
- * Kept here rather than at each call site because the two values are a pair:
- * the order timeout has to exceed the quote timeout by enough to still be the
- * longer deadline, and two literals in two modules is how that stops being true.
- */
-export const PRODIGI_QUOTE_TIMEOUT_MS = 8_000;
-export const PRODIGI_ORDER_TIMEOUT_MS = 15_000;
-
-/**
- * The abort signal for a Prodigi call, and the one way to recognise that a call
- * ended because we gave up on it rather than because Prodigi answered.
- *
- * `AbortSignal.timeout` rather than a manual `AbortController` plus
- * `setTimeout`: it has no timer to keep a request-scoped event loop alive, and
- * it aborts on its own if nobody awaits the promise.
- *
- * Detection is by the signal's own `aborted` flag rather than by the error's
- * name or class. `AbortSignal.timeout` aborts with a `TimeoutError` DOMException,
- * but the error that reaches our `catch` is the *fetch's* rejection — which
- * varies by runtime and by whether the request had already been sent. Asking
- * the signal is the one question whose answer does not depend on which.
- */
-export function prodigiTimeoutSignal(ms: number): AbortSignal {
-  return AbortSignal.timeout(ms);
-}
-
-/** True when a Prodigi call was ended by our own timeout rather than by Prodigi. */
-export function isProdigiTimeout(e: unknown, signal: AbortSignal): boolean {
-  if (signal.aborted) return true;
-  // The signal is the authority above; this covers the runtime that rejects
-  // with a TimeoutError without marking the signal — a defensive second
-  // reading, not the primary one, so an unrelated failure cannot match it.
-  return (
-    typeof e === "object" &&
-    e !== null &&
-    "name" in e &&
-    (e as { name?: unknown }).name === "TimeoutError"
-  );
-}
-
-/**
- * The Prodigi shipping method we quote with and buy with.
- *
- * It appeared as a literal in the quote body, the order body and the
- * request type. That is not a cosmetic duplication: if the two drift, the
- * shipping the customer was quoted is not the shipping the order gets, and
- * nothing downstream compares them. One constant, typed from itself, so the
- * type and both payloads cannot disagree.
- */
+/** The shipping method we quote with and buy with. */
 export const PRODIGI_SHIPPING_METHOD = "Budget";
 
 function missingKeyMessage(name: string): string {
@@ -144,41 +80,6 @@ const UNCONFIGURED_KEY_NAMES = [
   "PRODIGI_SANDBOX_API_KEY",
   "PRODIGI_API_KEY",
 ] as const;
-
-/**
- * How a failed Prodigi call is retried. The value is the failure's own shape,
- * not a name the caller matches against a message string.
- *
- * "server", "timeout" and "unconfigured" are all retryable and are answered 5xx
- * by the webhook; "client" is a permanent failure answered 200. "unconfigured"
- * and "timeout" are separated from "server" so a config problem and a deadline
- * are diagnosable at a glance instead of all collapsing into "Prodigi is down".
- */
-export type ProdigiFailureKind =
-  | "unconfigured"
-  | "timeout"
-  | "client"
-  | "server";
-
-/**
- * One result type for every Prodigi caller.
- *
- * Both the quote path and the order path return this, so a failure from either
- * carries the same `kind`/`reason`/`message`/`status` shape and a route can
- * answer one way without reading a thrown message back out of an Error.
- */
-export type ProdigiResult<T> =
-  | { ok: true; value: T }
-  | {
-      ok: false;
-      kind: ProdigiFailureKind;
-      reason: ProdigiFailureReason;
-      message: string;
-      status: number | null;
-    };
-
-/** The failed arm of `ProdigiResult`, the input a route hands to prodigiFailureFrom. */
-export type ProdigiFailureBranch = Extract<ProdigiResult<never>, { ok: false }>;
 
 /**
  * A Prodigi configuration read that found the deployment unconfigured.

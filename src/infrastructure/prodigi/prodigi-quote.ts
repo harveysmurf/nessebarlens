@@ -8,22 +8,18 @@ import {
 import {
   classifyProdigiStatus,
   detailSuffix,
+  PRODIGI_SHIPPING_METHOD,
+  prodigiUrl,
+} from "./prodigi-config";
+import {
   isProdigiTimeout,
   PRODIGI_QUOTE_TIMEOUT_MS,
-  PRODIGI_SHIPPING_METHOD,
   prodigiTimeoutSignal,
-  prodigiUrl,
-  type ProdigiResult,
-} from "./prodigi-config";
+} from "../../domain/ordering/prodigi-timeout";
+import type { ProdigiResult } from "../../domain/ordering/prodigi-result";
 import { prodigiConfig } from "../config/config";
 import { resolveSku, type PhysicalFormat } from "../../domain/pricing/sku-map";
-
-export type PhysicalQuote = {
-  sku: string;
-  unitCostEur: number;
-  shippingEur: number;
-  merchandiseEur: number;
-};
+import type { PhysicalQuote } from "../../domain/ordering/print-provider";
 
 type ProdigiQuoteResponse = {
   quotes?: Array<{

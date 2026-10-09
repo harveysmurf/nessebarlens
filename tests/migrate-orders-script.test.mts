@@ -14,7 +14,7 @@ import {
 // Same reasoning as the operator view's test: the bind renderer and the
 // download cap are read from the modules that own them, not re-exported here.
 import { sqlWithBinds } from "../scripts/sql-binds.mjs";
-import { DOWNLOAD_TOKEN_MAX_DOWNLOADS } from "../src/application/fulfillment/download-token.ts";
+import { DOWNLOAD_TOKEN_MAX_DOWNLOADS } from "../src/domain/ordering/download-token.ts";
 
 const SESSION = "cs_test_abcdefgh";
 const ORDER = JSON.stringify({

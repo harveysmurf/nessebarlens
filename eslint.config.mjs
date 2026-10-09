@@ -48,6 +48,12 @@ const eslintConfig = [
               message:
                 "Domain must not import application. Domain is the core and must not depend on orchestration.",
             },
+            {
+              target: "./src/application/**",
+              from: ["**/infrastructure/**"],
+              message:
+                "Application must not import infrastructure. Use a port from domain or wire dependencies through the container.",
+            },
           ],
         },
       ],
