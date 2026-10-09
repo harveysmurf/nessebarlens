@@ -1256,8 +1256,9 @@ from §7) into `ingest/` (repo root, gitignored), both named for the same slug:
   `nessebar-lens-web/{slug}/{hash8}/{400,750,1500,2000}.{jpg,webp}`, uploads the
   **staging master** (long edge ≤ 2500 px, JPEG q80, sRGB, metadata stripped) to
   `nessebar-lens-masters-staging/prints/{slug}.jpg`, writes `slug`,
-  `master_sha256` and `image_hash` into `content/photos/{slug}.yaml` preserving
-  the owner's comments and key order, then opens **one PR** for the run. That PR
+  `master_sha256`, `image_hash`, `master_width`, `master_height` and
+  `orientation` into `content/photos/{slug}.yaml` preserving the owner's
+  comments and key order, then opens **one PR** for the run. That PR
   is `content/photos/**` only. (Before #245 it also wrote a committed
   `public/placeholders/{slug}.jpg` fallback; that path is gone.)
 - `--only dawn,dusk` narrows a run; `--replace-image dawn` re-publishes an
@@ -1312,7 +1313,8 @@ input and re-running is always safe. The web keys from `--apply` are
 content-addressed, so they are never rewritten by a promote.
 
 Validation runs before any upload and reports every problem: the YAML must pass
-the schema with `master_sha256`/`image_hash` absent; the long edge must be
+the schema with the generated keys (`master_sha256`, `image_hash`,
+`master_width`, `master_height`, `orientation`) absent; the long edge must be
 ≥ 3500 px (a warning below 6000 px); a new slug must not already exist; the
 working tree must be clean apart from `ingest/` and `content/photos/`. Web keys
 are content-addressed (`{slug}/{hash8}/…`), so re-running skips identical
@@ -1381,6 +1383,16 @@ flow.
   derived as `prints/{slug}.jpg` — the only form `masterKeyForSlug` accepts
   (`src/domain/catalog/master-key.ts`). The only master-key list is that derived
   `imageKey`, surfaced via `masterKeyForSlug()`.
+- **Master facts are measured, not typed (#295).** `publish-photos` writes the
+  master's oriented `master_width`/`master_height` and the derived `orientation`
+  into the entry, measured by the same `masterDimensions()` the derivative ladder
+  uses (EXIF orientations 5-8 already swap the axes) and never hand-entered.
+  `src/domain/catalog/master-facts.ts` owns the three words and the validation
+  (`orientationOf`, `parseMasterFacts`); the schema accepts the keys only as a
+  complete, consistent set — all absent, or all three present — and `getPhoto()`
+  exposes them as `Photo.master`. They are optional until #297 backfills the
+  already-published photos, which also makes them required for
+  `published: true`.
 - **The homepage hero is the featured photo.** `featuredPhoto()` returns the one
   photo with `featured: true`, or else the first published fine-art photo in
   display order, so `src/app/page.tsx` no longer hard-codes a slug.

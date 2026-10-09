@@ -1,4 +1,5 @@
 import { PHOTOS as CATALOG } from "../../generated/catalog";
+import type { MasterFacts } from "./master-facts";
 import type { FilmLook, PhotoCategory, PhotoFile } from "./photo-schema";
 
 export type Photo = {
@@ -19,6 +20,8 @@ export type Photo = {
   featured?: boolean;
   /** Master content hash; when present the web derivative ladder is keyed by it. */
   imageHash?: string;
+  /** Oriented pixel size and orientation; drives print eligibility (#295). */
+  master?: MasterFacts;
 };
 
 /**
@@ -52,6 +55,7 @@ function toPhoto(file: PhotoFile): Photo {
     filmLook: file.filmLook,
     featured: file.featured,
     imageHash: file.imageHash,
+    master: file.master,
   };
 }
 

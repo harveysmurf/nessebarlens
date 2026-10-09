@@ -9,7 +9,9 @@ import os from "node:os";
 import path from "node:path";
 import test from "node:test";
 import sharp from "sharp";
+import { parse as parseYaml } from "yaml";
 
+import { buildCatalog } from "../scripts/build-catalog.mjs";
 import {
   MASTERS_BUCKET_NAME,
   STAGING_MASTERS_BUCKET_NAME,
@@ -53,11 +55,15 @@ function makeProject() {
   return dir;
 }
 
-async function writeMaster(file, { width = 3600, height = 2400, exif = false } = {}) {
+async function writeMaster(
+  file,
+  { width = 3600, height = 2400, exif = false, orientation } = {},
+) {
   let pipeline = sharp({
     create: { width, height, channels: 3, background: { r: 128, g: 64, b: 32 } },
   });
   if (exif) pipeline = pipeline.withMetadata({ exif: { IFD0: { Make: "Fixture" } } });
+  if (orientation) pipeline = pipeline.withMetadata({ orientation });
   await pipeline.jpeg({ quality: 90 }).toFile(file);
 }
 
@@ -230,20 +236,38 @@ test("planWebObjects is four widths × two formats under {slug}/{hash}", () => {
   assert.equal(objects.find((o) => o.format === "jpg")!.contentType, "image/jpeg");
 });
 
+const FACTS = { width: 4901, height: 3351, orientation: "landscape" };
+
 test("renderCatalogYaml keeps the owner's comment and appends the generated keys", () => {
-  const out = renderCatalogYaml(OWNER_YAML, "dawn", "a".repeat(64), "abcd1234");
+  const out = renderCatalogYaml(OWNER_YAML, {
+    slug: "dawn",
+    masterSha256: "a".repeat(64),
+    imageHash: "abcd1234",
+    masterFacts: FACTS,
+  });
   assert.match(out, /# owner note/);
   assert.match(out, /title: Dawn/);
   assert.match(out, /slug: dawn/);
   assert.match(out, new RegExp(`master_sha256: ${"a".repeat(64)}`));
   assert.match(out, /image_hash: abcd1234/);
+  assert.match(out, /master_width: 4901/);
+  assert.match(out, /master_height: 3351/);
+  assert.match(out, /orientation: landscape/);
   assert.match(out, /# written by publish-photos/);
-  // The generated keys are last.
+  // The generated keys are last, in the order publish-photos writes them.
   assert.ok(out.indexOf("image_hash") > out.indexOf("category:"));
+  const order = ["master_sha256", "image_hash", "master_width", "master_height", "orientation"];
+  const indices = order.map((key) => out.indexOf(`${key}:`));
+  assert.deepEqual([...indices].sort((a, b) => a - b), indices);
 });
 
 test("renderCatalogYaml does not duplicate an owner slug", () => {
-  const out = renderCatalogYaml("title: Dawn\nslug: dawn\n", "dawn", "a".repeat(64), "abcd1234");
+  const out = renderCatalogYaml("title: Dawn\nslug: dawn\n", {
+    slug: "dawn",
+    masterSha256: "a".repeat(64),
+    imageHash: "abcd1234",
+    masterFacts: FACTS,
+  });
   assert.equal(out.match(/^slug:/gm)?.length, 1);
 });
 
@@ -331,6 +355,9 @@ test("--apply uploads 8 web objects + 1 staging master and never production mast
     assert.match(written, /slug: dawn/);
     assert.match(written, /master_sha256: [0-9a-f]{64}/);
     assert.match(written, /image_hash: [0-9a-f]{8}/);
+    assert.match(written, /master_width: 3600/);
+    assert.match(written, /master_height: 2400/);
+    assert.match(written, /orientation: landscape/);
     assert.match(written, /# written by publish-photos/);
 
     // No committed placeholder is written anymore (#245).
@@ -342,6 +369,113 @@ test("--apply uploads 8 web objects + 1 staging master and never production mast
     assert.ok(d.exec.calls.some((c) => c[0] === "gh" && c[1] === "pr"));
     assert.equal(result.branch, "photos/2026-10-06-dawn");
     assert.equal(result.prUrl, "https://github.com/harveysmurf/nessebarlens/pull/999");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("publish records master facts for landscape, rotated portrait and square (#295)", async () => {
+  const dir = makeProject();
+  try {
+    // Landscape, as stored and seen.
+    await writeMaster(path.join(dir, "ingest/landscape.jpg"), {
+      width: 3600,
+      height: 2400,
+    });
+    writeFileSync(path.join(dir, "ingest/landscape.yaml"), OWNER_YAML);
+
+    // EXIF orientation 6: stored landscape, seen as a 2400x3600 portrait.
+    await writeMaster(path.join(dir, "ingest/portrait.jpg"), {
+      width: 3600,
+      height: 2400,
+      orientation: 6,
+    });
+    writeFileSync(path.join(dir, "ingest/portrait.yaml"), OWNER_YAML);
+
+    await writeMaster(path.join(dir, "ingest/square.jpg"), {
+      width: 3600,
+      height: 3600,
+    });
+    writeFileSync(path.join(dir, "ingest/square.yaml"), OWNER_YAML);
+
+    const result = await runPublish({ cwd: dir, apply: true }, deps());
+    assert.equal(result.status, 0, result.fatals?.join("\n"));
+
+    const readYaml = (slug: string) =>
+      parseYaml(
+        readFileSync(path.join(dir, "content/photos", `${slug}.yaml`), "utf8"),
+      );
+    const landscape = readYaml("landscape") as Record<string, unknown>;
+    assert.equal(landscape.master_width, 3600);
+    assert.equal(landscape.master_height, 2400);
+    assert.equal(landscape.orientation, "landscape");
+
+    const portrait = readYaml("portrait") as Record<string, unknown>;
+    assert.equal(portrait.master_width, 2400, "EXIF 6 swaps the stored axes");
+    assert.equal(portrait.master_height, 3600);
+    assert.equal(portrait.orientation, "portrait");
+
+    const square = readYaml("square") as Record<string, unknown>;
+    assert.equal(square.master_width, 3600);
+    assert.equal(square.master_height, 3600);
+    assert.equal(square.orientation, "square");
+
+    // Key order is the order publish-photos writes, and the one comment marks
+    // the generated block.
+    const raw = readFileSync(
+      path.join(dir, "content/photos/landscape.yaml"),
+      "utf8",
+    );
+    const order = ["master_sha256", "image_hash", "master_width", "master_height", "orientation"];
+    const indices = order.map((key) => raw.indexOf(`${key}:`));
+    assert.ok(indices.every((i) => i >= 0), raw);
+    assert.deepEqual([...indices].sort((a, b) => a - b), indices);
+    assert.match(raw, /# written by publish-photos/);
+
+    // build-catalog compiles the facts into the catalog entry.
+    const build = buildCatalog({
+      photosDir: path.join(dir, "content/photos"),
+      outFile: path.join(dir, "generated.ts"),
+    });
+    assert.equal(build.ok, true, build.problems.join("\n"));
+    const built = build.photos.find((photo) => photo.slug === "portrait");
+    assert.deepEqual(built?.master, {
+      width: 2400,
+      height: 3600,
+      orientation: "portrait",
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("--replace-image rewrites the master facts with the new size (#295)", async () => {
+  const dir = makeProject();
+  try {
+    await writeMaster(path.join(dir, "ingest/dawn.jpg"), {
+      width: 3600,
+      height: 2400,
+    });
+    writeFileSync(path.join(dir, "ingest/dawn.yaml"), OWNER_YAML);
+    assert.equal((await runPublish({ cwd: dir, apply: true }, deps())).status, 0);
+
+    // Replace with a portrait master: all five generated keys change together.
+    await writeMaster(path.join(dir, "ingest/dawn.jpg"), {
+      width: 2400,
+      height: 3600,
+    });
+    const result = await runPublish(
+      { cwd: dir, apply: true, replaceImage: "dawn" },
+      deps(),
+    );
+    assert.equal(result.status, 0, result.fatals?.join("\n"));
+
+    const dawn = parseYaml(
+      readFileSync(path.join(dir, "content/photos/dawn.yaml"), "utf8"),
+    ) as Record<string, unknown>;
+    assert.equal(dawn.master_width, 2400);
+    assert.equal(dawn.master_height, 3600);
+    assert.equal(dawn.orientation, "portrait");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

@@ -61,6 +61,7 @@ import {
   slugFromDroppedName,
   webDerivativeKey,
 } from "../src/domain/catalog/derivative-ladder";
+import { orientationOf } from "../src/domain/catalog/master-facts";
 import { validatePhotoFile } from "../src/domain/catalog/photo-schema";
 import {
   derivativeContentType,
@@ -73,7 +74,13 @@ import { runAudit } from "./audit-photos.mjs";
 const ROOT = path.join(import.meta.dirname, "..");
 const DEFAULT_DIR = "ingest";
 const CATALOG_DIR = "content/photos";
-const GENERATED_KEYS = ["master_sha256", "image_hash"];
+const GENERATED_KEYS = [
+  "master_sha256",
+  "image_hash",
+  "master_width",
+  "master_height",
+  "orientation",
+];
 /** A re-ingest overwrites the staging master's same key; a week is enough. */
 const STAGING_MASTER_CACHE_CONTROL = "public, max-age=604800";
 /**
@@ -245,10 +252,16 @@ export function planWebObjects(slug, hash8) {
 }
 
 /**
- * The owner's YAML with the generated keys appended and the three kept under
+ * The owner's YAML with the generated keys appended and the block kept under
  * one comment. The Document API preserves the owner's comments and key order.
+ *
+ * The master's pixel size and orientation are written here, in the same step as
+ * the hash they measure, so the facts can never drift from the file — #295.
  */
-export function renderCatalogYaml(ownerText, slug, masterSha256, imageHash) {
+export function renderCatalogYaml(
+  ownerText,
+  { slug, masterSha256, imageHash, masterFacts },
+) {
   const doc = parseDocument(ownerText);
   const map = doc.contents;
   const generated = [];
@@ -263,6 +276,14 @@ export function renderCatalogYaml(ownerText, slug, masterSha256, imageHash) {
   generated.push("master_sha256");
   map.add(new Pair(new Scalar("image_hash"), new Scalar(imageHash)));
   generated.push("image_hash");
+  map.add(new Pair(new Scalar("master_width"), new Scalar(masterFacts.width)));
+  generated.push("master_width");
+  map.add(new Pair(new Scalar("master_height"), new Scalar(masterFacts.height)));
+  generated.push("master_height");
+  map.add(
+    new Pair(new Scalar("orientation"), new Scalar(masterFacts.orientation)),
+  );
+  generated.push("orientation");
 
   const keyOf = (pair) =>
     pair.key && typeof pair.key === "object" ? pair.key.value : pair.key;
@@ -675,6 +696,7 @@ export async function runPublish(options, deps = {}) {
     const yamlText = await readFile(path.join(dir, pair.yaml), "utf8");
     const { width, height } = await masterDimensions(bytes);
     const longEdge = Math.max(width, height);
+    const masterFacts = { width, height, orientation: orientationOf(width, height) };
     const masterSha256 = await sha256Hex(bytes);
     const hash8 = masterSha256.slice(0, 8);
     const existing = readExistingCatalog(path.join(catalogDir, `${pair.slug}.yaml`));
@@ -695,6 +717,7 @@ export async function runPublish(options, deps = {}) {
       warnings,
       hash8,
       masterSha256,
+      masterFacts,
       bytes,
       yamlText,
       webObjects: planWebObjects(pair.slug, hash8),
@@ -715,7 +738,10 @@ export async function runPublish(options, deps = {}) {
 
   for (const plan of plans) {
     log("");
-    log(`${plan.slug}: ${plan.longEdge}px long edge, image_hash ${plan.hash8}`);
+    log(
+      `${plan.slug}: ${plan.masterFacts.width}x${plan.masterFacts.height} ` +
+        `${plan.masterFacts.orientation}, image_hash ${plan.hash8}`,
+    );
     for (const warning of plan.warnings) log(`  warning: ${warning}`);
     for (const object of plan.webObjects) {
       log(`  ${WEB_BUCKET_NAME}/${object.key}  ${object.width}px ${object.format}`);
@@ -798,7 +824,12 @@ export async function runPublish(options, deps = {}) {
     await mkdir(path.dirname(plan.yamlPath), { recursive: true });
     await writeFile(
       plan.yamlPath,
-      renderCatalogYaml(plan.yamlText, plan.slug, plan.masterSha256, plan.hash8),
+      renderCatalogYaml(plan.yamlText, {
+        slug: plan.slug,
+        masterSha256: plan.masterSha256,
+        imageHash: plan.hash8,
+        masterFacts: plan.masterFacts,
+      }),
     );
     log(`  wrote ${path.relative(cwd, plan.yamlPath)}`);
   }
