@@ -9,10 +9,14 @@
  *   npm run publish-photos -- --apply --only dawn,dusk
  *   npm run publish-photos -- --apply --replace-image dawn
  *   npm run publish-photos -- --promote --pr 42  # upload the masters, auto-merge
- *   npm run publish-photos -- --audit            # read-only bucket vs catalog report (#244)
- *
- * `--audit` is handled in scripts/audit-photos.mjs; it never writes. The rest
- * of this header describes the publish and promote paths.
+  *   npm run publish-photos -- --audit            # read-only bucket vs catalog report (#244)
+  *   npm run publish-photos -- --sync             # backfill master facts from R2 (#297)
+  *
+  * `--audit` is handled in scripts/audit-photos.mjs; it never writes. `--sync`
+  * is the #297 backfill: it HeadObjects each published master, and when the
+  * sha matches but the catalog is missing pixel facts, downloads and measures
+  * the master to patch `master_width`/`master_height`/`orientation` back in.
+  * The rest of this header describes the publish and promote paths.
  *
  * Drop folder defaults to the gitignored `ingest/`; `--dir <path>` overrides.
  * Input is one JPEG and one YAML per slug. The `--apply` uploader has no client
@@ -36,14 +40,19 @@
  * without S3, git or gh; `runPublish` takes those as injected dependencies.
  */
 
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
-import { HeadObjectCommand, PutObjectCommand, S3Client } from "@aws-sdk/client-s3";
+import {
+  GetObjectCommand,
+  HeadObjectCommand,
+  PutObjectCommand,
+  S3Client,
+} from "@aws-sdk/client-s3";
 import { parse as parseYaml, parseDocument, Pair, Scalar } from "yaml";
 
 import {
@@ -61,7 +70,7 @@ import {
   slugFromDroppedName,
   webDerivativeKey,
 } from "../src/domain/catalog/derivative-ladder";
-import { orientationOf } from "../src/domain/catalog/master-facts";
+import { orientationOf, parseMasterFacts } from "../src/domain/catalog/master-facts";
 import { validatePhotoFile } from "../src/domain/catalog/photo-schema";
 import {
   derivativeContentType,
@@ -114,6 +123,7 @@ export function parseArgs(argv) {
     apply: has("--apply"),
     promote: has("--promote"),
     audit: has("--audit"),
+    sync: has("--sync"),
     json: has("--json"),
     pr: Number.isInteger(pr) && pr > 0 ? pr : undefined,
     only: only && only.length > 0 ? only : undefined,
@@ -213,7 +223,10 @@ export function validatePhoto({
     }
   }
 
-  const schema = validatePhotoFile(slug, data, { requirePublishedHashes: false });
+  const schema = validatePhotoFile(slug, data, {
+    requirePublishedHashes: false,
+    requireMasterFacts: false,
+  });
   if (!schema.ok) {
     for (const problem of schema.problems) errors.push(`${slug}.yaml: ${problem}`);
   }
@@ -473,6 +486,261 @@ export function isReplacement({
     typeof baseMasterSha256 === "string" &&
     baseMasterSha256 !== headMasterSha256
   );
+}
+
+// ---------------------------------------------------------------------------
+// Backfill (#297): sync master facts from the masters bucket
+// ---------------------------------------------------------------------------
+
+/**
+ * What to do with one published photo's master facts, given the catalog's
+ * recorded sha256 + facts (if any) and the HeadObject response from the
+ * production masters bucket (null when the object is absent).
+ *
+ * - `unpromoted`: the master is not in the production bucket yet — the owner
+ *   has not run `--promote`. Warn and skip.
+ * - `mismatch`: the bucket holds a different master than the catalog says — the
+ *   sha256 metadata disagrees. Stop the run; a silent overwrite is a data loss.
+ * - `measure`: the sha matches but the catalog has no pixel facts yet — download
+ *   and measure, then write them back.
+ * - `in-sync`: the sha matches and the facts are already present — nothing to do.
+ */
+export function syncDecision({ catalogSha, catalogFacts, head }) {
+  if (!head) return "unpromoted";
+  const stored = metadataValue(head.metadata, MASTER_METADATA_KEY);
+  if (stored !== catalogSha) return "mismatch";
+  if (!catalogFacts) return "measure";
+  return "in-sync";
+}
+
+/** A read-only S3 client for the production masters bucket, scoped to `R2_MASTERS_READ_*` (#297). */
+export function createReadMastersS3(env) {
+  const endpoint = env.R2_S3_ENDPOINT ?? env.R2_ENDPOINT;
+  if (!endpoint) {
+    throw new Error(
+      "missing env: R2_S3_ENDPOINT or R2_ENDPOINT — the masters read key needs the R2 endpoint",
+    );
+  }
+  if (!env.R2_MASTERS_READ_ACCESS_KEY_ID || !env.R2_MASTERS_READ_SECRET_ACCESS_KEY) {
+    throw new Error(
+      "missing env: R2_MASTERS_READ_ACCESS_KEY_ID and R2_MASTERS_READ_SECRET_ACCESS_KEY " +
+        "— dedicated read-only masters creds (same as verify-masters #243), " +
+        "provisioned in the production Environment",
+    );
+  }
+  const client = new S3Client({
+    region: "auto",
+    endpoint: env.R2_S3_ENDPOINT ?? env.R2_ENDPOINT,
+    forcePathStyle: true,
+    credentials: {
+      accessKeyId: env.R2_MASTERS_READ_ACCESS_KEY_ID,
+      secretAccessKey: env.R2_MASTERS_READ_SECRET_ACCESS_KEY,
+    },
+  });
+  return {
+    async head(bucket, key) {
+      if (bucket !== MASTERS_BUCKET_NAME) {
+        throw new Error(
+          `refusing to read ${bucket}: sync only reads ${MASTERS_BUCKET_NAME}`,
+        );
+      }
+      try {
+        const object = await client.send(
+          new HeadObjectCommand({ Bucket: bucket, Key: key }),
+        );
+        return {
+          metadata: object.Metadata ?? {},
+          contentLength: object.ContentLength,
+        };
+      } catch (error) {
+        if (error?.name === "NotFound" || error?.$metadata?.httpStatusCode === 404) {
+          return null;
+        }
+        throw error;
+      }
+    },
+    async getObject(bucket, key) {
+      if (bucket !== MASTERS_BUCKET_NAME) {
+        throw new Error(
+          `refusing to read ${bucket}: sync only reads ${MASTERS_BUCKET_NAME}`,
+        );
+      }
+      const result = await client.send(
+        new GetObjectCommand({ Bucket: bucket, Key: key }),
+      );
+      return await streamToBuffer(result.Body);
+    },
+  };
+}
+
+/**
+ * Reads every `content/photos/*.yaml` for sync purposes: the slug, whether it is
+ * published, the catalog's `master_sha256`, any existing master facts, and the
+ * raw text + path so they can be patched back in place. `validatePhotoFile` is
+ * deliberately not used here — a catalog that is mid-backfill (facts missing) is
+ * exactly what the sync is fixing, not rejecting.
+ */
+export function readCatalogForSync(photosDir) {
+  if (!existsSync(photosDir)) return { entries: [], problems: [] };
+  const entries = [];
+  const problems = [];
+  for (const name of readdirSync(photosDir)) {
+    const ext = path.extname(name).toLowerCase();
+    if (ext !== ".yaml" && ext !== ".yml") continue;
+    const slug = path.basename(name, ext);
+    const yamlPath = path.join(photosDir, name);
+    let text;
+    try {
+      text = readFileSync(yamlPath, "utf8");
+    } catch (error) {
+      problems.push(`${name}: could not read ${error.message}`);
+      continue;
+    }
+    let data;
+    try {
+      data = parseYaml(text);
+    } catch (error) {
+      problems.push(`${name}: ${error.message}`);
+      continue;
+    }
+    const facts = parseMasterFactsSafe(data);
+    entries.push({
+      slug,
+      yamlPath,
+      yamlText: text,
+      published: data && typeof data === "object" && data.published !== false,
+      masterSha256: data && typeof data === "object" ? data.master_sha256 : undefined,
+      catalogFacts: facts,
+    });
+  }
+  return { entries, problems };
+}
+
+/**
+ * Parses { master_width, master_height, orientation } from raw YAML data, or
+ * undefined when the trio is absent. A half-written set (one or two of three) is
+ * reported as a problem rather than silently dropped — that is a publish bug.
+ */
+function parseMasterFactsSafe(data) {
+  if (!data || typeof data !== "object") return undefined;
+  const hasAny =
+    data.master_width !== undefined ||
+    data.master_height !== undefined ||
+    data.orientation !== undefined;
+  if (!hasAny) return undefined;
+  const result = parseMasterFacts({
+    width: data.master_width,
+    height: data.master_height,
+    orientation: data.orientation,
+  });
+  if (!result.ok) return undefined;
+  return result.facts;
+}
+
+/**
+ * Patches `master_width`, `master_height` and `orientation` into an existing
+ * YAML document, preserving comments and key order. `parseDocument` + `set`
+ * replaces an existing key if present, so a re-run is idempotent.
+ */
+export function patchCatalogFactsYaml(yamlText, facts) {
+  const doc = parseDocument(yamlText);
+  const map = doc.contents;
+  map.set("master_width", facts.width);
+  map.set("master_height", facts.height);
+  map.set("orientation", facts.orientation);
+  return doc.toString();
+}
+
+/**
+ * The backfill entry point (#297). For every published photo in `content/photos/`
+ * it HeadObjects the master in the production masters bucket; `syncDecision`
+ * chooses skip / warn / measure / refuse. Measurements are written back into the
+ * YAML so the next build-catalog picks them up. A sha mismatch refuses the whole
+ * run before any YAML is modified. All I/O goes through `deps`.
+ */
+export async function syncCatalogFacts(options, deps = {}) {
+  const cwd = options.cwd ?? ROOT;
+  const log = deps.log ?? ((line) => console.log(line));
+  const env = deps.env ?? process.env;
+  const s3 = deps.s3 ?? createReadMastersS3(env);
+  const measure = deps.measure ?? defaultMeasure;
+  const writeYaml = deps.writeYaml ?? defaultWriteYaml;
+
+  const photosDir = path.resolve(cwd, CATALOG_DIR);
+  const { entries, problems: readProblems } = readCatalogForSync(photosDir);
+  if (readProblems.length > 0) {
+    for (const problem of readProblems) log(`error: ${problem}`);
+    return { status: 1, fatals: readProblems };
+  }
+
+  const published = entries.filter((e) => e.published);
+  const mismatch = [];
+  const measured = [];
+
+  for (const entry of published) {
+    const key = masterKeyFromSlug(entry.slug);
+    const head = await s3.head(MASTERS_BUCKET_NAME, key);
+    const decision = syncDecision({
+      catalogSha: entry.masterSha256,
+      catalogFacts: entry.catalogFacts,
+      head,
+    });
+
+    if (decision === "mismatch") {
+      mismatch.push(`  ${entry.slug}: catalog sha256 does not match ${MASTERS_BUCKET_NAME}/${key}`);
+      continue;
+    }
+    if (decision === "unpromoted") {
+      log(`  warn: ${entry.slug}: master not yet promoted to ${MASTERS_BUCKET_NAME}; run --promote first`);
+      continue;
+    }
+    if (decision === "in-sync") {
+      log(`  skip: ${entry.slug} (${entry.catalogFacts.width}×${entry.catalogFacts.height} ${entry.catalogFacts.orientation})`);
+      continue;
+    }
+
+    // decision === "measure"
+    const bytes = await s3.getObject(MASTERS_BUCKET_NAME, key);
+    const facts = await measure(bytes);
+    const updated = patchCatalogFactsYaml(entry.yamlText, facts);
+    await writeYaml(entry.yamlPath, updated);
+    measured.push({ slug: entry.slug, facts });
+    log(`  backfilled: ${entry.slug} ${facts.width}×${facts.height} ${facts.orientation}`);
+  }
+
+  if (mismatch.length > 0) {
+    log("");
+    log("error: sha256 mismatch — refusing to patch any YAML:");
+    for (const line of mismatch) log(line);
+    return { status: 1, fatals: mismatch };
+  }
+
+  log("");
+  log(`${measured.length} photo(s) backfilled, ${published.length - measured.length - mismatch.length} already in sync.`);
+  return { status: 0, measured, total: published.length };
+}
+
+async function defaultMeasure(bytes) {
+  const { width, height } = await masterDimensions(bytes);
+  return { width, height, orientation: orientationOf(width, height) };
+}
+
+async function defaultWriteYaml(filePath, text) {
+  await mkdir(path.dirname(filePath), { recursive: true });
+  await writeFile(filePath, text);
+}
+
+/**
+ * Reads an S3 object body (a Node.js stream from @aws-sdk/client-s3) into a
+ * Buffer, so `masterDimensions` (which expects bytes) can consume it.
+ */
+async function streamToBuffer(stream) {
+  if (Buffer.isBuffer(stream)) return stream;
+  const chunks = [];
+  for await (const chunk of stream) {
+    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : Buffer.from(chunk));
+  }
+  return Buffer.concat(chunks);
 }
 
 /**
@@ -1150,9 +1418,11 @@ async function main() {
   }
   const result = options.audit
     ? await runAudit({ cwd: ROOT, json: options.json })
-    : options.promote
-      ? await runPromote({ ...options, cwd: ROOT })
-      : await runPublish({ ...options, cwd: ROOT });
+    : options.sync
+      ? await syncCatalogFacts({ cwd: ROOT, dir: options.dir })
+      : options.promote
+        ? await runPromote({ ...options, cwd: ROOT })
+        : await runPublish({ ...options, cwd: ROOT });
   if (result.status !== 0) process.exitCode = result.status;
 }
 

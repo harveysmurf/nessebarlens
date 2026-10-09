@@ -20,8 +20,8 @@ export type Photo = {
   featured?: boolean;
   /** Master content hash; when present the web derivative ladder is keyed by it. */
   imageHash?: string;
-  /** Oriented pixel size and orientation; drives print eligibility (#295). */
-  master?: MasterFacts;
+  /** Oriented pixel size and orientation; drives print eligibility (#295/#297). */
+  master: MasterFacts;
 };
 
 /**

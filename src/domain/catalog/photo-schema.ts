@@ -41,8 +41,8 @@ export type PhotoFile = {
   published: boolean;
   masterSha256?: string;
   imageHash?: string;
-  /** Oriented pixel size and orientation, written by publish-photos (#295). */
-  master?: MasterFacts;
+  /** Oriented pixel size and orientation, measured from the master file (#295/#297). */
+  master: MasterFacts;
 };
 
 export type PhotoValidation =
@@ -224,11 +224,11 @@ const MASTER_FACTS_MESSAGE: Record<MasterFactsReason, string> = {
 };
 
 /**
- * The master facts, if the file carries any of the three keys. They are
- * optional while #297 backfills the published photos, but a set that is present
- * must be complete and consistent: a half-written trio is a publish bug, not a
- * missing value, so it fails rather than being ignored. `undefined` means the
- * file has none of the three keys.
+ * The master facts, if the file carries any of the three keys. A set that is
+ * present must be complete and consistent: a half-written trio is a publish
+ * bug, not a missing value, so it fails rather than being ignored. `undefined`
+ * means the file has none of the three keys — allowed for drafts (unpublished)
+ * but rejected for a published photo once #297 has backfilled the catalog.
  */
 function readMasterFacts(
   data: Record<string, unknown>,
@@ -263,11 +263,19 @@ function readMasterFacts(
  * must have (#245). `publish-photos` passes false: it validates the owner's
  * drop-folder YAML *before* it writes those two keys, so requiring them there
  * would reject every new photo.
+ *
+ * `requireMasterFacts` (default true) enforces that a published photo carries
+ * `master_width`, `master_height` and `orientation` (#297). The backfill script
+ * passes false so it can read and patch YAMLs that are mid-backfill; every other
+ * caller — build-catalog, audit, the runtime — requires them once #297 is done.
  */
 export function validatePhotoFile(
   filename: string,
   data: unknown,
-  { requirePublishedHashes = true }: { requirePublishedHashes?: boolean } = {},
+  {
+    requirePublishedHashes = true,
+    requireMasterFacts = true,
+  }: { requirePublishedHashes?: boolean; requireMasterFacts?: boolean } = {},
 ): PhotoValidation {
   if (!isMapping(data)) {
     return { ok: false, problems: ["file: expected a YAML mapping"] };
@@ -318,6 +326,16 @@ export function validatePhotoFile(
     }
   }
 
+  // Master pixel facts are required for a published photo once #297 backfills
+  // the catalog: without them the release check has no size to compare and the
+  // page cannot size the gallery preview (#295). Drafts (unpublished) may lack
+  // them until they go through publish-photos + --sync.
+  if (published && requireMasterFacts && !master) {
+    problems.push(
+      "master_width, master_height and orientation: required for a published photo",
+    );
+  }
+
   if (problems.length > 0) {
     return { ok: false, problems };
   }
@@ -340,7 +358,7 @@ export function validatePhotoFile(
       published,
       masterSha256,
       imageHash,
-      master,
+      master: master!,
     },
   };
 }

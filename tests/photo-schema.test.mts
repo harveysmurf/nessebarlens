@@ -24,8 +24,11 @@ const REQUIRED = {
 /** The two values `publish-photos` writes; required for a published photo. */
 const HASHES = { master_sha256: "a".repeat(64), image_hash: "abcdef12" };
 
+/** The three values `publish-photos` / #297 sync backfills; required for a published photo. */
+const FACTS = { master_width: 4901, master_height: 3351, orientation: "landscape" };
+
 /** A valid, published photo. */
-const VALID = { ...REQUIRED, ...HASHES };
+const VALID = { ...REQUIRED, ...HASHES, ...FACTS };
 
 function validate(data: unknown, filename = "photo") {
   return validatePhotoFile(filename, data);
@@ -35,6 +38,10 @@ function problems(data: unknown, filename = "photo"): string[] {
   const result = validate(data, filename);
   assert.equal(result.ok, false, "expected a failure");
   return result.ok ? [] : result.problems;
+}
+
+function validateRelaxed(data: unknown, filename = "photo") {
+  return validatePhotoFile(filename, data, { requirePublishedHashes: false, requireMasterFacts: false });
 }
 
 test("an unpublished file needs no hashes and applies defaults", () => {
@@ -71,7 +78,7 @@ test("a published photo without master_sha256 or image_hash fails", () => {
     noMaster.some((p) => p.includes("master_sha256: required")),
     noMaster.join("; "),
   );
-  assert.equal(validate({ ...REQUIRED, ...HASHES }).ok, true);
+  assert.equal(validate({ ...REQUIRED, ...HASHES, ...FACTS }).ok, true);
 });
 
 test("a fully-specified file validates and keeps every field", () => {
@@ -279,10 +286,28 @@ test("image_hash must be 8-char lowercase hex", () => {
   assert.ok(wrongType.some((p) => p.startsWith("image_hash:")), wrongType.join("; "));
 });
 
-test("master facts are optional and default to undefined", () => {
-  const result = validate({ ...VALID });
+test("an unpublished photo may omit master facts", () => {
+  const result = validate({ ...REQUIRED, published: false });
   assert.equal(result.ok, true);
-  if (result.ok) assert.equal(result.photo.master, undefined);
+  if (!result.ok) return;
+  assert.equal(result.photo.master, undefined);
+  // And a draft that has hashes but no facts is fine too.
+  assert.equal(validate({ ...REQUIRED, published: false, ...HASHES }).ok, true);
+});
+
+test("a published photo without master facts fails (#297)", () => {
+  const withoutFacts = problems({ ...REQUIRED, ...HASHES });
+  assert.ok(
+    withoutFacts.some((p) => p.includes("master_width, master_height and orientation")),
+    withoutFacts.join("; "),
+  );
+});
+
+test("requireMasterFacts: false lets a published photo pass without facts", () => {
+  const result = validateRelaxed({ ...REQUIRED, ...HASHES });
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.equal(result.photo.master, undefined);
 });
 
 test("a complete set of master facts is accepted and kept", () => {
@@ -323,12 +348,12 @@ test("a malformed set of master facts is refused, keyed to its reason", () => {
 });
 
 test("a half-written set of master facts is refused rather than ignored", () => {
-  const onlyWidth = problems({ ...VALID, master_width: 4901 });
+  const onlyWidth = problems({ ...REQUIRED, ...HASHES, master_width: 4901 });
   assert.ok(
     onlyWidth.some((p) => p.includes("positive integers")),
     onlyWidth.join("; "),
   );
-  const noOrientation = problems({ ...VALID, master_width: 4901, master_height: 3351 });
+  const noOrientation = problems({ ...REQUIRED, ...HASHES, master_width: 4901, master_height: 3351 });
   assert.ok(
     noOrientation.some((p) => p.includes("one of landscape, portrait, square")),
     noOrientation.join("; "),
