@@ -20,20 +20,12 @@
 
 import { prodigiUrl } from "./prodigi-config";
 import { prodigiConfig } from "../config/config";
+import type { CancelProdigiOrder } from "../../domain/ordering/print-provider";
 
 /** A thrown value that is not an Error still has to name the failure. */
 function errorMessage(e: unknown, fallback: string): string {
   return e instanceof Error ? e.message : fallback;
 }
-
-export type ProdigiCancelResult =
-  | { ok: true; status: number }
-  | { ok: false; status: number | null; reason: string; message: string };
-
-export type CancelProdigiOrder = (input: {
-  prodigiOrderId: string;
-  sessionId: string;
-}) => Promise<ProdigiCancelResult>;
 
 /**
  * Prodigi order ids are opaque; the only thing we must not do is interpolate

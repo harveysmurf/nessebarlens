@@ -37,7 +37,7 @@ export const RECONCILE_SECRET_HEADER = "x-reconcile-secret";
  */
 export const FALLBACK_ORIGIN = "https://reconcile-cron.invalid";
 
-import { stripTrailingSlashes } from "../config/env";
+import { stripTrailingSlashes } from "../../domain/pricing/url-patterns";
 
 /** What a cron tick needs from the Worker env. */
 export type ReconcileCronEnv = {

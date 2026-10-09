@@ -26,13 +26,15 @@ import {
   isProduction,
   missingProductionConfig,
   printAssetSecret,
-  PRINT_ASSET_SECRET_MIN_LENGTH,
   prodigiConfig,
   siteUrl,
   stripeSecretKey,
-  usablePrintAssetSecret,
   webImagesBase,
 } from "../src/infrastructure/config/config.ts";
+import {
+  PRINT_ASSET_SECRET_MIN_LENGTH,
+  usablePrintAssetSecret,
+} from "../src/domain/ordering/print-asset.ts";
 
 const SANDBOX = "https://api.sandbox.prodigi.com";
 const LIVE = "https://api.prodigi.com";

@@ -10,8 +10,15 @@ import {
 } from "../src/application/fulfillment/reconcile.ts";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
 import { parseOrderRecord, type OrderRecord } from "../src/domain/ordering/order-decision.ts";
-import type { CreateProdigiOrder } from "../src/infrastructure/prodigi/prodigi-order.ts";
+import type { CreateProdigiOrder } from "../src/domain/ordering/print-provider.ts";
+import type { AssetUrlSigner } from "../src/domain/ordering/asset-url-signer.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
+
+const SITE_URL = "https://nessebarlens.com";
+const okSigner: AssetUrlSigner = {
+  sign: async () => ASSET_URL,
+  verify: async () => ({ ok: true, slug: SAMPLE_SLUG }),
+};
 
 const NOW = Date.parse("2026-10-03T00:00:00.000Z");
 
@@ -90,6 +97,8 @@ test("reconcile is a no-op on an empty store", async () => {
     store,
     stripe,
     prodigiKeyConfigured: true,
+    assetUrlSigner: okSigner,
+    siteUrl: SITE_URL,
     nowMs: NOW,
   });
   assert.deepEqual(summary, {
@@ -165,6 +174,8 @@ test("reconcile retries a retryable order and skips terminal ones", async () => 
       store,
       stripe,
       prodigiKeyConfigured: true,
+      assetUrlSigner: okSigner,
+      siteUrl: SITE_URL,
       createOrder,
       nowMs: NOW,
     });
@@ -188,6 +199,8 @@ test("reconcile recovers a paid Stripe session with no stored order", async () =
     store,
     stripe,
     prodigiKeyConfigured: true,
+    assetUrlSigner: okSigner,
+    siteUrl: SITE_URL,
     createOrder: async () => ({
       ok: true,
       value: {
@@ -220,6 +233,8 @@ test("a retry whose claim is lost is counted as claimedByOther, not as a retry",
       listPaidCheckoutSessions: async () => [],
     },
     prodigiKeyConfigured: true,
+    assetUrlSigner: okSigner,
+    siteUrl: SITE_URL,
     createOrder: async () => {
       creates += 1;
       return { ok: true, value: { orderId: "ord_x", stage: null, assetUrl: null } };
@@ -272,6 +287,8 @@ test("a run with no arguments uses the shipped defaults, not the caller's", asyn
         },
       },
       prodigiKeyConfigured: false,
+      assetUrlSigner: okSigner,
+      siteUrl: SITE_URL,
     });
     assert.equal(summary.checked, 1);
     assert.equal(summary.stuck, 1);
@@ -353,6 +370,8 @@ test("the reconciler prefers Stripe's collected shipping over the legacy field",
       listPaidCheckoutSessions: async () => [recovered],
     },
     prodigiKeyConfigured: true,
+    assetUrlSigner: okSigner,
+    siteUrl: SITE_URL,
     createOrder: async () => ({
       ok: true,
       value: {
@@ -418,6 +437,8 @@ test("a foreign-origin session is skipped: no store write, no Prodigi call", asy
       store,
       stripe,
       prodigiKeyConfigured: true,
+      assetUrlSigner: okSigner,
+      siteUrl: SITE_URL,
       createOrder: async () => {
         prodigiCalls += 1;
         throw new Error("Prodigi must not be called for a foreign session");
@@ -457,6 +478,8 @@ test("an own-origin session, www or apex, is fulfilled; unknown is treated like 
         listPaidCheckoutSessions: async () => sessions,
       },
       prodigiKeyConfigured: true,
+      assetUrlSigner: okSigner,
+      siteUrl: SITE_URL,
       createOrder: async () => {
         prodigiCalls += 1;
         return {

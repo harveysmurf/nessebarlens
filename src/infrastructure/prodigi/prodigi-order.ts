@@ -10,32 +10,25 @@ import type { FrameFinish, PrintSize } from "../../domain/pricing/pricing";
 import {
   classifyProdigiStatus,
   detailSuffix,
+  PRODIGI_SHIPPING_METHOD,
+  prodigiUrl,
+} from "./prodigi-config";
+import {
   isProdigiTimeout,
   PRODIGI_ORDER_TIMEOUT_MS,
-  PRODIGI_SHIPPING_METHOD,
   prodigiTimeoutSignal,
-  prodigiUrl,
-  type ProdigiFailureKind,
-  type ProdigiResult,
-} from "./prodigi-config";
+} from "../../domain/ordering/prodigi-timeout";
 import type { ProdigiFailureReason } from "../../domain/ordering/prodigi-policy";
+import type { ProdigiFailureKind } from "../../domain/ordering/prodigi-result";
+import {
+  type ProdigiOrderResult,
+  type CreateProdigiOrder,
+} from "../../domain/ordering/print-provider";
+import type { OrderRecipient } from "../../domain/ordering/order-recipient";
 import { prodigiConfig, prodigiWebhookToken } from "../config/config";
-import { signPrintAssetUrl } from "../../application/fulfillment/print-asset";
 import { resolveSku, type PhysicalFormat } from "../../domain/pricing/sku-map";
 import { siteUrl } from "../config/config";
 import { HTTPS_URL_PATTERN } from "../../domain/pricing/url-patterns";
-
-export type OrderRecipient = {
-  name: string;
-  line1: string;
-  line2: string;
-  city: string;
-  state: string;
-  postcode: string;
-  countryCode: string;
-  email: string | null;
-  phone: string | null;
-};
 
 export type ProdigiOrderRequest = {
   merchantReference: string;
@@ -70,37 +63,6 @@ export type ProdigiOrderRequest = {
     assets: Array<{ printArea: "default"; url: string }>;
   }>;
 };
-
-/** The success payload of a Prodigi order, carried under `value` on the result. */
-export type ProdigiOrderOk = {
-  orderId: string;
-  stage: string | null;
-  /**
-   * The URL Prodigi actually holds — the HMAC print-asset or placeholder we
-   * sent, or, on an adopted order (#193), the one read back from Prodigi. Never
-   * the locally-built value when the order was not ours to build.
-   */
-  assetUrl: string;
-  /**
-   * True when Prodigi answered `AlreadyExists` and this order adopted the one
-   * already there (#193). Carried so the record and the log can say the order
-   * was reused, not created.
-   */
-  reusedExisting?: boolean;
-};
-
-export type ProdigiOrderResult = ProdigiResult<ProdigiOrderOk>;
-
-export type CreateProdigiOrder = (input: {
-  sessionId: string;
-  photoSlug: string;
-  format: PhysicalFormat;
-  size: PrintSize;
-  frame: FrameFinish | null;
-  recipient: OrderRecipient;
-  /** Override asset URL (tests). Default: signed print-asset or placeholder. */
-  assetUrl?: string;
-}) => Promise<ProdigiOrderResult>;
 
 /**
  * Hosts where the Prodigi idempotency key stays the bare session id (#193).
@@ -398,27 +360,10 @@ export function isForeignOrder(input: {
 }
 
 export const createProdigiOrder: CreateProdigiOrder = async (input) => {
-  // The signed master URL for a paid physical order — or null if we cannot
-  // sign, and there is no public-placeholder fallback. /api/checkout refuses to
-  // take payment when signing is impossible, so reaching here with no secret
-  // means the pre-payment guard did not hold (or the secret was removed
-  // between payment and fulfillment). A placeholder here would ship a ~41KB,
-  // 1600x1200 thumbnail to a customer who paid for a print and record the
-  // order as fulfilled. Null lets us mark the order
-  // `paid-unfulfilled/asset-unconfigured` and answer 5xx, so Stripe
-  // redelivers and a human sees it.
-  const assetUrl = input.assetUrl ?? (await signPrintAssetUrl(input.photoSlug));
-
-  // Fail closed before we talk to Prodigi. Retryable, so the webhook answers
-  // 5xx and Stripe redelivers once the secret is fixed.
-  if (!assetUrl) {
-    return failure(
-      "server",
-      "prodigi-asset-unconfigured",
-      "print-asset signing is not configured",
-      null,
-    );
-  }
+  // `assetUrl` is now required on the port — the application signs it before
+  // calling, so this adapter never calls back into application for signing.
+  // The caller (fulfillment.ts) fail-closes on a null before reaching here.
+  const assetUrl = input.assetUrl;
 
   // Same fail-closed idea for the credential, and it has to be a *return*: a
   // throw here would escape fulfillCheckoutSession to the route's catch-all,

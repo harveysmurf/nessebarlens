@@ -15,12 +15,16 @@ import { NextResponse } from "next/server";
 import { NO_STORE_HEADERS } from "@/infrastructure/config/private-headers";
 import { readWorkerBindings } from "@/infrastructure/cloudflare/worker-bindings";
 import { timingSafeEqualString } from "@/domain/pricing/crypto-hex";
-import { getConfig } from "@/infrastructure/config/config";
-import { reconcileStripe } from "@/infrastructure/container";
+import { getConfig, siteUrl } from "@/infrastructure/config/config";
+import {
+  assetUrlSigner,
+  printProvider,
+  reconcileStripe,
+} from "@/infrastructure/container";
 import {
   ORDERS_STORE_UNAVAILABLE_ERROR,
   ORDERS_STORE_UNAVAILABLE_STATUS,
-} from "@/infrastructure/cloudflare/orders-store";
+} from "@/domain/ordering/orders-store";
 import { reconcileOrders } from "@/application/fulfillment/reconcile";
 
 export const dynamic = "force-dynamic";
@@ -63,6 +67,9 @@ export async function POST(request: Request) {
       store: bindings.ORDERS_DB,
       stripe: reconcileStripe(),
       prodigiKeyConfigured: bindings.prodigiKeyConfigured,
+      createOrder: printProvider().placeOrder,
+      assetUrlSigner: assetUrlSigner(),
+      siteUrl: siteUrl(),
       downloadLimits: {
         ttlSeconds: config.download.tokenTtlSeconds,
         maxDownloads: config.download.maxDownloads,

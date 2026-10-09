@@ -21,7 +21,7 @@ import { MASTERS_BUCKET, MASTER_MARKER } from "../src/domain/catalog/master-guar
 import { FILM_LOOKS } from "../src/domain/catalog/photo-schema.ts";
 import { filmLookClass } from "../src/domain/catalog/photos.ts";
 import { AWAITING_PRODIGI_REASON } from "../src/domain/ordering/order-decision.ts";
-import { ORDERS_STORE_UNAVAILABLE_ERROR } from "../src/infrastructure/cloudflare/orders-store.ts";
+import { ORDERS_STORE_UNAVAILABLE_ERROR } from "../src/domain/ordering/orders-store.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
@@ -590,7 +590,7 @@ test("the orders-store rejection is spelled once, in orders-store.ts", () => {
   );
   assert.deepEqual(
     sites.map((s) => s.file),
-    ["src/infrastructure/cloudflare/orders-store.ts"],
+    ["src/domain/ordering/orders-store.ts"],
     `"${ORDERS_STORE_UNAVAILABLE_ERROR}" spelled outside its owner: ${sites
       .map((s) => `${s.file}:${s.line}`)
       .join(", ")}`,

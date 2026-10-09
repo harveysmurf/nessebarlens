@@ -11,9 +11,10 @@ import {
   shipmentsFromProdigiOrder,
   type FetchProdigiOrder,
 } from "../src/infrastructure/prodigi/prodigi-callback.ts";
-import { PRODIGI_ORDER_TIMEOUT_MS } from "../src/infrastructure/prodigi/prodigi-config.ts";
+import { PRODIGI_ORDER_TIMEOUT_MS } from "../src/domain/ordering/prodigi-timeout.ts";
 import { parseOrderRecord, type OrderRecord } from "../src/domain/ordering/order-decision.ts";
-import { buildProdigiOrderBody, type OrderRecipient } from "../src/infrastructure/prodigi/prodigi-order.ts";
+import { buildProdigiOrderBody } from "../src/infrastructure/prodigi/prodigi-order.ts";
+import type { OrderRecipient } from "../src/domain/ordering/order-recipient.ts";
 import type { SendEmail } from "../src/domain/ordering/email.ts";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
 import { d1OrdersStore } from "../src/infrastructure/cloudflare/orders-d1.ts";

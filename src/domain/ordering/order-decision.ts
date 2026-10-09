@@ -24,8 +24,7 @@ import {
 import { referencesMasters } from "../catalog/master-guard";
 import { ISO_ALPHA2_PATTERN } from "../pricing/ship-to-countries";
 import { HTTPS_URL_PATTERN } from "../pricing/url-patterns";
-// eslint-disable-next-line import/no-restricted-paths -- type-only: OrderRecipient type from prodigi-order, erased at compile time, breaks an import cycle with application/fulfillment.
-import type { OrderRecipient } from "../../infrastructure/prodigi/prodigi-order";
+import type { OrderRecipient } from "./order-recipient";
 import { eurToCents, parseEurAmount, type PrintFormat } from "../pricing/pricing";
 import {
   isFrameFinishValue,

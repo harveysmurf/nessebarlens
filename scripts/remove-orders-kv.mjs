@@ -58,7 +58,7 @@ import { fileURLToPath } from "node:url";
 // asked, so it asks it with the same predicates: a gate that recognises a
 // different set of keys than the migrator would either refuse forever or, worse,
 // wave through an order the migrator would have carried over.
-import { isDownloadToken } from "../src/application/fulfillment/download-token";
+import { isDownloadToken } from "../src/domain/ordering/download-token";
 import { classifyKvKey, looksLikeOrderRecord } from "./migrate-orders-kv-to-d1.mjs";
 
 export const DATABASE_NAME = "nessebar-lens-orders";

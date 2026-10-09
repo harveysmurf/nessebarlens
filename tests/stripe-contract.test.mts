@@ -10,8 +10,13 @@ import { decideFulfillment, parseOrderRecord } from "../src/domain/ordering/orde
 import {
   paymentIntentForDispute,
   revokeOrderByPaymentIntent,
-  type StripeSessionLookup,
 } from "../src/application/fulfillment/order-revocation.ts";
+import {
+  isChargeId,
+  isPaymentIntentId,
+  isStripeNotFound,
+} from "../src/infrastructure/stripe/stripe-ids.ts";
+import type { StripeSessionLookup } from "../src/domain/ordering/stripe-session-lookup.ts";
 import { readStripeEvent, type StripeCheckoutSession } from "../src/infrastructure/stripe/stripe-event.ts";
 import { STRIPE_API_VERSION } from "../src/infrastructure/stripe/stripe.ts";
 import {
@@ -330,6 +335,9 @@ function lookupFor(paymentIntent: string, sessionId: string, chargeId?: string) 
       calls.push(`charge:${charge}`);
       return charge === chargeId ? paymentIntent : null;
     },
+    isPaymentReference: isPaymentIntentId,
+    isChargeReference: isChargeId,
+    isNotFound: isStripeNotFound,
   };
   return { lookup, calls };
 }

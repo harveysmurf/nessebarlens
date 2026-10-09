@@ -1,5 +1,5 @@
 import type { MastersBucket } from "../../domain/catalog/master-key";
-import type { OrdersStore } from "./orders-store";
+import type { OrdersStore } from "../../domain/ordering/orders-store";
 import { envString } from "../config/env";
 import { printAssetSecret } from "../config/config";
 import { prodigiKeyConfigured } from "../prodigi/prodigi-config";

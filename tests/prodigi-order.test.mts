@@ -3,12 +3,13 @@ import test from "node:test";
 import { PRODIGI_SHIPPING_METHOD, classifyProdigiStatus } from "../src/infrastructure/prodigi/prodigi-config.ts";
 import { PHOTOS } from "../src/domain/catalog/photos.ts";
 import { signPrintAssetUrl } from "../src/application/fulfillment/print-asset.ts";
+import { ConfiguredAssetUrlSigner } from "../src/infrastructure/print-asset/asset-url-signer.ts";
 import {
   assertNoMasterLeak,
   buildProdigiOrderBody,
   createProdigiOrder,
-  type OrderRecipient,
 } from "../src/infrastructure/prodigi/prodigi-order.ts";
+import type { OrderRecipient } from "../src/domain/ordering/order-recipient.ts";
 import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
 const RECIPIENT: OrderRecipient = {
@@ -208,6 +209,8 @@ const ORDER_INPUT = {
   size: "50x70" as const,
   frame: null,
   recipient: RECIPIENT,
+  // The application signs this before calling; the adapter never signs.
+  assetUrl: ASSET_URL,
 };
 
 test("createProdigiOrder posts the signed asset URL to the sandbox orders URL", async () => {
@@ -280,43 +283,6 @@ test("createProdigiOrder reads PRODIGI_WEBHOOK_TOKEN into the posted callbackUrl
       console.log = realLog;
       if (savedToken === undefined) delete process.env.PRODIGI_WEBHOOK_TOKEN;
       else process.env.PRODIGI_WEBHOOK_TOKEN = savedToken;
-    }
-  });
-});
-
-test("an unsignable master fails the order closed, before any network call", async () => {
-  // This is the defect that motivated the guard: without a secret we cannot
-  // sign the master, and the old fallback handed Prodigi the ~41KB public
-  // placeholder — a customer pays for a 70x100 print and the order is recorded
-  // as fulfilled. Retryable, so the webhook answers 5xx and Stripe redelivers.
-  for (const secret of [undefined, "too-short", "        "]) {
-    await withProdigiEnv(async () => {
-      if (secret === undefined) delete process.env.PRINT_ASSET_HMAC_SECRET;
-      else process.env.PRINT_ASSET_HMAC_SECRET = secret;
-      const stub = stubFetch(() => json({ order: { id: "ord_never" } }));
-      try {
-        const result = await createProdigiOrder(ORDER_INPUT);
-        assert.equal(result.ok, false, JSON.stringify(secret));
-        assert.equal(result.ok === false && result.reason, "prodigi-asset-unconfigured");
-        assert.equal(result.ok === false && result.kind, "server");
-        assert.equal(stub.calls.length, 0, "Prodigi must never be contacted");
-      } finally {
-        stub.restore();
-      }
-    });
-  }
-});
-
-test("createProdigiOrder signs the asset URL when the HMAC secret is set", async () => {
-  await withProdigiEnv(async () => {
-    process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
-    const stub = stubFetch(() => json({ order: { id: "ord_124" } }));
-    try {
-      const result = await createProdigiOrder(ORDER_INPUT);
-      assert.equal(result.ok && result.value.assetUrl.includes("/api/print-asset?"), true);
-      assert.equal(result.ok && result.value.stage, null, "missing stage becomes null");
-    } finally {
-      stub.restore();
     }
   });
 });
@@ -623,19 +589,20 @@ test("an unrecognised Prodigi host is the same retryable unconfigured failure", 
 });
 
 test("the order asset path signs, or returns null — never a placeholder", async () => {
+  const signer = new ConfiguredAssetUrlSigner();
   await withProdigiEnv(async () => {
     process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
-    const signed = await signPrintAssetUrl(SAMPLE_SLUG);
+    const signed = await signPrintAssetUrl(SAMPLE_SLUG, signer);
     assert.equal(signed?.includes("/api/print-asset?"), true);
   });
   await withProdigiEnv(async () => {
-    assert.equal(await signPrintAssetUrl(SAMPLE_SLUG), null);
+    assert.equal(await signPrintAssetUrl(SAMPLE_SLUG, signer), null);
   });
   await withProdigiEnv(async () => {
     // An unknown slug signs to null even with a secret configured. There is no
     // placeholder path left: null means "cannot fulfill this", not "send the
     // 41KB stand-in".
     process.env.PRINT_ASSET_HMAC_SECRET = "test-print-asset-hmac-secret-32b-min!!";
-    assert.equal(await signPrintAssetUrl("not-a-photo"), null);
+    assert.equal(await signPrintAssetUrl("not-a-photo", signer), null);
   });
 });

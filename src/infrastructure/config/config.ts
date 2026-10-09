@@ -28,12 +28,13 @@ import {
   envIntInRange,
   envString,
   envStringStrippedSlash,
-  stripTrailingSlashes,
 } from "./env";
+import { stripTrailingSlashes } from "../../domain/pricing/url-patterns";
 import {
   DOWNLOAD_TOKEN_MAX_DOWNLOADS,
   DOWNLOAD_TOKEN_TTL_SECONDS,
-} from "../../application/fulfillment/download-token";
+} from "../../domain/ordering/download-token";
+import { usablePrintAssetSecret } from "../../domain/ordering/print-asset";
 import {
   prodigiApiBaseIfAllowed,
   prodigiKeyConfigured,
@@ -163,39 +164,13 @@ export function isConfiguredSiteUrl(env: ConfigEnv = process.env): boolean {
 }
 
 /**
- * Min chars for the print-asset HMAC secret. Single source of truth.
- *
- * Lives with the reader rather than with the signing code because "usable" is
- * the question, and the signer and the verifier must answer it identically.
- */
-export const PRINT_ASSET_SECRET_MIN_LENGTH = 32;
-
-/**
- * A secret is usable only if it survives trimming and is long enough.
- *
- * A Worker binding can hold a value no env reader would produce — `wrangler
- * secret put` keeps a trailing newline, and a paste can carry a leading space.
- * "   " is truthy, so a bare length check signed URLs with a key of whitespace
- * and every legitimate request came back 401 bad-signature instead of the 503
- * that says the deployment is not configured.
- */
-export function usablePrintAssetSecret(
-  secret: string | null | undefined,
-): string | null {
-  const trimmed = secret?.trim() ?? "";
-  return trimmed.length >= PRINT_ASSET_SECRET_MIN_LENGTH ? trimmed : null;
-}
-
-/**
  * HMAC secret for /api/print-asset. Min 32 chars; unset returns null, which
  * callers read as "not configured" rather than as a usable default — see
- * signPrintAssetUrl for why there is no placeholder path here.
+ * the AssetUrlSigner port for why there is no placeholder path here.
  *
- * Exactly one resolution path, so no caller may write a second bare
- * `?? printAssetSecret()`: this reader already ends in a process.env read
- * inside envString, so a null here means the value is absent from both the
- * Worker env and process.env. A second call as a "fallback" could only ever
- * return the same null.
+ * Uses `usablePrintAssetSecret` from `domain/ordering/print-asset` — the signer
+ * and the verifier must agree on what "usable" means, and a second copy of that
+ * rule here would be a second answer.
  */
 export function printAssetSecret(
   env: ConfigEnv = process.env,
@@ -247,9 +222,10 @@ export function getConfig(env: ConfigEnv = process.env): Config {
       keyConfigured: prodigiKeyConfigured(env),
     },
     // Delegates rather than re-reading PRINT_ASSET_HMAC_SECRET: the
-    // minimum-length rule and its trimming live in print-asset.ts because the
-    // signer and the verifier must agree on what "usable" means, and a second
-    // copy of that rule here would be a second answer.
+    // minimum-length rule and its trimming live in
+    // domain/ordering/print-asset.ts (usablePrintAssetSecret) because the
+    // signer and the verifier must agree on what "usable" means, and a
+    // second copy of that rule here would be a second answer.
     printAsset: { secret: printAssetSecret(env) },
     download: {
       tokenTtlSeconds: envIntInRange(

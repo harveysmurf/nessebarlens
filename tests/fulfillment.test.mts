@@ -20,7 +20,8 @@ import { getPhoto } from "../src/domain/catalog/photos.ts";
 import { FRAME_FINISHES, PHYSICAL_FORMATS, PRINT_SIZES } from "../src/domain/pricing/sku-map.ts";
 import { readStripeEvent } from "../src/infrastructure/stripe/stripe-event.ts";
 import { eurToCents } from "../src/domain/pricing/pricing.ts";
-import type { CreateProdigiOrder } from "../src/infrastructure/prodigi/prodigi-order.ts";
+import type { CreateProdigiOrder } from "../src/domain/ordering/print-provider.ts";
+import type { AssetUrlSigner } from "../src/domain/ordering/asset-url-signer.ts";
 import {
   downloadLinkForSession,
   readDownloadToken,
@@ -53,6 +54,15 @@ function memoryKv(initial?: Record<string, string>) {
   return memoryOrdersStore({ store: initial });
 }
 
+const SITE_URL = "https://nessebarlens.com";
+
+// The signer the routes wire from the container. Tests inject a fake so no
+// secret or network is needed; the default returns the signed shape above.
+const okSigner: AssetUrlSigner = {
+  sign: async () => ASSET_URL,
+  verify: async () => ({ ok: true, slug: SAMPLE_SLUG }),
+};
+
 function paidInput(overrides: Record<string, unknown> = {}) {
   return {
     sessionId: SESSION,
@@ -71,6 +81,8 @@ function paidInput(overrides: Record<string, unknown> = {}) {
     customerPhone: null as string | null,
     prodigiKeyConfigured: false,
     now: NOW,
+    assetUrlSigner: okSigner,
+    siteUrl: SITE_URL,
     ...overrides,
   };
 }
@@ -984,7 +996,14 @@ test("webhook + download routes still do not call Prodigi; order module is the o
   assert.equal(order.includes("prodigiUrl"), true);
   assert.equal(order.includes("prodigiConfig"), true);
   assert.equal(order.includes("assertNoMasterLeak"), true);
-  assert.equal(order.includes("signPrintAssetUrl"), true);
+  // The adapter no longer signs: the application signs the asset URL and passes
+  // it in, so the Prodigi adapter cannot reach back into application/print-asset.
+  assert.equal(order.includes("signPrintAssetUrl"), false);
+  const fulfillment = fs.readFileSync(
+    path.join(root, "src/application/fulfillment/fulfillment.ts"),
+    "utf8",
+  );
+  assert.equal(fulfillment.includes("signPrintAssetUrl"), true);
   const config = fs.readFileSync(
     path.join(root, "src/infrastructure/prodigi/prodigi-config.ts"),
     "utf8",
@@ -1527,6 +1546,47 @@ test("parseRecipient truncates each field at its own cap", () => {
   assert.equal(recipient.phone, at(32));
   // Email is 254.
   assert.equal(recipient.email!.length, 254);
+});
+
+test("an unsignable master fails the order closed, before any network call", async () => {
+  // No HMAC secret means no real asset URL, and a placeholder would ship the
+  // ~41KB low-res stand-in to a customer who paid for a print. Fail closed with
+  // the asset-specific reason and 5xx, so Stripe redelivers once the secret is
+  // deployed.
+  const store = memoryOrdersStore();
+  let created = 0;
+  const create: CreateProdigiOrder = async () => {
+    created++;
+    return {
+      ok: true,
+      value: { orderId: "ord_never", stage: null, assetUrl: ASSET_URL },
+    };
+  };
+  const nullSigner: AssetUrlSigner = {
+    sign: async () => null,
+    verify: async () => ({
+      ok: false,
+      status: 503,
+      error: "print-asset-unavailable",
+    }),
+  };
+  const result = await fulfillCheckoutSession({
+    ...paidInput({
+      amountTotal: 1999,
+      prodigiKeyConfigured: true,
+      shippingDetails: SHIPPING,
+      metadata: physicalMeta(),
+    }),
+    store,
+    createOrder: create,
+    assetUrlSigner: nullSigner,
+  });
+  assert.equal(created, 0, "Prodigi must never be contacted");
+  assert.equal(result.httpStatus, 500);
+  const stored = parseOrderRecord((await store.getOrder(SESSION))!);
+  assert.equal(stored?.status, "paid-unfulfilled");
+  assert.equal(stored?.reason, "prodigi-asset-unconfigured");
+  assert.equal(stored?.terminal, false, "a redelivery must retry it");
 });
 
 // ---- download tokens (#111) ----

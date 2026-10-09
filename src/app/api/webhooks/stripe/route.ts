@@ -3,22 +3,27 @@ import { fulfillCheckoutSession } from "@/application/fulfillment/fulfillment";
 import { getConfig, siteUrl } from "@/infrastructure/config/config";
 import { sendEmailFromApiKey } from "@/domain/ordering/email";
 import {
-  defaultStripeLookup,
   paymentIntentForDispute,
   revokeOrderByPaymentIntent,
 } from "@/application/fulfillment/order-revocation";
 import {
   ORDERS_STORE_UNAVAILABLE_ERROR,
   ORDERS_STORE_UNAVAILABLE_STATUS,
-} from "@/infrastructure/cloudflare/orders-store";
-import { sessionOriginCheck } from "@/infrastructure/stripe/stripe-event";
-import { paymentGateway } from "@/infrastructure/container";
+} from "@/domain/ordering/orders-store";
+import { classifyUrlOrigin } from "@/domain/ordering/session-origin";
+import {
+  assetUrlSigner,
+  paymentGateway,
+  printProvider,
+  prodigiCancel,
+  stripeSessionLookupPort,
+} from "@/infrastructure/container";
 import {
   fulfillmentInputFromSession,
   type PaymentEvent,
 } from "@/application/checkout/payment-gateway";
 import { readWorkerBindings } from "@/infrastructure/cloudflare/worker-bindings";
-import type { OrdersStore } from "@/infrastructure/cloudflare/orders-store";
+import type { OrdersStore } from "@/domain/ordering/orders-store";
 
 export const dynamic = "force-dynamic";
 // OpenNext runs this inside the Worker via nodejs_compat. Not a separate Node server.
@@ -124,10 +129,7 @@ export async function POST(request: Request) {
   // without writing an order is the whole point: the other deployment owns that
   // payment, and writing it here is what let two builds fight over one Prodigi
   // order. 200, not 4xx — the event is delivered correctly, just not ours.
-  const origin = sessionOriginCheck(
-    { success_url: session.successUrl },
-    siteUrl(),
-  );
+  const origin = classifyUrlOrigin(session.successUrl, siteUrl());
   if (origin === "foreign") {
     console.warn(
       JSON.stringify({
@@ -149,6 +151,9 @@ export async function POST(request: Request) {
       ...fulfillmentInputFromSession(session),
       prodigiKeyConfigured: bindings.prodigiKeyConfigured,
       now: new Date().toISOString(),
+      createOrder: printProvider().placeOrder,
+      assetUrlSigner: assetUrlSigner(),
+      siteUrl: siteUrl(),
       // Read here rather than inside fulfillment, which takes its
       // configuration as an argument (config.ts is the only env reader).
       downloadLimits: {
@@ -197,7 +202,7 @@ async function handleRevocation(event: RevocationEvent, store: OrdersStore) {
   } else {
     paymentIntent = await paymentIntentForDispute(
       { charge: event.dispute.charge },
-      defaultStripeLookup(),
+      stripeSessionLookupPort(),
     );
   }
 
@@ -207,6 +212,8 @@ async function handleRevocation(event: RevocationEvent, store: OrdersStore) {
       status: event.kind === "charge-refunded" ? "refunded" : "disputed",
       paymentIntent,
       now: new Date().toISOString(),
+      stripe: stripeSessionLookupPort(),
+      cancel: prodigiCancel(),
     });
     return NextResponse.json(result.body, { status: result.httpStatus });
   } catch (e) {

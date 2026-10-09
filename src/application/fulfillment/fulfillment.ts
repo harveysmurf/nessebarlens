@@ -24,10 +24,7 @@
  * the stored order.
  */
 
-import {
-  createProdigiOrder,
-  type CreateProdigiOrder,
-} from "../../infrastructure/prodigi/prodigi-order";
+import type { CreateProdigiOrder } from "../../domain/ordering/print-provider";
 import { isRetryableProdigiReason } from "../../domain/ordering/prodigi-policy";
 import {
   AWAITING_PRODIGI_REASON,
@@ -43,15 +40,16 @@ import { readOrderRecord } from "../../domain/ordering/order-corrupt";
 import {
   DOWNLOAD_TOKEN_MAX_DOWNLOADS,
   DOWNLOAD_TOKEN_TTL_SECONDS,
-  ensureDownloadToken,
-  type DownloadTokenLimits,
-} from "./download-token";
+} from "../../domain/ordering/download-token";
+import { ensureDownloadToken } from "./download-token";
+import type { DownloadTokenLimits } from "../../domain/ordering/download-token";
 import type { FrameFinish } from "../../domain/pricing/pricing";
 import { isFrameFinishValue, isPrintSize } from "../../domain/pricing/sku-map";
-import type { OrdersStore } from "../../infrastructure/cloudflare/orders-store";
+import type { OrdersStore } from "../../domain/ordering/orders-store";
 import { emailCopyFor } from "../../domain/ordering/email-copy";
 import type { EmailKind, SendEmail } from "../../domain/ordering/email";
-import { siteUrl } from "../../infrastructure/config/config";
+import type { AssetUrlSigner } from "../../domain/ordering/asset-url-signer";
+import { signPrintAssetUrl } from "./print-asset";
 
 function reportUnfulfilled(record: OrderRecord, detail?: string): void {
   console.error(
@@ -137,12 +135,13 @@ async function sendClaimedEmail(input: {
   record: OrderRecord;
   kind: EmailKind;
   to: string;
+  siteUrl: string;
 }): Promise<void> {
   if (!input.sendEmail) return;
   const copy = emailCopyFor({
     kind: input.kind,
     sessionId: input.record.sessionId,
-    siteUrl: siteUrl(),
+    siteUrl: input.siteUrl,
   });
   try {
     const sent = await input.sendEmail({
@@ -214,7 +213,21 @@ async function issueTokenIfDigital(
 export async function fulfillCheckoutSession(
   input: FulfillmentInput & {
     store: OrdersStore;
-    createOrder?: CreateProdigiOrder;
+    /**
+     * The print-provider order function, injected so tests can fake Prodigi.
+     * Required — routes supply the container-wired adapter
+     * (`printProvider().placeOrder`), and this module must not import the
+     * Prodigi adapter directly.
+     */
+    createOrder: CreateProdigiOrder;
+    /**
+     * Signs the HMAC print-asset URL Prodigi fetches. Wired from the container
+     * at routes; required here because createProdigiOrder now takes assetUrl
+     * as a required parameter (no placeholder fallback since #245).
+     */
+    assetUrlSigner: AssetUrlSigner;
+    /** The site origin, for email links and audit logs. */
+    siteUrl: string;
     /**
      * Download-token policy (#111), passed in rather than read from the env:
      * this module is otherwise pure of configuration, and config.ts is the only
@@ -309,7 +322,7 @@ export async function fulfillCheckoutSession(
     (record.reason === AWAITING_PRODIGI_REASON ||
       isRetryableProdigiReason(record.reason))
   ) {
-    const create = input.createOrder ?? createProdigiOrder;
+    const create = input.createOrder;
 
     if (
       record.kind !== "physical" ||
@@ -342,6 +355,34 @@ export async function fulfillCheckoutSession(
           : isFrameFinishValue(record.frame)
             ? record.frame
             : null;
+      // Sign the asset URL before calling the provider — createProdigiOrder
+      // requires it (no placeholder fallback since #245), and fail-closed on a
+      // null here keeps the customer from being charged for an unfulfillable
+      // print.
+      const assetUrl = await signPrintAssetUrl(
+        record.photoSlug,
+        input.assetUrlSigner,
+      );
+      if (!assetUrl) {
+        // No signing secret: a placeholder would ship a paid print's low-res
+        // stand-in, so fail closed exactly like a retryable Prodigi failure —
+        // write the precise reason and answer 500, so Stripe redelivers once
+        // the HMAC secret is deployed.
+        record = withProdigiFailure(record, {
+          reason: "prodigi-asset-unconfigured",
+        });
+        const message = "print-asset signing is not configured";
+        if (fromAttempts !== null) {
+          await storeTransition(input.store, fromAttempts, record, message);
+        } else {
+          await storeNewOrder(input.store, record, message);
+        }
+        return {
+          httpStatus: 500,
+          body: { error: "prodigi-asset-unconfigured", message },
+        };
+      }
+
       const result = await create({
         sessionId: record.sessionId,
         photoSlug: record.photoSlug,
@@ -349,6 +390,7 @@ export async function fulfillCheckoutSession(
         size: record.size,
         frame,
         recipient: record.recipient,
+        assetUrl,
       });
 
       if (
@@ -437,6 +479,7 @@ export async function fulfillCheckoutSession(
       record,
       kind,
       to,
+      siteUrl: input.siteUrl,
     });
   }
 

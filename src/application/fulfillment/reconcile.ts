@@ -25,12 +25,12 @@
  * in wrangler.toml would be silently ignored for this Worker.
  */
 
-import { siteUrl } from "../../infrastructure/config/config";
+import { classifyUrlOrigin } from "../../domain/ordering/session-origin";
 import { fulfillCheckoutSession } from "./fulfillment";
-import { sessionOriginCheck } from "../../infrastructure/stripe/stripe-event";
-import type { OrdersStore } from "../../infrastructure/cloudflare/orders-store";
-import type { CreateProdigiOrder } from "../../infrastructure/prodigi/prodigi-order";
-import type { DownloadTokenLimits } from "./download-token";
+import type { OrdersStore } from "../../domain/ordering/orders-store";
+import type { CreateProdigiOrder } from "../../domain/ordering/print-provider";
+import type { AssetUrlSigner } from "../../domain/ordering/asset-url-signer";
+import type { DownloadTokenLimits } from "../../domain/ordering/download-token";
 import type { StripeShippingDetails } from "../../domain/ordering/order-decision";
 
 /** How many retryable orders one run will attempt. */
@@ -68,7 +68,7 @@ export type ReconcileSession = {
     email?: string | null;
     phone?: string | null;
   } | null;
-  /** The origin record (#193); see sessionOriginCheck. */
+  /** The origin record (#193); see classifyUrlOrigin. */
   success_url?: string | null;
 };
 
@@ -87,8 +87,12 @@ export type ReconcileInput = {
   store: OrdersStore;
   stripe: ReconcileStripe;
   prodigiKeyConfigured: boolean;
+  /** The site origin, for foreign-session classification (#193). */
+  siteUrl: string;
+  /** The order function and asset signer, passed through to fulfillment. */
+  createOrder: CreateProdigiOrder;
+  assetUrlSigner: AssetUrlSigner;
   nowMs?: number;
-  createOrder?: CreateProdigiOrder;
   downloadLimits?: DownloadTokenLimits;
   batch?: number;
   lookbackHours?: number;
@@ -162,30 +166,30 @@ export async function reconcileOrders(
     summary.recovered += 1;
   }
 
-  return summary;
-}
+  /**
+   * Same classifier as the webhook (#193): the Stripe account lists every
+   * environment's sessions, so the reconciler must refuse the ones it did not
+   * create, or it would adopt and fulfil another deployment's payment.
+   * `unknown` is accepted, exactly as in the webhook.
+   */
+  function isForeign(
+    session: ReconcileSession,
+    summary: ReconcileSummary,
+  ): boolean {
+    if (classifyUrlOrigin(session.success_url, input.siteUrl) !== "foreign") return false;
+    summary.foreign += 1;
+    console.warn(
+      JSON.stringify({
+        event: "reconcile.foreign-session",
+        sessionId: session.id,
+        sessionOrigin: session.success_url,
+        siteOrigin: input.siteUrl,
+      }),
+    );
+    return true;
+  }
 
-/**
- * Same classifier as the webhook (#193): the Stripe account lists every
- * environment's sessions, so the reconciler must refuse the ones it did not
- * create, or it would adopt and fulfil another deployment's payment. `unknown`
- * is accepted, exactly as in the webhook.
- */
-function isForeign(
-  session: ReconcileSession,
-  summary: ReconcileSummary,
-): boolean {
-  if (sessionOriginCheck(session, siteUrl()) !== "foreign") return false;
-  summary.foreign += 1;
-  console.warn(
-    JSON.stringify({
-      event: "reconcile.foreign-session",
-      sessionId: session.id,
-      sessionOrigin: session.success_url,
-      siteOrigin: siteUrl(),
-    }),
-  );
-  return true;
+  return summary;
 }
 
 async function fulfillFromSession(
@@ -208,7 +212,9 @@ async function fulfillFromSession(
     customerPhone: session.customer_details?.phone ?? null,
     prodigiKeyConfigured: input.prodigiKeyConfigured,
     now: new Date(input.nowMs ?? Date.now()).toISOString(),
-    createOrder: input.createOrder,
+     createOrder: input.createOrder,
+     assetUrlSigner: input.assetUrlSigner,
+     siteUrl: input.siteUrl,
     downloadLimits: input.downloadLimits,
   });
 }

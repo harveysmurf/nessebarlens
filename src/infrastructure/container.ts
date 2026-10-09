@@ -12,11 +12,15 @@
  * `config.ts` deliberately avoids.
  */
 
-import { stripeGateway, stripeReconcileStripe } from "./stripe/stripe-gateway";
+import { stripeGateway, stripeReconcileStripe, stripeSessionLookup } from "./stripe/stripe-gateway";
 import { prodigiPrintProvider } from "./prodigi/print-provider";
+import { cancelProdigiOrder } from "./prodigi/prodigi-cancel";
+import { ConfiguredAssetUrlSigner } from "./print-asset/asset-url-signer";
+import type { AssetUrlSigner } from "../domain/ordering/asset-url-signer";
 import type { PaymentGateway } from "../application/checkout/payment-gateway";
-import type { PrintProvider } from "./prodigi/print-provider";
+import type { PrintProvider, CancelProdigiOrder } from "../domain/ordering/print-provider";
 import type { ReconcileStripe } from "../application/fulfillment/reconcile";
+import type { StripeSessionLookup } from "../domain/ordering/stripe-session-lookup";
 
 /** The Stripe-backed payment gateway. */
 export function paymentGateway(): PaymentGateway {
@@ -31,4 +35,19 @@ export function printProvider(): PrintProvider {
 /** The Stripe-backed reconciler read. */
 export function reconcileStripe(): ReconcileStripe {
   return stripeReconcileStripe();
+}
+
+/** The Stripe-backed session lookup (refunds/disputes). */
+export function stripeSessionLookupPort(): StripeSessionLookup {
+  return stripeSessionLookup();
+}
+
+/** The configured AssetUrlSigner (HMAC print-asset signing). */
+export function assetUrlSigner(): AssetUrlSigner {
+  return new ConfiguredAssetUrlSigner();
+}
+
+/** The Prodigi-backed order cancellation. */
+export function prodigiCancel(): CancelProdigiOrder {
+  return cancelProdigiOrder;
 }

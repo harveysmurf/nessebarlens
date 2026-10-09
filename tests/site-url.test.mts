@@ -3,7 +3,10 @@ import test from "node:test";
 import { getStripe } from "../src/infrastructure/stripe/stripe.ts";
 import { isConfiguredSiteUrl, siteUrl } from "../src/infrastructure/config/config.ts";
 import { signPrintAssetUrl } from "../src/application/fulfillment/print-asset.ts";
+import { ConfiguredAssetUrlSigner } from "../src/infrastructure/print-asset/asset-url-signer.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
+
+const SIGNER = new ConfiguredAssetUrlSigner();
 
 /**
  * Sets NEXT_PUBLIC_SITE_URL for the body, with NODE_ENV cleared.
@@ -94,7 +97,7 @@ test("isConfiguredSiteUrl follows the stripped value, in any environment", async
 
 test("signed print-asset URLs have no double slash at the join", async () => {
   const url = await withSiteUrl("https://nessebarlens.com/", () =>
-    signPrintAssetUrl(SAMPLE_SLUG, {
+    signPrintAssetUrl(SAMPLE_SLUG, SIGNER, {
       secret: "test-print-asset-hmac-secret-32b-min!!",
       baseUrl: undefined,
     }),

@@ -18,8 +18,8 @@ import { readStripeEvent } from "./stripe-event";
 import { eurToCents, formatLabel } from "../../domain/pricing/pricing";
 import type { StripeShippingDetails } from "../../domain/ordering/order-decision";
 import type { ReconcileSession, ReconcileStripe } from "../../application/fulfillment/reconcile";
-import type { StripeSessionLookup } from "../../application/fulfillment/order-revocation";
-import { isPaymentIntentId, isStripeNotFound } from "./stripe-ids";
+import type { StripeSessionLookup } from "../../domain/ordering/stripe-session-lookup";
+import { isPaymentIntentId, isChargeId, isStripeNotFound } from "./stripe-ids";
 import type {
   CheckoutIntent,
   CreateCheckoutResult,
@@ -234,12 +234,15 @@ export function stripeGateway(): PaymentGateway {
 }
 
 /**
- * The refund/dispute lookup, moved here from `order-revocation.ts` so that
- * module no longer constructs a Stripe client. `order-revocation` re-exports
- * this as `defaultStripeLookup`.
+ * The refund/dispute lookup. Owns the Stripe client construction so
+ * `order-revocation.ts` (application) depends only on the
+ * `StripeSessionLookup` port from domain, never on the SDK.
  */
 export function stripeSessionLookup(): StripeSessionLookup {
   return {
+    isPaymentReference: isPaymentIntentId,
+    isChargeReference: isChargeId,
+    isNotFound: isStripeNotFound,
     findSessionIdByPaymentIntent: async (paymentIntent) => {
       const stripe = getStripe();
       const sessions = await stripe.checkout.sessions.list({

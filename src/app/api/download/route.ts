@@ -4,7 +4,7 @@ import { readOrderRecord } from "@/domain/ordering/order-corrupt";
 import {
   ORDERS_STORE_UNAVAILABLE_ERROR,
   ORDERS_STORE_UNAVAILABLE_STATUS,
-} from "@/infrastructure/cloudflare/orders-store";
+} from "@/domain/ordering/orders-store";
 import {
   NO_REFERRER_HEADERS,
   NO_STORE_HEADERS,

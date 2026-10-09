@@ -9,14 +9,18 @@ import {
   PRODIGI_ORDER_TIMEOUT_MS,
   PRODIGI_QUOTE_TIMEOUT_MS,
   prodigiTimeoutSignal,
-} from "../src/infrastructure/prodigi/prodigi-config.ts";
+} from "../src/domain/ordering/prodigi-timeout.ts";
 import { isRetryableProdigiReason } from "../src/domain/ordering/prodigi-policy.ts";
-import { type OrderRecipient } from "../src/infrastructure/prodigi/prodigi-order.ts";
+import type { OrderRecipient } from "../src/domain/ordering/order-recipient.ts";
 import { quotePhysical } from "../src/infrastructure/prodigi/prodigi-quote.ts";
 import { createProdigiOrder } from "../src/infrastructure/prodigi/prodigi-order.ts";
+import { ConfiguredAssetUrlSigner } from "../src/infrastructure/print-asset/asset-url-signer.ts";
 import { fulfillCheckoutSession } from "../src/application/fulfillment/fulfillment.ts";
 import { parseOrderRecord } from "../src/domain/ordering/order-decision.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
+
+const SITE_URL = "https://nessebarlens.com";
+const ASSET_URL = `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`;
 
 const RECIPIENT: OrderRecipient = {
   name: "Test Buyer",
@@ -113,6 +117,7 @@ test("a hung order is a retryable timeout, not a dead end", async () => {
       size: "50x70",
       frame: null,
       recipient: RECIPIENT,
+      assetUrl: ASSET_URL,
     });
     assert.equal(result.ok, false);
     if (result.ok) return;
@@ -164,6 +169,7 @@ test("a body read that dies mid-stream is a retryable timeout, not a lost order"
       size: "50x70",
       frame: null,
       recipient: RECIPIENT,
+      assetUrl: ASSET_URL,
     });
     assert.equal(result.ok, false);
     if (result.ok) return;
@@ -202,6 +208,7 @@ test("a genuinely empty 200 body is still the terminal missing-id failure", asyn
       size: "50x70",
       frame: null,
       recipient: RECIPIENT,
+      assetUrl: ASSET_URL,
     });
     assert.equal(result.ok, false);
     if (result.ok) return;
@@ -262,6 +269,9 @@ test("a timeout on the order path is stored non-terminal and answered 5xx", asyn
       prodigiKeyConfigured: true,
       now: "2026-01-01T00:00:00.000Z",
       store,
+      createOrder: createProdigiOrder,
+      assetUrlSigner: new ConfiguredAssetUrlSigner(),
+      siteUrl: SITE_URL,
     });
     // 5xx so Stripe redelivers; the record has to survive the round trip
     // through parseOrderRecord, or the retry has nothing to pick up.
@@ -303,6 +313,7 @@ test("a non-timeout network failure is still prodigi-unavailable", async () => {
       size: "50x70",
       frame: null,
       recipient: RECIPIENT,
+      assetUrl: ASSET_URL,
     });
     assert.equal(result.ok, false);
     if (result.ok) return;

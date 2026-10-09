@@ -2,20 +2,22 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
-  DOWNLOAD_TOKEN_MAX_DOWNLOADS,
-  DOWNLOAD_TOKEN_TTL_SECONDS,
   downloadIndexKey,
   downloadLinkForSession,
   downloadTokenKey,
   ensureDownloadToken,
-  isDownloadToken,
-  newDownloadToken,
-  parseDownloadTokenRecord,
   readDownloadToken,
   redeemDownloadToken,
 } from "../src/application/fulfillment/download-token.ts";
+import {
+  DOWNLOAD_TOKEN_MAX_DOWNLOADS,
+  DOWNLOAD_TOKEN_TTL_SECONDS,
+  isDownloadToken,
+  newDownloadToken,
+  parseDownloadTokenRecord,
+} from "../src/domain/ordering/download-token.ts";
 import { getConfig } from "../src/infrastructure/config/config.ts";
-import { ORDERS_STORE_UNAVAILABLE_ERROR } from "../src/infrastructure/cloudflare/orders-store.ts";
+import { ORDERS_STORE_UNAVAILABLE_ERROR } from "../src/domain/ordering/orders-store.ts";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
 
 /* Download tokens (#111 / #116).

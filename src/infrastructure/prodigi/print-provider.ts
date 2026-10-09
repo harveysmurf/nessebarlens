@@ -1,5 +1,5 @@
 /**
- * The print-provider port (#3, DDD).
+ * The print-provider port adapter (#3, DDD).
  *
  * The checkout and fulfillment application code talks to this interface; the
  * Prodigi HTTP/SKU logic stays behind it in `prodigi-quote.ts` and
@@ -8,15 +8,9 @@
  * fake provider in a test is just an object with these two fields.
  */
 
-import { createProdigiOrder, type CreateProdigiOrder } from "./prodigi-order";
+import { createProdigiOrder } from "./prodigi-order";
 import { quotePhysical } from "./prodigi-quote";
-
-export type PrintProvider = {
-  /** Price a physical spec for a destination. */
-  quote: typeof quotePhysical;
-  /** Place a physical order (the existing `CreateProdigiOrder` seam). */
-  placeOrder: CreateProdigiOrder;
-};
+import type { PrintProvider } from "../../domain/ordering/print-provider";
 
 /** The Prodigi-backed provider. */
 export function prodigiPrintProvider(): PrintProvider {

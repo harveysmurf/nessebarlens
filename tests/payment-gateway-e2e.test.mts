@@ -18,13 +18,20 @@ import {
   type PaymentEvent,
   type PaymentGateway,
 } from "../src/application/checkout/payment-gateway.ts";
-import type { PrintProvider } from "../src/infrastructure/prodigi/print-provider.ts";
+import type { PrintProvider } from "../src/domain/ordering/print-provider.ts";
+import type { AssetUrlSigner } from "../src/domain/ordering/asset-url-signer.ts";
 import { parseOrderRecord } from "../src/domain/ordering/order-decision.ts";
 import { fulfillCheckoutSession } from "../src/application/fulfillment/fulfillment.ts";
 
 const SESSION = "cs_test_fakegateway01";
 const NOW = "2026-10-08T12:00:00.000Z";
-process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
+const SITE_URL = "https://nessebarlens.com";
+process.env.NEXT_PUBLIC_SITE_URL = SITE_URL;
+
+const okSigner: AssetUrlSigner = {
+  sign: async () => `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`,
+  verify: async () => ({ ok: true, slug: SAMPLE_SLUG }),
+};
 
 test("a fake gateway + fake print provider drive a physical order end to end", async () => {
   let createdIntent: CheckoutIntent | null = null;
@@ -140,6 +147,8 @@ test("a fake gateway + fake print provider drive a physical order end to end", a
     prodigiKeyConfigured: true,
     now: NOW,
     createOrder: printProvider.placeOrder,
+    assetUrlSigner: okSigner,
+    siteUrl: SITE_URL,
   });
   assert.equal(result.httpStatus, 200);
   assert.equal(result.body.status, "paid");
