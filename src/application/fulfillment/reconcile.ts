@@ -212,9 +212,9 @@ async function fulfillFromSession(
     customerPhone: session.customer_details?.phone ?? null,
     prodigiKeyConfigured: input.prodigiKeyConfigured,
     now: new Date(input.nowMs ?? Date.now()).toISOString(),
-     createOrder: input.createOrder,
-     assetUrlSigner: input.assetUrlSigner,
-     siteUrl: input.siteUrl,
+    createOrder: input.createOrder,
+    assetUrlSigner: input.assetUrlSigner,
+    siteUrl: input.siteUrl,
     downloadLimits: input.downloadLimits,
   });
 }

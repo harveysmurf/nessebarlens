@@ -356,9 +356,9 @@ export async function fulfillCheckoutSession(
             ? record.frame
             : null;
       // Sign the asset URL before calling the provider — createProdigiOrder
-      // requires it (no placeholder fallback since #245), and fail-closed on a
-      // null here keeps the customer from being charged for an unfulfillable
-      // print.
+      // requires it (no placeholder fallback since #245). A null here fails
+      // closed so a paid print never ships a low-res placeholder; the charge is
+      // already prevented earlier by the pre-payment canSignMasterAsset guard.
       const assetUrl = await signPrintAssetUrl(
         record.photoSlug,
         input.assetUrlSigner,
