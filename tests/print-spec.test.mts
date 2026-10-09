@@ -4,8 +4,8 @@ import {
   frameForFormat,
   parsePrintSpecification,
   physicalSpecification,
-} from "../src/lib/print-spec.ts";
-import { FRAME_FINISHES, PRINT_SIZES } from "../src/lib/sku-map.ts";
+} from "../src/domain/ordering/print-spec.ts";
+import { FRAME_FINISHES, PRINT_SIZES } from "../src/domain/pricing/sku-map.ts";
 
 test("digital accepts an empty selection and refuses a filled one", () => {
   for (const [size, frame] of [

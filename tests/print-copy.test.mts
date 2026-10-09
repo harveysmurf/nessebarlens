@@ -9,9 +9,9 @@ import {
   DEFAULT_FRAME_FINISH,
   DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
-} from "../src/lib/print-copy.ts";
-import { sizeLabel } from "../src/lib/pricing.ts";
-import { FRAME_FINISHES, PRINT_SIZES, SELLABLE_FORMATS } from "../src/lib/sku-map.ts";
+} from "../src/domain/ordering/print-copy.ts";
+import { sizeLabel } from "../src/domain/pricing/pricing.ts";
+import { FRAME_FINISHES, PRINT_SIZES, SELLABLE_FORMATS } from "../src/domain/pricing/sku-map.ts";
 
 test("the configurator offers exactly what the catalog can sell", () => {
   // The component used to declare its own arrays. A format added to the
@@ -158,7 +158,7 @@ test("the checkout redirect is refused unless it is an https URL", async () => {
   // input. A client-side guard is only a guard if it runs before the
   // assignment, on the same synchronous path — a check placed after the
   // window.location line, or in a parallel branch, is theatre.
-  const { HTTPS_URL_PATTERN } = await import("../src/lib/url-patterns.ts");
+  const { HTTPS_URL_PATTERN } = await import("../src/domain/pricing/url-patterns.ts");
   const source = fs.readFileSync(
     new URL("../src/components/PrintConfigurator.tsx", import.meta.url),
     "utf8",
@@ -167,7 +167,7 @@ test("the checkout redirect is refused unless it is an https URL", async () => {
   // payload carries an absolute https string. What still has to hold at the
   // call site is the ordering: the value is narrowed before it is navigated to,
   // and a null narrowing can never reach the assignment.
-  const { checkoutUrl } = await import("../src/lib/api-payloads.ts");
+  const { checkoutUrl } = await import("../src/application/checkout/api-payloads.ts");
   assert.match(source, /const url = checkoutUrl\(data\);/);
   assert.match(source, /if \(!res\.ok\) \{/);
   assert.match(source, /if \(!url\) \{/);
@@ -217,7 +217,7 @@ test("the configurator never calls res.json() unguarded", async () => {
     "an unguarded response parse can reject on a non-JSON error body",
   );
   const { readJsonResponse, requestErrorMessage } = await import(
-    "../src/lib/api-payloads.ts"
+    "../src/application/checkout/api-payloads.ts"
   );
   assert.equal(typeof readJsonResponse, "function");
   assert.equal(typeof requestErrorMessage, "function");

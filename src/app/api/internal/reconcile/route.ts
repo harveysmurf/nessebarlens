@@ -12,16 +12,16 @@
  */
 
 import { NextResponse } from "next/server";
-import { NO_STORE_HEADERS } from "@/lib/private-headers";
-import { readWorkerBindings } from "@/lib/worker-bindings";
-import { timingSafeEqualString } from "@/lib/crypto-hex";
-import { getConfig } from "@/lib/config";
-import { reconcileStripe } from "@/lib/container";
+import { NO_STORE_HEADERS } from "@/infrastructure/config/private-headers";
+import { readWorkerBindings } from "@/infrastructure/cloudflare/worker-bindings";
+import { timingSafeEqualString } from "@/domain/pricing/crypto-hex";
+import { getConfig } from "@/infrastructure/config/config";
+import { reconcileStripe } from "@/infrastructure/container";
 import {
   ORDERS_STORE_UNAVAILABLE_ERROR,
   ORDERS_STORE_UNAVAILABLE_STATUS,
-} from "@/lib/orders-store";
-import { reconcileOrders } from "@/lib/reconcile";
+} from "@/infrastructure/cloudflare/orders-store";
+import { reconcileOrders } from "@/application/fulfillment/reconcile";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

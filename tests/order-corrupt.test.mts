@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { masterKeyForSlug } from "../src/lib/master-key.ts";
-import { parseOrderRecord } from "../src/lib/order-decision.ts";
+import { masterKeyForSlug } from "../src/domain/catalog/master-key.ts";
+import { parseOrderRecord } from "../src/domain/ordering/order-decision.ts";
 import {
   describeCorruptOrder,
   readOrderRecord,
   reportCorruptOrder,
-} from "../src/lib/order-corrupt.ts";
+} from "../src/domain/ordering/order-corrupt.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const SESSION = "cs_test_abcdefgh";
@@ -202,8 +202,8 @@ test("the read paths call one helper, not three copies of the check", async () =
     "src/app/api/download/route.ts",
     "src/app/api/order-status/route.ts",
     "src/app/checkout/success/order-state.ts",
-    "src/lib/fulfillment.ts",
-    "src/lib/order-revocation.ts",
+    "src/application/fulfillment/fulfillment.ts",
+    "src/application/fulfillment/order-revocation.ts",
   ];
   for (const rel of callers) {
     const src = fs.readFileSync(path.join(root, rel), "utf8");
@@ -232,5 +232,5 @@ test("the read paths call one helper, not three copies of the check", async () =
     }
   };
   walk(path.join(root, "src"));
-  assert.deepEqual(offenders, ["src/lib/order-corrupt.ts"]);
+  assert.deepEqual(offenders, ["src/domain/ordering/order-corrupt.ts"]);
 });

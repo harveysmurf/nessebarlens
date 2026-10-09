@@ -2,9 +2,9 @@ import { NextResponse } from "next/server";
 import {
   resolvePrintAssetStream,
   verifyPrintAssetRequest,
-} from "@/lib/print-asset";
-import { NO_STORE_HEADERS } from "@/lib/private-headers";
-import { readWorkerBindings } from "@/lib/worker-bindings";
+} from "@/application/fulfillment/print-asset";
+import { NO_STORE_HEADERS } from "@/infrastructure/config/private-headers";
+import { readWorkerBindings } from "@/infrastructure/cloudflare/worker-bindings";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

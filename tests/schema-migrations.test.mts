@@ -1,5 +1,5 @@
 /**
- * The migrated schema must be the schema `src/lib/orders-d1.ts` queries (#203).
+ * The migrated schema must be the schema `src/infrastructure/cloudflare/orders-d1.ts` queries (#203).
  *
  * Before this, the orders tests ran against `tests/fake-d1.mts`, which matched
  * statements by substring and answered from Maps. A migration could rename or
@@ -13,7 +13,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { sqliteD1, loadMigrations } from "./sqlite-d1.mts";
-import { ORDER_SQL } from "../src/lib/orders-d1.ts";
+import { ORDER_SQL } from "../src/infrastructure/cloudflare/orders-d1.ts";
 
 test("every migration applies to a fresh database and creates the store's tables", () => {
   const db = sqliteD1();

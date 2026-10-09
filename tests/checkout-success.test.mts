@@ -25,7 +25,7 @@ const globals = globalThis as { __buzzBindings?: Fake };
 
 registerHooks({
   resolve(specifier, context, nextResolve) {
-    if (specifier === "@/lib/worker-bindings") {
+    if (specifier === "@/infrastructure/cloudflare/worker-bindings") {
       return { url: FAKE, format: "module", shortCircuit: true };
     }
     return nextResolve(specifier, context);
@@ -46,10 +46,10 @@ registerHooks({
 const { resolveCheckoutPageState, resolveCheckoutDownloadLink } = await import(
   "../src/app/checkout/success/order-state.ts"
 );
-const { ensureDownloadToken } = await import("../src/lib/download-token.ts");
-const { orderViewState } = await import("../src/lib/order-decision.ts");
+const { ensureDownloadToken } = await import("../src/application/fulfillment/download-token.ts");
+const { orderViewState } = await import("../src/domain/ordering/order-decision.ts");
 const { memoryOrdersStore } = await import("./fake-orders-store.mts");
-type OrderRecord = import("../src/lib/order-decision.ts").OrderRecord;
+type OrderRecord = import("../src/domain/ordering/order-decision.ts").OrderRecord;
 const orderStatus = await import("../src/app/api/order-status/route.ts");
 
 const SESSION = "cs_test_abcdefgh";
@@ -157,13 +157,13 @@ async function withBindings<T>(next: Fake, run: () => Promise<T>): Promise<T> {
 // ---- orderViewState: the closed set the page and the route share. ----
 
 test("a physical order is only 'physical' (being produced) while it is paid", async () => {
-  const { parseOrderRecord } = await import("../src/lib/order-decision.ts");
+  const { parseOrderRecord } = await import("../src/domain/ordering/order-decision.ts");
   const order = parseOrderRecord(record({ format: "giclee", status: "paid" }))!;
   assert.equal(orderViewState(order), "physical");
 });
 
 test("a physical order still being handed to Prodigi is physical, not failed", async () => {
-  const { parseOrderRecord } = await import("../src/lib/order-decision.ts");
+  const { parseOrderRecord } = await import("../src/domain/ordering/order-decision.ts");
   const order = parseOrderRecord(
     record({ format: "giclee", status: "paid-unfulfilled", reason: "awaiting-prodigi" }),
   )!;
@@ -171,7 +171,7 @@ test("a physical order still being handed to Prodigi is physical, not failed", a
 });
 
 test("a physical order we failed to fulfil is never reported as being produced", async () => {
-  const { parseOrderRecord } = await import("../src/lib/order-decision.ts");
+  const { parseOrderRecord } = await import("../src/domain/ordering/order-decision.ts");
   // Staging regression: Stripe accepted a BG address with an empty postcode,
   // Prodigi requires one, so the order was paid-unfulfilled / missing-shipping
   // while the page said "Your print is being produced".
@@ -193,7 +193,7 @@ test("a physical order we failed to fulfil is never reported as being produced",
 });
 
 test("a refunded or disputed physical order is revoked, never 'physical'", async () => {
-  const { parseOrderRecord } = await import("../src/lib/order-decision.ts");
+  const { parseOrderRecord } = await import("../src/domain/ordering/order-decision.ts");
   for (const status of ["refunded", "disputed"]) {
     const order = parseOrderRecord(record({ format: "giclee", status }))!;
     assert.equal(orderViewState(order), "revoked", `status ${status}`);

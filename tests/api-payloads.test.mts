@@ -8,7 +8,7 @@ import {
   isNonJsonBody,
   readJsonResponse,
   requestErrorMessage,
-} from "../src/lib/api-payloads.ts";
+} from "../src/application/checkout/api-payloads.ts";
 
 test("isLiveQuote accepts a well-formed quote", () => {
   assert.ok(isLiveQuote({ merchandiseEur: 12.5, shippingEur: 4 }));

@@ -7,8 +7,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { galleryImage } from "../src/lib/gallery-image.ts";
-import { WEB_DEFAULT_WIDTH, WEB_DERIVATIVE_WIDTHS } from "../src/lib/derivative-ladder.ts";
+import { galleryImage } from "../src/infrastructure/media/gallery-image.ts";
+import { WEB_DEFAULT_WIDTH, WEB_DERIVATIVE_WIDTHS } from "../src/domain/catalog/derivative-ladder.ts";
 
 const BASE = "NEXT_PUBLIC_WEB_IMAGES_BASE";
 const BASE_URL = "https://cdn.example.com/gallery";

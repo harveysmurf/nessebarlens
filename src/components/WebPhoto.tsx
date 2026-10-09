@@ -18,9 +18,9 @@
  * is laid out exactly as it was before the wrapper existed (full-height tiles
  * depend on the percentage height resolving against the tile's own box).
  */
-import { galleryImage } from "@/lib/gallery-image";
-import type { WebDerivativeWidth } from "@/lib/derivative-ladder";
-import type { Photo } from "@/lib/photos";
+import { galleryImage } from "@/infrastructure/media/gallery-image";
+import type { WebDerivativeWidth } from "@/domain/catalog/derivative-ladder";
+import type { Photo } from "@/domain/catalog/photos";
 
 export function WebPhoto({
   photo,

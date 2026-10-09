@@ -20,7 +20,7 @@ import {
   reconcileOrigin,
   runReconcileCron,
   type ReconcileCronContext,
-} from "../src/lib/reconcile-cron.ts";
+} from "../src/infrastructure/cloudflare/reconcile-cron.ts";
 
 const root = path.join(import.meta.dirname, "..");
 

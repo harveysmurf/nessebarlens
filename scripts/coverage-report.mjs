@@ -7,13 +7,14 @@
  * when stdout is not a TTY:
  *
  *   node 20 — one flat row per file, path in the first column:
- *              # src/lib/sku-map.ts | 78.13 | 100.00 | 100.00 | 74-80
+ *              # src/domain/pricing/sku-map.ts | 78.13 | 100.00 | 100.00 | 74-80
  *
  *   node 24 — a directory tree, path split across indented rows, and every
  *              line prefixed with a reporter marker when not a TTY:
  *              ℹ src                       |      |      |      |
- *              ℹ  lib                      |      |      |      |
- *              ℹ   sku-map.ts              | 78.13 | 100.00 | 100.00 | 74-80
+ *              ℹ  domain                    |      |      |      |
+ *              ℹ   pricing                  |      |      |      |
+ *              ℹ    sku-map.ts              | 78.13 | 100.00 | 100.00 | 74-80
  *
  * A parser that only understands the running node's output fails with "no rows"
  * on a perfectly green suite, which is exactly the bug this split exists to
@@ -22,7 +23,7 @@
 
 import { FILE_NAME } from "./js-file-name.mjs";
 
-/** "file:///a/b/src/lib/x.ts" and "/a/b/src/lib/x.ts" both become "src/lib/x.ts". */
+/** "file:///a/b/src/domain/pricing/x.ts" and "/a/b/src/infrastructure/stripe/x.ts" both become "src/.../x.ts". */
 function repoRelative(name) {
   return name
     .replace(/^file:\/\//, "")
@@ -81,16 +82,17 @@ export function parseCoverage(text) {
 }
 
 /**
- * True when the path is a source file under src/lib, whatever the report used
- * to make it absolute.
+ * True when the path is a source file under the bounded-context tree
+ * (src/domain, src/application, or src/infrastructure), regardless of whether
+ * the report prefixed it with a file URL or a bare absolute directory.
  */
 export function isLibFile(file) {
-  return /(^|\/)src\/lib\/[^/]+\.[cm]?[jt]sx?$/.test(file);
+  return /(^|\/)src\/(?:domain|application|infrastructure)\/(?:[^/]+\/)*[^/]+\.[cm]?[jt]sx?$/.test(file);
 }
 
 /**
  * True for the files the coverage gate is measured over: everything under
- * src/lib, plus the API route handlers.
+ * src/domain, src/application, src/infrastructure, plus the API route handlers.
  *
  * The routes are Request -> Response functions with no React in them, so they
  * are ordinary code to test and they own the status codes a client sees. The

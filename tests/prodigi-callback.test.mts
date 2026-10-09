@@ -10,13 +10,13 @@ import {
   parseProdigiCloudEvent,
   shipmentsFromProdigiOrder,
   type FetchProdigiOrder,
-} from "../src/lib/prodigi-callback.ts";
-import { PRODIGI_ORDER_TIMEOUT_MS } from "../src/lib/prodigi-config.ts";
-import { parseOrderRecord, type OrderRecord } from "../src/lib/order-decision.ts";
-import { buildProdigiOrderBody, type OrderRecipient } from "../src/lib/prodigi-order.ts";
-import type { SendEmail } from "../src/lib/email.ts";
+} from "../src/infrastructure/prodigi/prodigi-callback.ts";
+import { PRODIGI_ORDER_TIMEOUT_MS } from "../src/infrastructure/prodigi/prodigi-config.ts";
+import { parseOrderRecord, type OrderRecord } from "../src/domain/ordering/order-decision.ts";
+import { buildProdigiOrderBody, type OrderRecipient } from "../src/infrastructure/prodigi/prodigi-order.ts";
+import type { SendEmail } from "../src/domain/ordering/email.ts";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
-import { d1OrdersStore } from "../src/lib/orders-d1.ts";
+import { d1OrdersStore } from "../src/infrastructure/cloudflare/orders-d1.ts";
 import { sqliteD1 } from "./sqlite-d1.mts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 

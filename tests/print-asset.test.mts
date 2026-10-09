@@ -5,18 +5,18 @@ import {
   resolvePrintAssetStream,
   signPrintAssetUrl,
   verifyPrintAssetRequest,
-} from "../src/lib/print-asset.ts";
+} from "../src/application/fulfillment/print-asset.ts";
 import {
   PRINT_ASSET_SECRET_MIN_LENGTH,
   printAssetSecret,
-} from "../src/lib/config.ts";
-import { readWorkerBindings } from "../src/lib/worker-bindings.ts";
+} from "../src/infrastructure/config/config.ts";
+import { readWorkerBindings } from "../src/infrastructure/cloudflare/worker-bindings.ts";
 import {
   assertNoMasterLeak,
   buildProdigiOrderBody,
   type OrderRecipient,
-} from "../src/lib/prodigi-order.ts";
-import { hmacSha256Hex } from "../src/lib/crypto-hex.ts";
+} from "../src/infrastructure/prodigi/prodigi-order.ts";
+import { hmacSha256Hex } from "../src/domain/pricing/crypto-hex.ts";
 import {
   SAMPLE_MASTER_KEY,
   SAMPLE_SLUG,
@@ -366,7 +366,7 @@ test("the stream has exactly one gate: a key that is not a catalog master never 
 test("a future exp is accepted exactly up to TTL plus the skew pad, and no further", async () => {
   const nowMs = Date.parse("2026-09-28T12:00:00.000Z");
   const nowSec = Math.floor(nowMs / 1000);
-  // Mirrors CLOCK_SKEW_PAD_SECONDS in src/lib/print-asset.ts, which is
+  // Mirrors CLOCK_SKEW_PAD_SECONDS in src/application/fulfillment/print-asset.ts, which is
   // module-internal and so not importable here; a second spelling on purpose.
   const PAD = 300;
 

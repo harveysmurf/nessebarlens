@@ -8,7 +8,7 @@ import {
   writeCachedQuote,
   type CachedQuote,
   type QuoteCache,
-} from "../src/lib/quote-cache.ts";
+} from "../src/application/checkout/quote-cache.ts";
 
 const BASE = {
   format: "giclee" as const,

@@ -16,12 +16,12 @@ import fs from "node:fs";
 import path from "node:path";
 import test from "node:test";
 import ts from "typescript";
-import { MASTERS_BUCKET_NAME } from "../src/lib/derivative-ladder.ts";
-import { MASTERS_BUCKET, MASTER_MARKER } from "../src/lib/master-guard.ts";
-import { FILM_LOOKS } from "../src/lib/photo-schema.ts";
-import { filmLookClass } from "../src/lib/photos.ts";
-import { AWAITING_PRODIGI_REASON } from "../src/lib/order-decision.ts";
-import { ORDERS_STORE_UNAVAILABLE_ERROR } from "../src/lib/orders-store.ts";
+import { MASTERS_BUCKET_NAME } from "../src/domain/catalog/derivative-ladder.ts";
+import { MASTERS_BUCKET, MASTER_MARKER } from "../src/domain/catalog/master-guard.ts";
+import { FILM_LOOKS } from "../src/domain/catalog/photo-schema.ts";
+import { filmLookClass } from "../src/domain/catalog/photos.ts";
+import { AWAITING_PRODIGI_REASON } from "../src/domain/ordering/order-decision.ts";
+import { ORDERS_STORE_UNAVAILABLE_ERROR } from "../src/infrastructure/cloudflare/orders-store.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
@@ -205,14 +205,14 @@ test("the owned grammars are declared exactly once, in their owning module", () 
     // Owned by derivative-ladder.ts, not master-key.ts: the leaf module with
     // no imports is the one an ops script can load, so the grammar it needs
     // has to live there. master-key.ts re-exports it.
-    "/^[a-z0-9]+(?:-[a-z0-9]+)*$/": "src/lib/derivative-ladder.ts",
-    "/^[0-9a-f]{64}$/i": "src/lib/crypto-hex.ts",
-    "/^[A-Z]{2}$/": "src/lib/ship-to-countries.ts",
-    "/^https:\\/\\//i": "src/lib/url-patterns.ts",
+    "/^[a-z0-9]+(?:-[a-z0-9]+)*$/": "src/domain/catalog/derivative-ladder.ts",
+    "/^[0-9a-f]{64}$/i": "src/domain/pricing/crypto-hex.ts",
+    "/^[A-Z]{2}$/": "src/domain/pricing/ship-to-countries.ts",
+    "/^https:\\/\\//i": "src/domain/pricing/url-patterns.ts",
     // Owned by money.ts, the module parseEur reads with it: pricing.ts
     // re-exports the parse rather than restating the grammar, so this stays
     // the only declaration of "what a EUR amount looks like on the wire".
-    "/^(?:0|[1-9]\\d{0,5})(?:\\.\\d{1,2})?$/": "src/lib/money.ts",
+    "/^(?:0|[1-9]\\d{0,5})(?:\\.\\d{1,2})?$/": "src/domain/pricing/money.ts",
   };
   const found = regexLiterals();
   for (const [source, owner] of Object.entries(owners)) {
@@ -266,7 +266,7 @@ test("the master marker tracks the bucket name instead of re-spelling it", () =>
   );
   assert.deepEqual(
     declaring.map(relative).sort(),
-    ["src/lib/derivative-ladder.ts"],
+    ["src/domain/catalog/derivative-ladder.ts"],
     "masters bucket name spelled outside derivative-ladder.ts",
   );
 });
@@ -295,7 +295,7 @@ test("a film-look class is not re-spelled outside its owning module", () => {
   // All three classes, not just contrast: sepia and grayscale were duplicated
   // in the same two files, and a guard that covers only the instance you
   // happened to notice does not guard the class of bug.
-  const OWNER = "src/lib/photos.ts";
+  const OWNER = "src/domain/catalog/photos.ts";
   const owners: string[] = [];
   const offenders: string[] = [];
   for (const file of sourceFiles(path.join(root, "src"))) {
@@ -348,7 +348,7 @@ test("filmLookClass is never called with a spelled-out look name", () => {
   // The only legal argument is photo.filmLook.
   const offenders: string[] = [];
   for (const file of sourceFiles(path.join(root, "src"))) {
-    if (relative(file) === "src/lib/photos.ts") {
+    if (relative(file) === "src/domain/catalog/photos.ts") {
       // The owner: FILM_LOOK_CLASS's keys are the legal spellings, and a
       // non-literal there is a compile error, not a duplication.
       continue;
@@ -405,14 +405,14 @@ test("the MASTERS storage shape is declared once and both readers import it", ()
   for (const name of ["MastersBucket", "MasterObject"]) {
     const sites = shapes.get(name) ?? [];
     assert.equal(sites.length, 1, `${name} declared ${sites.length} times`);
-    assert.equal(sites[0]!.file, "src/lib/master-key.ts", name);
+    assert.equal(sites[0]!.file, "src/domain/catalog/master-key.ts", name);
   }
   for (const reader of [
-    "src/lib/order-decision.ts",
-    "src/lib/print-asset.ts",
+    "src/domain/ordering/order-decision.ts",
+    "src/application/fulfillment/print-asset.ts",
   ]) {
     const src = fs.readFileSync(path.join(root, reader), "utf8");
-    assert.match(src, /from "\.\/master-key"/, reader);
+    assert.match(src, /from "[^"]*master-key"/, reader);
   }
 });
 
@@ -424,7 +424,7 @@ test("no module re-exports a single-source constant under a second name", () => 
   // alias can take: `export const X = SOME_CONST` and
   // `export { SOME_CONST as X }`.
   const GUARDED: Record<string, string> = {
-    DEFAULT_SHIPPING_COUNTRY: "src/lib/ship-to-countries.ts",
+    DEFAULT_SHIPPING_COUNTRY: "src/domain/pricing/ship-to-countries.ts",
   };
   const offenders: string[] = [];
   for (const file of allSourceFiles()) {
@@ -490,7 +490,7 @@ test("the awaiting-prodigi reason marker is spelled once, in order-decision.ts",
   // cannot see that — before the drift both sides are correct — so pin the
   // spelling itself: exactly one literal in src/, and it is the one the
   // constant holds.
-  const OWNER = "src/lib/order-decision.ts";
+  const OWNER = "src/domain/ordering/order-decision.ts";
   // Imported, not re-typed: the guard has to track whatever the constant is
   // called now, and a hand-written name here would drift into a test that
   // passes because it guarded a spelling nobody uses.
@@ -551,7 +551,7 @@ test("the awaiting-prodigi reason marker is spelled once, in order-decision.ts",
     owned.length >= 1,
     `expected the writer to use ${NAME}, saw ${owned.length}`,
   );
-  const READER = "src/lib/fulfillment.ts";
+  const READER = "src/application/fulfillment/fulfillment.ts";
   assert.ok(
     uses.some((u) => u.startsWith(`${READER}:`)),
     `expected the Prodigi trigger in ${READER} to use ${NAME}`,
@@ -566,7 +566,7 @@ test("the two body rejections stay one literal each, and stay different", () => 
   // that owns both parsers. A re-inline in the other parser fails here.
   assert.deepEqual(
     at("Invalid JSON body").map((s) => s.file),
-    ["src/lib/checkout-body.ts"],
+    ["src/domain/ordering/checkout-body.ts"],
   );
 
   // A body that would not parse at all is a different rejection and a different
@@ -574,7 +574,7 @@ test("the two body rejections stay one literal each, and stay different", () => 
   // which of the two happened.
   assert.deepEqual(
     at("Invalid JSON").map((s) => s.file),
-    ["src/lib/json-body.ts"],
+    ["src/infrastructure/config/json-body.ts"],
   );
 });
 
@@ -590,7 +590,7 @@ test("the orders-store rejection is spelled once, in orders-store.ts", () => {
   );
   assert.deepEqual(
     sites.map((s) => s.file),
-    ["src/lib/orders-store.ts"],
+    ["src/infrastructure/cloudflare/orders-store.ts"],
     `"${ORDERS_STORE_UNAVAILABLE_ERROR}" spelled outside its owner: ${sites
       .map((s) => `${s.file}:${s.line}`)
       .join(", ")}`,
@@ -613,7 +613,7 @@ test("no module re-exports a symbol it does not define", () => {
   // map of file -> the single module that file may re-export from, so a
   // second path out of any other file still fails below.
   const ALLOWED: Record<string, readonly string[]> = {
-    "src/lib/pricing.ts": ["./money"],
+    "src/domain/pricing/pricing.ts": ["./money"],
   };
   const offenders: string[] = [];
   for (const file of allSourceFiles()) {
@@ -656,7 +656,7 @@ test("no module re-exports a symbol it does not define", () => {
   // Non-vacuous in the direction the exception points: if pricing.ts stopped
   // re-exporting from money.ts, the allowance above would be a hole instead of
   // a description of one deliberate second path.
-  const pricing = fs.readFileSync(path.join(root, "src/lib/pricing.ts"), "utf8");
+  const pricing = fs.readFileSync(path.join(root, "src/domain/pricing/pricing.ts"), "utf8");
   assert.match(
     pricing,
     /export \{[^}]*parseEurAmount[^}]*\} from "\.\/money"/,
@@ -704,7 +704,7 @@ test("no comment narrates change history instead of an invariant", () => {
 });
 
 test("the pure half of fulfillment reaches no effect", () => {
-  // #148 split src/lib/fulfillment.ts on the pure-vs-effects seam: order-decision
+  // #148 split src/application/fulfillment/fulfillment.ts on the pure-vs-effects seam: order-decision
   // answers what an order *means*, fulfillment reaches for KV and Prodigi. The
   // seam is only worth having if it holds — a single `createProdigiOrder` call
   // inside the pure half makes every decision rule untestable without a stub
@@ -725,8 +725,8 @@ test("the pure half of fulfillment reaches no effect", () => {
   // and shapes are what the pure half is for.
   const BANNED_MODULES = new Set(["./prodigi-order", "./worker-bindings"]);
   const source = ts.createSourceFile(
-    path.join(root, "src/lib/order-decision.ts"),
-    fs.readFileSync(path.join(root, "src/lib/order-decision.ts"), "utf8"),
+    path.join(root, "src/domain/ordering/order-decision.ts"),
+    fs.readFileSync(path.join(root, "src/domain/ordering/order-decision.ts"), "utf8"),
     ts.ScriptTarget.Latest,
     true,
   );
@@ -767,7 +767,7 @@ test("the pure half of fulfillment reaches no effect", () => {
   // still contain them, or this test would stay green after a move that emptied
   // the orchestrator.
   const effects = fs.readFileSync(
-    path.join(root, "src/lib/fulfillment.ts"),
+    path.join(root, "src/application/fulfillment/fulfillment.ts"),
     "utf8",
   );
   assert.match(effects, /createProdigiOrder/, "fulfillment must call Prodigi");
@@ -798,7 +798,7 @@ test("the pure half is importable with no bindings, KV or Prodigi available", as
     ]) {
       delete process.env[key];
     }
-    const mod = await import("../src/lib/order-decision.ts");
+    const mod = await import("../src/domain/ordering/order-decision.ts");
     assert.equal(typeof mod.decideFulfillment, "function");
     assert.equal(typeof mod.parseOrderRecord, "function");
     assert.equal(typeof mod.orderViewState, "function");

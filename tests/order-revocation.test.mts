@@ -20,7 +20,7 @@ import {
   isRevoked,
   parseOrderRecord,
   resolveDownload,
-} from "../src/lib/order-decision.ts";
+} from "../src/domain/ordering/order-decision.ts";
 import {
   isChargeId,
   isPaymentIntentId,
@@ -28,8 +28,8 @@ import {
   paymentIntentForDispute,
   revokeOrderByPaymentIntent,
   type StripeSessionLookup,
-} from "../src/lib/order-revocation.ts";
-import type { CancelProdigiOrder } from "../src/lib/prodigi-cancel.ts";
+} from "../src/application/fulfillment/order-revocation.ts";
+import type { CancelProdigiOrder } from "../src/infrastructure/prodigi/prodigi-cancel.ts";
 import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 
 const SESSION = "cs_test_abcdefgh";
@@ -529,7 +529,7 @@ test("the default lookup asks Stripe for the session the payment came from", asy
     throw new Error(`unexpected fetch: ${target}`);
   }) as typeof fetch;
   try {
-    const { defaultStripeLookup } = await import("../src/lib/order-revocation.ts");
+    const { defaultStripeLookup } = await import("../src/application/fulfillment/order-revocation.ts");
     const live = defaultStripeLookup();
     assert.equal(await live.findSessionIdByPaymentIntent(INTENT), SESSION);
     assert.ok(

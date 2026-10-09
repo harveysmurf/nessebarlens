@@ -27,7 +27,7 @@
   // is a build artifact: `next build` type-checks before OpenNext generates it,
   // and a relative `declare module` cannot stand in for an unresolved relative
   // specifier. Its behaviour is pinned by `tests/reconcile-cron.test.mts`
-  // instead, and `src/lib/reconcile-cron.ts` — where the cron logic actually
+  // instead, and `src/infrastructure/cloudflare/reconcile-cron.ts` — where the cron logic actually
   // lives — stays typechecked and covered.
   "exclude": ["node_modules", "tests", "worker.ts"]
 }

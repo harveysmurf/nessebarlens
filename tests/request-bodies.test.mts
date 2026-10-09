@@ -1,13 +1,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { parseCheckoutBody, parseQuoteBody } from "../src/lib/checkout-body.ts";
-import { checkoutRequest, quoteRequest } from "../src/lib/request-bodies.ts";
+import { parseCheckoutBody, parseQuoteBody } from "../src/domain/ordering/checkout-body.ts";
+import { checkoutRequest, quoteRequest } from "../src/domain/ordering/request-bodies.ts";
 import {
   FRAME_FINISHES,
   PHYSICAL_FORMATS,
   PRINT_SIZES,
-} from "../src/lib/sku-map.ts";
-import { SHIP_TO_COUNTRIES } from "../src/lib/ship-to-countries.ts";
+} from "../src/domain/pricing/sku-map.ts";
+import { SHIP_TO_COUNTRIES } from "../src/domain/pricing/ship-to-countries.ts";
 
 const SLUG = "saint-spiridov";
 const SIZE = PRINT_SIZES[0];

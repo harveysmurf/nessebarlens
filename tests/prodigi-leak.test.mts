@@ -1,11 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PHOTOS } from "../src/lib/photos.ts";
+import { PHOTOS } from "../src/domain/catalog/photos.ts";
 import {
   assertNoMasterLeak,
   buildProdigiOrderBody,
   type OrderRecipient,
-} from "../src/lib/prodigi-order.ts";
+} from "../src/infrastructure/prodigi/prodigi-order.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 /* What may not leave the Worker. A master JPEG key in the Prodigi payload

@@ -8,7 +8,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { MASTERS_BUCKET_NAME } from "../src/lib/derivative-ladder.ts";
+import { MASTERS_BUCKET_NAME } from "../src/domain/catalog/derivative-ladder.ts";
 import {
   createMastersS3,
   main,

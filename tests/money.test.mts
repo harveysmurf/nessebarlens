@@ -5,8 +5,8 @@ import {
   eurToCents,
   parseEur,
   parseEurAmount,
-} from "../src/lib/money.ts";
-import * as pricing from "../src/lib/pricing.ts";
+} from "../src/domain/pricing/money.ts";
+import * as pricing from "../src/domain/pricing/pricing.ts";
 
 test("parseEur reads every amount the grammar admits", () => {
   for (const raw of ["0", "12.5", "12.50", "123456.78"]) {

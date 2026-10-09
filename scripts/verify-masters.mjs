@@ -39,8 +39,8 @@ import {
   MASTER_SHA256_PATTERN,
   MASTERS_BUCKET_NAME,
   masterKeyFromSlug,
-} from "../src/lib/derivative-ladder.ts";
-import { PHOTOS } from "../src/generated/catalog.ts";
+} from "../src/domain/catalog/derivative-ladder";
+import { PHOTOS } from "../src/generated/catalog";
 
 /** The S3 user-metadata key that carries the master's SHA-256. */
 const MASTER_METADATA_KEY = "sha256";

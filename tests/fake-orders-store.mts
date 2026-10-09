@@ -11,18 +11,18 @@ import {
   parseOrderRecord,
   type OrderRecord,
   type OrderStatus,
-} from "../src/lib/order-decision.ts";
+} from "../src/domain/ordering/order-decision.ts";
 import {
   parseDownloadTokenRecord,
   type DownloadTokenIndex,
   type DownloadTokenRecord,
-} from "../src/lib/download-token.ts";
+} from "../src/application/fulfillment/download-token.ts";
 import {
   clampOrderListLimit,
   type OrderStatusFilter,
   type OrdersStore,
-} from "../src/lib/orders-store.ts";
-import { DOWNLOAD_TOKEN_MAX_DOWNLOADS } from "../src/lib/download-token.ts";
+} from "../src/infrastructure/cloudflare/orders-store.ts";
+import { DOWNLOAD_TOKEN_MAX_DOWNLOADS } from "../src/application/fulfillment/download-token.ts";
 
 export type MemoryOrdersStore = OrdersStore & {
   /** Session ids written by putOrder / transitionOrder, for assertions. */

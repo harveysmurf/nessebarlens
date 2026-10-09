@@ -35,32 +35,32 @@ test("the resolve hook is the only thing in the loader chain", async () => {
 
 test("a relative import specifier inside a string literal is never rewritten", async () => {
   // The bug this guards: a regex rewrite over transpiled output turned this
-  // literal's "./pricing" into "./pricing.ts", so a source-grep guard failed for
+  // literal's specifier into "./pricing.ts", so a source-grep guard failed for
   // a reason unrelated to the code under test. Nothing rewrites text now, so
   // the needle a guard holds has to match the file on disk verbatim.
-  const quote = await readFile(path.join(SRC, "lib/prodigi-quote.ts"), "utf8");
-  assert.equal(quote.includes(`from "${"."}/pricing"`), true);
-  assert.equal(quote.includes(`from "${"."}/pricing.ts"`), false);
+  const quote = await readFile(path.join(SRC, "infrastructure/prodigi/prodigi-quote.ts"), "utf8");
+  assert.equal(quote.includes(`from "../../domain/pricing/pricing"`), true);
+  assert.equal(quote.includes(`from "../../domain/pricing/pricing.ts"`), false);
 });
 
 test("the extensionless specifier the resolve hook exists for still resolves", async () => {
   const fulfillment = await readFile(
-    path.join(SRC, "lib/fulfillment.ts"),
+    path.join(SRC, "application/fulfillment/fulfillment.ts"),
     "utf8",
   );
   assert.equal(
-    fulfillment.includes(`from "${"."}/pricing"`),
+    fulfillment.includes(`from "../../domain/pricing/pricing"`),
     true,
     "source keeps the extensionless specifier",
   );
-  const pricing = await import("../src/lib/pricing.ts");
+  const pricing = await import("../src/domain/pricing/pricing.ts");
   assert.equal(typeof pricing.PRODIGI_MARGIN, "number");
 });
 
 test("every src file is erasable-syntax only, so node can strip it itself", async () => {
-  // TypeScript compiles enums, namespaces and constructor parameter
-  // properties, which node's type stripping refuses at runtime. Nothing in the
-  // suite imports src/lib from app/ or components/ yet, so tsc is not a
+  // every src file is erasable-syntax only, so node can strip it itself. (TypeScript compiles
+  // enums, namespaces and constructor parameter properties, which node's type stripping refuses
+  // at runtime.) Nothing in the suite imports from app/ or components/ yet, so tsc is not a
   // guarantee for those files — this is.
   const banned = [
     [/^\s*export\s+(const\s+)?enum\s/m, "enum"],

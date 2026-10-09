@@ -1,5 +1,5 @@
 /**
- * src/lib/config.ts — the one place environment is read (#119).
+ * src/infrastructure/config/config.ts — the one place environment is read (#119).
  *
  * Most of this module's behaviour is already pinned where its consumers are
  * (print-asset's min-length rule, the site-url fallback, the Prodigi
@@ -32,7 +32,7 @@ import {
   stripeSecretKey,
   usablePrintAssetSecret,
   webImagesBase,
-} from "../src/lib/config.ts";
+} from "../src/infrastructure/config/config.ts";
 
 const SANDBOX = "https://api.sandbox.prodigi.com";
 const LIVE = "https://api.prodigi.com";

@@ -4,8 +4,8 @@ import {
   resolveCheckoutDownloadLink,
   resolveCheckoutPageState,
 } from "./order-state";
-import { getConfig } from "@/lib/config";
-import { orderReference } from "@/lib/order-reference";
+import { getConfig } from "@/infrastructure/config/config";
+import { orderReference } from "@/domain/ordering/order-reference";
 
 export default async function CheckoutSuccessPage({
   searchParams,

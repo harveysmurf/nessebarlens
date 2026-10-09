@@ -1,12 +1,12 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { fulfillCheckoutSession } from "../src/lib/fulfillment.ts";
-import type { OrdersStore } from "../src/lib/orders-store.ts";
+import { fulfillCheckoutSession } from "../src/application/fulfillment/fulfillment.ts";
+import type { OrdersStore } from "../src/infrastructure/cloudflare/orders-store.ts";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
 import {
   parseRecipient,
   type StripeShippingDetails,
-} from "../src/lib/order-decision.ts";
+} from "../src/domain/ordering/order-decision.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 /* The last edges the report could still name. Each is a branch production takes

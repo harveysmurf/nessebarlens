@@ -5,7 +5,7 @@ import {
   filmLookClass,
   isFilmPhoto,
   photosByCategory,
-} from "@/lib/photos";
+} from "@/domain/catalog/photos";
 
 const CATEGORIES = [
   {

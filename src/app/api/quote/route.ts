@@ -1,10 +1,10 @@
 import { NextResponse } from "next/server";
-import { readJsonBody } from "@/lib/json-body";
-import { parseQuoteBody } from "@/lib/checkout-body";
-import { DEFAULT_SHIPPING_COUNTRY } from "@/lib/ship-to-countries";
-import { quotePhysical } from "@/lib/prodigi-quote";
-import { prodigiFailureFrom } from "@/lib/prodigi-config";
-import { readCachedQuote, writeCachedQuote } from "@/lib/quote-cache";
+import { readJsonBody } from "@/infrastructure/config/json-body";
+import { parseQuoteBody } from "@/domain/ordering/checkout-body";
+import { DEFAULT_SHIPPING_COUNTRY } from "@/domain/pricing/ship-to-countries";
+import { quotePhysical } from "@/infrastructure/prodigi/prodigi-quote";
+import { prodigiFailureFrom } from "@/infrastructure/prodigi/prodigi-config";
+import { readCachedQuote, writeCachedQuote } from "@/application/checkout/quote-cache";
 
 export async function POST(request: Request) {
   const body = await readJsonBody(request);

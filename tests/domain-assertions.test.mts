@@ -25,7 +25,7 @@ const root = path.join(import.meta.dirname, "..");
 // routes cast Stripe's own event objects, which are not this repo's domain
 // values and are deliberately out of scope.
 const DOMAIN_FILES = [
-  "src/lib/fulfillment.ts",
+  "src/application/fulfillment/fulfillment.ts",
   "src/app/api/quote/route.ts",
   "src/app/api/checkout/route.ts",
 ];

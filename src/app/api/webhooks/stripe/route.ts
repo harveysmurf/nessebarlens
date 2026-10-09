@@ -1,24 +1,24 @@
 import { NextResponse } from "next/server";
-import { fulfillCheckoutSession } from "@/lib/fulfillment";
-import { getConfig, siteUrl } from "@/lib/config";
-import { sendEmailFromApiKey } from "@/lib/email";
+import { fulfillCheckoutSession } from "@/application/fulfillment/fulfillment";
+import { getConfig, siteUrl } from "@/infrastructure/config/config";
+import { sendEmailFromApiKey } from "@/domain/ordering/email";
 import {
   defaultStripeLookup,
   paymentIntentForDispute,
   revokeOrderByPaymentIntent,
-} from "@/lib/order-revocation";
+} from "@/application/fulfillment/order-revocation";
 import {
   ORDERS_STORE_UNAVAILABLE_ERROR,
   ORDERS_STORE_UNAVAILABLE_STATUS,
-} from "@/lib/orders-store";
-import { sessionOriginCheck } from "@/lib/stripe-event";
-import { paymentGateway } from "@/lib/container";
+} from "@/infrastructure/cloudflare/orders-store";
+import { sessionOriginCheck } from "@/infrastructure/stripe/stripe-event";
+import { paymentGateway } from "@/infrastructure/container";
 import {
   fulfillmentInputFromSession,
   type PaymentEvent,
-} from "@/lib/payment-gateway";
-import { readWorkerBindings } from "@/lib/worker-bindings";
-import type { OrdersStore } from "@/lib/orders-store";
+} from "@/application/checkout/payment-gateway";
+import { readWorkerBindings } from "@/infrastructure/cloudflare/worker-bindings";
+import type { OrdersStore } from "@/infrastructure/cloudflare/orders-store";
 
 export const dynamic = "force-dynamic";
 // OpenNext runs this inside the Worker via nodejs_compat. Not a separate Node server.

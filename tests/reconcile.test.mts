@@ -7,10 +7,10 @@ import {
   RECONCILE_STUCK_HOURS,
   type ReconcileSession,
   type ReconcileStripe,
-} from "../src/lib/reconcile.ts";
+} from "../src/application/fulfillment/reconcile.ts";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
-import { parseOrderRecord, type OrderRecord } from "../src/lib/order-decision.ts";
-import type { CreateProdigiOrder } from "../src/lib/prodigi-order.ts";
+import { parseOrderRecord, type OrderRecord } from "../src/domain/ordering/order-decision.ts";
+import type { CreateProdigiOrder } from "../src/infrastructure/prodigi/prodigi-order.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const NOW = Date.parse("2026-10-03T00:00:00.000Z");

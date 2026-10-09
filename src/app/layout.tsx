@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
-import { configuredSiteUrl } from "@/lib/config";
+import { configuredSiteUrl } from "@/infrastructure/config/config";
 import "./globals.css";
 
 const cormorant = localFont({

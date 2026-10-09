@@ -1,7 +1,7 @@
 import { PhotoCard } from "@/components/PhotoCard";
-import type { Photo } from "@/lib/photos";
-import { photosByCategory } from "@/lib/photos";
-import type { PhotoCategory } from "@/lib/photo-schema";
+import type { Photo } from "@/domain/catalog/photos";
+import { photosByCategory } from "@/domain/catalog/photos";
+import type { PhotoCategory } from "@/domain/catalog/photo-schema";
 
 const META: Record<
   PhotoCategory,

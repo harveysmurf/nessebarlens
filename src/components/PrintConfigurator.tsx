@@ -6,15 +6,15 @@ import {
   isShipToCountryCode,
   SHIP_TO_COUNTRIES,
   type ShipToCountryCode,
-} from "@/lib/ship-to-countries";
+} from "@/domain/pricing/ship-to-countries";
 import {
   DIGITAL_PRICE_EUR,
   formatLabel,
   type FrameFinish,
   type PrintFormat,
   type PrintSize,
-} from "@/lib/pricing";
-import { checkoutRequest, quoteRequest } from "@/lib/request-bodies";
+} from "@/domain/pricing/pricing";
+import { checkoutRequest, quoteRequest } from "@/domain/ordering/request-bodies";
 import {
   CONFIGURATOR_FORMATS,
   CONFIGURATOR_FRAMES,
@@ -22,15 +22,15 @@ import {
   DEFAULT_FRAME_FINISH,
   DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
-} from "@/lib/print-copy";
+} from "@/domain/ordering/print-copy";
 import {
   checkoutUrl,
   isLiveQuote,
   readJsonResponse,
   requestErrorMessage,
   type LiveQuote,
-} from "@/lib/api-payloads";
-import { isFrameFinishValue, isPrintSize } from "@/lib/sku-map";
+} from "@/application/checkout/api-payloads";
+import { isFrameFinishValue, isPrintSize } from "@/domain/pricing/sku-map";
 
 export function PrintConfigurator({
   photoSlug,

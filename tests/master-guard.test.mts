@@ -1,20 +1,20 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { MASTERS_BUCKET, referencesMasters } from "../src/lib/master-guard.ts";
+import { MASTERS_BUCKET, referencesMasters } from "../src/domain/catalog/master-guard.ts";
 import {
   MASTERS_BUCKET_NAME,
   PHOTO_SLUG_PATTERN,
   isMasterKey,
-} from "../src/lib/derivative-ladder.ts";
-import { assertNoMasterLeak } from "../src/lib/prodigi-order.ts";
+} from "../src/domain/catalog/derivative-ladder.ts";
+import { assertNoMasterLeak } from "../src/infrastructure/prodigi/prodigi-order.ts";
 import {
   decideFulfillment,
   parseOrderRecord,
   resolveDownload,
-} from "../src/lib/order-decision.ts";
-import { masterKeyForSlug } from "../src/lib/master-key.ts";
-import { isPhotoSlug } from "../src/lib/print-asset.ts";
-import { PHOTOS, getPhoto } from "../src/lib/photos.ts";
+} from "../src/domain/ordering/order-decision.ts";
+import { masterKeyForSlug } from "../src/domain/catalog/master-key.ts";
+import { isPhotoSlug } from "../src/application/fulfillment/print-asset.ts";
+import { PHOTOS, getPhoto } from "../src/domain/catalog/photos.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const SESSION = "cs_test_12345678abcd";

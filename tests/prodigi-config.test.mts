@@ -12,8 +12,8 @@ import {
   prodigiKeyConfigured,
   prodigiUrl,
   readProdigiConfig,
-} from "../src/lib/prodigi-config.ts";
-import { isRetryableProdigiReason } from "../src/lib/prodigi-policy.ts";
+} from "../src/infrastructure/prodigi/prodigi-config.ts";
+import { isRetryableProdigiReason } from "../src/domain/ordering/prodigi-policy.ts";
 
 /**
  * Every variable prodigi-config reads. Its readers layer the passed env over
@@ -238,7 +238,7 @@ test("no Prodigi module classifies a failure by matching its message text", () =
   // the Prodigi modules may still compare a message string to a config message.
   // The removed predicate and its status sibling must be gone, and the URL
   // builder must exist in their place.
-  const root = path.join(import.meta.dirname, "..", "src", "lib");
+  const root = path.join(import.meta.dirname, "..", "src", "infrastructure", "prodigi");
   for (const rel of ["prodigi-config.ts", "prodigi-quote.ts", "prodigi-order.ts"]) {
     const src = fs.readFileSync(path.join(root, rel), "utf8");
     assert.equal(

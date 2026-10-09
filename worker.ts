@@ -17,14 +17,14 @@
 // stand in for an unresolved relative specifier, and `next build` type-checks
 // before OpenNext generates the file. `tsc --noEmit` therefore does not cover
 // this wrapper; its wiring is pinned by tests/reconcile-cron.test.mts, and the
-// cron logic it delegates to (src/lib/reconcile-cron.ts) is fully typechecked.
+// cron logic it delegates to (src/infrastructure/cloudflare/reconcile-cron.ts) is fully typechecked.
 import handler from "./.open-next/worker.js";
 
 import {
   runReconcileCron,
   type ReconcileCronContext,
   type ScheduledEvent,
-} from "./src/lib/reconcile-cron";
+} from "./src/infrastructure/cloudflare/reconcile-cron";
 
 export {
   DOQueueHandler,

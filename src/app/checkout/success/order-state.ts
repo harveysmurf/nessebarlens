@@ -2,10 +2,10 @@ import {
   isCheckoutSessionId,
   orderViewState,
   type OrderViewState,
-} from "@/lib/order-decision";
-import { readOrderRecord } from "@/lib/order-corrupt";
-import { downloadLinkForSession } from "@/lib/download-token";
-import { readWorkerBindings } from "@/lib/worker-bindings";
+} from "@/domain/ordering/order-decision";
+import { readOrderRecord } from "@/domain/ordering/order-corrupt";
+import { downloadLinkForSession } from "@/application/fulfillment/download-token";
+import { readWorkerBindings } from "@/infrastructure/cloudflare/worker-bindings";
 
 /**
  * The order state the success page renders from, widened with the two cases

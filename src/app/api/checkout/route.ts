@@ -1,22 +1,22 @@
 import { NextResponse } from "next/server";
-import { readJsonBody } from "@/lib/json-body";
-import { parseCheckoutBody } from "@/lib/checkout-body";
+import { readJsonBody } from "@/infrastructure/config/json-body";
+import { parseCheckoutBody } from "@/domain/ordering/checkout-body";
 import {
   DEFAULT_SHIPPING_COUNTRY,
   type ShipToCountryCode,
-} from "@/lib/ship-to-countries";
-import { getPhoto } from "@/lib/photos";
+} from "@/domain/pricing/ship-to-countries";
+import { getPhoto } from "@/domain/catalog/photos";
 import {
   DIGITAL_PRICE_EUR,
   type FrameFinish,
   type PrintSize,
-} from "@/lib/pricing";
-import { webDerivativeUrls } from "@/lib/derivatives";
-import { prodigiFailureFrom } from "@/lib/prodigi-config";
-import { canSignMasterAsset } from "@/lib/print-asset";
-import { isConfiguredSiteUrl, siteUrl } from "@/lib/config";
-import { paymentGateway, printProvider } from "@/lib/container";
-import type { CheckoutIntent } from "@/lib/payment-gateway";
+} from "@/domain/pricing/pricing";
+import { webDerivativeUrls } from "@/infrastructure/media/derivatives";
+import { prodigiFailureFrom } from "@/infrastructure/prodigi/prodigi-config";
+import { canSignMasterAsset } from "@/application/fulfillment/print-asset";
+import { isConfiguredSiteUrl, siteUrl } from "@/infrastructure/config/config";
+import { paymentGateway, printProvider } from "@/infrastructure/container";
+import type { CheckoutIntent } from "@/application/checkout/payment-gateway";
 
 export async function POST(request: Request) {
   const body = await readJsonBody(request);

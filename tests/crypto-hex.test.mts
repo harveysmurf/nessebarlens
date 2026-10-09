@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { hmacSha256Hex, timingSafeEqualHex, timingSafeEqualString } from "../src/lib/crypto-hex.ts";
+import { hmacSha256Hex, timingSafeEqualHex, timingSafeEqualString } from "../src/domain/pricing/crypto-hex.ts";
 
 test("hmacSha256Hex is stable and hex-encoded", async () => {
   const a = await hmacSha256Hex("hello", "secret");

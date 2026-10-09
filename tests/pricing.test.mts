@@ -8,8 +8,8 @@ import {
   merchandiseFromUnitCost,
   parseEurAmount,
   sizeLabel,
-} from "../src/lib/pricing.ts";
-import { PRINT_SIZES, SELLABLE_FORMATS } from "../src/lib/sku-map.ts";
+} from "../src/domain/pricing/pricing.ts";
+import { PRINT_SIZES, SELLABLE_FORMATS } from "../src/domain/pricing/sku-map.ts";
 
 test("merchandise applies the margin and rounds to cents", () => {
   assert.equal(merchandiseFromUnitCost(10), 12);

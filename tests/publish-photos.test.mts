@@ -16,7 +16,7 @@ import {
   WEB_BUCKET_NAME,
   WEB_DERIVATIVE_WIDTHS,
   sha256Hex,
-} from "../src/lib/derivative-ladder.ts";
+} from "../src/domain/catalog/derivative-ladder.ts";
 import {
   branchName,
   createS3,

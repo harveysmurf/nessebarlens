@@ -2,7 +2,7 @@ import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PrintConfigurator } from "@/components/PrintConfigurator";
 import { WebPhoto } from "@/components/WebPhoto";
-import { categoryHref, filmLookClass, getPhoto, PHOTOS } from "@/lib/photos";
+import { categoryHref, filmLookClass, getPhoto, PHOTOS } from "@/domain/catalog/photos";
 
 export function generateStaticParams() {
   return PHOTOS.map((p) => ({ slug: p.slug }));

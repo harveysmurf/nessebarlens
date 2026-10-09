@@ -18,10 +18,10 @@ import {
   createProdigiOrder,
   isForeignOrder,
   prodigiIdempotencyKey,
-} from "../src/lib/prodigi-order.ts";
-import { prodigiWebhookToken } from "../src/lib/config.ts";
-import { sessionOriginCheck } from "../src/lib/stripe-event.ts";
-import type { OrderRecipient } from "../src/lib/prodigi-order.ts";
+} from "../src/infrastructure/prodigi/prodigi-order.ts";
+import { prodigiWebhookToken } from "../src/infrastructure/config/config.ts";
+import { sessionOriginCheck } from "../src/infrastructure/stripe/stripe-event.ts";
+import type { OrderRecipient } from "../src/infrastructure/prodigi/prodigi-order.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const SANDBOX = "https://api.sandbox.prodigi.com";

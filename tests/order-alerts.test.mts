@@ -12,14 +12,14 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
-import { fulfillCheckoutSession } from "../src/lib/fulfillment.ts";
+import { fulfillCheckoutSession } from "../src/application/fulfillment/fulfillment.ts";
 import {
   AWAITING_PRODIGI_REASON,
   isUnfulfilledOutcome,
   type OrderRecord,
   type StripeShippingDetails,
-} from "../src/lib/order-decision.ts";
-import type { CreateProdigiOrder } from "../src/lib/prodigi-order.ts";
+} from "../src/domain/ordering/order-decision.ts";
+import type { CreateProdigiOrder } from "../src/infrastructure/prodigi/prodigi-order.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const SESSION = "cs_test_abcdefgh";

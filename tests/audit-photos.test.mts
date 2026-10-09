@@ -16,7 +16,7 @@ import {
   WEB_DERIVATIVE_FORMATS,
   WEB_DERIVATIVE_WIDTHS,
   webDerivativeKey,
-} from "../src/lib/derivative-ladder.ts";
+} from "../src/domain/catalog/derivative-ladder.ts";
 import {
   AUDIT_CATEGORIES,
   auditFindings,

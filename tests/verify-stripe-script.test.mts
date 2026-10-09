@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { STRIPE_API_VERSION as APP_API_VERSION } from "../src/lib/stripe.ts";
+import { STRIPE_API_VERSION as APP_API_VERSION } from "../src/infrastructure/stripe/stripe.ts";
 import {
   STRIPE_API_VERSION,
   disputeChargeId,

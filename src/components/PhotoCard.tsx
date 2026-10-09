@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { filmLookClass, isFilmPhoto, type Photo } from "@/lib/photos";
+import { filmLookClass, isFilmPhoto, type Photo } from "@/domain/catalog/photos";
 import { WebPhoto } from "@/components/WebPhoto";
 
 export function PhotoCard({ photo }: { photo: Photo }) {

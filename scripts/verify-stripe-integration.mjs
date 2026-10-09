@@ -176,7 +176,7 @@ async function disputeForCharge(stripe, chargeId) {
 }
 
 /**
- * The API version the app pins in src/lib/stripe.ts. This check exists to prove
+ * The API version the app pins in src/infrastructure/stripe/stripe.ts. This check exists to prove
  * the shapes the app depends on, so it must ask for the same version the app
  * does; tests/verify-stripe-script.test.mts holds the two together.
  */

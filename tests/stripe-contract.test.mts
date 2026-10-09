@@ -6,14 +6,14 @@ import { afterEach, beforeEach, test } from "node:test";
 import Stripe from "stripe";
 import { memoryOrdersStore } from "./fake-orders-store.mts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
-import { decideFulfillment, parseOrderRecord } from "../src/lib/order-decision.ts";
+import { decideFulfillment, parseOrderRecord } from "../src/domain/ordering/order-decision.ts";
 import {
   paymentIntentForDispute,
   revokeOrderByPaymentIntent,
   type StripeSessionLookup,
-} from "../src/lib/order-revocation.ts";
-import { readStripeEvent, type StripeCheckoutSession } from "../src/lib/stripe-event.ts";
-import { STRIPE_API_VERSION } from "../src/lib/stripe.ts";
+} from "../src/application/fulfillment/order-revocation.ts";
+import { readStripeEvent, type StripeCheckoutSession } from "../src/infrastructure/stripe/stripe-event.ts";
+import { STRIPE_API_VERSION } from "../src/infrastructure/stripe/stripe.ts";
 import {
   pickCheckoutEvent,
   pickEvent,
@@ -37,7 +37,7 @@ import {
      - the fixtures all share the webhook endpoint's API version.
 
    Compile-time shape checks against the SDK types live in
-   src/lib/stripe-event.ts and run under `npm run typecheck`.
+   src/infrastructure/stripe/stripe-event.ts and run under `npm run typecheck`.
 
    The fixtures are real sandbox captures, scrubbed of personal data by
    `node scripts/capture-stripe-fixtures.mjs` (see tests/fixtures/stripe/README.md). */
@@ -45,7 +45,7 @@ import {
 /* The API version the webhook payloads are rendered at. Stripe renders an event
    at the webhook ENDPOINT's API version, falling back to the account default;
    the staging endpoint has api_version null, so it follows the account default.
-   The client pin STRIPE_API_VERSION (src/lib/stripe.ts) only governs API
+   The client pin STRIPE_API_VERSION (src/infrastructure/stripe/stripe.ts) only governs API
    requests, so it need not equal this. Changing this is a Stripe-dashboard
    decision; when it changes, re-capture the fixtures and update this constant. */
 const WEBHOOK_API_VERSION = "2026-08-26.dahlia";
@@ -66,7 +66,7 @@ globals.__buzzBindings = { prodigiKeyConfigured: false };
 // substituted; the route and everything under it is the real source.
 registerHooks({
   resolve(specifier, context, nextResolve) {
-    if (specifier === "@/lib/worker-bindings") {
+    if (specifier === "@/infrastructure/cloudflare/worker-bindings") {
       return { url: FAKE, format: "module", shortCircuit: true };
     }
     return nextResolve(specifier, context);
@@ -184,7 +184,7 @@ for (const name of FIXTURE_NAMES) {
 test("the API version pin has a Stripe-shaped value and is passed to the client", () => {
   assert.match(STRIPE_API_VERSION, /^\d{4}-\d{2}-\d{2}\.[a-z]+$/);
   const source = readFileSync(
-    new URL("../src/lib/stripe.ts", import.meta.url),
+    new URL("../src/infrastructure/stripe/stripe.ts", import.meta.url),
     "utf8",
   );
   assert.match(

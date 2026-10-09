@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
-import { isCheckoutSessionId, orderViewState } from "@/lib/order-decision";
-import { readOrderRecord } from "@/lib/order-corrupt";
+import { isCheckoutSessionId, orderViewState } from "@/domain/ordering/order-decision";
+import { readOrderRecord } from "@/domain/ordering/order-corrupt";
 import {
   ORDERS_STORE_UNAVAILABLE_ERROR,
   ORDERS_STORE_UNAVAILABLE_STATUS,
-} from "@/lib/orders-store";
-import { NO_STORE_HEADERS } from "@/lib/private-headers";
-import { readWorkerBindings } from "@/lib/worker-bindings";
+} from "@/infrastructure/cloudflare/orders-store";
+import { NO_STORE_HEADERS } from "@/infrastructure/config/private-headers";
+import { readWorkerBindings } from "@/infrastructure/cloudflare/worker-bindings";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";

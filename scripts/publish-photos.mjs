@@ -60,8 +60,8 @@ import {
   sha256Hex,
   slugFromDroppedName,
   webDerivativeKey,
-} from "../src/lib/derivative-ladder.ts";
-import { validatePhotoFile } from "../src/lib/photo-schema.ts";
+} from "../src/domain/catalog/derivative-ladder";
+import { validatePhotoFile } from "../src/domain/catalog/photo-schema";
 import {
   derivativeContentType,
   masterDimensions,

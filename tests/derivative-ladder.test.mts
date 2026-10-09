@@ -6,13 +6,13 @@ import {
   assertUploadIsSafe,
   slugFromDroppedName,
   webDerivativeKey,
-} from "../src/lib/derivative-ladder.ts";
+} from "../src/domain/catalog/derivative-ladder.ts";
 import {
   MASTERS_BUCKET_NAME,
   STAGING_MASTERS_BUCKET_NAME,
   WEB_BUCKET_NAME,
   slugFromMasterKey,
-} from "../src/lib/derivative-ladder.ts";
+} from "../src/domain/catalog/derivative-ladder.ts";
 
 const HASH = "abcdef12";
 

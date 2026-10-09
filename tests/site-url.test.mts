@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { getStripe } from "../src/lib/stripe.ts";
-import { isConfiguredSiteUrl, siteUrl } from "../src/lib/config.ts";
-import { signPrintAssetUrl } from "../src/lib/print-asset.ts";
+import { getStripe } from "../src/infrastructure/stripe/stripe.ts";
+import { isConfiguredSiteUrl, siteUrl } from "../src/infrastructure/config/config.ts";
+import { signPrintAssetUrl } from "../src/application/fulfillment/print-asset.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 /**

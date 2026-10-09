@@ -9,13 +9,13 @@ import {
   PRODIGI_ORDER_TIMEOUT_MS,
   PRODIGI_QUOTE_TIMEOUT_MS,
   prodigiTimeoutSignal,
-} from "../src/lib/prodigi-config.ts";
-import { isRetryableProdigiReason } from "../src/lib/prodigi-policy.ts";
-import { type OrderRecipient } from "../src/lib/prodigi-order.ts";
-import { quotePhysical } from "../src/lib/prodigi-quote.ts";
-import { createProdigiOrder } from "../src/lib/prodigi-order.ts";
-import { fulfillCheckoutSession } from "../src/lib/fulfillment.ts";
-import { parseOrderRecord } from "../src/lib/order-decision.ts";
+} from "../src/infrastructure/prodigi/prodigi-config.ts";
+import { isRetryableProdigiReason } from "../src/domain/ordering/prodigi-policy.ts";
+import { type OrderRecipient } from "../src/infrastructure/prodigi/prodigi-order.ts";
+import { quotePhysical } from "../src/infrastructure/prodigi/prodigi-quote.ts";
+import { createProdigiOrder } from "../src/infrastructure/prodigi/prodigi-order.ts";
+import { fulfillCheckoutSession } from "../src/application/fulfillment/fulfillment.ts";
+import { parseOrderRecord } from "../src/domain/ordering/order-decision.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
 const RECIPIENT: OrderRecipient = {
@@ -319,7 +319,7 @@ test("a non-timeout network failure is still prodigi-unavailable", async () => {
 test("both Prodigi fetches actually pass a signal", () => {
   // A timeout budget nothing passes is a constant with a comment. Assert the
   // fetch call carries one, in both callers, on the AST-visible option object.
-  const root = path.join(import.meta.dirname, "..", "src/lib");
+  const root = path.join(import.meta.dirname, "..", "src/infrastructure/prodigi");
   for (const rel of ["prodigi-quote.ts", "prodigi-order.ts"]) {
     const src = fs.readFileSync(path.join(root, rel), "utf8");
     const calls = [...src.matchAll(/await fetch\(/g)];

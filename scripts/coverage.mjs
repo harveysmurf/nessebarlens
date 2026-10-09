@@ -2,8 +2,9 @@
  * Zero-dependency coverage gate.
  *
  * Runs the suite under node's built-in V8 coverage, then enforces floors over
- * the gated files: src/lib plus the five src/app/api route handlers. The page
- * tree and components/ are React code that a DOM would be needed to measure
+ * the gated files: the bounded-context tree (src/domain, src/application,
+ * src/infrastructure) plus the five src/app/api route handlers. The page tree
+ * and components/ are React code that a DOM would be needed to measure
  * honestly, so they stay out until that is a decision worth making.
  *
  * Line numbers are trustworthy because node strips the types itself, in place:
@@ -98,7 +99,7 @@ const gated = rows.filter((row) => isGatedFile(row.file));
 const tests = rows.filter((row) => /(^|\/)tests\//.test(row.file));
 if (gated.length === 0) {
   process.stderr.write(
-    `coverage.mjs: parsed ${rows.length} rows but none under src/lib or src/app/api\n`,
+    `coverage.mjs: parsed ${rows.length} rows but none under the bounded-context tree or src/app/api\n`,
   );
   process.exit(1);
 }
@@ -109,7 +110,7 @@ const actual = {
   functions: mean(gated, "functions"),
 };
 
-console.log(`gated: src/lib + src/app/api (${gated.length} files, mean over files)`);
+  console.log(`gated: bounded-context tree + src/app/api (${gated.length} files, mean over files)`);
 for (const name of ["lines", "branches", "functions"]) {
   console.log(
     `  ${name.padEnd(10)} ${actual[name].toFixed(2).padStart(6)}%  floor ${FLOOR[name]}%`,

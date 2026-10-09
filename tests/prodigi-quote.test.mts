@@ -1,16 +1,16 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { PRODIGI_SHIPPING_METHOD } from "../src/lib/prodigi-config.ts";
+import { PRODIGI_SHIPPING_METHOD } from "../src/infrastructure/prodigi/prodigi-config.ts";
 import {
   merchandiseFromUnitCost,
   PRODIGI_MARGIN,
-} from "../src/lib/pricing.ts";
+} from "../src/domain/pricing/pricing.ts";
 import {
   PRODIGI_LIVE_API_BASE,
   PRODIGI_SANDBOX_API_BASE,
   readProdigiConfig,
-} from "../src/lib/prodigi-config.ts";
-import { quotePhysical, type PhysicalQuote } from "../src/lib/prodigi-quote.ts";
+} from "../src/infrastructure/prodigi/prodigi-config.ts";
+import { quotePhysical, type PhysicalQuote } from "../src/infrastructure/prodigi/prodigi-quote.ts";
 
 test("merchandiseFromUnitCost applies PRODIGI_MARGIN and rounds to cents", () => {
   assert.equal(PRODIGI_MARGIN, 1.2);

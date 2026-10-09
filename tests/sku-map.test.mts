@@ -1,8 +1,8 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
-import { PRODIGI_SHIPPING_METHOD } from "../src/lib/prodigi-config.ts";
-import type { FrameFinish } from "../src/lib/pricing.ts";
+import { PRODIGI_SHIPPING_METHOD } from "../src/infrastructure/prodigi/prodigi-config.ts";
+import type { FrameFinish } from "../src/domain/pricing/pricing.ts";
 import {
   CANVAS_WRAP,
   FRAME_COLOR,
@@ -17,7 +17,7 @@ import {
   isPrintSize,
   isSellableFormat,
   resolveSku,
-} from "../src/lib/sku-map.ts";
+} from "../src/domain/pricing/sku-map.ts";
 
 test("every UI format×size resolves to a pinned Prodigi SKU", () => {
   const resolved = new Set<string>();
@@ -165,8 +165,8 @@ test("the Prodigi shipping method is declared once, in prodigi-config", () => {
   // have been invisible to every test here. Both now read this constant.
   assert.equal(PRODIGI_SHIPPING_METHOD, "Budget");
   for (const file of [
-    "../src/lib/prodigi-quote.ts",
-    "../src/lib/prodigi-order.ts",
+    "../src/infrastructure/prodigi/prodigi-quote.ts",
+    "../src/infrastructure/prodigi/prodigi-order.ts",
   ]) {
     const source = readFileSync(new URL(file, import.meta.url), "utf8");
     assert.ok(
