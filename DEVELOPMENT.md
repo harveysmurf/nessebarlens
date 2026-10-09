@@ -820,6 +820,34 @@ Until (1) lands, every staging purchase races production for the same Prodigi
 order, and the operator alert (`order-ops-alert`, #195) is what tells you it
 happened.
 
+### Print-area orientation (#298)
+
+Placed sandbox orders for `GLOBAL-FAP-12X16`, `GLOBAL-CFPM-12X16` and
+`GLOBAL-CAN-12X16` with a landscape 3:2 asset, using the same body the code
+sends (`sizing: "fillPrintArea"`). Prodigi accepted all three (`Created`, asset
+`Complete`, `status.issues: []`) and the FAP order reached `InProduction`.
+
+**Prodigi does not rotate.** The dashboard preview shows the landscape photo
+**centre-cropped to the portrait print area**, not turned to match the SKU's
+short/long edges. So a landscape photo ordered as a portrait SKU arrives
+heavily cropped today.
+
+Consequences:
+
+- `/api/print-asset` must rotate the streamed master to the SKU's orientation
+  before Prodigi fetches it. The signed URL carries only `slug`, `exp` and
+  `sig`, so the requested orientation (or the SKU) has to join the signed
+  payload — a protocol change. Tracked in **#307**, which **blocks #299**.
+- The v4 API exposes no rendered-print preview — only a thumbnail of the
+  *uploaded* asset (verified: a 100×66 copy of the 3:2 source, not the 3:4
+  print) — so orientation cannot be asserted from the API; it was read from the
+  dashboard.
+
+Cancellation note: the v4 cancel action is
+`POST /v4.0/orders/{orderId}/actions/cancel`; `/cancel` answers
+`EndpointDoesNotExist` (404). `prodigiCancelUrl` was fixed to the `/actions/…`
+path, which had been silently no-op'ing every cancellation.
+
 ---
 
 ### Reconciler

@@ -8,14 +8,14 @@
  * — so every function here returns a result rather than throwing, and the
  * caller logs and answers 200 either way.
  *
- * Why it is best-effort rather than authoritative: Prodigi's cancel semantics
- * (which stages are still cancellable, whether a dispatched order can be
- * recalled) are documented at docs.prodigi.com, which did not resolve from the
- * box this was written on, and there is no sandbox key here to probe. Guessing
- * "cancelled" into a record would be worse than admitting we do not know: a
- * human reading `order.prodigi-cancel-failed` with the stage attached can
- * decide, whereas a record claiming a cancellation that never happened cannot
- * be corrected later by anyone.
+ * Why it is best-effort rather than authoritative: which stages are still
+ * cancellable, and whether a dispatched order can be recalled, are Prodigi's
+ * call. Probing the sandbox (#298) showed a completed order answers
+ * `ActionNotAvailable`, so a late cancel succeeding is not something the caller
+ * may assume. Guessing "cancelled" into a record would be worse than admitting
+ * we do not know: a human reading `order.prodigi-cancel-failed` with the stage
+ * attached can decide, whereas a record claiming a cancellation that never
+ * happened cannot be corrected later by anyone.
  */
 
 import { prodigiUrl } from "./prodigi-config";
@@ -46,12 +46,16 @@ export function isSafeProdigiOrderId(value: unknown): value is string {
  * deployment — the caller has already failed closed on the read before reaching
  * here. The one thing it still refuses is an order id that could escape its
  * path segment.
+ *
+ * The v4 cancel action is under `/actions/cancel`; the previous `/cancel`
+ * answered `EndpointDoesNotExist` (HTTP 404) against the sandbox, so every
+ * cancellation was silently a no-op (#298).
  */
 export function prodigiCancelUrl(prodigiOrderId: string, base: string): string {
   if (!isSafeProdigiOrderId(prodigiOrderId)) {
     throw new Error("unsafe Prodigi order id");
   }
-  return prodigiUrl(base, `v4.0/orders/${prodigiOrderId}/cancel`);
+  return prodigiUrl(base, `v4.0/orders/${prodigiOrderId}/actions/cancel`);
 }
 
 /**
