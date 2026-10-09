@@ -17,6 +17,10 @@ export default async function PrintDetailPage({
   const photo = getPhoto(slug);
   if (!photo) notFound();
 
+  const previewAspect = photo.master
+    ? `${photo.master.width}/${photo.master.height}`
+    : "4/3";
+
   return (
     <section className="fade-in max-w-7xl mx-auto px-6 py-10">
       <Link
@@ -28,7 +32,7 @@ export default async function PrintDetailPage({
 
       <div className="grid lg:grid-cols-12 gap-12 items-start">
         <div className="lg:col-span-7 space-y-3">
-          <div className="bg-stone-200 rounded-sm overflow-hidden aspect-[4/3] relative flex items-center justify-center p-3 border border-stone-300/60 shadow-inner">
+          <div className={`bg-stone-200 rounded-sm overflow-hidden aspect-[${previewAspect}] relative flex items-center justify-center p-3 border border-stone-300/60 shadow-inner`}>
             <WebPhoto
               photo={photo}
               preferred={2000}
@@ -39,6 +43,9 @@ export default async function PrintDetailPage({
           </div>
           <div className="flex justify-between text-[10px] text-stone-400 uppercase tracking-widest px-1">
             <span>Gallery preview</span>
+            {photo.master && (
+              <span>{photo.master.width} × {photo.master.height} px</span>
+            )}
             <span>Global Delivery via Prodigi</span>
           </div>
         </div>
