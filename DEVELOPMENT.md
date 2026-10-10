@@ -117,7 +117,8 @@ Environment variables (names only — values live in the `.env.local` symlink):
 | `PRODIGI_API_KEY` | Prodigi key used when `PRODIGI_API_BASE` is live |
 | `PRINT_ASSET_HMAC_SECRET` | ≥32-char HMAC secret for `/api/print-asset` (Prodigi). **Required for physical checkout, not optional** — `/api/checkout` calls `canSignMasterAsset()` and answers **503** rather than take the money for a print it cannot fulfill, and `/api/print-asset` answers 503 `print-asset-unavailable` when unset. A short or whitespace-only value is treated as unset. |
 | `PRODIGI_WEBHOOK_TOKEN` | Bearer token Prodigi must send on `POST /api/webhooks/prodigi` (`Authorization: Bearer …`). Prodigi v4 signs nothing, so this is the only callback auth. **Unset ⇒ 503** `prodigi-webhook-unconfigured`; mismatch ⇒ 401. Generate with `openssl rand -hex 32` and configure the same value as the shared secret Prodigi is told to send (or that a reverse-proxy injects). |
-| `RESEND_API_KEY` | Resend API key for customer email (order confirmation, print shipped, unfulfilled apology). **Unset ⇒ emails are skipped** with a structured `email.skipped` log line — never a throw on a paid webhook path. The sending domain (`nessebarlens.com`) must have Resend's **DNS TXT domain verification** before production mail will deliver; until then sandbox/`onboarding@resend.dev` testing is fine locally. |
+| `RESEND_API_KEY` | Resend API key for customer email (order confirmation, print shipped, unfulfilled apology) and operator alerts. **Unset ⇒ emails are skipped** with a structured `email.skipped` log line — never a throw on a paid webhook path. The sending domain (`nessebarlens.com`) must have Resend's **DNS TXT domain verification** before production mail will deliver; until then sandbox/`onboarding@resend.dev` testing is fine locally. |
+| `OPERATOR_ALERT_EMAIL` | Recipient for operator alerts raised through the `OperatorAlerts` port (`src/application/ports/operator-alerts.ts`, #309) — e.g. a Prodigi cancel that failed during a refund/dispute. **Unset (or `RESEND_API_KEY` unset) ⇒ the alert is skipped** with a structured `operator-alert.undelivered` log line; a send failure logs `operator-alert.failed`/`operator-alert.threw`. Never a throw on the webhook path. |
 | `NEXT_PUBLIC_SITE_URL` | Canonical public origin (used by `src/infrastructure/stripe/stripe.ts`). **Required for any production build** — `next.config.ts` fails the build without it, because `NEXT_PUBLIC_*` is inlined at build time and a silent `http://localhost:3000` fallback would ship a checkout that redirects to localhost. `next dev` and `npm test` do not need it. |
 | `NEXT_PUBLIC_WEB_IMAGES_BASE` | Base URL for gallery `<img>` srcset; unset serves nothing. Must be `https://images.nessebarlens.com`, see Public image host. |
 | `R2_ACCOUNT_ID`, `R2_ENDPOINT`, `R2_S3_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | R2 S3 creds (unused by Workers — they use bucket bindings) |
@@ -817,8 +818,10 @@ The remaining fix is in the Stripe dashboard, not the repo:
    staging origin.
 
 Until (1) lands, every staging purchase races production for the same Prodigi
-order, and the operator alert (`order-ops-alert`, #195) is what tells you it
-happened.
+order, and nothing alerts on that race today. (The `OperatorAlerts` port
+introduced in #309, `src/application/ports/operator-alerts.ts`, is the place a
+future race/`order.stuck` alert would land; today it covers a failed physical
+`cancel` during a refund/dispute.)
 
 ### Print-area orientation and the print asset (#298, #307)
 

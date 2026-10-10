@@ -6,6 +6,7 @@ import {
   formatTable,
   parseArgs,
   extractRows,
+  REVOKED_STATUSES,
 } from "../scripts/list-orders.mjs";
 // From the owner, not through the script: a re-export would put the quoting
 // rules back under two names, which is the duplication the grammar gate
@@ -25,6 +26,24 @@ test("list-orders builds a parameterised query and never interpolates raw status
     sqlWithBinds(filtered.sql, filtered.binds),
     "SELECT session_id, status, reason, attempts, created_at, updated_at, record FROM orders WHERE status = 'paid-unfulfilled' ORDER BY created_at ASC LIMIT 5",
   );
+});
+
+test("list-orders supports statuses IN clause for the audit query", () => {
+  const built = buildListOrdersSql({ statuses: REVOKED_STATUSES, limit: 100 });
+  assert.match(built.sql, /WHERE status IN \(\?,\?\)/);
+  assert.deepEqual(built.binds, ["refunded", "disputed", 100]);
+  assert.equal(
+    sqlWithBinds(built.sql, built.binds),
+    "SELECT session_id, status, reason, attempts, created_at, updated_at, record FROM orders WHERE status IN ('refunded','disputed') ORDER BY created_at ASC LIMIT 100",
+  );
+  // Default (no statuses/status) still produces no WHERE clause.
+  const none = buildListOrdersSql({ limit: 10 });
+  assert.ok(!none.sql.includes("WHERE"));
+});
+
+test("list-orders statuses rejects unknown values from the closed set", () => {
+  assert.throws(() => buildListOrdersSql({ statuses: ["refunded", "nope"] }), /unknown --status/);
+  assert.throws(() => buildListOrdersSql({ statuses: [] }), /non-empty array/);
 });
 
 test("list-orders rejects unknown status and clamps limit", () => {

@@ -34,6 +34,7 @@ import type { StripeSessionLookup } from "../src/domain/ordering/stripe-session-
 import type { CancelProdigiOrder } from "../src/domain/ordering/print-provider.ts";
 import { cancelProdigiOrder } from "../src/infrastructure/prodigi/prodigi-cancel.ts";
 import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
+import type { OperatorAlert, OperatorAlerts } from "../src/application/ports/operator-alerts.ts";
 
 const SESSION = "cs_test_abcdefgh";
 const INTENT = "pi_3AbcDefGh12345678";
@@ -66,6 +67,32 @@ function digitalPaidRecord(overrides: Record<string, unknown> = {}): string {
     prodigiStage: null,
     assetUrl: null,
     updatedAt: "2026-09-27T12:00:00.000Z",
+    ...overrides,
+  });
+}
+
+/** A paid physical order with a Prodigi id — the record that triggers a cancel. */
+function physicalPaidRecord(overrides: Record<string, unknown> = {}): string {
+  return digitalPaidRecord({
+    format: "giclee",
+    size: "30x40",
+    masterKey: null,
+    recipient: {
+      name: "Test Buyer",
+      line1: "1 Harbor St",
+      line2: "",
+      city: "Nessebar",
+      state: "",
+      postcode: "8230",
+      countryCode: "BG",
+      email: null,
+      phone: null,
+    },
+    prodigiOrderId: "ord_abc123",
+    prodigiStage: "created",
+    assetUrl:
+      `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1&sig=` +
+      "a".repeat(64),
     ...overrides,
   });
 }
@@ -694,4 +721,131 @@ test("a refund that loses the claim answers duplicate and cancels nothing", asyn
   assert.equal(result.body.duplicate, true);
   assert.equal(result.body.sessionId, SESSION);
   assert.deepEqual(calls, [], "a lost claim must not cancel a second time");
+});
+
+/* --- Operator alert on failed physical cancel (#309) ------------------------
+ * The gate for Task 2: a failed Prodigi cancel for a physical order raises
+ * exactly one operator alert (event key + Prodigi order id/stage in details)
+ * and never changes the 200 revocation outcome. A successful cancel raises
+ * none, and a throwing alert adapter is logged without propagating.
+ */
+
+test("a failed physical cancel raises exactly one operator alert and still answers 200", async () => {
+  const store = memoryKv({
+    [SESSION]: physicalPaidRecord({ prodigiStage: "created" }),
+  });
+  const raised: OperatorAlert[] = [];
+  const alerts: OperatorAlerts = {
+    raise: async (alert) => {
+      raised.push(alert);
+    },
+  };
+  const cancel: CancelProdigiOrder = async () => ({
+    ok: false,
+    status: 405,
+    reason: "prodigi-cancel-http-405",
+    message: "Prodigi cancel HTTP 405",
+  });
+  const result = await revokeOrderByPaymentIntent({
+    store,
+    status: "refunded",
+    paymentIntent: INTENT,
+    now: NOW,
+    stripe: lookup(),
+    cancel,
+    alerts,
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.equal(raised.length, 1, "exactly one alert per failed physical cancel");
+  assert.equal(raised[0]!.event, "order.prodigi-cancel-failed");
+  assert.equal(raised[0]!.sessionId, SESSION);
+  assert.equal(raised[0]!.details.prodigiOrderId, "ord_abc123");
+  assert.equal(raised[0]!.details.prodigiStage, "created");
+  assert.equal(raised[0]!.details.cancelStatus, 405);
+  assert.equal(raised[0]!.details.orderStatus, "refunded");
+  assert.equal(result.body.revoked, true);
+  assert.equal(result.body.prodigiCancelled, false);
+});
+
+test("a successful physical cancel raises no operator alert", async () => {
+  const store = memoryKv({
+    [SESSION]: physicalPaidRecord({ prodigiStage: "created" }),
+  });
+  const raised: OperatorAlert[] = [];
+  const alerts: OperatorAlerts = {
+    raise: async (alert) => {
+      raised.push(alert);
+    },
+  };
+  const cancel: CancelProdigiOrder = async () => ({ ok: true, status: 200 });
+  const result = await revokeOrderByPaymentIntent({
+    store,
+    status: "refunded",
+    paymentIntent: INTENT,
+    now: NOW,
+    stripe: lookup(),
+    cancel,
+    alerts,
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.deepEqual(raised, [], "no alert when the cancel succeeds");
+  assert.equal(result.body.prodigiCancelled, true);
+});
+
+test("a throwing operator alert does not change the 200 revocation outcome", async () => {
+  const store = memoryKv({
+    [SESSION]: physicalPaidRecord({ prodigiStage: "created" }),
+  });
+  const cancel: CancelProdigiOrder = async () => ({
+    ok: false,
+    status: 405,
+    reason: "prodigi-cancel-http-405",
+    message: "Prodigi cancel HTTP 405",
+  });
+  const lines = await captureErrors(() =>
+    revokeOrderByPaymentIntent({
+      store,
+      status: "disputed",
+      paymentIntent: INTENT,
+      now: NOW,
+      stripe: lookup(),
+      cancel,
+      alerts: {
+        raise: async () => {
+          throw new Error("resend exploded");
+        },
+      },
+    }).then((result) => {
+      assert.equal(result.httpStatus, 200, "the alert throw must not propagate");
+      assert.equal(result.body.revoked, true);
+      assert.equal(result.body.prodigiCancelled, false);
+    }),
+  );
+  assert.match(lines.join("\n"), /operator-alert\.failed/);
+});
+
+test("a failed cancel raises no alert for a digital order (no Prodigi id)", async () => {
+  // Digital orders never reach the cancel: no alert, no cancel attempt.
+  const store = memoryKv({ [SESSION]: digitalPaidRecord() });
+  const raised: OperatorAlert[] = [];
+  const alerts: OperatorAlerts = {
+    raise: async (alert) => {
+      raised.push(alert);
+    },
+  };
+  const cancel: CancelProdigiOrder = async () => {
+    throw new Error("must not be called for a digital order");
+  };
+  const result = await revokeOrderByPaymentIntent({
+    store,
+    status: "refunded",
+    paymentIntent: INTENT,
+    now: NOW,
+    stripe: lookup(),
+    cancel,
+    alerts,
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.deepEqual(raised, [], "no alert — there is no failed physical cancel");
+  assert.equal(result.body.prodigiCancelled, null, "digital orders do not cancel");
 });

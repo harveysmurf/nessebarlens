@@ -24,6 +24,7 @@
     "deploy": "opennextjs-cloudflare build && opennextjs-cloudflare deploy",
     "publish-photos": "node scripts/publish-photos-launcher.mjs",
     "orders": "node scripts/list-orders.mjs",
+    "audit:prodigi": "node --import ./scripts/register.mjs scripts/audit-prodigi-cancellations.mjs",
     "preverify:masters": "npm run build:catalog",
     "verify:masters": "node --import ./scripts/register.mjs scripts/verify-masters.mjs",
     "migrate:orders": "node --import ./scripts/register.mjs scripts/migrate-orders-kv-to-d1.mjs",

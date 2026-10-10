@@ -13,6 +13,7 @@ import {
 import { classifyUrlOrigin } from "@/domain/ordering/session-origin";
 import {
   assetUrlSigner,
+  operatorAlerts,
   paymentGateway,
   printProvider,
   prodigiCancel,
@@ -214,6 +215,10 @@ async function handleRevocation(event: RevocationEvent, store: OrdersStore) {
       now: new Date().toISOString(),
       stripe: stripeSessionLookupPort(),
       cancel: prodigiCancel(),
+      // Operator alerts (#309): wired through the container, which reads
+      // RESEND_API_KEY + OPERATOR_ALERT_EMAIL and returns undefined when either
+      // is absent — raiseOperatorAlert logs operator-alert.undelivered, never throws.
+      alerts: operatorAlerts(),
     });
     return NextResponse.json(result.body, { status: result.httpStatus });
   } catch (e) {

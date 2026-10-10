@@ -191,6 +191,23 @@ export function prodigiWebhookToken(
 }
 
 /**
+ * Operator-alert configuration (#309): the Resend key and the recipient
+ * address. Both are optional — the alert adapter factory returns undefined when
+ * either is missing, and the dispatch wrapper then logs
+ * `operator-alert.undelivered` instead of throwing on a webhook path. Read here,
+ * not in container.ts, so the env reads stay in the one allowlisted module.
+ */
+export function operatorAlertConfig(env: ConfigEnv = process.env): {
+  apiKey: string | undefined;
+  to: string | undefined;
+} {
+  return {
+    apiKey: envString("RESEND_API_KEY", env),
+    to: envString("OPERATOR_ALERT_EMAIL", env),
+  };
+}
+
+/**
  * The deployment's own Prodigi configuration, for callers that must reach an
  * env read they are not allowed to make themselves.
  *
