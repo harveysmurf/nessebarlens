@@ -234,6 +234,7 @@ export function validatePhoto({
   const schema = validatePhotoFile(slug, data, {
     requirePublishedHashes: false,
     requireMasterFacts: false,
+    requirePrintAssets: false,
   });
   if (!schema.ok) {
     for (const problem of schema.problems) errors.push(`${slug}.yaml: ${problem}`);

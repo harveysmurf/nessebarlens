@@ -46,6 +46,7 @@ const INPUT = {
   size: "30x40" as const,
   frame: null,
   recipient: RECIPIENT,
+  assetMd5: "c".repeat(32),
 };
 
 /**

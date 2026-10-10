@@ -269,8 +269,8 @@ function readMasterFacts(
  * The print asset's sha256 and md5 (#307). The two keys travel together: a file
  * with only one is a publish bug (the asset would be uploaded without the MD5
  * Prodigi checks, or vice versa), so it fails rather than being ignored.
- * `undefined` means the file carries neither key — allowed until #307's PR 2
- * makes a published photo require one.
+ * `undefined` means the file carries neither key — allowed for drafts, but a
+ * published photo requires one once the catalog is backfilled (#307 PR 2).
  */
 function readPrintAsset(
   data: Record<string, unknown>,
@@ -320,6 +320,12 @@ function readPrintAsset(
  * `master_width`, `master_height` and `orientation` (#297). The backfill script
  * passes false so it can read and patch YAMLs that are mid-backfill; every other
  * caller — build-catalog, audit, the runtime — requires them once #297 is done.
+ *
+ * `requirePrintAssets` (default true) enforces that a published photo carries
+ * `print_asset_sha256` and `print_asset_md5` (#307). `publish-photos` passes
+ * false: it validates the owner's drop-folder YAML *before* it renders the asset
+ * and writes those two keys, so requiring them there would reject every new
+ * photo.
  */
 export function validatePhotoFile(
   filename: string,
@@ -327,7 +333,7 @@ export function validatePhotoFile(
   {
     requirePublishedHashes = true,
     requireMasterFacts = true,
-    requirePrintAssets = false,
+    requirePrintAssets = true,
   }: {
     requirePublishedHashes?: boolean;
     requireMasterFacts?: boolean;
@@ -394,10 +400,11 @@ export function validatePhotoFile(
     );
   }
 
-  // A published photo requires a print asset once #307's PR 2 lands and the
-  // catalog is backfilled: without it checkout would send Prodigi the
-  // unrotated master (#307). PR 1 leaves this off so the backfill can read the
-  // catalog before the assets exist.
+  // A published photo requires a print asset now that the catalog is
+  // backfilled: without it checkout would send Prodigi the unrotated master
+  // (#307). `print_asset_sha256` and `print_asset_md5` are rendered and written
+  // together by `publish-photos`, so a half-present pair was already rejected by
+  // readPrintAsset above.
   if (published && requirePrintAssets && !printAsset) {
     problems.push(
       "print_asset_sha256 and print_asset_md5: required for a published photo",

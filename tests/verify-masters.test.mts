@@ -26,6 +26,9 @@ const ENV = {
 const SHA_A = "a".repeat(64);
 const SHA_B = "b".repeat(64);
 
+/** The print asset (#307); now required for every published photo in PR 2. */
+const PRINT = { sha256: SHA_B, md5: "c".repeat(32) };
+
 /** A fake masters bucket: `{ "prints/dawn.jpg": { sha256, contentLength } }`. */
 function fakeS3(objects = {}) {
   const calls = [];
@@ -44,6 +47,7 @@ const PHOTO = (overrides) => ({
   slug: "dawn",
   published: true,
   masterSha256: SHA_A,
+  printAsset: PRINT,
   ...overrides,
 });
 
@@ -51,6 +55,8 @@ test("all present and matching is a pass", async () => {
   const s3 = fakeS3({
     "prints/dawn.jpg": { sha256: SHA_A, contentLength: 1234 },
     "prints/dusk.jpg": { sha256: SHA_B, contentLength: 99 },
+    "print-assets/dawn.jpg": { sha256: SHA_B, contentLength: 10 },
+    "print-assets/dusk.jpg": { sha256: SHA_B, contentLength: 10 },
   });
   const failures = await verifyMasters({
     photos: [PHOTO({ slug: "dawn" }), PHOTO({ slug: "dusk", masterSha256: SHA_B })],
@@ -60,15 +66,19 @@ test("all present and matching is a pass", async () => {
   assert.deepEqual(failures, []);
   assert.deepEqual(s3.calls, [
     [MASTERS_BUCKET_NAME, "prints/dawn.jpg"],
+    [MASTERS_BUCKET_NAME, "print-assets/dawn.jpg"],
     [MASTERS_BUCKET_NAME, "prints/dusk.jpg"],
+    [MASTERS_BUCKET_NAME, "print-assets/dusk.jpg"],
   ]);
 });
 
 test("one missing is reported and the others are still checked", async () => {
   const s3 = fakeS3({
     "prints/dawn.jpg": { sha256: SHA_A, contentLength: 1234 },
-    // dusk is absent
+    // dusk's master is absent, so its print asset is never reached.
     "prints/noon.jpg": { sha256: SHA_A, contentLength: 5 },
+    "print-assets/dawn.jpg": { sha256: SHA_B, contentLength: 10 },
+    "print-assets/noon.jpg": { sha256: SHA_B, contentLength: 10 },
   });
   const failures = await verifyMasters({
     photos: [
@@ -81,7 +91,7 @@ test("one missing is reported and the others are still checked", async () => {
   });
   assert.deepEqual(failures, [`dusk: missing from ${MASTERS_BUCKET_NAME}`]);
   // dawn and noon were checked too, not short-circuited by the failure.
-  assert.equal(s3.calls.length, 3);
+  assert.equal(s3.calls.length, 5);
 });
 
 test("an unpublished photo is not checked", async () => {
@@ -180,8 +190,6 @@ test("main needs the read-only credentials as soon as a real photo must be check
 // Print assets (#307)
 // ---------------------------------------------------------------------------
 
-const PRINT = { sha256: SHA_B, md5: "c".repeat(32) };
-
 test("a print asset is checked where the catalog has one (#307)", async () => {
   const s3 = fakeS3({
     "prints/dawn.jpg": { sha256: SHA_A, contentLength: 1234 },
@@ -224,9 +232,12 @@ test("a print asset missing, empty or mismatched is reported (#307)", async () =
   assert.match(mismatch[0]!, /dawn: print asset sha256 mismatch/);
 });
 
-test("a photo without a print asset is not checked for one (#307 PR 1)", async () => {
+test("a published photo without a print asset fails (#307 PR 2)", async () => {
+  // The master is healthy, so the only failure is the missing asset: without it
+  // Prodigi would receive the unrotated master, so the photo must not ship.
   const s3 = fakeS3({ "prints/dawn.jpg": { sha256: SHA_A, contentLength: 10 } });
-  const failures = await verifyMasters({ photos: [PHOTO({ slug: "dawn" })], s3 });
-  assert.deepEqual(failures, []);
+  const failures = await verifyMasters({ photos: [PHOTO({ slug: "dawn", printAsset: undefined })], s3 });
+  assert.deepEqual(failures, ["dawn: no print asset in the catalog"]);
+  // The master was still checked before the asset decision.
   assert.deepEqual(s3.calls, [[MASTERS_BUCKET_NAME, "prints/dawn.jpg"]]);
 });

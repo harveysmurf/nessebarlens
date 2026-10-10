@@ -17,3 +17,6 @@ export const SAMPLE_SLUG = SAMPLE_PHOTO.slug;
 
 /** The production master key for SAMPLE_SLUG: `prints/{slug}.jpg`. */
 export const SAMPLE_MASTER_KEY = `prints/${SAMPLE_SLUG}.jpg`;
+
+/** The print-asset key Prodigi is served for SAMPLE_SLUG: `print-assets/{slug}.jpg` (#307). */
+export const SAMPLE_PRINT_ASSET_KEY = `print-assets/${SAMPLE_SLUG}.jpg`;

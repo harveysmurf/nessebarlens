@@ -45,6 +45,7 @@ import { ensureDownloadToken } from "./download-token";
 import type { DownloadTokenLimits } from "../../domain/ordering/download-token";
 import type { FrameFinish } from "../../domain/pricing/pricing";
 import { isFrameFinishValue, isPrintSize } from "../../domain/pricing/sku-map";
+import { getPhoto } from "../../domain/catalog/photos";
 import type { OrdersStore } from "../../domain/ordering/orders-store";
 import { emailCopyFor } from "../../domain/ordering/email-copy";
 import type { EmailKind, SendEmail } from "../../domain/ordering/email";
@@ -356,22 +357,25 @@ export async function fulfillCheckoutSession(
             ? record.frame
             : null;
       // Sign the asset URL before calling the provider — createProdigiOrder
-      // requires it (no placeholder fallback since #245). A null here fails
-      // closed so a paid print never ships a low-res placeholder; the charge is
-      // already prevented earlier by the pre-payment canSignMasterAsset guard.
+      // requires it (no placeholder fallback since #245). The MD5 comes from
+      // the catalog's print asset (#307) and is required too: Prodigi verifies
+      // the fetched bytes against it, so an order without one must fail closed
+      // rather than let a corrupted or stale upload print. A null asset URL
+      // (no signing secret) or a missing MD5 (no print asset registered for the
+      // photo) share the retryable prodigi-asset-unconfigured branch; the charge
+      // is already prevented earlier by the pre-payment canSignMasterAsset guard.
+      const assetMd5 = getPhoto(record.photoSlug)?.printAsset?.md5;
       const assetUrl = await signPrintAssetUrl(
         record.photoSlug,
         input.assetUrlSigner,
       );
-      if (!assetUrl) {
-        // No signing secret: a placeholder would ship a paid print's low-res
-        // stand-in, so fail closed exactly like a retryable Prodigi failure —
-        // write the precise reason and answer 500, so Stripe redelivers once
-        // the HMAC secret is deployed.
+      if (!assetUrl || !assetMd5) {
         record = withProdigiFailure(record, {
           reason: "prodigi-asset-unconfigured",
         });
-        const message = "print-asset signing is not configured";
+        const message = !assetUrl
+          ? "print-asset signing is not configured"
+          : "no print asset is registered for this photo";
         if (fromAttempts !== null) {
           await storeTransition(input.store, fromAttempts, record, message);
         } else {
@@ -391,6 +395,7 @@ export async function fulfillCheckoutSession(
         frame,
         recipient: record.recipient,
         assetUrl,
+        assetMd5,
       });
 
       if (

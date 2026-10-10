@@ -100,10 +100,14 @@ export async function verifyMasters({
       continue;
     }
 
-    // The print asset (#307). PR 1 checks it only where the catalog has one;
-    // PR 2 makes a published photo require it. Same three failures as the
-    // master, on `print-assets/{slug}.jpg`.
-    if (!photo.printAsset) continue;
+    // The print asset (#307) is now required for every published photo: it is
+    // the only file Prodigi ever receives, so a photo without one cannot be
+    // fulfilled and must not ship. Same three failures as the master, on
+    // `print-assets/{slug}.jpg`.
+    if (!photo.printAsset || typeof photo.printAsset.sha256 !== "string") {
+      failures.push(`${photo.slug}: no print asset in the catalog`);
+      continue;
+    }
     const printKey = printAssetKeyFromSlug(photo.slug);
     let printHead;
     try {

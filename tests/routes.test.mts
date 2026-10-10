@@ -1329,7 +1329,7 @@ test("print-asset: a verified request streams the master as image/jpeg", async (
   }
 });
 
-test("print-asset: a bucket that throws is a 503, an absent master a 404", async () => {
+test("print-asset: a bucket that throws is a 503, an absent asset a retryable 503", async () => {
   const secret = "route-test-print-asset-secret-32-chars";
   const { signPrintAssetUrl } = await import("../src/application/fulfillment/print-asset.ts");
   const { ConfiguredAssetUrlSigner } = await import("../src/infrastructure/print-asset/asset-url-signer.ts");
@@ -1358,8 +1358,10 @@ test("print-asset: a bucket that throws is a 503, an absent master a 404", async
   });
   try {
     const missing = await printAsset.GET(new Request(signed!));
-    assert.equal(missing.status, 404);
-    assert.equal((await body(missing)).error, "master-not-found");
+    // A missing asset is the same retryable 503 as a missing binding, never a
+    // fallback to the unrotated master (#307): Prodigi retries.
+    assert.equal(missing.status, 503);
+    assert.equal((await body(missing)).error, "print-asset-unavailable");
   } finally {
     restore2();
   }

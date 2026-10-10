@@ -118,6 +118,7 @@ test("a hung order is a retryable timeout, not a dead end", async () => {
       frame: null,
       recipient: RECIPIENT,
       assetUrl: ASSET_URL,
+      assetMd5: "c".repeat(32),
     });
     assert.equal(result.ok, false);
     if (result.ok) return;
@@ -170,6 +171,7 @@ test("a body read that dies mid-stream is a retryable timeout, not a lost order"
       frame: null,
       recipient: RECIPIENT,
       assetUrl: ASSET_URL,
+      assetMd5: "c".repeat(32),
     });
     assert.equal(result.ok, false);
     if (result.ok) return;
@@ -209,6 +211,7 @@ test("a genuinely empty 200 body is still the terminal missing-id failure", asyn
       frame: null,
       recipient: RECIPIENT,
       assetUrl: ASSET_URL,
+      assetMd5: "c".repeat(32),
     });
     assert.equal(result.ok, false);
     if (result.ok) return;
@@ -314,6 +317,7 @@ test("a non-timeout network failure is still prodigi-unavailable", async () => {
       frame: null,
       recipient: RECIPIENT,
       assetUrl: ASSET_URL,
+      assetMd5: "c".repeat(32),
     });
     assert.equal(result.ok, false);
     if (result.ok) return;

@@ -101,6 +101,7 @@ test(
       frame: null,
       recipient: RECIPIENT,
       assetUrl,
+      assetMd5: "c".repeat(32),
     });
     assert.equal(created.ok, true, created.ok ? "" : created.message);
     if (!created.ok) return;

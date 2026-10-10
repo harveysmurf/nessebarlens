@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  canSignMasterAsset,
   resolvePrintAssetStream,
   signPrintAssetUrl,
   verifyPrintAssetRequest,
@@ -18,6 +19,7 @@ import type { OrderRecipient } from "../src/domain/ordering/order-recipient.ts";
 import { hmacSha256Hex } from "../src/domain/pricing/crypto-hex.ts";
 import {
   SAMPLE_MASTER_KEY,
+  SAMPLE_PRINT_ASSET_KEY,
   SAMPLE_SLUG,
 } from "./fixtures/sample-photo.mts";
 
@@ -166,12 +168,22 @@ test("Prodigi body accepts HMAC print-asset URL without master leak", async () =
     frame: null,
     recipient: RECIPIENT,
     assetUrl,
+    assetMd5: "c".repeat(32),
   });
   assert.equal(body.items[0].assets[0].url, assetUrl);
+  // #307: the md5 travels with the URL so Prodigi verifies the fetched bytes.
+  assert.equal(body.items[0].assets[0].md5Hash, "c".repeat(32));
   assertNoMasterLeak(body);
 });
 
-test("resolvePrintAssetStream serves catalog master only", async () => {
+test("canSignMasterAsset refuses a slug the catalog has no print asset for (#307 PR 2)", async () => {
+  // The pre-payment guard's catalog half: a well-formed slug with no catalog
+  // print asset is refused before signing, so checkout cannot take money for a
+  // physical order it could only fulfil from the unrotated master.
+  assert.equal(await canSignMasterAsset("not-a-photo", SIGNER), false);
+});
+
+test("resolvePrintAssetStream serves the catalog print asset only (#307)", async () => {
   const chunks: Uint8Array[] = [];
   const body = new ReadableStream<Uint8Array>({
     start(controller) {
@@ -195,14 +207,19 @@ test("resolvePrintAssetStream serves catalog master only", async () => {
     },
   };
   const resolved = await resolvePrintAssetStream(SAMPLE_SLUG, masters);
-  assert.equal(gotKey, SAMPLE_MASTER_KEY);
+  // The print asset, never the master: `prints/{slug}.jpg` would be the
+  // unrotated file #307 exists to keep away from Prodigi.
+  assert.equal(gotKey, SAMPLE_PRINT_ASSET_KEY);
+  assert.notEqual(gotKey, SAMPLE_MASTER_KEY);
   assert.equal(resolved.kind, "stream");
   if (resolved.kind === "stream") {
     assert.equal(resolved.contentType, "image/jpeg");
     assert.equal(resolved.size, 10);
   }
 
-  const missing = await resolvePrintAssetStream("not-a-photo", masters);
+  // Invalid grammar is a 400 (a caller bug), distinct from a valid slug with
+  // no catalog print asset, which is the retryable 503.
+  const missing = await resolvePrintAssetStream("Not A Slug", masters);
   assert.equal(missing.kind, "json");
   if (missing.kind === "json") assert.equal(missing.status, 400);
 });
@@ -295,8 +312,8 @@ test("resolvePrintAssetStream separates missing binding, bucket error and missin
       },
     });
 
-  // Unknown slug never reaches the bucket.
-  const unknown = await resolvePrintAssetStream("not-a-photo", { get: async () => null });
+  // A slug that fails the grammar never reaches the bucket: 400.
+  const unknown = await resolvePrintAssetStream("Not A Slug", { get: async () => null });
   assert.equal(unknown.kind === "json" && unknown.status, 400);
 
   // No MASTERS binding at all is 503, not a crash.
@@ -312,12 +329,15 @@ test("resolvePrintAssetStream separates missing binding, bucket error and missin
   });
   assert.equal(throwing.kind === "json" && throwing.status, 503);
 
-  // A null object is 404: the key is a catalog master that is simply absent.
+  // A missing object is now the same retryable 503 as a missing catalog key:
+  // the print asset is not there, so Prodigi must retry — never fall back to
+  // the unrotated master (#307).
   const missing = await resolvePrintAssetStream(SAMPLE_SLUG, { get: async () => null });
-  assert.equal(missing.kind === "json" && missing.status, 404);
-  assert.equal(missing.kind === "json" && missing.body.error, "master-not-found");
+  assert.equal(missing.kind === "json" && missing.status, 503);
+  assert.equal(missing.kind === "json" && missing.body.error, "print-asset-unavailable");
 
-  // The happy path streams the catalog key, not a caller-supplied one.
+  // The happy path streams the catalog print-asset key, not a caller-supplied
+  // one and not the master.
   const keys: string[] = [];
   const found = await resolvePrintAssetStream(SAMPLE_SLUG, {
     get: async (key: string) => {
@@ -325,16 +345,17 @@ test("resolvePrintAssetStream separates missing binding, bucket error and missin
       return { body: bytes(), size: 3 };
     },
   });
-  assert.deepEqual(keys, [SAMPLE_MASTER_KEY]);
+  assert.deepEqual(keys, [SAMPLE_PRINT_ASSET_KEY]);
   assert.equal(found.kind === "stream", true);
   assert.equal(found.kind === "stream" && found.contentType, "image/jpeg");
   assert.equal(found.kind === "stream" && found.size, 3);
 });
 
-test("the stream has exactly one gate: a key that is not a catalog master never happens", async () => {
-  // There is no longer a "bad-master-key" 500 branch, because masterKeyForSlug
-  // already guarantees the shape. Every non-catalog input is a 400 invalid-slug
-  // and the bucket is never called.
+test("the stream's only gate: grammar is a 400, a non-catalog slug a retryable 503, no bucket read", async () => {
+  // Invalid grammar is a caller bug: 400, so Prodigi does not retry a request
+  // that can never succeed. A well-formed slug with no catalog photo (or none
+  // with a print asset) is a retryable 503 — and crucially the bucket is never
+  // asked for the master key, which is the fallback #307 removes.
   let called = 0;
   const bucket = {
     async get() {
@@ -342,21 +363,19 @@ test("the stream has exactly one gate: a key that is not a catalog master never 
       return { body: new ReadableStream(), size: 1 };
     },
   };
-  for (const slug of [
-    "not-a-photo",
-    "",
-    "Dawn",
-    "dawn.jpg",
-    "../prints/dawn.jpg",
-    "prints/dawn.jpg",
-    "co%2Fb",
-  ]) {
+  for (const slug of ["", "Dawn", "dawn.jpg", "../prints/dawn.jpg", "prints/dawn.jpg", "co%2Fb"]) {
     const result = await resolvePrintAssetStream(slug, bucket);
     assert.equal(result.kind === "json", true, slug);
     assert.equal(result.kind === "json" && result.status, 400, slug);
     assert.equal(result.kind === "json" && result.body.error, "invalid-slug", slug);
   }
-  assert.equal(called, 0, "no lookup may be attempted for a non-catalog slug");
+  for (const slug of ["not-a-photo", "winter-pier"]) {
+    const result = await resolvePrintAssetStream(slug, bucket);
+    assert.equal(result.kind === "json", true, slug);
+    assert.equal(result.kind === "json" && result.status, 503, slug);
+    assert.equal(result.kind === "json" && result.body.error, "print-asset-unavailable", slug);
+  }
+  assert.equal(called, 0, "no lookup may be attempted for a slug with no print asset");
 });
 
 // The future-exp bound is TTL + a clock-skew pad. Both halves matter and the
