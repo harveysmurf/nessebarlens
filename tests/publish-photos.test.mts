@@ -702,10 +702,10 @@ test("syncCatalogFacts backfills a photo whose facts are missing (#297)", async 
 
     let measured = false;
     const s3 = {
-      async head(_bucket, _key) {
+      async head() {
         return { metadata: { sha256: SHA_A }, contentLength: 1234 };
       },
-      async getObject(_bucket, _key) {
+      async getObject() {
         measured = true;
         return Buffer.from("jpeg-bytes");
       },
@@ -717,7 +717,7 @@ test("syncCatalogFacts backfills a photo whose facts are missing (#297)", async 
         env: {},
         s3,
         measure: async () => FACTS,
-        writeYaml: async (_path, _text) => {},
+        writeYaml: async () => {},
       },
     );
     assert.equal(measured, true);
@@ -740,7 +740,7 @@ test("syncCatalogFacts leaves an in-sync photo untouched", async () => {
 
     let headCalls = 0;
     const s3 = {
-      async head(_bucket, _key) {
+      async head() {
         headCalls++;
         return { metadata: { sha256: SHA_A }, contentLength: 1234 };
       },
@@ -774,7 +774,7 @@ test("syncCatalogFacts refuses on a sha mismatch and writes nothing", async () =
 
     let written = false;
     const s3 = {
-      async head(_bucket, _key) {
+      async head() {
         return { metadata: { sha256: SHA_B }, contentLength: 999 };
       },
       async getObject() {
@@ -855,9 +855,9 @@ test("syncCatalogFacts warns on unpromoted masters and continues", async () => {
        "master_sha256: " + SHA_A, "image_hash: aaaaaaaa"].join("\n") + "\n",
     );
 
-    let logLines = [];
+    const logLines = [];
     const s3 = {
-      async head(_bucket, _key) {
+      async head() {
         return null; // master not yet promoted
       },
       async getObject() {
@@ -897,10 +897,10 @@ test("syncCatalogFacts integration: real sharp JPEG measured from a fake getObje
     );
 
     const s3 = {
-      async head(_bucket, _key) {
+      async head() {
         return { metadata: { sha256: sha }, contentLength: bytes.length };
       },
-      async getObject(_bucket, _key) {
+      async getObject() {
         return bytes;
       },
     };
