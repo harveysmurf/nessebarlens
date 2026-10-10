@@ -31,6 +31,8 @@ import {
   type PrintSize,
 } from "../pricing/pricing";
 import { FRAME_FINISHES, SELLABLE_FORMATS } from "../pricing/sku-map";
+import type { PreviewGeometry } from "./print-preview";
+import type { PrintSelection } from "./print-selection";
 
 export type FormatCopy = { title: string; sub: string };
 export type FormatOption = { id: PrintFormat } & FormatCopy;
@@ -100,6 +102,75 @@ export function firstOfferedSize(
  */
 export function masterResolutionLabel(master: MasterFacts): string {
   return `${master.width} × ${master.height} px`;
+}
+
+/**
+ * The preview's accessible label (#326), keyed by format so a new format is a
+ * compile error here. It names the format, the labelled size and, for a framed
+ * print, the finish and the white mount.
+ */
+const PREVIEW_LABEL: Record<
+  PrintFormat,
+  (alt: string, selection: PrintSelection, orientation: Orientation) => string
+> = {
+  giclee: (alt, selection, orientation) =>
+    `${alt} — giclée fine art print, ${sizeLabel(selection.size, orientation)}`,
+  framed: (alt, selection, orientation) =>
+    `${alt} — framed print, ${sizeLabel(selection.size, orientation)}, ${FRAME_COPY[selection.frame]} frame with white mount`,
+  canvas: (alt, selection, orientation) =>
+    `${alt} — stretched canvas, ${sizeLabel(selection.size, orientation)}, image wrapped around the edges`,
+  digital: (alt) => alt,
+};
+
+export function previewLabel(
+  alt: string,
+  selection: PrintSelection,
+  orientation: Orientation,
+): string {
+  return PREVIEW_LABEL[selection.format](alt, selection, orientation);
+}
+
+/**
+ * The caption under the stage (#326), keyed by format. It names the product,
+ * the labelled size and, for framed, the finish. Digital states the full frame
+ * because the whole uncropped photo is shown.
+ */
+const PREVIEW_CAPTION: Record<
+  PrintFormat,
+  (selection: PrintSelection, orientation: Orientation) => string
+> = {
+  giclee: (selection, orientation) =>
+    `Giclée Fine Art · ${sizeLabel(selection.size, orientation)}`,
+  framed: (selection, orientation) =>
+    `Framed Print · ${sizeLabel(selection.size, orientation)} · ${FRAME_COPY[selection.frame]}`,
+  canvas: (selection, orientation) =>
+    `Stretched Canvas · ${sizeLabel(selection.size, orientation)}`,
+  digital: () => "Digital Copy · full frame",
+};
+
+export function previewCaption(
+  selection: PrintSelection,
+  orientation: Orientation,
+): string {
+  return PREVIEW_CAPTION[selection.format](selection, orientation);
+}
+
+/**
+ * The note under the caption (#326), or null. Canvas explains the wrap; a
+ * paper or framed print whose crop discards at least 1% of the photo says so,
+ * because the buyer is seeing a real trim, not a decorative crop.
+ */
+export function previewNote(geometry: PreviewGeometry): string | null {
+  if (geometry.kind === "canvas") {
+    return `The outer ${Math.round(geometry.wrapMm.x / 10)} cm of the photo wraps around the sides of the canvas.`;
+  }
+  if (
+    (geometry.kind === "paper" || geometry.kind === "framed") &&
+    geometry.cropFraction >= 0.01
+  ) {
+    return "Prints fill the paper edge to edge, so the photo is trimmed slightly at this size — the preview shows exactly what is printed.";
+  }
+  return null;
 }
 
 /**

@@ -10,21 +10,21 @@ import {
 import {
   DIGITAL_PRICE_EUR,
   formatLabel,
-  type FrameFinish,
   type PrintFormat,
-  type PrintSize,
 } from "@/domain/pricing/pricing";
 import { checkoutRequest, quoteRequest } from "@/domain/ordering/request-bodies";
 import {
   CONFIGURATOR_FRAMES,
-  DEFAULT_FRAME_FINISH,
-  DEFAULT_PRINT_FORMAT,
-  DEFAULT_PRINT_SIZE,
-  firstOfferedSize,
   masterResolutionLabel,
   offeredFormats,
   sizeOptions,
 } from "@/domain/ordering/print-copy";
+import {
+  withFormat,
+  withFrame,
+  withSize,
+  type PrintSelection,
+} from "@/domain/ordering/print-selection";
 import type { MasterFacts } from "@/domain/catalog/master-facts";
 import type { PrintOffer } from "@/domain/catalog/print-offer";
 import {
@@ -41,11 +41,15 @@ export function PrintConfigurator({
   title,
   offer,
   master,
+  selection,
+  onSelectionChange,
 }: {
   photoSlug: string;
   title: string;
   offer: PrintOffer;
   master: MasterFacts;
+  selection: PrintSelection;
+  onSelectionChange: (next: PrintSelection) => void;
 }) {
   // The whole MasterFacts is passed in (#295/#325): the size labels read its
   // orientation and the Digital Copy reads its dimensions, both from the one
@@ -55,12 +59,9 @@ export function PrintConfigurator({
   // #302: only the formats this photo offers, digital always. The list is never
   // empty — digital is in it — so the opening selection always exists.
   const formats = offeredFormats(offer);
-  const openingFormat = formats[0]?.id ?? DEFAULT_PRINT_FORMAT;
-  const [format, setFormat] = useState<PrintFormat>(openingFormat);
-  const [size, setSize] = useState<PrintSize>(
-    firstOfferedSize(offer, openingFormat) ?? DEFAULT_PRINT_SIZE,
-  );
-  const [frame, setFrame] = useState<FrameFinish>(DEFAULT_FRAME_FINISH);
+  // #326: the selection is owned by the parent (PrintDetail), so the preview
+  // and the configurator read the same value. These are views of it.
+  const { format, size, frame } = selection;
   const [destinationCountry, setDestinationCountry] =
     useState<ShipToCountryCode>(DEFAULT_SHIPPING_COUNTRY);
   const [busy, setBusy] = useState(false);
@@ -133,25 +134,22 @@ export function PrintConfigurator({
   // the predicates read, so a value that fails here is a value the selector
   // could not have produced.
   function selectFormat(value: PrintFormat) {
-    setFormat(value);
+    // `withFormat` opens a physical format on its first offered size, so the
+    // size select never points at a size the format does not offer.
+    onSelectionChange(withFormat(selection, offer, value));
     if (value === "digital") {
       setQuote(null);
       setQuoteError(null);
       setQuoteLoading(false);
-      return;
     }
-    // The new format has its own offered sizes; open on its first, so the size
-    // select never points at a size the format does not offer.
-    const first = firstOfferedSize(offer, value);
-    if (first) setSize(first);
   }
 
   function selectSize(value: string) {
-    if (isPrintSize(value)) setSize(value);
+    if (isPrintSize(value)) onSelectionChange(withSize(selection, value));
   }
 
   function selectFrame(value: string) {
-    if (isFrameFinishValue(value)) setFrame(value);
+    if (isFrameFinishValue(value)) onSelectionChange(withFrame(selection, value));
   }
 
   function selectDestination(value: string) {
