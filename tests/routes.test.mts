@@ -655,6 +655,161 @@ test("checkout: an unset site url is a 503 before Stripe or Prodigi is called", 
   }
 });
 
+test("checkout: a physical size the photo does not sell is a 400 before Prodigi or Stripe", async () => {
+  const saved = { ...process.env };
+  const originalFetch = globalThis.fetch;
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
+  process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
+  const restore = withBindings({ prodigiKeyConfigured: true });
+  let gatewayCalled = false;
+  globalThis.fetch = (async () => {
+    gatewayCalled = true;
+    throw new Error("no gateway may be reached for a non-offered size");
+  }) as typeof fetch;
+  try {
+    const response = await checkout.POST(
+      jsonRequest(`${SITE}/api/checkout`, {
+        photoSlug: SAMPLE_SLUG,
+        format: "giclee",
+        size: "70x100",
+        frame: null,
+        destinationCountryCode: "BG",
+      }),
+    );
+    assert.equal(response.status, 400);
+    assert.equal(
+      (await body(response)).error,
+      "This print option is not available for this photo",
+    );
+    assert.equal(gatewayCalled, false, "no gateway call for a refused size");
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+    for (const key of [
+      "STRIPE_SECRET_KEY",
+      "PRODIGI_API_BASE",
+      "PRODIGI_SANDBOX_API_KEY",
+    ] as const) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+});
+
+test("checkout: an offered physical spec reaches the Prodigi quote and Stripe session", async () => {
+  const saved = { ...process.env };
+  const originalFetch = globalThis.fetch;
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
+  process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
+  const restore = withBindings({ prodigiKeyConfigured: true });
+  let prodigiCalled = false;
+  let stripeCalled = false;
+  globalThis.fetch = (async (url: unknown) => {
+    const u = String(url);
+    if (u.includes("api.sandbox.prodigi.com")) {
+      prodigiCalled = true;
+      return new Response(
+        JSON.stringify({
+          quotes: [
+            {
+              items: [{ unitCost: { amount: "12.00" } }],
+              costSummary: { shipping: { amount: "4.99" } },
+            },
+          ],
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    if (u.includes("api.stripe.com")) {
+      stripeCalled = true;
+      return new Response(
+        JSON.stringify({
+          id: "cs_test_abcdefgh",
+          url: "https://checkout.stripe.com/c/pay/cs_test_abcdefgh",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    throw new Error(`unexpected fetch to ${u}`);
+  }) as typeof fetch;
+  try {
+    // giclee 30x40 is in the golden photo's committed offer.
+    const response = await checkout.POST(
+      jsonRequest(`${SITE}/api/checkout`, {
+        photoSlug: SAMPLE_SLUG,
+        format: "giclee",
+        size: "30x40",
+        frame: null,
+        destinationCountryCode: "BG",
+      }),
+    );
+    assert.equal(response.status, 200);
+    const created = await body(response);
+    assert.equal(created.sessionId, "cs_test_abcdefgh");
+    assert.equal(created.quoteEur, 14.4);
+    assert.equal(prodigiCalled, true, "Prodigi quote was reached for an offered size");
+    assert.equal(stripeCalled, true, "Stripe session create was reached");
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+    for (const key of [
+      "STRIPE_SECRET_KEY",
+      "PRODIGI_API_BASE",
+      "PRODIGI_SANDBOX_API_KEY",
+    ] as const) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+});
+
+test("checkout: a digital spec passes the offer gate and reaches Stripe", async () => {
+  const saved = { ...process.env };
+  const originalFetch = globalThis.fetch;
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  let prodigiCalled = false;
+  let stripeCalled = false;
+  globalThis.fetch = (async (url: unknown) => {
+    const u = String(url);
+    if (u.includes("api.sandbox.prodigi.com") || u.includes("prodigi.com")) {
+      prodigiCalled = true;
+      throw new Error("Prodigi must not be called for a digital order");
+    }
+    if (u.includes("api.stripe.com")) {
+      stripeCalled = true;
+      return new Response(
+        JSON.stringify({
+          id: "cs_test_digital",
+          url: "https://checkout.stripe.com/c/pay/cs_test_digital",
+        }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    throw new Error(`unexpected fetch to ${u}`);
+  }) as typeof fetch;
+  const restore = withBindings({ prodigiKeyConfigured: false });
+  try {
+    const response = await checkout.POST(
+      jsonRequest(`${SITE}/api/checkout`, {
+        photoSlug: SAMPLE_SLUG,
+        format: "digital",
+      }),
+    );
+    assert.equal(response.status, 200);
+    const created = await body(response);
+    assert.equal(created.sessionId, "cs_test_digital");
+    assert.equal(prodigiCalled, false, "Prodigi must not be called for digital");
+    assert.equal(stripeCalled, true, "Stripe was reached for digital");
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+    if (saved.STRIPE_SECRET_KEY === undefined) delete process.env.STRIPE_SECRET_KEY;
+    else process.env.STRIPE_SECRET_KEY = saved.STRIPE_SECRET_KEY;
+  }
+});
+
 test("prodigi webhook: authenticated but no ORDERS_DB is a 503, not a callback", async () => {
   // Order matters and is the point of this test: auth is checked first, so a
   // request that passes the bearer check reaches the binding check and is told
