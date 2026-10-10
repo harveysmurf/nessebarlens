@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { PrintConfigurator } from "@/components/PrintConfigurator";
 import { WebPhoto } from "@/components/WebPhoto";
 import { categoryHref, filmLookClass, getPhoto, PHOTOS } from "@/domain/catalog/photos";
+import { masterResolutionLabel } from "@/domain/ordering/print-copy";
 
 export function generateStaticParams() {
   return PHOTOS.map((p) => ({ slug: p.slug }));
@@ -42,7 +43,7 @@ export default async function PrintDetailPage({
           </div>
           <div className="flex justify-between text-[10px] text-stone-400 uppercase tracking-widest px-1">
             <span>Gallery preview</span>
-            <span>{photo.master.width} × {photo.master.height} px</span>
+            <span>{masterResolutionLabel(photo.master)}</span>
             <span>Global Delivery via Prodigi</span>
           </div>
         </div>
@@ -64,7 +65,7 @@ export default async function PrintDetailPage({
             photoSlug={photo.slug}
             title={photo.title}
             offer={photo.printOffer}
-            orientation={photo.master.orientation}
+            master={photo.master}
           />
         </div>
       </div>

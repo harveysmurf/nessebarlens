@@ -92,6 +92,33 @@ test.describe("print configurator shows only the photo's offer (#302)", () => {
       page.getByRole("button", { name: /checkout with stripe/i }),
     ).toBeEnabled();
   });
+
+  test("the Digital Copy states the master's full resolution (#325)", async ({
+    page,
+  }) => {
+    await page.goto(`/prints/${HARBOUR}`);
+    const master = getPhoto(HARBOUR)!.master;
+    const expected = `${master.width} \u00d7 ${master.height} px`;
+
+    await page.getByText(/digital copy/i).click();
+    // Selected: the detail slot reports the delivered pixel size, read from
+    // the photo's master facts — not a hard-coded number.
+    await expect(page.getByTestId("digital-resolution")).toHaveText(expected);
+    // The option itself carries it too, so the state is legible before choice.
+    await expect(page.getByTestId("digital-option-resolution")).toHaveText(
+      expected,
+    );
+  });
+
+  test("physical formats keep their print-size select, not a resolution", async ({
+    page,
+  }) => {
+    await page.goto(`/prints/${HARBOUR}`);
+    // Opens on a physical format by default: the detail slot is the print-size
+    // select, so the digital resolution block is not rendered for it.
+    await expect(page.locator("#print-size")).toBeVisible();
+    await expect(page.getByTestId("digital-resolution")).toHaveCount(0);
+  });
 });
 
 const sandboxProdigiKey = process.env.PRODIGI_SANDBOX_API_KEY?.trim();
