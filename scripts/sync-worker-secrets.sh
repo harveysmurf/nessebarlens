@@ -134,6 +134,19 @@ else
   export RESEND_API_KEY="$RESEND_KEY"
 fi
 
+# Operator alert recipient (#309). Not required, unlike RESEND_API_KEY: with it
+# unset the revocation path still answers 200 and logs
+# operator-alert.undelivered, so this warns in every scope rather than failing a
+# deploy. Empty is not shipped (a blank binding would read as present-but-wrong).
+OP_ALERT="${OPERATOR_ALERT_EMAIL:-}"
+OP_ALERT="${OP_ALERT#"${OP_ALERT%%[![:space:]]*}"}"
+OP_ALERT="${OP_ALERT%"${OP_ALERT##*[![:space:]]}"}"
+if [[ -z "$OP_ALERT" ]]; then
+  echo "warning: OPERATOR_ALERT_EMAIL unset — operator alerts will only be logged" >&2
+else
+  export OPERATOR_ALERT_EMAIL="$OP_ALERT"
+fi
+
 # Bearer token for the Prodigi CloudEvent callback (#117). Prodigi signs nothing,
 # so this is our own secret and Prodigi must be configured to send it. Unset
 # means the route answers 503 "prodigi-webhook-unconfigured" rather than
@@ -260,6 +273,12 @@ if len(print_secret) >= 32:
 resend_key = os.environ.get("RESEND_API_KEY", "").strip()
 if resend_key:
     secrets["RESEND_API_KEY"] = resend_key
+# Operator alert recipient (#309). Not a secret, but like PRODIGI_API_BASE there
+# is no plain-text channel here, so it rides as a binding. Optional: unset only
+# logs operator-alert.undelivered at runtime.
+operator_alert_email = os.environ.get("OPERATOR_ALERT_EMAIL", "").strip()
+if operator_alert_email:
+    secrets["OPERATOR_ALERT_EMAIL"] = operator_alert_email
 webhook_token = os.environ.get("PRODIGI_WEBHOOK_TOKEN", "").strip()
 if len(webhook_token) >= 32:
     secrets["PRODIGI_WEBHOOK_TOKEN"] = webhook_token

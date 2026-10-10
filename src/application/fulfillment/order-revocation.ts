@@ -21,6 +21,16 @@
  * Writes use `transitionOrder` (#116) so a double-refund webhook cannot cancel
  * the same Prodigi order twice: the losing transition answers 200 duplicate
  * and skips cancel.
+ *
+ * Operator alert (#309): a Prodigi cancel that fails for a physical order
+ * raises one alert — event key `order.prodigi-cancel-failed` with the Prodigi
+ * order id, stage, cancel HTTP status and reason in `details` — in addition to
+ * the `order.prodigi-cancel-failed` log. The alert is fire-and-forget: it never
+ * changes the 200 outcome, a missing OPERATOR_ALERT_EMAIL logs
+ * `operator-alert.undelivered`, and a throwing adapter logs
+ * `operator-alert.failed`/`operator-alert.threw`. Exactly one alert per failed
+ * physical cancel: the cancel runs after the winning transition, so a lost
+ * claim never reaches it.
  */
 
 import type { OrdersStore } from "../../domain/ordering/orders-store";
@@ -33,6 +43,8 @@ import {
 } from "../../domain/ordering/order-decision";
 import type { CancelProdigiOrder } from "../../domain/ordering/print-provider";
 import type { StripeSessionLookup } from "../../domain/ordering/stripe-session-lookup";
+import type { OperatorAlerts } from "../ports/operator-alerts";
+import { raiseOperatorAlert } from "../operator-alert";
 
 export type RevocationOutcome =
   /** Nothing to do, or done. 200 either way — never make Stripe redeliver. */
@@ -47,6 +59,12 @@ export type RevokeInput = {
   now: string;
   stripe: StripeSessionLookup;
   cancel: CancelProdigiOrder;
+  /**
+   * Optional operator-alert port (#309). Unset means OPERATOR_ALERT_EMAIL or
+   * RESEND_API_KEY is missing — `raiseOperatorAlert` logs
+   * `operator-alert.undelivered` rather than throwing on a webhook path.
+   */
+  alerts?: OperatorAlerts;
 };
 
 /**
@@ -172,11 +190,12 @@ export async function revokeOrderByPaymentIntent(
         })
       : null;
 
-  if (cancellation && !cancellation.ok) {
-    // Log for a human, never a webhook failure. Prodigi's cancel semantics are
-    // not something we could verify from here (docs.prodigi.com does not
-    // resolve from this environment and there is no sandbox key), so the
-    // operator gets the stage and the HTTP status and decides.
+  if (cancellation && !cancellation.ok && order.prodigiOrderId) {
+    // Log for a human, never a webhook failure: the revocation that protects
+    // the customer is already written, so a Prodigi failure must not make
+    // Stripe redeliver. #298 pinned the real cancel action (/actions/cancel),
+    // so a failure here is unexpected — the operator gets the stage and the
+    // HTTP status from the log and the alert, and decides.
     console.error(
       JSON.stringify({
         event: "order.prodigi-cancel-failed",
@@ -188,6 +207,25 @@ export async function revokeOrderByPaymentIntent(
         detail: cancellation.message,
       }),
     );
+    // Operator alert (#309): fire-and-forget, never changes the 200 outcome.
+    // The block is reached at most once per revocation — the transition above
+    // is the claim, lost claims skip the cancel entirely — so this is exactly
+    // one alert per failed physical cancel. The adapter may throw; the wrapper
+    // logs operator-alert.failed/threw but never propagates onto the webhook
+    // path.
+    await raiseOperatorAlert(input.alerts, {
+      event: "order.prodigi-cancel-failed",
+      sessionId,
+      summary: `Prodigi cancel failed for ${order.prodigiOrderId} (${order.prodigiStage ?? "no stage"})`,
+      details: {
+        prodigiOrderId: order.prodigiOrderId,
+        prodigiStage: order.prodigiStage,
+        orderStatus: input.status,
+        cancelStatus: cancellation.status,
+        cancelReason: cancellation.reason,
+        cancelMessage: cancellation.message,
+      },
+    });
   }
 
   return {

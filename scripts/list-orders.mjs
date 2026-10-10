@@ -33,16 +33,35 @@ const STATUS_ALLOW = new Set([
   "all",
 ]);
 
+/** The two statuses that take an order away from a customer for money reasons. */
+export const REVOKED_STATUSES = ["refunded", "disputed"];
+
 /**
  * Build the parameterised SELECT. Status values are validated against a closed
  * set before they become binds — never interpolated into the SQL string from
  * raw argv.
+ *
+ * `status` accepts a single value from STATUS_ALLOW ("all" means no WHERE);
+ * `statuses` accepts an array of values (excluding "all") and emits
+ * `WHERE status IN (?, …)`. `statuses` takes precedence when both are given.
  */
 export function buildListOrdersSql(options = {}) {
   const status = options.status ?? "all";
+  const statuses = options.statuses;
   const limit = clampLimit(options.limit ?? DEFAULT_LIMIT);
 
-  if (!STATUS_ALLOW.has(status)) {
+  if (statuses !== undefined) {
+    if (!Array.isArray(statuses) || statuses.length === 0) {
+      throw new Error("--statuses requires a non-empty array");
+    }
+    for (const s of statuses) {
+      if (!STATUS_ALLOW.has(s)) {
+        throw new Error(
+          `unknown --status ${s}; expected paid-unfulfilled|refunded|disputed|paid`,
+        );
+      }
+    }
+  } else if (!STATUS_ALLOW.has(status)) {
     throw new Error(
       `unknown --status ${status}; expected paid-unfulfilled|refunded|disputed|paid|all`,
     );
@@ -50,7 +69,10 @@ export function buildListOrdersSql(options = {}) {
 
   const binds = [];
   let where = "";
-  if (status !== "all") {
+  if (statuses !== undefined) {
+    where = `WHERE status IN (${statuses.map(() => "?").join(",")})`;
+    for (const s of statuses) binds.push(s);
+  } else if (status !== "all") {
     where = "WHERE status = ?";
     binds.push(status);
   }
@@ -65,7 +87,7 @@ export function buildListOrdersSql(options = {}) {
     .filter(Boolean)
     .join(" ");
   binds.push(limit);
-  return { sql, binds, status, limit };
+  return { sql, binds, status, limit, statuses: statuses ?? null };
 }
 
 export function clampLimit(limit) {
