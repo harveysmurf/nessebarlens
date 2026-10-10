@@ -16,7 +16,7 @@ import {
   previewNote,
   sizeOptions,
 } from "../src/domain/ordering/print-copy.ts";
-import type { PreviewGeometry } from "../src/domain/ordering/print-preview.ts";
+import { CANVAS_BAR_DEPTH_MM, type PreviewGeometry } from "../src/domain/ordering/print-preview.ts";
 import type { PrintSelection } from "../src/domain/ordering/print-selection.ts";
 import type { MasterFacts } from "../src/domain/catalog/master-facts.ts";
 import { sizeLabel } from "../src/domain/pricing/pricing.ts";
@@ -324,7 +324,7 @@ test("previewLabel names the format, size and, for framed, the finish (#326)", (
   );
   assert.equal(
     previewLabel(ALT, sel("canvas"), "landscape"),
-    `${ALT} — stretched canvas, ${sizeLabel("30x40", "landscape")}, image wrapped around the edges`,
+    `${ALT} — stretched canvas, ${sizeLabel("30x40", "landscape")}, image wrapped around the ${CANVAS_BAR_DEPTH_MM} mm edges`,
   );
   // Digital shows the whole uncropped photo, so the label is just the alt.
   assert.equal(previewLabel(ALT, sel("digital"), "landscape"), ALT);

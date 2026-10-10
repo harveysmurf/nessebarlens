@@ -28,6 +28,9 @@ export type Mm = number;
 export type Rect = { x: Mm; y: Mm; width: Mm; height: Mm };
 export type Extent = { width: Mm; height: Mm };
 
+/** The four faces of a stretched canvas, named for their side of the front. */
+export type CanvasSide = "top" | "right" | "bottom" | "left";
+
 export type PreviewGeometry =
   | { kind: "digital" }
   | { kind: "paper"; outer: Extent; image: Rect; cropFraction: number }
@@ -157,6 +160,35 @@ export function previewGeometry(
     height: cover.image.height,
   };
   return { kind: "canvas", front, wrapMm, depthMm: CANVAS_BAR_DEPTH_MM, image, cropFraction: cover.cropFraction };
+}
+
+/**
+ * One side face of a stretched canvas (#327), and where the photo sits on it.
+ *
+ * Prodigi wraps the cover crop around the bar, so the side shows the real band
+ * of the photo beyond the front edge — not a mirror or a stretch. The face is
+ * `depthMm` deep; the image rect is `g.image` re-expressed relative to the
+ * face's top-left in the unfolded layout, where the face sits outside the
+ * front edge. The `wrapMm - depthMm` overhang folds behind the canvas and is
+ * never visible, which falls out of using only `depthMm` for the face.
+ */
+export function canvasSideFace(
+  geometry: Extract<PreviewGeometry, { kind: "canvas" }>,
+  side: CanvasSide,
+): { face: Extent; image: Rect } {
+  const { front, depthMm, image } = geometry;
+  const upright = side === "top" || side === "bottom";
+  const x = side === "right" ? image.x - front.width : image.x + depthMm;
+  const y = side === "bottom" ? image.y - front.height : image.y + depthMm;
+  const face: Extent = upright
+    ? { width: front.width, height: depthMm }
+    : { width: depthMm, height: front.height };
+  return {
+    face,
+    image: upright
+      ? { x: image.x, y, width: image.width, height: image.height }
+      : { x, y: image.y, width: image.width, height: image.height },
+  };
 }
 
 /**

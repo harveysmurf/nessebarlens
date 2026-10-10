@@ -6,8 +6,10 @@ import { assess } from "../src/domain/catalog/print-eligibility.ts";
 import {
   CANVAS_BAR_DEPTH_MM,
   CLASSIC_FRAME_MOULDING_MM,
+  canvasSideFace,
   percentRect,
   previewGeometry,
+  type CanvasSide,
   type PreviewGeometry,
 } from "../src/domain/ordering/print-preview.ts";
 import type { PrintSelection } from "../src/domain/ordering/print-selection.ts";
@@ -208,6 +210,57 @@ test("canvas wrap is at least the bar depth for every pinned canvas product", ()
       geometry.wrapMm.y >= geometry.depthMm - TOL,
       `${product.sku} y wrap ${geometry.wrapMm.y}`,
     );
+  }
+});
+
+test("canvasSideFace matches the issue's reference table (±0.01 mm)", () => {
+  const geometry = previewGeometry(selection("canvas", "30x40"), LANDSCAPE);
+  assert.equal(geometry.kind, "canvas");
+  if (geometry.kind !== "canvas") return;
+
+  // Canvas 30x40, 3000×2000 master: front 406.4 × 304.8, depth 38, and
+  // g.image = (−85.41, −40.01, 577.22, 384.81). The side image is that rect
+  // moved to the face's top-left in the unfolded layout.
+  const REFERENCE: Array<{
+    side: CanvasSide;
+    face: { width: number; height: number };
+    image: { x: number; y: number; width: number; height: number };
+  }> = [
+    { side: "right", face: { width: 38, height: 304.8 }, image: { x: -491.81, y: -40.01, width: 577.22, height: 384.81 } },
+    { side: "left", face: { width: 38, height: 304.8 }, image: { x: -47.41, y: -40.01, width: 577.22, height: 384.81 } },
+    { side: "top", face: { width: 406.4, height: 38 }, image: { x: -85.41, y: -2.01, width: 577.22, height: 384.81 } },
+    { side: "bottom", face: { width: 406.4, height: 38 }, image: { x: -85.41, y: -344.81, width: 577.22, height: 384.81 } },
+  ];
+
+  for (const row of REFERENCE) {
+    const { face, image } = canvasSideFace(geometry, row.side);
+    near(face.width, row.face.width);
+    near(face.height, row.face.height);
+    near(image.x, row.image.x);
+    near(image.y, row.image.y);
+    near(image.width, row.image.width);
+    near(image.height, row.image.height);
+  }
+});
+
+test("every canvas side face is depthMm deep and its photo band abuts the front", () => {
+  for (const product of PRINT_PRODUCTS) {
+    if (product.format !== "canvas") continue;
+    const geometry = previewGeometry(selection("canvas", product.size), LANDSCAPE);
+    assert.equal(geometry.kind, "canvas", product.sku);
+    if (geometry.kind !== "canvas") continue;
+
+    for (const side of ["top", "right", "bottom", "left"] as CanvasSide[]) {
+      const { face } = canvasSideFace(geometry, side);
+      const upright = side === "top" || side === "bottom";
+      near(face.width, upright ? geometry.front.width : geometry.depthMm);
+      near(face.height, upright ? geometry.depthMm : geometry.front.height);
+    }
+
+    // The right face's strip starts where the front ends, so the photo
+    // continues across the fold with no seam.
+    const right = canvasSideFace(geometry, "right");
+    near(right.image.x, geometry.image.x - geometry.front.width);
   }
 });
 
