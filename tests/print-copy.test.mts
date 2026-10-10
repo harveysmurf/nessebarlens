@@ -11,8 +11,13 @@ import {
   firstOfferedSize,
   masterResolutionLabel,
   offeredFormats,
+  previewCaption,
+  previewLabel,
+  previewNote,
   sizeOptions,
 } from "../src/domain/ordering/print-copy.ts";
+import type { PreviewGeometry } from "../src/domain/ordering/print-preview.ts";
+import type { PrintSelection } from "../src/domain/ordering/print-selection.ts";
 import type { MasterFacts } from "../src/domain/catalog/master-facts.ts";
 import { sizeLabel } from "../src/domain/pricing/pricing.ts";
 import { FRAME_FINISHES, PRINT_SIZES, SELLABLE_FORMATS } from "../src/domain/pricing/sku-map.ts";
@@ -148,7 +153,9 @@ test("the component declares no option lists of its own", () => {
   // no longer names the full catalog lists.
   assert.ok(source.includes("offeredFormats"));
   assert.ok(source.includes("sizeOptions"));
-  assert.ok(source.includes("firstOfferedSize"));
+  // #326: the component no longer owns the selection or the opening rule; it
+  // applies the pure transitions from print-selection.ts.
+  assert.ok(source.includes("withFormat"));
   assert.ok(source.includes("CONFIGURATOR_FRAMES"));
   assert.equal(source.includes("CONFIGURATOR_SIZES"), false);
 });
@@ -294,4 +301,93 @@ test("the configurator never calls res.json() unguarded", async () => {
     [...source.matchAll(/requestErrorMessage\(/g)].length,
     2,
   );
+});
+
+const ALT = "Harbour at dusk";
+
+function sel(
+  format: PrintSelection["format"],
+  size: PrintSelection["size"] = "30x40",
+  frame: PrintSelection["frame"] = "black",
+): PrintSelection {
+  return { format, size, frame };
+}
+
+test("previewLabel names the format, size and, for framed, the finish (#326)", () => {
+  assert.equal(
+    previewLabel(ALT, sel("giclee"), "landscape"),
+    `${ALT} — giclée fine art print, ${sizeLabel("30x40", "landscape")}`,
+  );
+  assert.equal(
+    previewLabel(ALT, sel("framed", "30x40", "white"), "landscape"),
+    `${ALT} — framed print, ${sizeLabel("30x40", "landscape")}, Satin White frame with white mount`,
+  );
+  assert.equal(
+    previewLabel(ALT, sel("canvas"), "landscape"),
+    `${ALT} — stretched canvas, ${sizeLabel("30x40", "landscape")}, image wrapped around the edges`,
+  );
+  // Digital shows the whole uncropped photo, so the label is just the alt.
+  assert.equal(previewLabel(ALT, sel("digital"), "landscape"), ALT);
+});
+
+test("previewCaption names the product and, for framed, the finish (#326)", () => {
+  assert.equal(
+    previewCaption(sel("giclee"), "landscape"),
+    `Giclée Fine Art · ${sizeLabel("30x40", "landscape")}`,
+  );
+  assert.equal(
+    previewCaption(sel("framed", "30x40", "brown"), "landscape"),
+    `Framed Print · ${sizeLabel("30x40", "landscape")} · Brown Wood`,
+  );
+  assert.equal(
+    previewCaption(sel("canvas"), "landscape"),
+    `Stretched Canvas · ${sizeLabel("30x40", "landscape")}`,
+  );
+  assert.equal(previewCaption(sel("digital"), "landscape"), "Digital Copy · full frame");
+});
+
+test("previewNote explains the wrap, or a real trim, and nothing else (#326)", () => {
+  const canvas: PreviewGeometry = {
+    kind: "canvas",
+    front: { width: 406.4, height: 304.8 },
+    wrapMm: { x: 40.01, y: 40 },
+    depthMm: 38,
+    image: { x: -85.41, y: -40.01, width: 577.22, height: 384.81 },
+    cropFraction: 0.1573,
+  };
+  assert.equal(
+    previewNote(canvas),
+    "The outer 4 cm of the photo wraps around the sides of the canvas.",
+  );
+
+  const trimmed: PreviewGeometry = {
+    kind: "paper",
+    outer: { width: 406.4, height: 304.8 },
+    image: { x: -25.4, y: 0, width: 457.2, height: 304.8 },
+    cropFraction: 0.1111,
+  };
+  assert.match(previewNote(trimmed) ?? "", /trimmed slightly/);
+
+  const framedTrimmed: PreviewGeometry = {
+    kind: "framed",
+    frame: "black",
+    outer: { width: 497.2, height: 344.8 },
+    mouldingMm: 20,
+    mount: { x: 20, y: 20, width: 457.2, height: 304.8 },
+    window: { x: 70.04, y: 70.04, width: 357.12, height: 204.72 },
+    image: { x: 0, y: -16.68, width: 357.12, height: 238.08 },
+    cropFraction: 0.1401,
+  };
+  assert.match(previewNote(framedTrimmed) ?? "", /trimmed slightly/);
+
+  // Below the 1% threshold the trim is not worth a line.
+  const barely: PreviewGeometry = {
+    kind: "paper",
+    outer: { width: 406.4, height: 304.8 },
+    image: { x: -1, y: 0, width: 410, height: 304.8 },
+    cropFraction: 0.005,
+  };
+  assert.equal(previewNote(barely), null);
+  // Digital is never trimmed.
+  assert.equal(previewNote({ kind: "digital" }), null);
 });

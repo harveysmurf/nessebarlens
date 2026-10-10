@@ -14,13 +14,13 @@
  * `sizes` applies because there is a real srcSet: an <img> with a srcSet and no
  * sizes makes the browser assume 100vw, which is wrong for a 33vw tile.
  *
- * The `<picture>` is `display: contents`, so it generates no box and the <img>
- * is laid out exactly as it was before the wrapper existed (full-height tiles
- * depend on the percentage height resolving against the tile's own box).
+ * The markup is PictureImg's; this component only resolves the ladder and the
+ * alt-text fallback.
  */
 import { galleryImage } from "@/infrastructure/media/gallery-image";
 import type { WebDerivativeWidth } from "@/domain/catalog/derivative-ladder";
 import type { Photo } from "@/domain/catalog/photos";
+import { PictureImg } from "./PictureImg";
 
 export function WebPhoto({
   photo,
@@ -43,18 +43,12 @@ export function WebPhoto({
   }
 
   return (
-    <picture className="contents">
-      <source type="image/webp" srcSet={image.webpSrcSet} sizes={sizes} />
-      <img
-        src={image.src}
-        srcSet={image.srcSet}
-        sizes={sizes}
-        alt={photo.alt}
-        className={className}
-        decoding="async"
-        loading={priority ? "eager" : "lazy"}
-        {...(priority ? { fetchPriority: "high" as const } : {})}
-      />
-    </picture>
+    <PictureImg
+      image={image}
+      alt={photo.alt}
+      className={className}
+      sizes={sizes}
+      priority={priority}
+    />
   );
 }

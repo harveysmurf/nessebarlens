@@ -1,9 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { PrintConfigurator } from "@/components/PrintConfigurator";
-import { WebPhoto } from "@/components/WebPhoto";
+import { PrintDetail } from "@/components/PrintDetail";
 import { categoryHref, filmLookClass, getPhoto, PHOTOS } from "@/domain/catalog/photos";
-import { masterResolutionLabel } from "@/domain/ordering/print-copy";
+import { galleryImage } from "@/infrastructure/media/gallery-image";
 
 export function generateStaticParams() {
   return PHOTOS.map((p) => ({ slug: p.slug }));
@@ -18,6 +17,12 @@ export default async function PrintDetailPage({
   const photo = getPhoto(slug);
   if (!photo) notFound();
 
+  // Resolved on the server: `galleryImage()` reads `process.env`, which a
+  // client component does not see, so the ladder URL must be computed here and
+  // passed down as a plain value (#326).
+  const image = galleryImage(photo, 2000);
+  const filmLookClassName = filmLookClass(photo.filmLook);
+
   return (
     <section className="fade-in max-w-7xl mx-auto px-6 py-10">
       <Link
@@ -27,48 +32,27 @@ export default async function PrintDetailPage({
         ← Back to Gallery
       </Link>
 
-      <div className="grid lg:grid-cols-12 gap-12 items-start">
-        <div className="lg:col-span-7 space-y-3">
-          <div
-            className="bg-stone-200 rounded-sm overflow-hidden relative flex items-center justify-center p-3 border border-stone-300/60 shadow-inner"
-            style={{ aspectRatio: `${photo.master.width} / ${photo.master.height}` }}
-          >
-            <WebPhoto
-              photo={photo}
-              preferred={2000}
-              sizes="(max-width: 1024px) 100vw, 60vw"
-              priority
-              className={`max-h-full max-w-full object-contain shadow-md ${filmLookClass(photo.filmLook)}`}
-            />
-          </div>
-          <div className="flex justify-between text-[10px] text-stone-400 uppercase tracking-widest px-1">
-            <span>Gallery preview</span>
-            <span>{masterResolutionLabel(photo.master)}</span>
-            <span>Global Delivery via Prodigi</span>
-          </div>
+      <PrintDetail
+        photoSlug={photo.slug}
+        title={photo.title}
+        offer={photo.printOffer}
+        master={photo.master}
+        image={image}
+        alt={photo.alt}
+        filmLookClassName={filmLookClassName}
+      >
+        <div>
+          <span className="text-[10px] uppercase tracking-[0.2em] font-mono font-medium text-amber-800">
+            {photo.categoryLabel}
+          </span>
+          <h1 className="font-serif text-3xl font-normal text-stone-900 mt-1">
+            {photo.title}
+          </h1>
+          <p className="text-xs text-stone-500 mt-2 leading-relaxed">
+            {photo.description}
+          </p>
         </div>
-
-        <div className="lg:col-span-5 bg-white p-8 rounded-sm border border-stone-200/80 shadow-sm space-y-6">
-          <div>
-            <span className="text-[10px] uppercase tracking-[0.2em] font-mono font-medium text-amber-800">
-              {photo.categoryLabel}
-            </span>
-            <h1 className="font-serif text-3xl font-normal text-stone-900 mt-1">
-              {photo.title}
-            </h1>
-            <p className="text-xs text-stone-500 mt-2 leading-relaxed">
-              {photo.description}
-            </p>
-          </div>
-
-          <PrintConfigurator
-            photoSlug={photo.slug}
-            title={photo.title}
-            offer={photo.printOffer}
-            master={photo.master}
-          />
-        </div>
-      </div>
+      </PrintDetail>
     </section>
   );
 }
