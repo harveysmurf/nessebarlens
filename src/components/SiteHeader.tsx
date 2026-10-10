@@ -2,13 +2,8 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-
-const NAV = [
-  { href: "/fine-art", label: "Fine Art" },
-  { href: "/archive", label: "Archive" },
-  { href: "/film", label: "Film Photography" },
-  { href: "/contact", label: "Contact" },
-] as const;
+import { MobileNav } from "./MobileNav";
+import { NAV, isActive } from "./nav";
 
 export function SiteHeader() {
   const pathname = usePathname();
@@ -16,18 +11,18 @@ export function SiteHeader() {
   return (
     <header className="border-b border-gallery-200/70 bg-gallery-50/90 backdrop-blur-md sticky top-0 z-40">
       <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between gap-4">
-        <Link href="/" className="group shrink-0">
-          <span className="font-serif text-2xl font-light tracking-tight block text-gallery-900">
+        <Link href="/" className="group min-w-0">
+          <span className="font-serif text-2xl font-light tracking-tight block whitespace-nowrap text-gallery-900">
             NESSEBAR LENS
           </span>
-          <span className="text-[9px] uppercase tracking-[0.3em] text-stone-500 font-medium block">
+          <span className="hidden sm:block text-[9px] uppercase tracking-[0.3em] text-stone-500 font-medium">
             Old Town Nessebar • Fine Art, Archive & Film
           </span>
         </Link>
 
-        <nav className="flex items-center space-x-4 sm:space-x-10 text-[11px] tracking-widest uppercase font-medium">
+        <nav className="hidden md:flex items-center space-x-4 sm:space-x-10 text-[11px] tracking-widest uppercase font-medium">
           {NAV.map((item) => {
-            const active = pathname === item.href || pathname.startsWith(item.href + "/");
+            const active = isActive(pathname, item.href);
             return (
               <Link
                 key={item.href}
@@ -44,6 +39,8 @@ export function SiteHeader() {
             );
           })}
         </nav>
+
+        <MobileNav />
       </div>
     </header>
   );
