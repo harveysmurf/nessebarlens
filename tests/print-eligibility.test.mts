@@ -146,11 +146,12 @@ test("assessAll walks the table in order, with the product on each assessment", 
     all.map((a) => [a.product.format, a.product.size]),
     PRINT_PRODUCTS.map((p) => [p.format, p.size]),
   );
-  // Giclée, framed then canvas, each short to long.
-  assert.deepEqual(all.slice(0, 3).map((a) => a.product.size), [
+  // Giclée, framed then canvas, each small to large by area.
+  assert.deepEqual(all.slice(0, 4).map((a) => a.product.size), [
+    "20x30",
     "30x40",
-    "50x70",
-    "70x100",
+    "30x45",
+    "40x60",
   ]);
 });
 

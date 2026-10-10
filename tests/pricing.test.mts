@@ -43,7 +43,8 @@ test("every print size has a label with both unit systems", () => {
     assert.match(label, /cm \(/);
     assert.match(label, /"/);
   }
-  assert.equal(sizeLabel(PRINT_SIZES[0]!), '30 × 40 cm (12 × 16")');
+  // PRINT_SIZES is in table order, small to large; the smallest is 20x30 (#303).
+  assert.equal(sizeLabel(PRINT_SIZES[0]!), '20 × 30 cm (8 × 12")');
 });
 
 test("sizeLabel puts the long edge first for a landscape photo (#302)", () => {
@@ -51,6 +52,8 @@ test("sizeLabel puts the long edge first for a landscape photo (#302)", () => {
   // long edge and reads first. Portrait and square keep the short edge first.
   assert.equal(sizeLabel("30x40", "landscape"), '40 × 30 cm (16 × 12")');
   assert.equal(sizeLabel("50x70", "landscape"), '70 × 50 cm (28 × 20")');
+  // A 2:3 size too (#303).
+  assert.equal(sizeLabel("20x30", "landscape"), '30 × 20 cm (12 × 8")');
   assert.equal(sizeLabel("30x40", "portrait"), '30 × 40 cm (12 × 16")');
   assert.equal(sizeLabel("30x40", "square"), '30 × 40 cm (12 × 16")');
   assert.equal(sizeLabel("30x40"), '30 × 40 cm (12 × 16")');

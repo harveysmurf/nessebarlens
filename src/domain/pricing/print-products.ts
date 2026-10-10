@@ -31,14 +31,32 @@ export type PrintProductEntry = {
 };
 
 export const PRINT_PRODUCTS = [
+  // 2:3 sizes (#303) sit alongside the 3:4 and 5:7 ones, ordered small to large
+  // by area within each format. The 2:3 SKUs are the cm-nominal IDs: 20x30 =
+  // 8x12", 30x45 = 12x18", 40x60 = 16x24", 50x75 = 20x30", 60x90 = 24x36".
+  { format: "giclee", size: "20x30", sizeIn: "8x12", sku: "GLOBAL-FAP-8X12", printAreaPx: { short: 2400, long: 3600 }, printAreaDpi: 300 },
   { format: "giclee", size: "30x40", sizeIn: "12x16", sku: "GLOBAL-FAP-12X16", printAreaPx: { short: 3600, long: 4800 }, printAreaDpi: 300 },
+  { format: "giclee", size: "30x45", sizeIn: "12x18", sku: "GLOBAL-FAP-12X18", printAreaPx: { short: 3600, long: 5400 }, printAreaDpi: 300 },
+  { format: "giclee", size: "40x60", sizeIn: "16x24", sku: "GLOBAL-FAP-16X24", printAreaPx: { short: 4800, long: 7200 }, printAreaDpi: 300 },
   { format: "giclee", size: "50x70", sizeIn: "20x28", sku: "GLOBAL-FAP-20X28", printAreaPx: { short: 6000, long: 8400 }, printAreaDpi: 300 },
+  { format: "giclee", size: "50x75", sizeIn: "20x30", sku: "GLOBAL-FAP-20X30", printAreaPx: { short: 6000, long: 9000 }, printAreaDpi: 300 },
+  { format: "giclee", size: "60x90", sizeIn: "24x36", sku: "GLOBAL-FAP-24X36", printAreaPx: { short: 7200, long: 10800 }, printAreaDpi: 300 },
   { format: "giclee", size: "70x100", sizeIn: "28x40", sku: "GLOBAL-FAP-28X40", printAreaPx: { short: 8400, long: 12000 }, printAreaDpi: 300 },
+  { format: "framed", size: "20x30", sizeIn: "8x12", sku: "GLOBAL-CFPM-8X12", printAreaPx: { short: 1800, long: 3000 }, printAreaDpi: 300 },
   { format: "framed", size: "30x40", sizeIn: "12x16", sku: "GLOBAL-CFPM-12X16", printAreaPx: { short: 2400, long: 3600 }, printAreaDpi: 300 },
+  { format: "framed", size: "30x45", sizeIn: "12x18", sku: "GLOBAL-CFPM-12X18", printAreaPx: { short: 2418, long: 4218 }, printAreaDpi: 300 },
+  { format: "framed", size: "40x60", sizeIn: "16x24", sku: "GLOBAL-CFPM-16X24", printAreaPx: { short: 3618, long: 6018 }, printAreaDpi: 300 },
   { format: "framed", size: "50x70", sizeIn: "20x28", sku: "GLOBAL-CFPM-20X28", printAreaPx: { short: 4800, long: 7200 }, printAreaDpi: 300 },
+  { format: "framed", size: "50x75", sizeIn: "20x30", sku: "GLOBAL-CFPM-20X30", printAreaPx: { short: 4800, long: 7800 }, printAreaDpi: 300 },
+  { format: "framed", size: "60x90", sizeIn: "24x36", sku: "GLOBAL-CFPM-24X36", printAreaPx: { short: 6000, long: 9600 }, printAreaDpi: 300 },
   { format: "framed", size: "70x100", sizeIn: "28x40", sku: "GLOBAL-CFPM-28X40", printAreaPx: { short: 7200, long: 10800 }, printAreaDpi: 300 },
+  { format: "canvas", size: "20x30", sizeIn: "8x12", sku: "GLOBAL-CAN-8X12", printAreaPx: { short: 3345, long: 4545 }, printAreaDpi: 300 },
   { format: "canvas", size: "30x40", sizeIn: "12x16", sku: "GLOBAL-CAN-12X16", printAreaPx: { short: 4545, long: 5745 }, printAreaDpi: 300 },
+  { format: "canvas", size: "30x45", sizeIn: "12x18", sku: "GLOBAL-CAN-12X18", printAreaPx: { short: 4545, long: 6345 }, printAreaDpi: 300 },
+  { format: "canvas", size: "40x60", sizeIn: "16x24", sku: "GLOBAL-CAN-16X24", printAreaPx: { short: 5745, long: 8145 }, printAreaDpi: 300 },
   { format: "canvas", size: "50x70", sizeIn: "20x28", sku: "GLOBAL-CAN-20X28", printAreaPx: { short: 6945, long: 9345 }, printAreaDpi: 300 },
+  { format: "canvas", size: "50x75", sizeIn: "20x30", sku: "GLOBAL-CAN-20X30", printAreaPx: { short: 6945, long: 9945 }, printAreaDpi: 300 },
+  { format: "canvas", size: "60x90", sizeIn: "24x36", sku: "GLOBAL-CAN-24X36", printAreaPx: { short: 8145, long: 11745 }, printAreaDpi: 300 },
   { format: "canvas", size: "70x100", sizeIn: "28x40", sku: "GLOBAL-CAN-28X40", printAreaPx: { short: 9600, long: 13200 }, printAreaDpi: 300 },
 ] as const satisfies readonly PrintProductEntry[];
 

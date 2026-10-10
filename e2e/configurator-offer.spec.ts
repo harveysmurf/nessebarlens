@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPhoto } from "@/domain/catalog/photos";
+import { sizeLabel } from "@/domain/pricing/pricing";
 
 /**
  * The print configurator renders a photo's committed print offer (#302): only
@@ -60,10 +61,11 @@ test.describe("print configurator shows only the photo's offer (#302)", () => {
     // A size the offer excludes (70×100, below the PPI floor) is not present.
     expect(await sizeValues(page)).not.toContain("70x100");
     // Landscape: the long edge reads first; the value stays short edge first.
-    expect(await sizeLabels(page)).toEqual([
-      '40 × 30 cm (16 × 12")',
-      '70 × 50 cm (28 × 20")',
-    ]);
+    expect(await sizeLabels(page)).toEqual(
+      photo.printOffer.giclee.map((size) => sizeLabel(size, "landscape")),
+    );
+    // The smallest offered size is a #303 2:3 size, and reads long edge first.
+    expect((await sizeLabels(page))[0]).toBe('30 × 20 cm (12 × 8")');
   });
 
   test("only offered formats are buttons, and digital is always one", async ({
@@ -109,5 +111,22 @@ test.describe("@hosted physical quote from the offer", () => {
     });
     await expect(checkout).toBeEnabled({ timeout: 30_000 });
     await expect(page.getByText(/shipping estimate/i)).toBeVisible();
+  });
+
+  test("a new 2:3 size quotes and reaches Stripe (#303)", async ({ page }) => {
+    // Golden sun offers giclée 40×60 — one of the #303 2:3 sizes. Picking it
+    // proves the new size flows through /api/quote (the real table SKU) and on
+    // to the Stripe redirect, not just that it renders.
+    await page.goto(`/prints/${GOLDEN}`);
+    await page.locator("#print-size").selectOption("40x60");
+    const checkout = page.getByRole("button", {
+      name: /checkout with stripe/i,
+    });
+    await expect(checkout).toBeEnabled({ timeout: 30_000 });
+    await expect(page.getByText(/shipping estimate/i)).toBeVisible();
+    await Promise.all([
+      page.waitForURL(/checkout\.stripe\.com/, { timeout: 30_000 }),
+      checkout.click(),
+    ]);
   });
 });

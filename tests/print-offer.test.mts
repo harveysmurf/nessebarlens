@@ -31,21 +31,21 @@ const HARBOUR: MasterFacts = {
 
 /** Every size on every format — the offer an owner starts from before narrowing. */
 const FULL: PrintOffer = {
-  giclee: ["30x40", "50x70", "70x100"],
-  framed: ["30x40", "50x70", "70x100"],
-  canvas: ["30x40", "50x70", "70x100"],
+  giclee: ["20x30", "30x40", "30x45", "40x60", "50x70", "50x75", "60x90", "70x100"],
+  framed: ["20x30", "30x40", "30x45", "40x60", "50x70", "50x75", "60x90", "70x100"],
+  canvas: ["20x30", "30x40", "30x45", "40x60", "50x70", "50x75", "60x90", "70x100"],
 };
 
 test("eligibleOffer lists only eligible sizes, per format, in table order", () => {
   assert.deepEqual(eligibleOffer(GOLDEN), {
-    giclee: ["30x40", "50x70"],
-    framed: ["30x40", "50x70", "70x100"],
-    canvas: ["30x40", "50x70", "70x100"],
+    giclee: ["20x30", "30x40", "30x45", "40x60", "50x70", "50x75", "60x90"],
+    framed: ["20x30", "30x40", "30x45", "40x60", "50x70", "50x75", "60x90", "70x100"],
+    canvas: ["20x30", "30x40", "30x45", "40x60", "50x70", "50x75", "60x90", "70x100"],
   });
   assert.deepEqual(eligibleOffer(HARBOUR), {
-    giclee: ["30x40"],
-    framed: ["30x40"],
-    canvas: ["30x40"],
+    giclee: ["20x30", "30x40", "30x45"],
+    framed: ["20x30", "30x40", "30x45", "40x60"],
+    canvas: ["20x30", "30x40", "30x45", "40x60"],
   });
 });
 
@@ -211,10 +211,17 @@ test("narrowOffer drops options that are no longer eligible, and reports them", 
     removed.map((a) => [a.product.format, a.product.size]).sort(),
     [
       ["canvas", "50x70"],
+      ["canvas", "50x75"],
+      ["canvas", "60x90"],
       ["canvas", "70x100"],
       ["framed", "50x70"],
+      ["framed", "50x75"],
+      ["framed", "60x90"],
       ["framed", "70x100"],
+      ["giclee", "40x60"],
       ["giclee", "50x70"],
+      ["giclee", "50x75"],
+      ["giclee", "60x90"],
       ["giclee", "70x100"],
     ],
   );
@@ -232,12 +239,27 @@ test("narrowOffer reports newly eligible options but never adds them", () => {
   assert.deepEqual(
     newlyEligible.map((a) => [a.product.format, a.product.size]),
     [
+      ["giclee", "20x30"],
+      ["giclee", "30x45"],
+      ["giclee", "40x60"],
       ["giclee", "50x70"],
+      ["giclee", "50x75"],
+      ["giclee", "60x90"],
+      ["framed", "20x30"],
       ["framed", "30x40"],
+      ["framed", "30x45"],
+      ["framed", "40x60"],
       ["framed", "50x70"],
+      ["framed", "50x75"],
+      ["framed", "60x90"],
       ["framed", "70x100"],
+      ["canvas", "20x30"],
       ["canvas", "30x40"],
+      ["canvas", "30x45"],
+      ["canvas", "40x60"],
       ["canvas", "50x70"],
+      ["canvas", "50x75"],
+      ["canvas", "60x90"],
       ["canvas", "70x100"],
     ],
   );
@@ -255,13 +277,28 @@ test("narrowOffer can remove and report a newly eligible option at once", () => 
   assert.deepEqual(
     newlyEligible.map((a) => [a.product.format, a.product.size]),
     [
+      ["giclee", "20x30"],
       ["giclee", "30x40"],
+      ["giclee", "30x45"],
+      ["giclee", "40x60"],
       ["giclee", "50x70"],
+      ["giclee", "50x75"],
+      ["giclee", "60x90"],
+      ["framed", "20x30"],
       ["framed", "30x40"],
+      ["framed", "30x45"],
+      ["framed", "40x60"],
       ["framed", "50x70"],
+      ["framed", "50x75"],
+      ["framed", "60x90"],
       ["framed", "70x100"],
+      ["canvas", "20x30"],
       ["canvas", "30x40"],
+      ["canvas", "30x45"],
+      ["canvas", "40x60"],
       ["canvas", "50x70"],
+      ["canvas", "50x75"],
+      ["canvas", "60x90"],
       ["canvas", "70x100"],
     ],
   );

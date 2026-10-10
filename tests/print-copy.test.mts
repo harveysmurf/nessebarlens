@@ -17,9 +17,9 @@ import { FRAME_FINISHES, PRINT_SIZES, SELLABLE_FORMATS } from "../src/domain/pri
 
 /** Every size on every format — the offer of a very high-resolution master. */
 const FULL_OFFER = {
-  giclee: ["30x40", "50x70", "70x100"],
-  framed: ["30x40", "50x70", "70x100"],
-  canvas: ["30x40", "50x70", "70x100"],
+  giclee: ["20x30", "30x40", "30x45", "40x60", "50x70", "50x75", "60x90", "70x100"],
+  framed: ["20x30", "30x40", "30x45", "40x60", "50x70", "50x75", "60x90", "70x100"],
+  canvas: ["20x30", "30x40", "30x45", "40x60", "50x70", "50x75", "60x90", "70x100"],
 } as const;
 
 test("the configurator offers exactly what the catalog can sell", () => {
@@ -61,21 +61,20 @@ test("offeredFormats keeps digital and only formats with an offered size (#302)"
 });
 
 test("sizeOptions labels the offered sizes in table order for the photo (#302)", () => {
-  assert.deepEqual(sizeOptions(FULL_OFFER, "giclee", "portrait"), [
-    { id: "30x40", label: sizeLabel("30x40", "portrait") },
-    { id: "50x70", label: sizeLabel("50x70", "portrait") },
-    { id: "70x100", label: sizeLabel("70x100", "portrait") },
-  ]);
+  assert.deepEqual(
+    sizeOptions(FULL_OFFER, "giclee", "portrait"),
+    PRINT_SIZES.map((size) => ({ id: size, label: sizeLabel(size, "portrait") })),
+  );
   assert.deepEqual(sizeOptions(FULL_OFFER, "giclee", "landscape")[0], {
-    id: "30x40",
-    label: '40 × 30 cm (16 × 12")',
+    id: "20x30",
+    label: '30 × 20 cm (12 × 8")',
   });
   // Digital carries no size.
   assert.deepEqual(sizeOptions(FULL_OFFER, "digital", "portrait"), []);
 });
 
 test("firstOfferedSize is the first table size, and undefined for digital (#302)", () => {
-  assert.equal(firstOfferedSize(FULL_OFFER, "giclee"), "30x40");
+  assert.equal(firstOfferedSize(FULL_OFFER, "giclee"), PRINT_SIZES[0]);
   assert.equal(
     firstOfferedSize({ giclee: ["50x70", "70x100"], framed: [], canvas: [] }, "giclee"),
     "50x70",
