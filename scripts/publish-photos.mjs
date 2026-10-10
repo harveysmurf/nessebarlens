@@ -9,14 +9,16 @@
  *   npm run publish-photos -- --apply --only dawn,dusk
  *   npm run publish-photos -- --apply --replace-image dawn
  *   npm run publish-photos -- --promote --pr 42  # upload the masters, auto-merge
-  *   npm run publish-photos -- --audit            # read-only bucket vs catalog report (#244)
-  *   npm run publish-photos -- --sync             # backfill master facts from R2 (#297)
-  *
-  * `--audit` is handled in scripts/audit-photos.mjs; it never writes. `--sync`
-  * is the #297 backfill: it HeadObjects each published master, and when the
-  * sha matches but the catalog is missing pixel facts, downloads and measures
-  * the master to patch `master_width`/`master_height`/`orientation` back in.
-  * The rest of this header describes the publish and promote paths.
+ *   npm run publish-photos -- --audit            # read-only bucket vs catalog report (#244)
+ *
+ * `--audit` is handled in scripts/audit-photos.mjs; it never writes. Every
+ * publish run first syncs the catalog against the production masters (#297): it
+ * HeadObjects each already-published master, and when the sha matches but the
+ * catalog is missing pixel facts, downloads and measures the master to patch
+ * `master_width`/`master_height`/`orientation` back in. The read-only masters
+ * creds (`R2_MASTERS_READ_*`) are required, even for a dry run; a sha mismatch
+ * refuses the whole run before anything is uploaded. The rest of this header
+ * describes the publish and promote paths.
  *
  * Drop folder defaults to the gitignored `ingest/`; `--dir <path>` overrides.
  * Input is one JPEG and one YAML per slug. The `--apply` uploader has no client
@@ -123,7 +125,6 @@ export function parseArgs(argv) {
     apply: has("--apply"),
     promote: has("--promote"),
     audit: has("--audit"),
-    sync: has("--sync"),
     json: has("--json"),
     pr: Number.isInteger(pr) && pr > 0 ? pr : undefined,
     only: only && only.length > 0 ? only : undefined,
@@ -658,9 +659,14 @@ export function patchCatalogFactsYaml(yamlText, facts) {
  * chooses skip / warn / measure / refuse. Measurements are written back into the
  * YAML so the next build-catalog picks them up. A sha mismatch refuses the whole
  * run before any YAML is modified. All I/O goes through `deps`.
+ *
+ * `options.write` (default true) gates the YAML write only; the head/decide/refuse
+ * work always runs. A publish dry run passes `write: false` so it still reports
+ * the drift and still requires the creds, but leaves the working tree untouched.
  */
 export async function syncCatalogFacts(options, deps = {}) {
   const cwd = options.cwd ?? ROOT;
+  const write = options.write !== false;
   const log = deps.log ?? ((line) => console.log(line));
   const env = deps.env ?? process.env;
   const s3 = deps.s3 ?? createReadMastersS3(env);
@@ -725,14 +731,23 @@ export async function syncCatalogFacts(options, deps = {}) {
     const key = masterKeyFromSlug(entry.slug);
     const bytes = await s3.getObject(MASTERS_BUCKET_NAME, key);
     const facts = await measure(bytes);
+    measured.push({ slug: entry.slug, facts });
+    if (!write) {
+      log(
+        `  would backfill: ${entry.slug} ${facts.width}×${facts.height} ${facts.orientation} (dry run)`,
+      );
+      continue;
+    }
     const updated = patchCatalogFactsYaml(entry.yamlText, facts);
     await writeYaml(entry.yamlPath, updated);
-    measured.push({ slug: entry.slug, facts });
     log(`  backfilled: ${entry.slug} ${facts.width}×${facts.height} ${facts.orientation}`);
   }
 
   log("");
-  log(`${measured.length} photo(s) backfilled, ${published.length - measured.length} already in sync.`);
+  log(
+    `${measured.length} photo(s) ${write ? "backfilled" : "need backfill"}, ` +
+      `${published.length - measured.length} already in sync.`,
+  );
   return { status: 0, measured, total: published.length };
 }
 
@@ -958,6 +973,27 @@ export async function runPublish(options, deps = {}) {
   const exec = deps.exec ?? runCommand;
   const s3 = deps.s3 ?? createS3(env);
 
+  // #297: every publish run first syncs the catalog against the production
+  // masters, before it handles new photos. The read-only masters creds are
+  // required even for a dry run — createReadMastersS3 refuses to construct
+  // without them, so a missing-cred run stops here. A sha mismatch fails the
+  // sync and the run, before any upload. Dry runs decide but do not write.
+  let syncS3;
+  try {
+    syncS3 = deps.syncS3 ?? createReadMastersS3(env);
+  } catch (error) {
+    const message = String(error?.message ?? error);
+    log(`error: ${message}`);
+    return { status: 1, fatals: [message] };
+  }
+  const sync = await syncCatalogFacts(
+    { cwd, write: options.apply === true },
+    { log, env, s3: syncS3, measure: deps.measure, writeYaml: deps.writeYaml },
+  );
+  if (sync.status !== 0) {
+    return { status: 1, fatals: sync.fatals ?? [] };
+  }
+
   const names = await readDirNames(dir);
   const { pairs: allPairs, problems: pairProblems, ignored } = pairInputs(names);
   const fatals = [...pairProblems];
@@ -1049,7 +1085,14 @@ export async function runPublish(options, deps = {}) {
   // Refuse a dirty tree before any bytes move: only the files this run writes
   // (plus the gitignored drop folder) may differ, so a stray edit under
   // content/photos/ is never swept into the commit.
-  const written = plans.flatMap((plan) => [path.relative(cwd, plan.yamlPath)]);
+  const written = [
+    ...plans.flatMap((plan) => [path.relative(cwd, plan.yamlPath)]),
+    // The #297 sync may have patched existing published photos this run; those
+    // YAMLs are legitimate writes, not stray edits.
+    ...(sync.measured ?? []).map((m) =>
+      path.relative(cwd, path.join(catalogDir, `${m.slug}.yaml`)),
+    ),
+  ];
   const status = await exec("git", ["status", "--porcelain"], { cwd });
   const dirty = status.stdout
     .split("\n")
@@ -1434,11 +1477,9 @@ async function main() {
   }
   const result = options.audit
     ? await runAudit({ cwd: ROOT, json: options.json })
-    : options.sync
-      ? await syncCatalogFacts({ cwd: ROOT, dir: options.dir })
-      : options.promote
-        ? await runPromote({ ...options, cwd: ROOT })
-        : await runPublish({ ...options, cwd: ROOT });
+    : options.promote
+      ? await runPromote({ ...options, cwd: ROOT })
+      : await runPublish({ ...options, cwd: ROOT });
   if (result.status !== 0) process.exitCode = result.status;
 }
 

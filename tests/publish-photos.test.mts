@@ -85,6 +85,20 @@ function fakeS3() {
   };
 }
 
+// The #297 read-only masters client. By default every master is absent, so the
+// automatic sync warns "unpromoted" and continues; a test that needs a decision
+// (measure / mismatch / in-sync) passes its own head/getObject.
+function fakeSyncS3({ head = null, getObject } = {}) {
+  return {
+    head: typeof head === "function" ? head : async () => head,
+    getObject:
+      getObject ??
+      (async () => {
+        throw new Error("fakeSyncS3.getObject was not expected");
+      }),
+  };
+}
+
 function fakeExec({ dirty = [], prUrl = "https://github.com/harveysmurf/nessebarlens/pull/999" } = {}) {
   const calls = [];
   const exec = async (command, args) => {
@@ -108,6 +122,7 @@ function deps(overrides = {}) {
   return {
     logs,
     s3: overrides.s3 ?? fakeS3(),
+    syncS3: overrides.syncS3 ?? fakeSyncS3(),
     exec: overrides.exec ?? fakeExec(),
     env: ENV,
     now: () => new Date("2026-10-06T12:00:00Z"),
@@ -124,7 +139,6 @@ test("parseArgs reads the flags", () => {
     apply: false,
     promote: false,
     audit: false,
-    sync: false,
     json: false,
     pr: undefined,
     only: undefined,
@@ -135,7 +149,6 @@ test("parseArgs reads the flags", () => {
     apply: true,
     promote: false,
     audit: false,
-    sync: false,
     json: false,
     pr: undefined,
     only: ["dawn", "dusk"],
@@ -146,7 +159,6 @@ test("parseArgs reads the flags", () => {
     apply: false,
     promote: true,
     audit: false,
-    sync: false,
     json: false,
     pr: 242,
     only: undefined,
@@ -157,19 +169,7 @@ test("parseArgs reads the flags", () => {
     apply: false,
     promote: false,
     audit: true,
-    sync: false,
     json: true,
-    pr: undefined,
-    only: undefined,
-    replaceImage: undefined,
-    dir: undefined,
-  });
-  assert.deepEqual(parseArgs(["--sync"]), {
-    apply: false,
-    promote: false,
-    audit: false,
-    sync: true,
-    json: false,
     pr: undefined,
     only: undefined,
     replaceImage: undefined,
@@ -948,4 +948,108 @@ test("createReadMastersS3 refuses to construct without R2_MASTERS_READ_* creds",
     () => createReadMastersS3({}),
     /R2_S3_ENDPOINT/,
   );
+});
+
+// ---------------------------------------------------------------------------
+// #297 Option A: the sync runs automatically inside every publish run
+// ---------------------------------------------------------------------------
+
+const PUBLISHED_NO_FACTS = [
+  "slug: harbour",
+  "title: Harbour",
+  "caption: c",
+  "description: d",
+  "alt: a",
+  "category: fine-art",
+  "master_sha256: " + SHA_A,
+  "image_hash: aaaaaaaa",
+].join("\n") + "\n";
+
+test("publish refuses to start without the read-only masters creds (#297)", async () => {
+  const dir = makeProject();
+  try {
+    await writeMaster(path.join(dir, "ingest/dawn.jpg"));
+    writeFileSync(path.join(dir, "ingest/dawn.yaml"), OWNER_YAML);
+    const d = deps();
+    delete d.syncS3;
+    const result = await runPublish({ cwd: dir, apply: false }, d);
+    assert.equal(result.status, 1);
+    assert.equal(d.s3.puts.length, 0);
+    assert.match(result.fatals.join("\n"), /R2_MASTERS_READ_ACCESS_KEY_ID/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an automatic sync sha mismatch stops the publish before any upload (#297)", async () => {
+  const dir = makeProject();
+  try {
+    await writeMaster(path.join(dir, "ingest/dawn.jpg"));
+    writeFileSync(path.join(dir, "ingest/dawn.yaml"), OWNER_YAML);
+    writeFileSync(path.join(dir, "content/photos/harbour.yaml"), PUBLISHED_NO_FACTS);
+    const d = deps({
+      syncS3: fakeSyncS3({ head: { metadata: { sha256: SHA_B }, contentLength: 1 } }),
+    });
+    const result = await runPublish({ cwd: dir, apply: true }, d);
+    assert.equal(result.status, 1);
+    assert.equal(d.s3.puts.length, 0);
+    assert.match(result.fatals.join("\n"), /harbour.*sha256/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the automatic sync backfills an existing photo and the write passes the dirty-tree gate (#297)", async () => {
+  const dir = makeProject();
+  try {
+    await writeMaster(path.join(dir, "ingest/dawn.jpg"));
+    writeFileSync(path.join(dir, "ingest/dawn.yaml"), OWNER_YAML);
+    writeFileSync(path.join(dir, "content/photos/harbour.yaml"), PUBLISHED_NO_FACTS);
+    const d = deps({
+      syncS3: fakeSyncS3({
+        head: { metadata: { sha256: SHA_A }, contentLength: 100 },
+        getObject: async () => Buffer.from("jpeg"),
+      }),
+      // The sync's write shows up as a tree change; it must be allowlisted or
+      // the run would refuse itself.
+      exec: fakeExec({ dirty: ["content/photos/harbour.yaml"] }),
+    });
+    d.measure = async () => ({ width: 4901, height: 3351, orientation: "landscape" });
+    const result = await runPublish({ cwd: dir, apply: true }, d);
+    assert.equal(result.status, 0, result.fatals?.join("\n"));
+    assert.ok(d.logs.some((line) => line.includes("backfilled: harbour")));
+    assert.match(
+      readFileSync(path.join(dir, "content/photos/harbour.yaml"), "utf8"),
+      /master_width: 4901/,
+    );
+    assert.ok(d.exec.calls.some((c) => c.join(" ") === "git add -- content/photos"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a publish dry run reports the drift but writes no YAML (#297)", async () => {
+  const dir = makeProject();
+  try {
+    await writeMaster(path.join(dir, "ingest/dawn.jpg"));
+    writeFileSync(path.join(dir, "ingest/dawn.yaml"), OWNER_YAML);
+    writeFileSync(path.join(dir, "content/photos/harbour.yaml"), PUBLISHED_NO_FACTS);
+    const d = deps({
+      syncS3: fakeSyncS3({
+        head: { metadata: { sha256: SHA_A }, contentLength: 100 },
+        getObject: async () => Buffer.from("jpeg"),
+      }),
+    });
+    d.measure = async () => ({ width: 4901, height: 3351, orientation: "landscape" });
+    const result = await runPublish({ cwd: dir, apply: false }, d);
+    assert.equal(result.status, 0, result.fatals?.join("\n"));
+    assert.ok(d.logs.some((line) => line.includes("would backfill: harbour")));
+    assert.equal(
+      readFileSync(path.join(dir, "content/photos/harbour.yaml"), "utf8"),
+      PUBLISHED_NO_FACTS,
+      "a dry run must leave the catalog YAML untouched",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });
