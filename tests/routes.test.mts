@@ -655,6 +655,48 @@ test("checkout: an unset site url is a 503 before Stripe or Prodigi is called", 
   }
 });
 
+test("checkout: a physical size the photo does not sell is a 400 before Prodigi or Stripe", async () => {
+  const saved = { ...process.env };
+  const originalFetch = globalThis.fetch;
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
+  process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
+  const restore = withBindings({ prodigiKeyConfigured: true });
+  let gatewayCalled = false;
+  globalThis.fetch = (async () => {
+    gatewayCalled = true;
+    throw new Error("no gateway may be reached for a non-offered size");
+  }) as typeof fetch;
+  try {
+    const response = await checkout.POST(
+      jsonRequest(`${SITE}/api/checkout`, {
+        photoSlug: SAMPLE_SLUG,
+        format: "giclee",
+        size: "70x100",
+        frame: null,
+        destinationCountryCode: "BG",
+      }),
+    );
+    assert.equal(response.status, 400);
+    assert.equal(
+      (await body(response)).error,
+      "Print option not available for this photo",
+    );
+    assert.equal(gatewayCalled, false, "no gateway call for a refused size");
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+    for (const key of [
+      "STRIPE_SECRET_KEY",
+      "PRODIGI_API_BASE",
+      "PRODIGI_SANDBOX_API_KEY",
+    ] as const) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+});
+
 test("prodigi webhook: authenticated but no ORDERS_DB is a 503, not a callback", async () => {
   // Order matters and is the point of this test: auth is checked first, so a
   // request that passes the bearer check reaches the binding check and is told

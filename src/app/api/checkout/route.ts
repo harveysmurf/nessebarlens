@@ -2,10 +2,15 @@ import { NextResponse } from "next/server";
 import { readJsonBody } from "@/infrastructure/config/json-body";
 import { parseCheckoutBody } from "@/domain/ordering/checkout-body";
 import {
+  physicalSpecification,
+  type PrintSpecification,
+} from "@/domain/ordering/print-spec";
+import {
   DEFAULT_SHIPPING_COUNTRY,
   type ShipToCountryCode,
 } from "@/domain/pricing/ship-to-countries";
 import { getPhoto } from "@/domain/catalog/photos";
+import { offers } from "@/domain/catalog/print-offer";
 import {
   DIGITAL_PRICE_EUR,
   type FrameFinish,
@@ -43,6 +48,21 @@ export async function POST(request: Request) {
     return NextResponse.json(
       { error: "Checkout is not configured" },
       { status: 503 },
+    );
+  }
+
+  const spec: PrintSpecification =
+    parsed.format === "digital"
+      ? { kind: "digital" }
+      : physicalSpecification(
+          parsed.format,
+          parsed.size,
+          parsed.frame ?? null,
+        );
+  if (!offers(photo.printOffer, spec)) {
+    return NextResponse.json(
+      { error: "Print option not available for this photo" },
+      { status: 400 },
     );
   }
 
