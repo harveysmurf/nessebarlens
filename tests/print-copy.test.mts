@@ -5,30 +5,82 @@ import test from "node:test";
 import {
   CONFIGURATOR_FORMATS,
   CONFIGURATOR_FRAMES,
-  CONFIGURATOR_SIZES,
   DEFAULT_FRAME_FINISH,
   DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
+  firstOfferedSize,
+  offeredFormats,
+  sizeOptions,
 } from "../src/domain/ordering/print-copy.ts";
 import { sizeLabel } from "../src/domain/pricing/pricing.ts";
 import { FRAME_FINISHES, PRINT_SIZES, SELLABLE_FORMATS } from "../src/domain/pricing/sku-map.ts";
+
+/** Every size on every format — the offer of a very high-resolution master. */
+const FULL_OFFER = {
+  giclee: ["30x40", "50x70", "70x100"],
+  framed: ["30x40", "50x70", "70x100"],
+  canvas: ["30x40", "50x70", "70x100"],
+} as const;
 
 test("the configurator offers exactly what the catalog can sell", () => {
   // The component used to declare its own arrays. A format added to the
   // catalog — which is what pinning a new Prodigi SKU does — produced a
   // configurator that could not offer it, silently, with no type error.
   assert.deepEqual(
-    CONFIGURATOR_FORMATS.map((f) => f.id),
+    offeredFormats(FULL_OFFER).map((f) => f.id),
     SELLABLE_FORMATS,
   );
   assert.deepEqual(
-    CONFIGURATOR_SIZES.map((s) => s.id),
+    sizeOptions(FULL_OFFER, "giclee", "portrait").map((s) => s.id),
     PRINT_SIZES,
   );
   assert.deepEqual(
     CONFIGURATOR_FRAMES.map((f) => f.id),
     FRAME_FINISHES,
   );
+});
+
+test("offeredFormats keeps digital and only formats with an offered size (#302)", () => {
+  assert.deepEqual(offeredFormats(FULL_OFFER).map((f) => f.id), [
+    "giclee",
+    "framed",
+    "canvas",
+    "digital",
+  ]);
+  // A photo that offers only giclée 30x40: no framed or canvas button at all,
+  // digital always present.
+  assert.deepEqual(
+    offeredFormats({ giclee: ["30x40"], framed: [], canvas: [] }).map((f) => f.id),
+    ["giclee", "digital"],
+  );
+  // Nothing physical: only digital.
+  assert.deepEqual(
+    offeredFormats({ giclee: [], framed: [], canvas: [] }).map((f) => f.id),
+    ["digital"],
+  );
+});
+
+test("sizeOptions labels the offered sizes in table order for the photo (#302)", () => {
+  assert.deepEqual(sizeOptions(FULL_OFFER, "giclee", "portrait"), [
+    { id: "30x40", label: sizeLabel("30x40", "portrait") },
+    { id: "50x70", label: sizeLabel("50x70", "portrait") },
+    { id: "70x100", label: sizeLabel("70x100", "portrait") },
+  ]);
+  assert.deepEqual(sizeOptions(FULL_OFFER, "giclee", "landscape")[0], {
+    id: "30x40",
+    label: '40 × 30 cm (16 × 12")',
+  });
+  // Digital carries no size.
+  assert.deepEqual(sizeOptions(FULL_OFFER, "digital", "portrait"), []);
+});
+
+test("firstOfferedSize is the first table size, and undefined for digital (#302)", () => {
+  assert.equal(firstOfferedSize(FULL_OFFER, "giclee"), "30x40");
+  assert.equal(
+    firstOfferedSize({ giclee: ["50x70", "70x100"], framed: [], canvas: [] }, "giclee"),
+    "50x70",
+  );
+  assert.equal(firstOfferedSize(FULL_OFFER, "digital"), undefined);
 });
 
 test("every option carries display copy, and no copy is blank", () => {
@@ -42,16 +94,11 @@ test("every option carries display copy, and no copy is blank", () => {
   for (const frame of CONFIGURATOR_FRAMES) {
     assert.ok(frame.label.length > 0, `${frame.id} has no label`);
   }
-  // Size labels are pricing's, not a second copy: one wording for a size.
-  for (const size of CONFIGURATOR_SIZES) {
-    assert.equal(size.label, sizeLabel(size.id));
-  }
 });
 
 test("the ids are unique, so no selector renders the same option twice", () => {
   for (const list of [
     CONFIGURATOR_FORMATS.map((f) => f.id),
-    CONFIGURATOR_SIZES.map((s) => s.id),
     CONFIGURATOR_FRAMES.map((f) => f.id),
   ]) {
     assert.equal(new Set(list).size, list.length);
@@ -85,9 +132,13 @@ test("the component declares no option lists of its own", () => {
   assert.ok(SELLABLE_FORMATS.includes(DEFAULT_PRINT_FORMAT));
   assert.ok(PRINT_SIZES.includes(DEFAULT_PRINT_SIZE));
   assert.ok(FRAME_FINISHES.includes(DEFAULT_FRAME_FINISH));
-  assert.ok(source.includes("CONFIGURATOR_FORMATS"));
-  assert.ok(source.includes("CONFIGURATOR_SIZES"));
+  // #302: the component takes its formats and sizes from the photo's offer; it
+  // no longer names the full catalog lists.
+  assert.ok(source.includes("offeredFormats"));
+  assert.ok(source.includes("sizeOptions"));
+  assert.ok(source.includes("firstOfferedSize"));
   assert.ok(source.includes("CONFIGURATOR_FRAMES"));
+  assert.equal(source.includes("CONFIGURATOR_SIZES"), false);
 });
 
 test("the format options are a real radio group", () => {

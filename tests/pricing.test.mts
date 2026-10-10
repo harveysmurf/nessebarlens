@@ -46,6 +46,16 @@ test("every print size has a label with both unit systems", () => {
   assert.equal(sizeLabel(PRINT_SIZES[0]!), '30 × 40 cm (12 × 16")');
 });
 
+test("sizeLabel puts the long edge first for a landscape photo (#302)", () => {
+  // The frame is portrait, but the photo hangs landscape, so its width is the
+  // long edge and reads first. Portrait and square keep the short edge first.
+  assert.equal(sizeLabel("30x40", "landscape"), '40 × 30 cm (16 × 12")');
+  assert.equal(sizeLabel("50x70", "landscape"), '70 × 50 cm (28 × 20")');
+  assert.equal(sizeLabel("30x40", "portrait"), '30 × 40 cm (12 × 16")');
+  assert.equal(sizeLabel("30x40", "square"), '30 × 40 cm (12 × 16")');
+  assert.equal(sizeLabel("30x40"), '30 × 40 cm (12 × 16")');
+});
+
 test("parseEurAmount accepts plain decimal amounts and rejects the rest", () => {
   assert.equal(parseEurAmount("0"), 0);
   assert.equal(parseEurAmount("12.5"), 12.5);

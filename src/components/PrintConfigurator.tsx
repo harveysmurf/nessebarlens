@@ -16,13 +16,16 @@ import {
 } from "@/domain/pricing/pricing";
 import { checkoutRequest, quoteRequest } from "@/domain/ordering/request-bodies";
 import {
-  CONFIGURATOR_FORMATS,
   CONFIGURATOR_FRAMES,
-  CONFIGURATOR_SIZES,
   DEFAULT_FRAME_FINISH,
   DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
+  firstOfferedSize,
+  offeredFormats,
+  sizeOptions,
 } from "@/domain/ordering/print-copy";
+import type { Orientation } from "@/domain/catalog/master-facts";
+import type { PrintOffer } from "@/domain/catalog/print-offer";
 import {
   checkoutUrl,
   isLiveQuote,
@@ -35,12 +38,22 @@ import { isFrameFinishValue, isPrintSize } from "@/domain/pricing/sku-map";
 export function PrintConfigurator({
   photoSlug,
   title,
+  offer,
+  orientation,
 }: {
   photoSlug: string;
   title: string;
+  offer: PrintOffer;
+  orientation: Orientation;
 }) {
-  const [format, setFormat] = useState<PrintFormat>(DEFAULT_PRINT_FORMAT);
-  const [size, setSize] = useState<PrintSize>(DEFAULT_PRINT_SIZE);
+  // #302: only the formats this photo offers, digital always. The list is never
+  // empty — digital is in it — so the opening selection always exists.
+  const formats = offeredFormats(offer);
+  const openingFormat = formats[0]?.id ?? DEFAULT_PRINT_FORMAT;
+  const [format, setFormat] = useState<PrintFormat>(openingFormat);
+  const [size, setSize] = useState<PrintSize>(
+    firstOfferedSize(offer, openingFormat) ?? DEFAULT_PRINT_SIZE,
+  );
   const [frame, setFrame] = useState<FrameFinish>(DEFAULT_FRAME_FINISH);
   const [destinationCountry, setDestinationCountry] =
     useState<ShipToCountryCode>(DEFAULT_SHIPPING_COUNTRY);
@@ -52,6 +65,9 @@ export function PrintConfigurator({
 
   const isDigital = format === "digital";
   const isFramed = format === "framed";
+  // #302: sizes come from the photo's offer, in table order, labelled for its
+  // orientation. The component no longer names the size list itself.
+  const sizes = sizeOptions(offer, format, orientation);
 
   useEffect(() => {
     if (isDigital) return;
@@ -116,7 +132,12 @@ export function PrintConfigurator({
       setQuote(null);
       setQuoteError(null);
       setQuoteLoading(false);
+      return;
     }
+    // The new format has its own offered sizes; open on its first, so the size
+    // select never points at a size the format does not offer.
+    const first = firstOfferedSize(offer, value);
+    if (first) setSize(first);
   }
 
   function selectSize(value: string) {
@@ -215,7 +236,7 @@ export function PrintConfigurator({
             Supported Prodigi Option
           </legend>
           <div className="grid grid-cols-2 gap-2">
-            {CONFIGURATOR_FORMATS.map((f) => {
+            {formats.map((f) => {
               const active = format === f.id;
               return (
                 // A real radio input, visually hidden behind the label: the
@@ -265,7 +286,7 @@ export function PrintConfigurator({
               onChange={(e) => selectSize(e.target.value)}
               className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900"
             >
-              {CONFIGURATOR_SIZES.map((s) => (
+              {sizes.map((s) => (
                 <option key={s.id} value={s.id}>
                   {s.label}
                 </option>

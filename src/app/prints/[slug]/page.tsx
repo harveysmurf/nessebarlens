@@ -60,7 +60,12 @@ export default async function PrintDetailPage({
             </p>
           </div>
 
-          <PrintConfigurator photoSlug={photo.slug} title={photo.title} />
+          <PrintConfigurator
+            photoSlug={photo.slug}
+            title={photo.title}
+            offer={photo.printOffer}
+            orientation={photo.master.orientation}
+          />
         </div>
       </div>
     </section>
