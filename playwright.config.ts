@@ -126,6 +126,12 @@ export default defineConfig({
           // render "processing" on a dev server, because ORDERS is a Worker
           // binding with no env fallback.
           ORDERS_DEV_SEED: "e2e/fixtures/orders-seed.json",
+          // The contact page reads this at request time (it is force-dynamic) to
+          // render the Turnstile widget. Cloudflare's always-pass test site key
+          // lets the contact spec render a real widget without a secret or a
+          // live challenge.
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY:
+            process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA",
         },
       },
 });

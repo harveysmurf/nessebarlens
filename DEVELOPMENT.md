@@ -119,6 +119,9 @@ Environment variables (names only — values live in the `.env.local` symlink):
 | `PRODIGI_WEBHOOK_TOKEN` | Bearer token Prodigi must send on `POST /api/webhooks/prodigi` (`Authorization: Bearer …`). Prodigi v4 signs nothing, so this is the only callback auth. **Unset ⇒ 503** `prodigi-webhook-unconfigured`; mismatch ⇒ 401. Generate with `openssl rand -hex 32` and configure the same value as the shared secret Prodigi is told to send (or that a reverse-proxy injects). |
 | `RESEND_API_KEY` | Resend API key for customer email (order confirmation, print shipped, unfulfilled apology) and operator alerts. **Unset ⇒ emails are skipped** with a structured `email.skipped` log line — never a throw on a paid webhook path. The sending domain (`nessebarlens.com`) must have Resend's **DNS TXT domain verification** before production mail will deliver; until then sandbox/`onboarding@resend.dev` testing is fine locally. |
 | `OPERATOR_ALERT_EMAIL` | Recipient for operator alerts raised through the `OperatorAlerts` port (`src/application/ports/operator-alerts.ts`, #309) — e.g. a Prodigi cancel that failed during a refund/dispute. **Unset (or `RESEND_API_KEY` unset) ⇒ the alert is skipped** with a structured `operator-alert.undelivered` log line; a send failure logs `operator-alert.failed`/`operator-alert.threw`. Never a throw on the webhook path. |
+| `TURNSTILE_SECRET_KEY` | Cloudflare Turnstile secret for `POST /api/contact` (#293). Verified server-side against `https://challenges.cloudflare.com/turnstile/v0/siteverify`; missing/invalid/expired/reused tokens fail closed. **Required in staging and production** — without it `/api/contact` answers **503** and no contact message is delivered. Use the Turnstile **test** secret `1x0000000000000000000000000000000AA` for non-production. |
+| `CONTACT_TO_EMAIL` | Recipient of contact-form messages (#293), e.g. `simeon.babev@gmail.com`. Read by `POST /api/contact`. **Unset ⇒ `/api/contact` answers 503** (the route fails closed rather than accepting a message it cannot deliver). The sender is the verified `orders@nessebarlens.com`; the visitor's address is set as the reply-to. |
+| `NEXT_PUBLIC_TURNSTILE_SITE_KEY` | Public Turnstile **site** key for the contact form widget (#293). Not a secret (it is embedded in the page). Read at request time by the `force-dynamic` contact page. Use the always-pass test key `1x00000000000000000000AA` for non-production. |
 | `NEXT_PUBLIC_SITE_URL` | Canonical public origin (used by `src/infrastructure/stripe/stripe.ts`). **Required for any production build** — `next.config.ts` fails the build without it, because `NEXT_PUBLIC_*` is inlined at build time and a silent `http://localhost:3000` fallback would ship a checkout that redirects to localhost. `next dev` and `npm test` do not need it. |
 | `NEXT_PUBLIC_WEB_IMAGES_BASE` | Base URL for gallery `<img>` srcset; unset serves nothing. Must be `https://images.nessebarlens.com`, see Public image host. |
 | `R2_ACCOUNT_ID`, `R2_ENDPOINT`, `R2_S3_ENDPOINT`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY` | R2 S3 creds (unused by Workers — they use bucket bindings) |
@@ -922,6 +925,39 @@ path, which had been silently no-op'ing every cancellation.
 
 ---
 
+### Contact form (#293)
+
+`/contact` renders a name/email/message form; `POST /api/contact` delivers the
+message to `CONTACT_TO_EMAIL` through Resend, with the visitor's address as the
+reply-to. Layers, in the order the route runs them:
+
+1. **Config check.** If `TURNSTILE_SECRET_KEY`, `CONTACT_TO_EMAIL` or
+   `RESEND_API_KEY` is missing, the route answers **503** and accepts nothing —
+   it fails closed rather than taking a message it cannot verify or deliver.
+2. **Rate limit.** The Workers rate-limit binding `CONTACT_RATE_LIMIT`
+   (`[[ratelimits]]` in `wrangler.toml`, 5/min per caller IP) is defence in
+   depth. It is optional at runtime — absent skips the check — but Turnstile is
+   the actual gate, never the rate limit.
+3. **Validation.** `src/domain/contact/contact-message.ts` (pure) checks the
+   fields and returns per-field copy; the 400 body echoes them.
+4. **Turnstile.** `src/infrastructure/turnstile/cloudflare-turnstile.ts` posts
+   the token to Cloudflare Siteverify. A missing, invalid, expired, reused or
+   unverifiable token is rejected **before** any email is sent. Cloudflare
+   reports a reused token as `timeout-or-duplicate`, so no state is kept here.
+5. **Send.** `src/infrastructure/contact/email-contact-message.ts` posts to
+   Resend. A provider failure answers a generic **502**; a submission is never
+   reported as success unless the mail was accepted.
+
+The visitor's name, address and message are never logged. Rejections log a
+short reason code and delivery failures log the Resend diagnostic only.
+
+Config: see the env table in §3 and the per-Environment secret set in
+§What each Environment holds. For non-production, Cloudflare's always-pass keys
+(`1x00000000000000000000AA` site / `1x0000000000000000000000000000000AA`
+secret) keep the form and its tests deterministic without a live challenge.
+
+---
+
 ### Reconciler
 
 `POST /api/internal/reconcile`, guarded by `x-reconcile-secret` /
@@ -1232,8 +1268,8 @@ settings.
 
 | Scope | Expected secrets |
 |---|---|
-| `staging` | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_WEB_IMAGES_BASE`, `PRINT_ASSET_HMAC_SECRET`, `PRODIGI_API_KEY`, `PRODIGI_SANDBOX_API_KEY`, `PRODIGI_WEBHOOK_TOKEN`, `RECONCILE_SECRET`, `RESEND_API_KEY`, `SITE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET` |
-| `production` | the same fourteen, with live values, plus the read-only masters token: `R2_MASTERS_READ_ACCESS_KEY_ID`, `R2_MASTERS_READ_SECRET_ACCESS_KEY`, `R2_S3_ENDPOINT` (#243) |
+| `staging` | `CLOUDFLARE_ACCOUNT_ID`, `CLOUDFLARE_API_TOKEN`, `CONTACT_TO_EMAIL`, `NEXT_PUBLIC_SITE_URL`, `NEXT_PUBLIC_TURNSTILE_SITE_KEY`, `NEXT_PUBLIC_WEB_IMAGES_BASE`, `PRINT_ASSET_HMAC_SECRET`, `PRODIGI_API_KEY`, `PRODIGI_SANDBOX_API_KEY`, `PRODIGI_WEBHOOK_TOKEN`, `RECONCILE_SECRET`, `RESEND_API_KEY`, `SITE_URL`, `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `TURNSTILE_SECRET_KEY` |
+| `production` | the same, with live values, plus the read-only masters token: `R2_MASTERS_READ_ACCESS_KEY_ID`, `R2_MASTERS_READ_SECRET_ACCESS_KEY`, `R2_S3_ENDPOINT` (#243) |
 | repository | `PRINT_ASSET_HMAC_SECRET` only |
 
 `release.yml`'s build matrix declares `environment: ${{ matrix.env }}` and so
@@ -1251,6 +1287,15 @@ to Object Read on `nessebar-lens-masters` only, and `R2_S3_ENDPOINT` is where
 they connect. They are in no other environment, and `release.yml` is push-only,
 so a `pull_request` job never holds them. `scripts/verify-masters.mjs` is the
 only reader.
+
+The contact-form secrets (#293) live in both `staging` and `production`:
+`TURNSTILE_SECRET_KEY` (server-side Siteverify; use the test secret
+`1x0000000000000000000000000000000AA` off production), `CONTACT_TO_EMAIL`
+(the recipient), and the public `NEXT_PUBLIC_TURNSTILE_SITE_KEY` (test site
+key `1x00000000000000000000AA` off production). `RESEND_API_KEY` is shared with
+order email. Without `TURNSTILE_SECRET_KEY` the deploy fails in both scopes;
+without the recipient it only warns, because a missing recipient just 503s the
+contact form. See §Contact form (#293).
 
 Not in the table, and asserted to stay out (`#205` item 6): `CF_ACCOUNT_ID` and
 `CF_API_TOKEN`, the pre-Workers names for the Cloudflare token, which
@@ -1301,7 +1346,9 @@ GitHub Environments:
   `PRODIGI_SANDBOX_API_KEY` + `SITE_URL=https://staging.nessebarlens.com` +
   `PRODIGI_WEBHOOK_TOKEN` (shared with whatever injects the bearer on sandbox
   callbacks) + `RESEND_API_KEY` (Resend test/sandbox key is fine; domain
-  verification still required before real inboxes accept mail).
+  verification still required before real inboxes accept mail) +
+  `TURNSTILE_SECRET_KEY` / `CONTACT_TO_EMAIL` / `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+  (Turnstile test key pair off production, #293).
   The `e2e-hosted-checkout` job also reads its keys from here, so it needs
   `environment: staging` — the repository has only `PRINT_ASSET_HMAC_SECRET`, and
   without the environment line every guard would resolve to nothing. Its one
@@ -1312,8 +1359,10 @@ GitHub Environments:
 - **`production`** — required reviewer `harveysmurf`. Live Stripe
   (`sk_live_*` + live webhook secret) + `PRODIGI_API_BASE=https://api.prodigi.com` +
   `PRODIGI_API_KEY` (live org key) + `PRODIGI_WEBHOOK_TOKEN` + `RESEND_API_KEY`
-  (live Resend key; sending domain DNS TXT verified). Host is never inferred
-  from which key is set. Preview/staging stays sandbox.
+  (live Resend key; sending domain DNS TXT verified) +
+  `TURNSTILE_SECRET_KEY` / `CONTACT_TO_EMAIL` / `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
+  (live Turnstile keys, #293). Host is never inferred from which key is set.
+  Preview/staging stays sandbox.
 
 Secrets live in those Environments (never in git). Local `.env.local` remains the
 Debian-host symlink to `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.

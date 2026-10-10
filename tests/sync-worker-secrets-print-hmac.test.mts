@@ -59,14 +59,16 @@ function run(
       ...(secret === undefined
         ? {}
         : { PRINT_ASSET_HMAC_SECRET: secret }),
-      // A complete production environment is the baseline; a test that wants one
-      // of these absent overrides it with "". That keeps each new required
-      // secret from breaking every existing case.
-      ...(extra ?? {
-        RESEND_API_KEY: "re_test_key",
-        PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
-        RECONCILE_SECRET: "r".repeat(32),
-      }),
+      // A complete staging/production environment is the baseline; a test that
+      // wants one of these absent overrides it with "". These are merged under
+      // `extra` (not replaced by it) so each newly-required secret does not
+      // break every existing case: `run(...)` with a partial `extra` still has
+      // the rest present, and only the named key changes.
+      RESEND_API_KEY: "re_test_key",
+      PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
+      RECONCILE_SECRET: "r".repeat(32),
+      TURNSTILE_SECRET_KEY: "t".repeat(32),
+      ...(extra ?? {}),
     },
   });
   fs.rmSync(dir, { recursive: true, force: true });
@@ -95,6 +97,9 @@ function runAndReadSecrets(
       RESEND_API_KEY: "re_test_key",
       PRODIGI_WEBHOOK_TOKEN: "w".repeat(32),
       RECONCILE_SECRET: "r".repeat(32),
+      TURNSTILE_SECRET_KEY: "t".repeat(32),
+      CONTACT_TO_EMAIL: "contact@example.com",
+      NEXT_PUBLIC_TURNSTILE_SITE_KEY: "site-key",
       SYNC_SCOPE: "version-only",
       SECRETS_OUT: out,
       ...(extra ?? {}),
@@ -456,4 +461,63 @@ test("staging refuses a RECONCILE_SECRET short enough to guess", () => {
   });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /at least 32 characters/);
+});
+
+// --- #293: contact form secrets ------------------------------------------
+//
+// TURNSTILE_SECRET_KEY verifies the anti-bot token server-side; without it
+// /api/contact answers 503 and a shipped feature is silently off. It is
+// required in staging and production, warned in preview. CONTACT_TO_EMAIL and
+// the public site key are optional (a missing recipient only 503s the contact
+// form), so they warn rather than fail a deploy.
+
+test("production and staging fail when TURNSTILE_SECRET_KEY is missing", () => {
+  for (const target of ["staging", "production"] as const) {
+    const result = run(target, valid, undefined, { TURNSTILE_SECRET_KEY: "" });
+    assert.equal(result.status, 1, `${target} must require the Turnstile secret`);
+    assert.match(result.stderr, new RegExp(`${target} requires TURNSTILE_SECRET_KEY`));
+  }
+});
+
+test("preview warns about a missing TURNSTILE_SECRET_KEY rather than failing", () => {
+  const result = run("preview", valid, undefined, { TURNSTILE_SECRET_KEY: "" });
+  assert.equal(result.status, 0);
+  assert.match(result.stderr, /warning: TURNSTILE_SECRET_KEY/);
+});
+
+test("a missing CONTACT_TO_EMAIL only warns in every scope", () => {
+  for (const target of ["preview", "staging", "production"] as const) {
+    const result = run(target, valid, undefined, { CONTACT_TO_EMAIL: "" });
+    assert.equal(result.status, 0, `${target} must not fail without a recipient`);
+    assert.match(result.stderr, /warning: CONTACT_TO_EMAIL/);
+  }
+});
+
+test("the contact secrets reach the file the deploying version carries", () => {
+  const { status, secrets } = runAndReadSecrets("production", {
+    TURNSTILE_SECRET_KEY: "turnstile-secret-key",
+    CONTACT_TO_EMAIL: "simeon.babev@gmail.com",
+    NEXT_PUBLIC_TURNSTILE_SITE_KEY: "0x4AAAAAAAsitekey",
+  });
+  assert.equal(status, 0);
+  assert.equal(secrets.TURNSTILE_SECRET_KEY, "turnstile-secret-key");
+  assert.equal(secrets.CONTACT_TO_EMAIL, "simeon.babev@gmail.com");
+  assert.equal(secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY, "0x4AAAAAAAsitekey");
+});
+
+test("all deploy workflows pass the contact secrets to the sync script", () => {
+  for (const wf of ["release.yml", "preview.yml"]) {
+    const text = fs.readFileSync(path.join(root, ".github", "workflows", wf), "utf8");
+    for (const name of [
+      "TURNSTILE_SECRET_KEY",
+      "CONTACT_TO_EMAIL",
+      "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
+    ]) {
+      assert.match(
+        text,
+        new RegExp(`${name}: \\$\\{\\{ secrets\\.${name} \\}\\}`),
+        `${wf} must pass ${name}`,
+      );
+    }
+  }
 });

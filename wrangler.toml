@@ -61,6 +61,19 @@ bucket_name = "nessebar-lens-web"
 binding = "MASTERS"
 bucket_name = "nessebar-lens-masters"
 
+# Abuse control for the contact form (#293). This is defence in depth, not the
+# gate: /api/contact still fails closed on Turnstile. The binding is optional at
+# runtime — a deploy without it skips the rate check rather than erroring — but
+# it is declared here and in [env.staging] because wrangler does not inherit
+# bindings into environments. 5 submissions per minute per caller IP.
+[[ratelimits]]
+name = "CONTACT_RATE_LIMIT"
+namespace_id = "1001"
+
+[ratelimits.simple]
+limit = 5
+period = 60
+
 # Staging: a second, always-on Worker on its own hostname and its own D1, so a
 # full purchase can be rehearsed with sandbox keys without touching production
 # orders. Deploy with `--env staging` (opennextjs-cloudflare forwards it to
@@ -124,3 +137,14 @@ bucket_name = "nessebar-lens-web"
 [[env.staging.r2_buckets]]
 binding = "MASTERS"
 bucket_name = "nessebar-lens-masters-staging"
+
+# Redeclared for the same reason as the top-level binding: wrangler does not
+# inherit bindings into [env.*]. A staging deploy without this would skip the
+# contact rate check and rehearse a form production rate-limits.
+[[env.staging.ratelimits]]
+name = "CONTACT_RATE_LIMIT"
+namespace_id = "1001"
+
+[env.staging.ratelimits.simple]
+limit = 5
+period = 60

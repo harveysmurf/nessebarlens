@@ -194,6 +194,9 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           PRODIGI_WEBHOOK_TOKEN: ${{ secrets.PRODIGI_WEBHOOK_TOKEN }}
           RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          CONTACT_TO_EMAIL: ${{ secrets.CONTACT_TO_EMAIL }}
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
           # Explicit host, never inferred from which Prodigi key is set.
           PRODIGI_API_BASE: https://api.sandbox.prodigi.com
           PRODIGI_SANDBOX_API_KEY: ${{ secrets.PRODIGI_SANDBOX_API_KEY }}
@@ -321,6 +324,9 @@ jobs:
           RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
           PRODIGI_WEBHOOK_TOKEN: ${{ secrets.PRODIGI_WEBHOOK_TOKEN }}
           RECONCILE_SECRET: ${{ secrets.RECONCILE_SECRET }}
+          TURNSTILE_SECRET_KEY: ${{ secrets.TURNSTILE_SECRET_KEY }}
+          CONTACT_TO_EMAIL: ${{ secrets.CONTACT_TO_EMAIL }}
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY: ${{ secrets.NEXT_PUBLIC_TURNSTILE_SITE_KEY }}
           # Live Prodigi host -- staging/preview stays on sandbox.
           PRODIGI_API_BASE: https://api.prodigi.com
           PRODIGI_API_KEY: ${{ secrets.PRODIGI_API_KEY }}
