@@ -1,6 +1,7 @@
 import { PHOTOS as CATALOG } from "../../generated/catalog";
 import type { MasterFacts } from "./master-facts";
 import type { FilmLook, PhotoCategory, PhotoFile } from "./photo-schema";
+import type { PrintOffer } from "./print-offer";
 
 export type Photo = {
   slug: string;
@@ -24,6 +25,12 @@ export type Photo = {
   master: MasterFacts;
   /** The pre-rotated file Prodigi receives (#307); absent until it is backfilled. */
   printAsset?: { sha256: string; md5: string };
+  /**
+   * The print offer (#300): which sizes are sold per physical format. The
+   * generated catalog only contains published photos, which build-catalog
+   * validates with `requirePrintOffer: true` — so this is always present here.
+   */
+  printOffer: PrintOffer;
 };
 
 /**
@@ -61,6 +68,9 @@ function toPhoto(file: PhotoFile): Photo {
     // validates with requireMasterFacts: true — so master is guaranteed here.
     master: file.master!,
     printAsset: file.printAsset,
+    // Likewise guaranteed: build-catalog requires print_options for a published
+    // photo (#300).
+    printOffer: file.printOffer!,
   };
 }
 

@@ -28,9 +28,13 @@ import {
   pairInputs,
   parseArgs,
   patchCatalogFactsYaml,
+  patchCatalogPrintOptionsYaml,
   planWebObjects,
   prBody,
+  printOfferReport,
   readCatalogForSync,
+  readOfferForNarrow,
+  recalculateOffer,
   renderCatalogYaml,
   resolutionFindings,
   runBackfillPrintAssets,
@@ -39,6 +43,7 @@ import {
   syncDecision,
   validatePhoto,
 } from "../scripts/publish-photos.mjs";
+import { eligibleOffer } from "../src/domain/catalog/print-offer.ts";
 
 const OWNER_YAML = [
   "# owner note",
@@ -165,6 +170,8 @@ test("parseArgs reads the flags", () => {
     replaceImage: undefined,
     dir: undefined,
     backfillPrintAssets: false,
+    includeNew: false,
+    includeNewSlugs: undefined,
   });
   assert.deepEqual(parseArgs(["--apply", "--only", "dawn, dusk", "--replace-image", "dawn", "--dir", "drop"]), {
     apply: true,
@@ -176,6 +183,8 @@ test("parseArgs reads the flags", () => {
     replaceImage: "dawn",
     dir: "drop",
     backfillPrintAssets: false,
+    includeNew: false,
+    includeNewSlugs: undefined,
   });
   assert.deepEqual(parseArgs(["--promote", "--pr", "242", "--dir", "drop"]), {
     apply: false,
@@ -187,6 +196,8 @@ test("parseArgs reads the flags", () => {
     replaceImage: undefined,
     dir: "drop",
     backfillPrintAssets: false,
+    includeNew: false,
+    includeNewSlugs: undefined,
   });
   assert.deepEqual(parseArgs(["--audit", "--json"]), {
     apply: false,
@@ -198,10 +209,19 @@ test("parseArgs reads the flags", () => {
     replaceImage: undefined,
     dir: undefined,
     backfillPrintAssets: false,
+    includeNew: false,
+    includeNewSlugs: undefined,
   });
   // A missing or non-numeric --pr is left undefined rather than treated as 0.
   assert.equal(parseArgs(["--promote"]).pr, undefined);
   assert.equal(parseArgs(["--promote", "--pr", "nope"]).pr, undefined);
+
+  // --include-new: bare (every photo) or a comma list of slugs; a following
+  // flag is not a value.
+  assert.equal(parseArgs(["--include-new"]).includeNew, true);
+  assert.equal(parseArgs(["--include-new"]).includeNewSlugs, undefined);
+  assert.deepEqual(parseArgs(["--include-new", "dawn,dusk"]).includeNewSlugs, ["dawn", "dusk"]);
+  assert.equal(parseArgs(["--include-new", "--apply"]).includeNewSlugs, undefined);
 });
 
 test("pairInputs matches a jpg with its yaml and reports a missing half", () => {
@@ -220,11 +240,13 @@ test("pairInputs matches a jpg with its yaml and reports a missing half", () => 
   assert.deepEqual(ignored, ["notes.txt"]);
 });
 
-test("resolutionFindings refuses 3499, warns at 3500, is clean at 6000", () => {
+test("resolutionFindings refuses below 3500 and never warns (#300 dropped the warning)", () => {
   assert.match(resolutionFindings(3499).errors[0]!, /below the 3500px minimum/);
   assert.deepEqual(resolutionFindings(3500).errors, []);
-  assert.match(resolutionFindings(3500).warnings[0]!, /~89 dpi/);
-  assert.deepEqual(resolutionFindings(6000).warnings, []);
+  // The old "70x100 will print at ~N dpi" warning is gone; the print offer
+  // report now names every size a master is or is not eligible for.
+  assert.deepEqual(resolutionFindings(3500).warnings, []);
+  assert.deepEqual(resolutionFindings(4000).warnings, []);
 });
 
 test("validatePhoto checks the schema, the generated keys, and the hash rules", () => {
@@ -256,6 +278,17 @@ test("validatePhoto checks the schema, the generated keys, and the hash rules", 
       key,
     );
   }
+
+  // #300: print_options is generated too — it is rejected in ingest, so the
+  // owner cannot hand-write an offer into the drop folder.
+  const withPrintOptions = validatePhoto({
+    ...base,
+    yamlText: OWNER_YAML + "print_options:\n  giclee:\n    - 30x40\n",
+  });
+  assert.match(
+    withPrintOptions.errors.join("\n"),
+    /print_options must be absent in the input/,
+  );
 
   const badSchema = validatePhoto({ ...base, yamlText: "title: ''\ncategory: fine-art\n" });
   assert.match(badSchema.errors.join("\n"), /dawn\.yaml: title:/);
@@ -295,6 +328,7 @@ test("planWebObjects is four widths × two formats under {slug}/{hash}", () => {
 
 const FACTS = { width: 4901, height: 3351, orientation: "landscape" };
 const PRINT_ASSET = { sha256: "b".repeat(64), md5: "c".repeat(32) };
+const PRINT_OFFER = { giclee: ["30x40"], framed: ["30x40"], canvas: ["30x40"] };
 
 test("renderCatalogYaml keeps the owner's comment and appends the generated keys", () => {
   const out = renderCatalogYaml(OWNER_YAML, {
@@ -303,6 +337,7 @@ test("renderCatalogYaml keeps the owner's comment and appends the generated keys
     imageHash: "abcd1234",
     masterFacts: FACTS,
     printAsset: PRINT_ASSET,
+    printOffer: PRINT_OFFER,
   });
   assert.match(out, /# owner note/);
   assert.match(out, /title: Dawn/);
@@ -314,10 +349,12 @@ test("renderCatalogYaml keeps the owner's comment and appends the generated keys
   assert.match(out, /orientation: landscape/);
   assert.match(out, new RegExp(`print_asset_sha256: ${"b".repeat(64)}`));
   assert.match(out, new RegExp(`print_asset_md5: ${"c".repeat(32)}`));
+  assert.match(out, /print_options:/);
+  assert.match(out, /giclee:\n {4}- 30x40/);
   assert.match(out, /# written by publish-photos/);
   // The generated keys are last, in the order publish-photos writes them.
   assert.ok(out.indexOf("image_hash") > out.indexOf("category:"));
-  const order = ["master_sha256", "image_hash", "master_width", "master_height", "orientation", "print_asset_sha256", "print_asset_md5"];
+  const order = ["master_sha256", "image_hash", "master_width", "master_height", "orientation", "print_asset_sha256", "print_asset_md5", "print_options"];
   const indices = order.map((key) => out.indexOf(`${key}:`));
   assert.deepEqual([...indices].sort((a, b) => a - b), indices);
 });
@@ -329,6 +366,7 @@ test("renderCatalogYaml does not duplicate an owner slug", () => {
     imageHash: "abcd1234",
     masterFacts: FACTS,
     printAsset: PRINT_ASSET,
+    printOffer: PRINT_OFFER,
   });
   assert.equal(out.match(/^slug:/gm)?.length, 1);
 });
@@ -1217,6 +1255,258 @@ test("renderPrintAsset turns a landscape master 90° clockwise and leaves portra
     assert.equal(square.width, 3000);
     assert.equal(square.height, 3000);
     assert.ok(square.at(100, 100).r > 200, "square keeps the red corner top-left");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Print offer (#300): report, recalculation, rollout, idempotency
+// ---------------------------------------------------------------------------
+
+const HARBOUR_FACTS300 = { width: 4901, height: 3351, orientation: "landscape" };
+
+/** A published harbour YAML with facts and print assets but no offer. */
+const HARBOUR_YAML300 =
+  [
+    "# owner note",
+    "title: Harbour",
+    "caption: c",
+    "description: d",
+    "alt: a",
+    "category: fine-art",
+    "master_sha256: " + SHA_A,
+    "image_hash: aaaaaaaa",
+    "master_width: 4901",
+    "master_height: 3351",
+    "orientation: landscape",
+    "print_asset_sha256: " + "d".repeat(64),
+    "print_asset_md5: " + "e".repeat(32),
+  ].join("\n") + "\n";
+
+/** The in-sync head for HARBOUR_YAML300 (sha matches, facts present). */
+const IN_SYNC_HEAD = { metadata: { sha256: SHA_A }, contentLength: 1 };
+
+test("printOfferReport prints one line per product with PPI, crop and status (#300)", () => {
+  const lines = printOfferReport("harbour", HARBOUR_FACTS300);
+  assert.equal(lines.length, 9);
+  assert.equal(lines[0], "harbour  giclee  30x40  279 PPI  crop 9%  eligible");
+  assert.equal(lines[1], "harbour  giclee  50x70  167 PPI  crop 4%  unavailable: below 220 PPI");
+  assert.equal(lines[2], "harbour  giclee  70x100  119 PPI  crop 2%  unavailable: below 220 PPI");
+});
+
+test("readOfferForNarrow keeps a now-ineligible entry so it can be removed (#300)", () => {
+  assert.deepEqual(
+    readOfferForNarrow({ giclee: ["70x100", "nope", 7], framed: [], canvas: [] }),
+    { giclee: ["70x100"], framed: [], canvas: [] },
+  );
+  assert.equal(readOfferForNarrow(undefined), undefined);
+  assert.deepEqual(readOfferForNarrow("nope"), { giclee: [], framed: [], canvas: [] });
+});
+
+test("recalculateOffer gives an unseen photo the full eligible offer (#300)", () => {
+  const result = recalculateOffer({ raw: undefined, master: HARBOUR_FACTS300 });
+  assert.deepEqual(result.offer, eligibleOffer(HARBOUR_FACTS300));
+  assert.equal(result.changed, true);
+  assert.deepEqual(result.removed, []);
+});
+
+test("#300 a new low-resolution photo gets its offer, report and previews; build-catalog passes", async () => {
+  const dir = makeProject();
+  try {
+    await writeMaster(path.join(dir, "ingest/dawn.jpg"), { width: 3600, height: 2400 });
+    writeFileSync(path.join(dir, "ingest/dawn.yaml"), OWNER_YAML);
+    const d = deps();
+    const result = await runPublish({ cwd: dir, apply: true }, d);
+    assert.equal(result.status, 0, result.fatals?.join("\n"));
+
+    const written = parseYaml(
+      readFileSync(path.join(dir, "content/photos/dawn.yaml"), "utf8"),
+    ) as { print_options: unknown };
+    // A low-resolution master: only the framed and canvas 30x40 are sellable.
+    assert.deepEqual(written.print_options, {
+      giclee: [],
+      framed: ["30x40"],
+      canvas: ["30x40"],
+    });
+
+    // The report names the ineligible giclee 30x40 with its PPI and crop.
+    assert.ok(
+      d.logs.some(
+        (line) =>
+          line.trim() ===
+          "dawn  giclee  30x40  200 PPI  crop 11%  unavailable: below 220 PPI",
+      ),
+      d.logs.join("\n"),
+    );
+
+    // One crop preview per pinned product, under the gitignored drop folder.
+    for (const name of ["giclee-30x40", "giclee-70x100", "framed-30x40", "canvas-50x70"]) {
+      assert.ok(
+        existsSync(path.join(dir, "ingest/.previews/dawn", `${name}.jpg`)),
+        `${name} preview`,
+      );
+    }
+
+    const build = buildCatalog({
+      photosDir: path.join(dir, "content/photos"),
+      outFile: path.join(dir, "generated.ts"),
+    });
+    assert.equal(build.ok, true, build.problems.join("\n"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#300 an owner-narrowed offer survives a run, comments and all", async () => {
+  const dir = makeProject();
+  try {
+    const narrowed = patchCatalogPrintOptionsYaml(HARBOUR_YAML300, {
+      giclee: ["30x40"],
+      framed: [],
+      canvas: [],
+    });
+    writeFileSync(path.join(dir, "content/photos/harbour.yaml"), narrowed);
+    let writes = 0;
+    const result = await syncCatalogFacts(
+      { cwd: dir },
+      {
+        log: () => {},
+        s3: fakeSyncS3({ head: IN_SYNC_HEAD }),
+        writeYaml: async () => {
+          writes += 1;
+        },
+      },
+    );
+    assert.equal(result.status, 0, JSON.stringify(result));
+    assert.equal(writes, 0, "a narrowing that does not change writes nothing");
+    const after = readFileSync(path.join(dir, "content/photos/harbour.yaml"), "utf8");
+    assert.equal(after, narrowed, "the owner's narrowing and comments are untouched");
+    assert.match(after, /# owner note/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#300 an option that is no longer eligible is removed and reported", async () => {
+  const dir = makeProject();
+  try {
+    // giclee 50x70 is listed but harbour is only 167 PPI there, below 220.
+    const stale = patchCatalogPrintOptionsYaml(HARBOUR_YAML300, {
+      giclee: ["30x40", "50x70"],
+      framed: ["30x40"],
+      canvas: ["30x40"],
+    });
+    writeFileSync(path.join(dir, "content/photos/harbour.yaml"), stale);
+    const logs: string[] = [];
+    let writtenText: string | undefined;
+    const result = await syncCatalogFacts(
+      { cwd: dir },
+      {
+        log: (line: string) => logs.push(line),
+        s3: fakeSyncS3({ head: IN_SYNC_HEAD }),
+        writeYaml: async (_p: string, text: string) => {
+          writtenText = text;
+        },
+      },
+    );
+    assert.equal(result.status, 0);
+    assert.ok(
+      logs.some((line) => line.includes("removed: harbour giclee 50x70 (below-min-ppi)")),
+      logs.join("\n"),
+    );
+    assert.ok(writtenText, "the removal is written");
+    assert.deepEqual((parseYaml(writtenText!) as { print_options: unknown }).print_options, {
+      giclee: ["30x40"],
+      framed: ["30x40"],
+      canvas: ["30x40"],
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#300 --include-new adds newly eligible sizes for the named photos", async () => {
+  const dir = makeProject();
+  try {
+    const narrowed = patchCatalogPrintOptionsYaml(HARBOUR_YAML300, {
+      giclee: ["30x40"],
+      framed: [],
+      canvas: [],
+    });
+    writeFileSync(path.join(dir, "content/photos/harbour.yaml"), narrowed);
+    let writtenText: string | undefined;
+    const result = await syncCatalogFacts(
+      { cwd: dir, includeNew: true, includeNewSlugs: ["harbour"] },
+      {
+        log: () => {},
+        s3: fakeSyncS3({ head: IN_SYNC_HEAD }),
+        writeYaml: async (_p: string, text: string) => {
+          writtenText = text;
+        },
+      },
+    );
+    assert.equal(result.status, 0);
+    const offer = (parseYaml(writtenText!) as { print_options: unknown }).print_options;
+    assert.deepEqual(offer, {
+      giclee: ["30x40"],
+      framed: ["30x40"],
+      canvas: ["30x40"],
+    });
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#300 recalculation is idempotent: a no-op run rewrites nothing", async () => {
+  const dir = makeProject();
+  try {
+    const full = patchCatalogPrintOptionsYaml(
+      HARBOUR_YAML300,
+      eligibleOffer(HARBOUR_FACTS300),
+    );
+    writeFileSync(path.join(dir, "content/photos/harbour.yaml"), full);
+    let writes = 0;
+    await syncCatalogFacts(
+      { cwd: dir },
+      {
+        log: () => {},
+        s3: fakeSyncS3({ head: IN_SYNC_HEAD }),
+        writeYaml: async () => {
+          writes += 1;
+        },
+      },
+    );
+    assert.equal(writes, 0, "an already-current offer is not rewritten");
+    assert.equal(
+      readFileSync(path.join(dir, "content/photos/harbour.yaml"), "utf8"),
+      full,
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("#300 build-catalog fails on a hand-added ineligible option", () => {
+  const dir = makeProject();
+  try {
+    writeFileSync(
+      path.join(dir, "content/photos/harbour.yaml"),
+      patchCatalogPrintOptionsYaml(HARBOUR_YAML300, {
+        giclee: ["70x100"],
+        framed: [],
+        canvas: [],
+      }),
+    );
+    const result = buildCatalog({
+      photosDir: path.join(dir, "content/photos"),
+      outFile: path.join(dir, "generated.ts"),
+    });
+    assert.equal(result.ok, false);
+    assert.match(
+      result.problems.join("\n"),
+      /print_options\.giclee\.70x100: below the 119 PPI minimum/,
+    );
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
