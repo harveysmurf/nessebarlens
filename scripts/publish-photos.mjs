@@ -1221,15 +1221,13 @@ export async function runPublish(options, deps = {}) {
       });
       // The print asset lands next to the staging master, byte-identical to
       // what --promote will upload, so a sandbox order's md5Hash matches (#307).
-      if (plan.printAssetBytes) {
-        await s3.put({
-          bucket: STAGING_MASTERS_BUCKET_NAME,
-          key: plan.stagingPrintAssetKey,
-          body: plan.printAssetBytes,
-          contentType: "image/jpeg",
-          cacheControl: STAGING_MASTER_CACHE_CONTROL,
-        });
-      }
+      await s3.put({
+        bucket: STAGING_MASTERS_BUCKET_NAME,
+        key: plan.stagingPrintAssetKey,
+        body: plan.printAssetBytes,
+        contentType: "image/jpeg",
+        cacheControl: STAGING_MASTER_CACHE_CONTROL,
+      });
     }
   } catch (error) {
     log(`error: upload failed: ${error?.message ?? error}`);
