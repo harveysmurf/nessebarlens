@@ -9,9 +9,9 @@ import { expect, test } from "@playwright/test";
  * shims rather than the deployed artifact's bindings. These four checks can
  * only pass when the thing under test is the built Worker with real bindings:
  *
- *   - the print-asset route streams the master from the R2 `MASTERS` binding,
- *     which a `next dev` server answers 503 for, and refuses a bad signature
- *     with 401 rather than 503;
+ *   - the print-asset route streams the rotated print asset from the R2
+ *     `MASTERS` binding, which a `next dev` server answers 503 for, and refuses
+ *     a bad signature with 401 rather than 503;
  *   - the Stripe webhook answers 400 (bad signature) rather than 503, which
  *     says STRIPE_WEBHOOK_SECRET reached the runtime as a binding;
  *   - the Prodigi webhook answers 401 without the token and 400 with it and a
@@ -35,8 +35,11 @@ const isLocalWorker = (() => {
 })();
 
 // The catalog's first published slug. Derived rather than hardcoded so the
-// seeded master key and this request cannot drift when the catalog changes:
-// `ci.yml` seeds `prints/{slug}.jpg` from the same `content/photos` listing.
+// seeded asset key and this request cannot drift when the catalog changes:
+// `ci.yml` seeds `print-assets/{slug}.jpg` from the same `content/photos`
+// listing. Since #307 the route streams only the rotated print asset, so the
+// seeded object must be that key — seeding `prints/{slug}.jpg` would (correctly)
+// answer 503.
 const CATALOG_SLUG = fs
   .readdirSync(new URL("../content/photos", import.meta.url))
   .filter((file) => file.endsWith(".yaml"))
@@ -49,14 +52,16 @@ test.describe("Worker runtime", () => {
     "runs only against the built Worker (E2E_BASE_URL=http://localhost:8787)",
   );
 
-  test("print-asset streams the seeded master from the R2 binding", async ({
+  test("print-asset streams the seeded print asset from the R2 binding", async ({
     request,
   }) => {
     const secret = process.env.PRINT_ASSET_HMAC_SECRET ?? "";
     expect(secret.length, "PRINT_ASSET_HMAC_SECRET must reach the job").toBeGreaterThan(0);
 
-    // The master e2e/fixtures/worker-master.jpg is seeded at prints/{slug}.jpg
-    // by the job for this same first catalog slug.
+    // The print asset e2e/fixtures/worker-print-asset.jpg is seeded at
+    // print-assets/{slug}.jpg by the job for this same first catalog slug. Since
+    // #307 the route serves only that key, so this 200 proves the MASTERS
+    // binding reached the runtime and the rotated asset is what it streams.
     const slug = CATALOG_SLUG;
     const exp = Math.floor(Date.now() / 1000) + 3600;
     const sig = createHmac("sha256", secret)
@@ -67,17 +72,21 @@ test.describe("Worker runtime", () => {
       `/api/print-asset?slug=${slug}&exp=${exp}&sig=${sig}`,
     );
     // 503 (masters-unavailable) is the specific failure a missing MASTERS
-    // binding produces; asserting 200 is what rules it out.
+    // binding produces; asserting 200 is what rules it out. 503
+    // (print-asset-unavailable) is what a route that fell back to
+    // prints/{slug}.jpg — the unrotated master — would answer here, since only
+    // print-assets/{slug}.jpg is seeded.
     expect(res.status(), await res.text()).toBe(200);
     expect(res.headers()["content-type"]).toBe("image/jpeg");
 
     const body = await res.body();
     const fixture = fs.readFileSync(
-      new URL("./fixtures/worker-master.jpg", import.meta.url),
+      new URL("./fixtures/worker-print-asset.jpg", import.meta.url),
     );
-    expect(body.equals(fixture), "the served bytes must be the seeded master").toBe(
-      true,
-    );
+    expect(
+      body.equals(fixture),
+      "the served bytes must be the seeded print asset",
+    ).toBe(true);
   });
 
   test("print-asset refuses a bad signature with 401, not 503", async ({

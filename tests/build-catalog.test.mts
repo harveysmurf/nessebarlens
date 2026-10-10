@@ -18,12 +18,15 @@ const BASE = {
   description: "A description.",
   alt: "A one-line description of the image",
   category: "fine-art",
-  // A published photo must carry both (#245) and master facts (#297).
+  // A published photo must carry both (#245), master facts (#297) and the
+  // print asset pair (#307).
   master_sha256: "a".repeat(64),
   image_hash: "abcdef12",
   master_width: 4901,
   master_height: 3351,
   orientation: "landscape",
+  print_asset_sha256: "b".repeat(64),
+  print_asset_md5: "c".repeat(32),
 };
 
 function withTmpDir(fn: (dir: string) => void) {

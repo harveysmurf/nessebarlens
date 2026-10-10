@@ -221,6 +221,7 @@ test("every product quotes with the table's SKU and attributes", async () => {
 
 test("every product orders with the table's SKU and attributes", () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
+  const ASSET_MD5 = "c".repeat(32);
   for (const product of PRINT_PRODUCTS) {
     const body = buildProdigiOrderBody({
       sessionId: "cs_test_abcdefgh",
@@ -230,6 +231,7 @@ test("every product orders with the table's SKU and attributes", () => {
       frame: product.format === "framed" ? "black" : null,
       recipient: RECIPIENT,
       assetUrl: ASSET_URL,
+      assetMd5: ASSET_MD5,
     });
     assert.deepEqual(
       body.items[0],
@@ -238,7 +240,7 @@ test("every product orders with the table's SKU and attributes", () => {
         copies: 1,
         sizing: "fillPrintArea",
         attributes: EXPECTED_ATTRIBUTES[product.format],
-        assets: [{ printArea: "default", url: ASSET_URL }],
+        assets: [{ printArea: "default", url: ASSET_URL, md5Hash: ASSET_MD5 }],
       },
       product.sku,
     );

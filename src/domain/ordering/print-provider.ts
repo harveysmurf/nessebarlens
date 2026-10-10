@@ -56,6 +56,13 @@ export type CreateProdigiOrder = (input: {
    * (fulfillment) signs it before calling, so there is no placeholder fallback.
    */
   assetUrl: string;
+  /**
+   * The catalog print asset's MD5, sent to Prodigi as `assets[0].md5Hash`
+   * (#307). Required: Prodigi verifies the fetched bytes against it, so omitting
+   * it would let a corrupted or stale upload print. The caller fails closed when
+   * the photo has no print asset, rather than passing an empty hash.
+   */
+  assetMd5: string;
 }) => Promise<ProdigiOrderResult>;
 
 /** The success/failure shape of a Prodigi cancellation. */

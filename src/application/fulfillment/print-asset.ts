@@ -12,7 +12,7 @@
 
 import { PHOTO_SLUG_PATTERN } from "../../domain/catalog/derivative-ladder";
 import {
-  masterKeyForSlug,
+  printAssetKeyForSlug,
   readMasterObject,
   type MastersBucket,
 } from "../../domain/catalog/master-key";
@@ -37,20 +37,24 @@ export function isPhotoSlug(value: string): boolean {
 }
 
 /**
- * Whether this deployment can actually produce a signed master URL for `slug`.
+ * Whether this deployment can actually serve a print asset for `slug`.
  *
  * Used as a pre-payment guard: /api/checkout refuses to create a Stripe
  * session when this is false, so a physical order can never be paid for and
- * then fulfilled from the public placeholder.
+ * then fulfilled from the unrotated master or the public placeholder.
  *
- * Delegates to the port's `sign` — the check answers the question that
- * actually matters — "would the order path be able to sign this?" — instead
- * of a proxy for it that could drift from the signer.
+ * Two conditions, both required. `printAssetKeyForSlug` answers the catalog
+ * half — the photo must carry a `printAsset`, because that is the only file
+ * `/api/print-asset` will ever stream (#307); a null means there is nothing to
+ * serve, so the order must be refused. `signer.sign` answers the configuration
+ * half — the deployment must hold a usable HMAC secret and site origin. Both
+ * are asked, because either being absent makes the order unserviceable.
  */
 export async function canSignMasterAsset(
   slug: string,
   signer: AssetUrlSigner,
 ): Promise<boolean> {
+  if (printAssetKeyForSlug(slug) === null) return false;
   return (await signer.sign(slug)) !== null;
 }
 
@@ -85,20 +89,43 @@ export async function verifyPrintAssetRequest(
   return signer.verify(slug, expRaw, sig, options);
 }
 
+/** The 503 shape both missing-asset paths answer with. */
+function printAssetUnavailable(
+  slug: string,
+): Extract<PrintAssetStream, { kind: "json" }> {
+  console.error(JSON.stringify({ event: "print-asset.missing", slug }));
+  return { kind: "json", status: 503, body: { error: "print-asset-unavailable" } };
+}
+
 /**
- * Stream master bytes for a verified slug. Never accepts a raw R2 key —
- * always resolves via masterKeyForSlug so only catalog masters are served.
+ * Stream the print asset for a verified slug — the portrait, sRGB, EXIF-free
+ * file Prodigi receives (#307). Resolves the key through `printAssetKeyForSlug`,
+ * never `masterKeyForSlug`, so a missing asset is a 503 the caller (Prodigi)
+ * retries rather than a silent fallback to the unrotated master that #307 exists
+ * to remove.
  */
 export async function resolvePrintAssetStream(
   slug: string,
   masters: MastersBucket | undefined,
 ): Promise<PrintAssetStream> {
-  const masterKey = masterKeyForSlug(slug);
-  if (!masterKey) {
+  // A slug that is not valid grammar is a caller bug, not a retryable miss:
+  // 400, so Prodigi does not retry a request that can never succeed.
+  if (!isPhotoSlug(slug)) {
     return { kind: "json", status: 400, body: { error: "invalid-slug" } };
   }
-  const read = await readMasterObject(masterKey, masters);
+  const printKey = printAssetKeyForSlug(slug);
+  if (!printKey) {
+    // A catalog photo without a print asset, or a slug not in the catalog:
+    // there is nothing to serve, and the master must not be substituted.
+    return printAssetUnavailable(slug);
+  }
+  const read = await readMasterObject(printKey, masters);
   if (!read.ok) {
+    // A missing object is the same fact as a missing key — the print asset is
+    // not there — so it is the same retryable 503. A missing bucket or a
+    // throwing get() keeps its own error: it is a deployment problem, not an
+    // absent asset.
+    if (read.error === "master-not-found") return printAssetUnavailable(slug);
     return { kind: "json", status: read.status, body: { error: read.error } };
   }
   const object = read.object;

@@ -156,6 +156,7 @@ test("a non-Error thrown while building the body is reported, not rethrown", asy
       frame: null,
       recipient: hostile,
       assetUrl: ASSET_URL,
+      assetMd5: "c".repeat(32),
     });
     assert.equal(result.ok, false);
     assert.equal(result.ok === false && result.kind, "client");
@@ -192,6 +193,7 @@ test("a non-Error thrown by fetch is a server failure, not a crash", async () =>
       frame: null,
       recipient: RECIPIENT,
       assetUrl: ASSET_URL,
+      assetMd5: "c".repeat(32),
     });
     assert.equal(result.ok, false);
     assert.equal(result.ok === false && result.kind, "server");

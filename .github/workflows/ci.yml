@@ -410,7 +410,7 @@ jobs:
           EOF
           npx wrangler d1 migrations apply nessebar-lens-orders --local
           SLUG="$(basename "$(ls content/photos/*.yaml | sort | head -1)" .yaml)"
-          npx wrangler r2 object put "nessebar-lens-masters/prints/$SLUG.jpg" --local --file e2e/fixtures/worker-master.jpg
+          npx wrangler r2 object put "nessebar-lens-masters/print-assets/$SLUG.jpg" --local --file e2e/fixtures/worker-print-asset.jpg
 
       # The #190 acceptance: without NEXT_PUBLIC_SITE_URL the production build's
       # guard (siteUrl()) throws here, before the Worker is ever started. It is a

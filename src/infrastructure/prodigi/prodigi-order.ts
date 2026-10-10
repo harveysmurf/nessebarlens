@@ -29,6 +29,7 @@ import { prodigiConfig, prodigiWebhookToken } from "../config/config";
 import { resolveSku, type PhysicalFormat } from "../../domain/pricing/sku-map";
 import { siteUrl } from "../config/config";
 import { HTTPS_URL_PATTERN } from "../../domain/pricing/url-patterns";
+import { HEX_32_PATTERN } from "../../domain/pricing/crypto-hex";
 
 export type ProdigiOrderRequest = {
   merchantReference: string;
@@ -60,7 +61,7 @@ export type ProdigiOrderRequest = {
     copies: 1;
     sizing: "fillPrintArea";
     attributes: Record<string, string>;
-    assets: Array<{ printArea: "default"; url: string }>;
+    assets: Array<{ printArea: "default"; url: string; md5Hash: string }>;
   }>;
 };
 
@@ -120,16 +121,27 @@ export function buildProdigiOrderBody(input: {
   /** The HMAC /api/print-asset URL Prodigi fetches. Required: there is no
    * public-placeholder fallback anymore (#245). */
   assetUrl: string;
+  /** The print asset's MD5, sent as `assets[0].md5Hash` (#307). Required, and
+   * the caller fails closed without one rather than sending an empty hash. */
+  assetMd5: string;
   /** PRODIGI_WEBHOOK_TOKEN. Unset or blank ⇒ the body carries no callbackUrl. */
   webhookToken?: string;
 }): ProdigiOrderRequest {
   const entry = resolveSku(input.format, input.size, input.frame);
   const assetUrl = input.assetUrl;
+  const assetMd5 = input.assetMd5;
   if (!HTTPS_URL_PATTERN.test(assetUrl)) {
     throw new Error("asset url must be https");
   }
   if (referencesMasters(assetUrl)) {
     throw new Error("asset url must not point at masters");
+  }
+  // The MD5 is what Prodigi checks the fetched bytes against (#307), so an
+  // absent or malformed one must fail here rather than be sent and silently
+  // ignored. Callers fail closed upstream (no print asset ⇒ no order), so this
+  // is the second line of defence for a caller bug.
+  if (!HEX_32_PATTERN.test(typeof assetMd5 === "string" ? assetMd5 : "")) {
+    throw new Error("asset md5 must be 32-char lowercase hex");
   }
   // Same-origin at generation, which is where it is knowable: the read path
   // (parseOrderRecord) checks shape only, so a record written before a domain
@@ -197,7 +209,7 @@ export function buildProdigiOrderBody(input: {
         copies: 1,
         sizing: "fillPrintArea",
         attributes: entry.attributes,
-        assets: [{ printArea: "default", url: assetUrl }],
+        assets: [{ printArea: "default", url: assetUrl, md5Hash: assetMd5 }],
       },
     ],
   };

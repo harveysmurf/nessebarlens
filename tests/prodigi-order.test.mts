@@ -29,6 +29,10 @@ const RECIPIENT: OrderRecipient = {
 // this URL rather than making one up.
 const ASSET_URL = `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`;
 
+// The catalog print asset's MD5, sent as `assets[0].md5Hash` (#307). The
+// builder now requires it, and the caller fails closed without one.
+const ASSET_MD5 = "c".repeat(32);
+
 test("Prodigi order body uses SKU + the signed asset URL and never leaks masters", () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   const body = buildProdigiOrderBody({
@@ -39,6 +43,7 @@ test("Prodigi order body uses SKU + the signed asset URL and never leaks masters
     frame: null,
     recipient: RECIPIENT,
     assetUrl: ASSET_URL,
+    assetMd5: ASSET_MD5,
   });
   assert.equal(body.idempotencyKey, "cs_test_abcdefgh");
   assert.equal(body.merchantReference, "cs_test_abcdefgh");
@@ -96,6 +101,7 @@ test("the asset URL must be on the site origin; the read path no longer checks i
     frame: null,
     recipient: RECIPIENT,
     assetUrl: ASSET_URL,
+    assetMd5: ASSET_MD5,
   });
   // The read path validates shape only so a record survives a domain move, which
   // makes generation the only place same-origin is knowable. Pinned here so
@@ -114,6 +120,7 @@ test("the asset URL must be on the site origin; the read path no longer checks i
         frame: null,
         recipient: RECIPIENT,
         assetUrl: `https://old-domain.example/api/print-asset?slug=${SAMPLE_SLUG}`,
+        assetMd5: ASSET_MD5,
       }),
     /site origin/,
   );
@@ -129,6 +136,7 @@ test("framed order includes color attribute", () => {
     frame: "brown",
     recipient: RECIPIENT,
     assetUrl: ASSET_URL,
+    assetMd5: ASSET_MD5,
   });
   assert.equal(body.items[0].sku, "GLOBAL-CFPM-12X16");
   assert.deepEqual(body.items[0].attributes, { color: "brown" });
@@ -211,6 +219,7 @@ const ORDER_INPUT = {
   recipient: RECIPIENT,
   // The application signs this before calling; the adapter never signs.
   assetUrl: ASSET_URL,
+  assetMd5: ASSET_MD5,
 };
 
 test("createProdigiOrder posts the signed asset URL to the sandbox orders URL", async () => {
@@ -507,6 +516,28 @@ test("a master asset URL is a client failure before any network call", async () 
       assert.equal(result.ok, false);
       assert.equal(result.ok === false && result.kind, "client");
       assert.equal(stub.calls.length, 0);
+    } finally {
+      stub.restore();
+    }
+  });
+});
+
+test("an absent or malformed asset md5 is a client failure before any network call (#307)", async () => {
+  await withProdigiEnv(async () => {
+    const stub = stubFetch(() => json({ order: { id: "ord_127" } }));
+    try {
+      for (const assetMd5 of [
+        "not-hex",
+        "c".repeat(31),
+        "C".repeat(32),
+        123 as unknown as string,
+        undefined as unknown as string,
+      ]) {
+        const result = await createProdigiOrder({ ...ORDER_INPUT, assetMd5 });
+        assert.equal(result.ok, false, String(assetMd5));
+        assert.equal(result.ok === false && result.kind, "client", String(assetMd5));
+      }
+      assert.equal(stub.calls.length, 0, "must not call Prodigi without a usable md5");
     } finally {
       stub.restore();
     }
