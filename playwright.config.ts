@@ -100,6 +100,13 @@ export default defineConfig({
         env: {
           PORT: String(DEV_PORT),
           NEXT_PUBLIC_SITE_URL: baseURL,
+          // The derivative ladder base, so the gallery and the print preview
+          // render a real `<picture>`/`<img>` in the flow specs (#326) instead
+          // of the alt-text fallback. The host is deliberately unresolvable:
+          // print-preview.spec.ts fulfils its image requests with a small
+          // opaque pixel, so nothing here reaches a CDN. Server-side only — the
+          // client gets the resolved URLs as props.
+          NEXT_PUBLIC_WEB_IMAGES_BASE: "https://images.e2e.test",
           // Any sk_test_ key is accepted; the flow is only ever run against
           // Stripe's sandbox, where 4242… cannot move money. support/stripe.ts
           // asserts that as a test rather than trusting this comment.

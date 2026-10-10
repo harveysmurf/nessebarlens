@@ -17,14 +17,65 @@ const HARBOUR = "nessebar-harbour-in-black-and-white-bulgaria";
 const GOLDEN =
   "golden-sun-flare-shining-through-stone-arch-ruins-of-saint-sophia-church-in-nessebar-bulgaria";
 
+/**
+ * The derivative ladder base the dev server is started with (playwright.config
+ * `webServer.env`). The ladder is a real URL but the host is not resolvable, so
+ * every image request is fulfilled with a small opaque image below — the point
+ * is that the server resolved a ladder and the client rendered the `<img>`,
+ * not the CDN.
+ *
+ * The image is 16x16, not 1x1. The `<img>` carries a `srcset` of width
+ * descriptors and a `sizes` value, so Chromium reports `naturalWidth` as the
+ * density-corrected intrinsic size: the selected rung (1500w) over `sizes`
+ * (60vw at the test viewport) is a factor of ~2, and a 1x1 source rounds that
+ * down to 0. A 16x16 source stays well clear of 0, so `naturalWidth > 0`
+ * genuinely asserts the image decoded rather than the placeholder's size.
+ */
+const IMAGES_BASE = "https://images.e2e.test";
+
+/** A 16x16 opaque PNG for the JPEG rungs. */
+const PIXEL_PNG = Buffer.from(
+  "iVBORw0KGgoAAAANSUhEUgAAABAAAAAQCAIAAACQkWg2AAAAGUlEQVR4nGM8ISfHQApgIkn1qIZRDUNKAwBPHwEkcYw1mAAAAABJRU5ErkJggg==",
+  "base64",
+);
+
+/** A 16x16 opaque WebP for the `<source type="image/webp">` rungs. */
+const PIXEL_WEBP = Buffer.from(
+  "UklGRjoAAABXRUJQVlA4IC4AAACwAQCdASoQABAAAUAmJaACdLoABDAAAP7x3I/4DdfFtMv/vYL/3YL/3YL/WwAA",
+  "base64",
+);
+
 function preview(page: Page) {
   return page.locator("[data-preview-kind]");
 }
 
-async function imageLoaded(page: Page): Promise<boolean> {
+/**
+ * The preview shows the server-resolved ladder image when the site has a
+ * derivative base, and the alt text when it does not. CI builds the Worker
+ * without `NEXT_PUBLIC_WEB_IMAGES_BASE`, so the no-image path is a real state:
+ * assert whichever one the render is, not a specific one.
+ */
+async function expectPreviewImage(page: Page) {
   const img = preview(page).locator("img").first();
-  return img.evaluate((node: HTMLImageElement) => node.naturalWidth > 0);
+  if ((await img.count()) === 0) {
+    await expect(preview(page).locator("span").first()).toBeVisible();
+    return;
+  }
+  await expect
+    .poll(() => img.evaluate((node: HTMLImageElement) => node.naturalWidth > 0))
+    .toBe(true);
 }
+
+test.beforeEach(async ({ page }) => {
+  await page.route(`${IMAGES_BASE}/**`, (route) => {
+    const webp = route.request().url().endsWith(".webp");
+    return route.fulfill({
+      status: 200,
+      contentType: webp ? "image/webp" : "image/jpeg",
+      body: webp ? PIXEL_WEBP : PIXEL_PNG,
+    });
+  });
+});
 
 test.describe("product preview (#326)", () => {
   test("opens on the photo's first offered format, uncropped for that kind", async ({
@@ -34,7 +85,7 @@ test.describe("product preview (#326)", () => {
     const offer = getPhoto(HARBOUR)!.printOffer;
     const opening = offer.giclee.length > 0 ? "paper" : "framed";
     await expect(preview(page)).toHaveAttribute("data-preview-kind", opening);
-    expect(await imageLoaded(page)).toBe(true);
+    await expectPreviewImage(page);
   });
 
   test("framed shows the selected finish, and the label names it", async ({
@@ -48,7 +99,7 @@ test.describe("product preview (#326)", () => {
     await expect(box).toHaveAttribute("data-preview-kind", "framed");
     await expect(box).toHaveAttribute("data-frame", "white");
     await expect(box).toHaveAttribute("aria-label", /Satin White/);
-    expect(await imageLoaded(page)).toBe(true);
+    await expectPreviewImage(page);
 
     const product = await box.boundingBox();
     const mount = await box.locator("[data-mount]").boundingBox();
@@ -107,7 +158,7 @@ test.describe("product preview (#326)", () => {
     const box = preview(page);
     await expect(box).toHaveAttribute("data-preview-kind", "canvas");
     await expect(page.getByText(/wraps around the sides/i)).toBeVisible();
-    expect(await imageLoaded(page)).toBe(true);
+    await expectPreviewImage(page);
     await testInfo.attach("canvas", {
       body: await box.screenshot(),
       contentType: "image/png",
@@ -119,7 +170,7 @@ test.describe("product preview (#326)", () => {
     await page.getByText(/digital copy/i).click();
     const box = preview(page);
     await expect(box).toHaveAttribute("data-preview-kind", "digital");
-    expect(await imageLoaded(page)).toBe(true);
+    await expectPreviewImage(page);
     await testInfo.attach("digital", {
       body: await box.screenshot(),
       contentType: "image/png",
@@ -130,7 +181,7 @@ test.describe("product preview (#326)", () => {
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto(`/prints/${GOLDEN}`);
     await expect(preview(page)).toHaveAttribute("data-preview-kind", "paper");
-    expect(await imageLoaded(page)).toBe(true);
+    await expectPreviewImage(page);
     await testInfo.attach("paper-mobile", {
       body: await preview(page).screenshot(),
       contentType: "image/png",

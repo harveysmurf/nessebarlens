@@ -14,7 +14,6 @@ import type { PrintOffer } from "../catalog/print-offer";
 import type { FrameFinish, PrintFormat, PrintSize } from "../pricing/pricing";
 import {
   DEFAULT_FRAME_FINISH,
-  DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
   firstOfferedSize,
   offeredFormats,
@@ -28,11 +27,12 @@ export type PrintSelection = {
 
 /**
  * The selection the configurator opens on: the photo's first offered format
- * and its first offered size, with the default frame. Digital is always in the
- * offered list, so the format is never absent.
+ * and its first offered size, with the default frame. `offeredFormats` always
+ * returns digital (see print-copy), so the list is never empty and the first
+ * entry is always present; a fallback format here would be dead code.
  */
 export function openingSelection(offer: PrintOffer): PrintSelection {
-  const format = offeredFormats(offer)[0]?.id ?? DEFAULT_PRINT_FORMAT;
+  const format = offeredFormats(offer)[0]!.id;
   const size = firstOfferedSize(offer, format) ?? DEFAULT_PRINT_SIZE;
   return { format, size, frame: DEFAULT_FRAME_FINISH };
 }
