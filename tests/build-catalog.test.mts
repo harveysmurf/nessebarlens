@@ -27,6 +27,8 @@ const BASE = {
   orientation: "landscape",
   print_asset_sha256: "b".repeat(64),
   print_asset_md5: "c".repeat(32),
+  // The print offer (#300), required for a published photo.
+  print_options: { giclee: ["30x40"], framed: ["30x40"], canvas: ["30x40"] },
 };
 
 function withTmpDir(fn: (dir: string) => void) {

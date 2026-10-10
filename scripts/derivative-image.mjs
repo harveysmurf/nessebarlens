@@ -109,3 +109,24 @@ export async function renderPrintAsset(bytes, orientation) {
     .jpeg({ quality: 95, chromaSubsampling: "4:4:4" })
     .toBuffer();
 }
+
+/**
+ * A crop preview (#300): the master's EXIF orientation applied, then a center
+ * crop at the product's print-area ratio, 1200 px on the long edge. This is what
+ * the owner reviews before a publish — not an artifact anything reads — so it is
+ * a small JPEG and never leaves the gitignored drop folder.
+ *
+ * `printArea` is the unordered `{ short, long }` inches pair from the pinned
+ * table; the ratio is orientation-free, so the crop drops the same pixels as the
+ * print fill does.
+ */
+export async function renderCropPreview(bytes, printArea, longEdge = 1200) {
+  const ratio = printArea.long / printArea.short;
+  const height = longEdge;
+  const width = Math.max(1, Math.round(longEdge / ratio));
+  return sharp(bytes)
+    .rotate()
+    .resize({ width, height, fit: "cover", position: "center" })
+    .jpeg({ quality: 80, mozjpeg: true })
+    .toBuffer();
+}

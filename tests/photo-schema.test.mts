@@ -30,8 +30,13 @@ const FACTS = { master_width: 4901, master_height: 3351, orientation: "landscape
 /** The print asset's two keys (#307); required for a published photo in PR 2. */
 const PRINT_ASSET = { print_asset_sha256: "b".repeat(64), print_asset_md5: "c".repeat(32) };
 
+/** The print offer (#300); required for a published photo. Valid for FACTS. */
+const PRINT_OPTIONS = {
+  print_options: { giclee: ["30x40"], framed: ["30x40"], canvas: ["30x40"] },
+};
+
 /** A valid, published photo. */
-const VALID = { ...REQUIRED, ...HASHES, ...FACTS, ...PRINT_ASSET };
+const VALID = { ...REQUIRED, ...HASHES, ...FACTS, ...PRINT_ASSET, ...PRINT_OPTIONS };
 
 function validate(data: unknown, filename = "photo") {
   return validatePhotoFile(filename, data);
@@ -44,7 +49,12 @@ function problems(data: unknown, filename = "photo"): string[] {
 }
 
 function validateRelaxed(data: unknown, filename = "photo") {
-  return validatePhotoFile(filename, data, { requirePublishedHashes: false, requireMasterFacts: false });
+  return validatePhotoFile(filename, data, {
+    requirePublishedHashes: false,
+    requireMasterFacts: false,
+    requirePrintAssets: false,
+    requirePrintOffer: false,
+  });
 }
 
 test("an unpublished file needs no hashes and applies defaults", () => {
@@ -81,7 +91,10 @@ test("a published photo without master_sha256 or image_hash fails", () => {
     noMaster.some((p) => p.includes("master_sha256: required")),
     noMaster.join("; "),
   );
-  assert.equal(validate({ ...REQUIRED, ...HASHES, ...FACTS, ...PRINT_ASSET }).ok, true);
+  assert.equal(
+    validate({ ...REQUIRED, ...HASHES, ...FACTS, ...PRINT_ASSET, ...PRINT_OPTIONS }).ok,
+    true,
+  );
 });
 
 test("a fully-specified file validates and keeps every field", () => {
@@ -436,4 +449,70 @@ test("requirePrintAssets: true fails a published photo without one (PR 2)", () =
   );
   // With the asset present the requirement is satisfied.
   assert.equal(validatePhotoFile("photo", VALID, { requirePrintAssets: true }).ok, true);
+});
+
+// ---------------------------------------------------------------------------
+// Print offer (#300)
+// ---------------------------------------------------------------------------
+
+test("a published photo requires print_options by default, and keeps it (#300)", () => {
+  const without = problems({ ...VALID, print_options: undefined });
+  assert.ok(
+    without.some((p) => p.includes("print_options: required for a published photo")),
+    without.join("; "),
+  );
+  const result = validate(VALID);
+  assert.equal(result.ok, true);
+  if (!result.ok) return;
+  assert.deepEqual(result.photo.printOffer, {
+    giclee: ["30x40"],
+    framed: ["30x40"],
+    canvas: ["30x40"],
+  });
+});
+
+test("requirePrintOffer: false lets a published photo pass without an offer", () => {
+  const result = validatePhotoFile(
+    "photo",
+    { ...REQUIRED, ...HASHES, ...FACTS, ...PRINT_ASSET },
+    { requirePrintOffer: false },
+  );
+  assert.equal(result.ok, true);
+  if (result.ok) assert.equal(result.photo.printOffer, undefined);
+});
+
+test("every offer problem maps to a print_options field: message line (#300)", () => {
+  const cases: Array<[unknown, RegExp]> = [
+    ["nope", /print_options: must be a map of format to a list of sizes/],
+    [{}, /print_options\.(giclee|framed|canvas): required/],
+    [{ giclee: [], framed: [], canvas: [], digital: [] }, /print_options\.digital: unknown format/],
+    [{ giclee: "30x40", framed: [], canvas: [] }, /print_options\.giclee: must be a list of sizes/],
+    [{ giclee: ["99x99"], framed: [], canvas: [] }, /print_options\.giclee\.99x99: unknown size/],
+    [
+      { giclee: ["30x40", "30x40"], framed: [], canvas: [] },
+      /print_options\.giclee\.30x40: listed more than once/,
+    ],
+    [
+      { giclee: ["70x100"], framed: [], canvas: [] },
+      /print_options\.giclee\.70x100: below the \d+ PPI minimum/,
+    ],
+  ];
+  for (const [print_options, re] of cases) {
+    const found = problems({ ...VALID, print_options });
+    assert.ok(found.some((p) => re.test(p)), `${JSON.stringify(print_options)} → ${found.join("; ")}`);
+  }
+});
+
+test("an option that does not match a square master is a shape problem (#300)", () => {
+  const found = problems({
+    ...VALID,
+    master_width: 4000,
+    master_height: 4000,
+    orientation: "square",
+    print_options: { giclee: ["30x40"], framed: [], canvas: [] },
+  });
+  assert.ok(
+    found.some((p) => p === "print_options.giclee.30x40: does not match the master's shape"),
+    found.join("; "),
+  );
 });

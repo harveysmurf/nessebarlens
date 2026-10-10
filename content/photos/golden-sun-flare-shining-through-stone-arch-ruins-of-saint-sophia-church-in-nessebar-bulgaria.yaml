@@ -16,3 +16,15 @@ master_height: 5304
 orientation: landscape
 print_asset_sha256: 205fa04f9059972d49d24b8b9961b3b202e6143c762012ae19a23d1861bea399
 print_asset_md5: 8b19a16ae2552a9d5da753821985e174
+print_options:
+  giclee:
+    - 30x40
+    - 50x70
+  framed:
+    - 30x40
+    - 50x70
+    - 70x100
+  canvas:
+    - 30x40
+    - 50x70
+    - 70x100

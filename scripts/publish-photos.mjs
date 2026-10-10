@@ -77,9 +77,17 @@ import {
 } from "../src/domain/catalog/derivative-ladder";
 import { orientationOf, parseMasterFacts } from "../src/domain/catalog/master-facts";
 import { validatePhotoFile } from "../src/domain/catalog/photo-schema";
+import { assessAll, MIN_PRINT_PPI } from "../src/domain/catalog/print-eligibility";
+import { eligibleOffer, narrowOffer } from "../src/domain/catalog/print-offer";
+import { printAreaIn, PRINT_PRODUCTS } from "../src/domain/pricing/print-products";
+import {
+  isPrintSize,
+  PHYSICAL_FORMATS,
+} from "../src/domain/pricing/sku-map";
 import {
   derivativeContentType,
   masterDimensions,
+  renderCropPreview,
   renderDerivative,
   renderPrintAsset,
   renderStagingMaster,
@@ -97,6 +105,7 @@ const GENERATED_KEYS = [
   "orientation",
   "print_asset_sha256",
   "print_asset_md5",
+  "print_options",
 ];
 /** A re-ingest overwrites the staging master's same key; a week is enough. */
 const STAGING_MASTER_CACHE_CONTROL = "public, max-age=604800";
@@ -108,7 +117,8 @@ const PROMOTE_MASTER_CACHE_CONTROL = "private, no-store";
 /** The S3 user-metadata key that carries the master's SHA-256. */
 const MASTER_METADATA_KEY = "sha256";
 const MIN_LONG_EDGE = 3500;
-const WARN_LONG_EDGE = 6000;
+/** The long edge of a crop preview written under the drop folder (#300). */
+const PREVIEW_LONG_EDGE = 1200;
 
 // ---------------------------------------------------------------------------
 // Pure decisions
@@ -127,6 +137,14 @@ export function parseArgs(argv) {
     : undefined;
   const prRaw = valueOf("--pr");
   const pr = prRaw === undefined ? undefined : Number(prRaw);
+  // `--include-new` takes no value (add for every photo) or a comma list of
+  // slugs. A following flag is not a value, so `--include-new --apply` is bare.
+  const includeNew = has("--include-new");
+  const includeNewRaw = valueOf("--include-new");
+  const includeNewSlugs =
+    includeNew && includeNewRaw && !includeNewRaw.startsWith("--")
+      ? includeNewRaw.split(",").map((s) => s.trim()).filter(Boolean)
+      : undefined;
   return {
     apply: has("--apply"),
     promote: has("--promote"),
@@ -137,6 +155,9 @@ export function parseArgs(argv) {
     replaceImage: valueOf("--replace-image"),
     dir: valueOf("--dir"),
     backfillPrintAssets: has("--backfill-print-assets"),
+    includeNew,
+    includeNewSlugs:
+      includeNewSlugs && includeNewSlugs.length > 0 ? includeNewSlugs : undefined,
   };
 }
 
@@ -183,17 +204,16 @@ export function pairInputs(names) {
 }
 
 /**
- * The resolution floor and warning. 3499 px is refused; 3500 px warns about a
- * 70x100 cm print; 6000 px and up is clean.
+ * The resolution floor. Below `MIN_LONG_EDGE` the master is refused; at or
+ * above it the print offer (#300) decides which sizes are actually sellable, so
+ * there is no separate "this size will print at ~N dpi" warning — the offer
+ * report names every size a master is or is not eligible for.
  */
 export function resolutionFindings(longEdge) {
   const errors = [];
   const warnings = [];
   if (longEdge < MIN_LONG_EDGE) {
     errors.push(`long edge ${longEdge}px is below the ${MIN_LONG_EDGE}px minimum`);
-  } else if (longEdge < WARN_LONG_EDGE) {
-    const dpi = Math.round(longEdge / (100 / 2.54));
-    warnings.push(`long edge ${longEdge}px: 70x100 cm will print at ~${dpi} dpi`);
   }
   return { errors, warnings };
 }
@@ -235,6 +255,7 @@ export function validatePhoto({
     requirePublishedHashes: false,
     requireMasterFacts: false,
     requirePrintAssets: false,
+    requirePrintOffer: false,
   });
   if (!schema.ok) {
     for (const problem of schema.problems) errors.push(`${slug}.yaml: ${problem}`);
@@ -282,6 +303,133 @@ export function md5Hex(bytes) {
   return createHash("md5").update(bytes).digest("hex");
 }
 
+// ---------------------------------------------------------------------------
+// Print offer (#300): report, recalculation, YAML patch
+// ---------------------------------------------------------------------------
+
+/** An empty offer with every physical format present. */
+function emptyOffer() {
+  return { giclee: [], framed: [], canvas: [] };
+}
+
+/** A copy of an offer as a plain, mutable object. */
+function offerToPlain(offer) {
+  return {
+    giclee: [...offer.giclee],
+    framed: [...offer.framed],
+    canvas: [...offer.canvas],
+  };
+}
+
+/** Whether two offers list the same sizes, in the same order, per format. */
+function sameOffer(a, b) {
+  return PHYSICAL_FORMATS.every(
+    (format) =>
+      a[format].length === b[format].length &&
+      a[format].every((size, i) => size === b[format][i]),
+  );
+}
+
+/**
+ * The report wording for one product's verdict (#300). An eligible product is
+ * `eligible`; an ineligible one names why, with the format's own floor for the
+ * PPI case, so the line reads the same way a human would say it.
+ */
+export function offerStatus(assessment) {
+  if (assessment.verdict.eligible) return "eligible";
+  if (assessment.verdict.reason === "below-min-ppi") {
+    return `unavailable: below ${MIN_PRINT_PPI[assessment.product.format]} PPI`;
+  }
+  return "unavailable: shape mismatch";
+}
+
+/**
+ * One report line per pinned product, in table order (#300), so a dry run and a
+ * real run show the owner exactly which sizes the current master is sold at:
+ *
+ *   harbour  giclee  30x40   279 PPI  crop 9%   eligible
+ *   harbour  giclee  50x70   168 PPI  crop 4%   unavailable: below 220 PPI
+ */
+export function printOfferReport(slug, master) {
+  return assessAll(master).map((assessment) => {
+    const ppi = `${assessment.effectivePpi} PPI`;
+    const crop = `crop ${Math.round(assessment.cropFraction * 100)}%`;
+    const { format, size } = assessment.product;
+    return `${slug}  ${format}  ${size}  ${ppi}  ${crop}  ${offerStatus(assessment)}`;
+  });
+}
+
+/**
+ * The offer an owner last saved, read leniently: a now-ineligible entry is
+ * exactly what `narrowOffer` must remove, so it is kept here rather than being
+ * rejected the way `parsePrintOffer` would. Unknown sizes and non-lists are
+ * dropped. `undefined` in means no `print_options` was saved (the rollout).
+ */
+export function readOfferForNarrow(raw) {
+  if (raw === undefined) return undefined;
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return emptyOffer();
+  }
+  const map = raw;
+  const offer = emptyOffer();
+  for (const format of PHYSICAL_FORMATS) {
+    const value = map[format];
+    if (!Array.isArray(value)) continue;
+    for (const size of value) {
+      if (isPrintSize(size) && !offer[format].includes(size)) {
+        offer[format].push(size);
+      }
+    }
+  }
+  return offer;
+}
+
+/** The eligible options added to an offer, keeping the table's order (#300). */
+function withAdded(offer, assessments) {
+  const add = new Set(
+    assessments.map((a) => `${a.product.format}/${a.product.size}`),
+  );
+  const next = emptyOffer();
+  for (const product of PRINT_PRODUCTS) {
+    const included =
+      offer[product.format].includes(product.size) ||
+      add.has(`${product.format}/${product.size}`);
+    if (included) next[product.format].push(product.size);
+  }
+  return next;
+}
+
+/**
+ * The recalculated offer for a published photo (#300). `raw` is the saved
+ * `print_options` (or `undefined` when there is none, which gets the full
+ * eligible offer — the rollout). Otherwise `narrowOffer` drops what is no longer
+ * eligible and reports what became eligible, which is only added on request.
+ * `changed` says whether the offer actually differs, so an idempotent run writes
+ * nothing.
+ */
+export function recalculateOffer({ raw, master, includeNew = false }) {
+  const current = readOfferForNarrow(raw);
+  if (current === undefined) {
+    const offer = eligibleOffer(master);
+    return { offer, current: undefined, removed: [], newlyEligible: [], changed: true };
+  }
+  const { offer, removed, newlyEligible } = narrowOffer(current, master);
+  const next =
+    includeNew && newlyEligible.length > 0 ? withAdded(offer, newlyEligible) : offer;
+  return { offer: next, current, removed, newlyEligible, changed: !sameOffer(current, next) };
+}
+
+/**
+ * Patches `print_options` into an existing YAML document, preserving comments
+ * and key order. `parseDocument` + `set` replaces an existing key, so a re-run
+ * is idempotent.
+ */
+export function patchCatalogPrintOptionsYaml(yamlText, offer) {
+  const doc = parseDocument(yamlText);
+  doc.set("print_options", offerToPlain(offer));
+  return doc.toString();
+}
+
 /**
  * The owner's YAML with the generated keys appended and the block kept under
  * one comment. The Document API preserves the owner's comments and key order.
@@ -293,7 +441,7 @@ export function md5Hex(bytes) {
  */
 export function renderCatalogYaml(
   ownerText,
-  { slug, masterSha256, imageHash, masterFacts, printAsset },
+  { slug, masterSha256, imageHash, masterFacts, printAsset, printOffer },
 ) {
   const doc = parseDocument(ownerText);
   const map = doc.contents;
@@ -323,6 +471,10 @@ export function renderCatalogYaml(
   generated.push("print_asset_sha256");
   map.add(new Pair(new Scalar("print_asset_md5"), new Scalar(printAsset.md5)));
   generated.push("print_asset_md5");
+  map.add(
+    new Pair(new Scalar("print_options"), doc.createNode(offerToPlain(printOffer))),
+  );
+  generated.push("print_options");
 
   const keyOf = (pair) =>
     pair.key && typeof pair.key === "object" ? pair.key.value : pair.key;
@@ -653,9 +805,12 @@ export function readCatalogForSync(photosDir) {
       slug,
       yamlPath,
       yamlText: text,
+      data,
       published: data && typeof data === "object" && data.published !== false,
       masterSha256: data && typeof data === "object" ? data.master_sha256 : undefined,
       catalogFacts: facts,
+      rawPrintOptions:
+        data && typeof data === "object" ? data.print_options : undefined,
     });
   }
   return { entries, problems };
@@ -775,45 +930,101 @@ export async function syncCatalogFacts(options, deps = {}) {
     return { status: 1, fatals: mismatch };
   }
 
-  // Second pass: only measure and write. Mismatches already refused above, so
-  // every remaining entry is in-sync, unpromoted, or needs measuring.
+  const includeSlugs = Array.isArray(options.includeNewSlugs)
+    ? options.includeNewSlugs
+    : undefined;
+  const includeFor = (slug) =>
+    options.includeNew === true && (!includeSlugs || includeSlugs.includes(slug));
+
+  // Second pass: measure, recalculate the print offer, and write. Mismatches
+  // were already refused above, so every remaining entry is in-sync, unpromoted,
+  // or needs measuring. A photo is written only when its facts or its offer
+  // actually change, so a no-op run leaves the tree untouched (#300).
   const measured = [];
+  const written = [];
+  let offerChanges = 0;
   for (const { entry, decision } of decisions) {
+    let facts = entry.catalogFacts;
+    let patchFacts = false;
     if (decision === "unpromoted") {
       log(
         `  warn: ${entry.slug}: master not yet promoted to ${MASTERS_BUCKET_NAME}; run --promote first`,
       );
-      continue;
-    }
-    if (decision === "in-sync") {
+    } else if (decision === "measure") {
+      const key = masterKeyFromSlug(entry.slug);
+      const bytes = await s3.getObject(MASTERS_BUCKET_NAME, key);
+      facts = await measure(bytes);
+      measured.push({ slug: entry.slug, facts });
+      patchFacts = true;
+    } else {
       log(
         `  skip: ${entry.slug} (${entry.catalogFacts.width}×${entry.catalogFacts.height} ${entry.catalogFacts.orientation})`,
       );
-      continue;
     }
 
-    // decision === "measure"
-    const key = masterKeyFromSlug(entry.slug);
-    const bytes = await s3.getObject(MASTERS_BUCKET_NAME, key);
-    const facts = await measure(bytes);
-    measured.push({ slug: entry.slug, facts });
-    if (!write) {
+    // The offer is recalculated from whatever facts we now have, measured this
+    // run or already in the catalog. No facts means no offer to derive.
+    if (!facts) continue;
+    for (const line of printOfferReport(entry.slug, facts)) log(`  ${line}`);
+    const recalc = recalculateOffer({
+      raw: entry.rawPrintOptions,
+      master: facts,
+      includeNew: includeFor(entry.slug),
+    });
+    for (const assessment of recalc.removed) {
       log(
-        `  would backfill: ${entry.slug} ${facts.width}×${facts.height} ${facts.orientation} (dry run)`,
+        `  removed: ${entry.slug} ${assessment.product.format} ${assessment.product.size} ` +
+          `(${assessment.verdict.reason})`,
       );
+    }
+    for (const assessment of recalc.newlyEligible) {
+      const added = recalc.offer[assessment.product.format].includes(
+        assessment.product.size,
+      );
+      log(
+        `  newly eligible${added ? " (added)" : ""}: ${entry.slug} ` +
+          `${assessment.product.format} ${assessment.product.size}`,
+      );
+    }
+
+    if (!patchFacts && !recalc.changed) continue;
+
+    let updated = entry.yamlText;
+    if (patchFacts) updated = patchCatalogFactsYaml(updated, facts);
+    if (recalc.changed) {
+      updated = patchCatalogPrintOptionsYaml(updated, recalc.offer);
+      offerChanges += 1;
+    }
+    if (!write) {
+      if (patchFacts) {
+        log(
+          `  would backfill: ${entry.slug} ${facts.width}×${facts.height} ${facts.orientation} (dry run)`,
+        );
+      }
+      if (recalc.changed) {
+        log(`  would recalc print_options: ${entry.slug} (dry run)`);
+      }
       continue;
     }
-    const updated = patchCatalogFactsYaml(entry.yamlText, facts);
     await writeYaml(entry.yamlPath, updated);
-    log(`  backfilled: ${entry.slug} ${facts.width}×${facts.height} ${facts.orientation}`);
+    written.push(entry.yamlPath);
+    if (patchFacts) {
+      log(
+        `  backfilled: ${entry.slug} ${facts.width}×${facts.height} ${facts.orientation}`,
+      );
+    }
+    if (recalc.changed) {
+      log(`  wrote print_options: ${entry.slug}`);
+    }
   }
 
   log("");
   log(
     `${measured.length} photo(s) ${write ? "backfilled" : "need backfill"}, ` +
+      `${offerChanges} print offer(s) recalculated, ` +
       `${published.length - measured.length} already in sync.`,
   );
-  return { status: 0, measured, total: published.length };
+  return { status: 0, measured, written, total: published.length };
 }
 
 async function defaultMeasure(bytes) {
@@ -1052,7 +1263,12 @@ export async function runPublish(options, deps = {}) {
     return { status: 1, fatals: [message] };
   }
   const sync = await syncCatalogFacts(
-    { cwd, write: options.apply === true },
+    {
+      cwd,
+      write: options.apply === true,
+      includeNew: options.includeNew,
+      includeNewSlugs: options.includeNewSlugs,
+    },
     { log, env, s3: syncS3, measure: deps.measure, writeYaml: deps.writeYaml },
   );
   if (sync.status !== 0) {
@@ -1117,8 +1333,12 @@ export async function runPublish(options, deps = {}) {
       stagingKey: masterKeyFromSlug(pair.slug),
       printAssetBytes,
       printAsset,
+      // A new/replaced photo starts at the full eligible offer (#300); the owner
+      // narrows it by deleting entries in the publish PR.
+      printOffer: eligibleOffer(masterFacts),
       stagingPrintAssetKey: printAssetKeyFromSlug(pair.slug),
       yamlPath: path.join(catalogDir, `${pair.slug}.yaml`),
+      previews: [],
     });
   }
 
@@ -1147,6 +1367,10 @@ export async function runPublish(options, deps = {}) {
       `  ${STAGING_MASTERS_BUCKET_NAME}/${plan.stagingPrintAssetKey}  print asset ` +
         `(md5 ${plan.printAsset.md5.slice(0, 8)}…)`,
     );
+    // The print offer report (#300): one line per pinned product.
+    for (const line of printOfferReport(plan.slug, plan.masterFacts)) {
+      log(`  ${line}`);
+    }
     log(`  write ${path.relative(cwd, plan.yamlPath) || plan.yamlPath}`);
   }
 
@@ -1154,6 +1378,28 @@ export async function runPublish(options, deps = {}) {
     log("");
     for (const problem of fatals) log(`error: ${problem}`);
     return { status: 1, plans, branch, body, fatals };
+  }
+
+  // Crop previews (#300): a center crop at each product's ratio, written under
+  // the gitignored drop folder so the owner can review the fill before applying.
+  const renderPreview = deps.renderPreview ?? renderCropPreview;
+  for (const plan of plans) {
+    for (const product of PRINT_PRODUCTS) {
+      const previewBytes = await renderPreview(
+        plan.bytes,
+        printAreaIn(product),
+        PREVIEW_LONG_EDGE,
+      );
+      const previewPath = path.join(
+        dir,
+        ".previews",
+        plan.slug,
+        `${product.format}-${product.size}.jpg`,
+      );
+      await mkdir(path.dirname(previewPath), { recursive: true });
+      await writeFile(previewPath, previewBytes);
+      plan.previews.push(path.relative(cwd, previewPath));
+    }
   }
 
   if (!options.apply) {
@@ -1167,11 +1413,10 @@ export async function runPublish(options, deps = {}) {
   // content/photos/ is never swept into the commit.
   const written = [
     ...plans.flatMap((plan) => [path.relative(cwd, plan.yamlPath)]),
-    // The #297 sync may have patched existing published photos this run; those
-    // YAMLs are legitimate writes, not stray edits.
-    ...(sync.measured ?? []).map((m) =>
-      path.relative(cwd, path.join(catalogDir, `${m.slug}.yaml`)),
-    ),
+    // The #297 sync (master facts) and the #300 recalc may have patched existing
+    // published photos this run; those YAMLs are legitimate writes, not stray
+    // edits.
+    ...(sync.written ?? []).map((yamlPath) => path.relative(cwd, yamlPath)),
   ];
   const status = await exec("git", ["status", "--porcelain"], { cwd });
   const dirty = status.stdout
@@ -1246,6 +1491,7 @@ export async function runPublish(options, deps = {}) {
         imageHash: plan.hash8,
         masterFacts: plan.masterFacts,
         printAsset: plan.printAsset,
+        printOffer: plan.printOffer,
       }),
     );
     log(`  wrote ${path.relative(cwd, plan.yamlPath)}`);

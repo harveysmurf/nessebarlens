@@ -209,7 +209,7 @@ test("readCatalogEntries reads published and unpublished files and rejects a bad
     ["title: Dawn", "caption: c", "description: d", "alt: a", "category: fine-art", extra].join(
       "\n",
     );
-  writeFileSync(path.join(dir, "dawn.yaml"), body(`image_hash: ${NEW}\nmaster_sha256: ${SHA}\nmaster_width: 4000\nmaster_height: 3000\norientation: landscape\nprint_asset_sha256: ${"d".repeat(64)}\nprint_asset_md5: ${"e".repeat(32)}`));
+  writeFileSync(path.join(dir, "dawn.yaml"), body(`image_hash: ${NEW}\nmaster_sha256: ${SHA}\nmaster_width: 4000\nmaster_height: 3000\norientation: landscape\nprint_asset_sha256: ${"d".repeat(64)}\nprint_asset_md5: ${"e".repeat(32)}\nprint_options:\n  giclee:\n    - 30x40\n  framed:\n    - 30x40\n  canvas:\n    - 30x40`));
   writeFileSync(path.join(dir, "draft.yaml"), body("published: false"));
   const entries = readCatalogEntries(dir);
   assert.deepEqual(

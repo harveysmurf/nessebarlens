@@ -5,6 +5,11 @@ import {
   type MasterFactsReason,
   parseMasterFacts,
 } from "./master-facts";
+import {
+  type OfferProblem,
+  parsePrintOffer,
+  type PrintOffer,
+} from "./print-offer";
 
 /**
  * The one definition of a photo file, checked at build time by
@@ -49,6 +54,13 @@ export type PhotoFile = {
    * carries both keys or neither.
    */
   printAsset?: { sha256: string; md5: string };
+  /**
+   * The print offer (#300): which sizes are sold per physical format. Derived
+   * from the master by `publish-photos` and validated here against the same
+   * facts. Required on a published photo; the owner narrows it by deleting
+   * entries in the publish PR, which `publish-photos` then preserves.
+   */
+  printOffer?: PrintOffer;
 };
 
 export type PhotoValidation =
@@ -77,6 +89,7 @@ const KNOWN_KEYS = new Set([
   "orientation",
   "print_asset_sha256",
   "print_asset_md5",
+  "print_options",
 ]);
 
 const ALT_MAX = 200;
@@ -305,6 +318,62 @@ function readPrintAsset(
 }
 
 /**
+ * One `parsePrintOffer` problem as a `field: message` line, so a bad offer
+ * reads the same way as every other schema problem. The field is the exact
+ * `print_options` path the problem is about; the message explains it.
+ */
+function offerProblemMessage(problem: OfferProblem): string {
+  const path = problem.size
+    ? `print_options.${problem.format}.${problem.size}`
+    : `print_options.${problem.format}`;
+  switch (problem.reason) {
+    case "not-a-map":
+      return "print_options: must be a map of format to a list of sizes";
+    case "missing-format":
+      return `${path}: required`;
+    case "unknown-format":
+      return `${path}: unknown format`;
+    case "not-a-list":
+      return `${path}: must be a list of sizes`;
+    case "unknown-size":
+      return `${path}: unknown size`;
+    case "not-offered-for-format":
+      return `${path}: not offered for ${problem.format}`;
+    case "duplicate-size":
+      return `${path}: listed more than once`;
+    case "below-min-ppi":
+      return `${path}: below the ${problem.effectivePpi} PPI minimum`;
+    case "shape-mismatch":
+      return `${path}: does not match the master's shape`;
+  }
+}
+
+/**
+ * The print offer (#300), validated against the master. A file with no
+ * `print_options` returns `undefined` — allowed for a draft, required for a
+ * published photo once the rollout lands. The offer is only checked when the
+ * master facts are present, because every rule is relative to them; a published
+ * photo without facts is already reported by the master-facts check.
+ */
+function readPrintOffer(
+  data: Record<string, unknown>,
+  master: MasterFacts | undefined,
+  problems: string[],
+): PrintOffer | undefined {
+  if (data.print_options === undefined) return undefined;
+  if (master === undefined) return undefined;
+
+  const result = parsePrintOffer(data.print_options, master);
+  if (!result.ok) {
+    for (const problem of result.problems) {
+      problems.push(offerProblemMessage(problem));
+    }
+    return undefined;
+  }
+  return result.offer;
+}
+
+/**
  * Validates one photo file against every rule, collecting all problems rather
  * than stopping at the first, so a single run reports the whole file. The
  * filename is the slug the file declares — a `slug:` that disagrees with it is
@@ -326,6 +395,11 @@ function readPrintAsset(
  * false: it validates the owner's drop-folder YAML *before* it renders the asset
  * and writes those two keys, so requiring them there would reject every new
  * photo.
+ *
+ * `requirePrintOffer` (default true) enforces that a published photo carries a
+ * valid `print_options` (#300). `publish-photos` passes false for the drop
+ * folder: a new photo's offer is derived and written by the publish run, so
+ * requiring it in the input would reject every new photo.
  */
 export function validatePhotoFile(
   filename: string,
@@ -334,10 +408,12 @@ export function validatePhotoFile(
     requirePublishedHashes = true,
     requireMasterFacts = true,
     requirePrintAssets = true,
+    requirePrintOffer = true,
   }: {
     requirePublishedHashes?: boolean;
     requireMasterFacts?: boolean;
     requirePrintAssets?: boolean;
+    requirePrintOffer?: boolean;
   } = {},
 ): PhotoValidation {
   if (!isMapping(data)) {
@@ -376,6 +452,7 @@ export function validatePhotoFile(
   );
   const master = readMasterFacts(data, problems);
   const printAsset = readPrintAsset(data, problems);
+  const printOffer = readPrintOffer(data, master, problems);
 
   // A published photo is served from the real ladder, so the two values the
   // publish script writes are required, not optional: without them the gallery
@@ -411,6 +488,13 @@ export function validatePhotoFile(
     );
   }
 
+  // A published photo requires a print offer now that #300 writes it: checkout
+  // (#301) and the configurator (#302) read only this value, so a missing offer
+  // would silently sell nothing rather than fail.
+  if (published && requirePrintOffer && !printOffer) {
+    problems.push("print_options: required for a published photo");
+  }
+
   if (problems.length > 0) {
     return { ok: false, problems };
   }
@@ -435,6 +519,7 @@ export function validatePhotoFile(
       imageHash,
       master,
       printAsset,
+      printOffer,
     },
   };
 }
