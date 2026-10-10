@@ -1681,9 +1681,11 @@ the guard to keep the honest copy honest.
 
 - Brand rename "Stefan Todorov" → "Nessebar Lens" is done (commit `18886c3`); keep
   "Old Town Nessebar" as the place name.
-- Prodigi order creation is wired end to end: a pinned 9-SKU map (`src/domain/pricing/sku-map.ts`),
+- Prodigi order creation is wired end to end: a pinned SKU map (`src/domain/pricing/sku-map.ts`),
   live quote + order calls, and a HMAC-signed master asset URL. Sandbox and live
   are selected by an explicit `PRODIGI_API_BASE`, never inferred from the key.
+  The table carries eight sizes per format — the 3:4 and 5:7 sizes plus the 2:3
+  range (`20x30`…`60x90`, #303) — ordered small to large.
 - Real photographs land in the R2 `MASTERS`/`WEB` buckets through the publish
   flow. `npm run publish-photos` (§6a) uploads the web ladder and the staging
   master and opens the catalog PR; `--promote` (#242) writes the production

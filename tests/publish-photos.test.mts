@@ -1289,10 +1289,11 @@ const IN_SYNC_HEAD = { metadata: { sha256: SHA_A }, contentLength: 1 };
 
 test("printOfferReport prints one line per product with PPI, crop and status (#300)", () => {
   const lines = printOfferReport("harbour", HARBOUR_FACTS300);
-  assert.equal(lines.length, 9);
-  assert.equal(lines[0], "harbour  giclee  30x40  279 PPI  crop 9%  eligible");
-  assert.equal(lines[1], "harbour  giclee  50x70  167 PPI  crop 4%  unavailable: below 220 PPI");
-  assert.equal(lines[2], "harbour  giclee  70x100  119 PPI  crop 2%  unavailable: below 220 PPI");
+  // 24 pinned products: eight sizes × three formats (#303).
+  assert.equal(lines.length, 24);
+  assert.equal(lines[0], "harbour  giclee  20x30  408 PPI  crop 2%  eligible");
+  assert.equal(lines[1], "harbour  giclee  30x40  279 PPI  crop 9%  eligible");
+  assert.equal(lines[3], "harbour  giclee  40x60  204 PPI  crop 2%  unavailable: below 220 PPI");
 });
 
 test("readOfferForNarrow keeps a now-ineligible entry so it can be removed (#300)", () => {
@@ -1323,11 +1324,12 @@ test("#300 a new low-resolution photo gets its offer, report and previews; build
     const written = parseYaml(
       readFileSync(path.join(dir, "content/photos/dawn.yaml"), "utf8"),
     ) as { print_options: unknown };
-    // A low-resolution master: only the framed and canvas 30x40 are sellable.
+    // A low-resolution master: only the smallest sizes (mostly 2:3) are
+    // sellable, and 3600×2400 is a clean 3:2 so the 2:3 sizes crop nothing.
     assert.deepEqual(written.print_options, {
-      giclee: [],
-      framed: ["30x40"],
-      canvas: ["30x40"],
+      giclee: ["20x30"],
+      framed: ["20x30", "30x40", "30x45"],
+      canvas: ["20x30", "30x40", "30x45"],
     });
 
     // The report names the ineligible giclee 30x40 with its PPI and crop.
@@ -1449,9 +1451,9 @@ test("#300 --include-new adds newly eligible sizes for the named photos", async 
     assert.equal(result.status, 0);
     const offer = (parseYaml(writtenText!) as { print_options: unknown }).print_options;
     assert.deepEqual(offer, {
-      giclee: ["30x40"],
-      framed: ["30x40"],
-      canvas: ["30x40"],
+      giclee: ["20x30", "30x40", "30x45"],
+      framed: ["20x30", "30x40", "30x45", "40x60"],
+      canvas: ["20x30", "30x40", "30x45", "40x60"],
     });
   } finally {
     rmSync(dir, { recursive: true, force: true });

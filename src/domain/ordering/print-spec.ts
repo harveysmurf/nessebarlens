@@ -143,7 +143,7 @@ export function parsePrintSpecification(
   }
 
   // A size the table carries for some other format is not a size this format
-  // offers: the pair is the identity, not the size alone. With today's nine
+  // offers: the pair is the identity, not the size alone. With today's table
   // this cannot fire, but the check is what lets a format-specific catalogue
   // grow without silently selling a size Prodigi has no SKU for.
   if (!findProduct(format, size, products)) {

@@ -76,13 +76,28 @@ test("the giclée PPIs match #291's problem table", () => {
 test("golden sun's offer is what the table says, and nothing below the floor", () => {
   const master = masterOf(GOLDEN_SLUG);
   assert.deepEqual(eligibleKeys(master), [
+    "giclee/20x30",
     "giclee/30x40",
+    "giclee/30x45",
+    "giclee/40x60",
     "giclee/50x70",
+    "giclee/50x75",
+    "giclee/60x90",
+    "framed/20x30",
     "framed/30x40",
+    "framed/30x45",
+    "framed/40x60",
     "framed/50x70",
+    "framed/50x75",
+    "framed/60x90",
     "framed/70x100",
+    "canvas/20x30",
     "canvas/30x40",
+    "canvas/30x45",
+    "canvas/40x60",
     "canvas/50x70",
+    "canvas/50x75",
+    "canvas/60x90",
     "canvas/70x100",
   ]);
   // Every excluded product is excluded by the PPI floor, never the shape.
@@ -96,9 +111,17 @@ test("golden sun's offer is what the table says, and nothing below the floor", (
 test("harbour's offer is what the table says, and nothing below the floor", () => {
   const master = masterOf(HARBOUR_SLUG);
   assert.deepEqual(eligibleKeys(master), [
+    "giclee/20x30",
     "giclee/30x40",
+    "giclee/30x45",
+    "framed/20x30",
     "framed/30x40",
+    "framed/30x45",
+    "framed/40x60",
+    "canvas/20x30",
     "canvas/30x40",
+    "canvas/30x45",
+    "canvas/40x60",
   ]);
   for (const assessment of assessAll(master)) {
     if (!assessment.verdict.eligible) {

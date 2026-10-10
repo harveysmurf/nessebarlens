@@ -37,13 +37,13 @@ test("every UI format×size resolves to a pinned Prodigi SKU", () => {
       resolved.add(entry.sku);
     }
   }
-  assert.equal(resolved.size, 9);
+  assert.equal(resolved.size, 24);
   assert.deepEqual([...resolved].sort(), [...PINNED_SKUS].sort());
 });
 
-test("allPhysicalSkus returns exactly the 9 pinned SKUs", () => {
+test("allPhysicalSkus returns exactly the 24 pinned SKUs", () => {
   const entries = allPhysicalSkus();
-  assert.equal(entries.length, 9);
+  assert.equal(entries.length, 24);
   assert.deepEqual(
     entries.map((e) => e.sku).sort(),
     [...PINNED_SKUS].sort(),
@@ -89,14 +89,29 @@ test("every canvas SKU carries the required wrap attribute", () => {
 
 test("SKU table: format / cm / in / sku", () => {
   const table = [
+    ["giclee", "20x30", "8x12", "GLOBAL-FAP-8X12"],
     ["giclee", "30x40", "12x16", "GLOBAL-FAP-12X16"],
+    ["giclee", "30x45", "12x18", "GLOBAL-FAP-12X18"],
+    ["giclee", "40x60", "16x24", "GLOBAL-FAP-16X24"],
     ["giclee", "50x70", "20x28", "GLOBAL-FAP-20X28"],
+    ["giclee", "50x75", "20x30", "GLOBAL-FAP-20X30"],
+    ["giclee", "60x90", "24x36", "GLOBAL-FAP-24X36"],
     ["giclee", "70x100", "28x40", "GLOBAL-FAP-28X40"],
+    ["framed", "20x30", "8x12", "GLOBAL-CFPM-8X12"],
     ["framed", "30x40", "12x16", "GLOBAL-CFPM-12X16"],
+    ["framed", "30x45", "12x18", "GLOBAL-CFPM-12X18"],
+    ["framed", "40x60", "16x24", "GLOBAL-CFPM-16X24"],
     ["framed", "50x70", "20x28", "GLOBAL-CFPM-20X28"],
+    ["framed", "50x75", "20x30", "GLOBAL-CFPM-20X30"],
+    ["framed", "60x90", "24x36", "GLOBAL-CFPM-24X36"],
     ["framed", "70x100", "28x40", "GLOBAL-CFPM-28X40"],
+    ["canvas", "20x30", "8x12", "GLOBAL-CAN-8X12"],
     ["canvas", "30x40", "12x16", "GLOBAL-CAN-12X16"],
+    ["canvas", "30x45", "12x18", "GLOBAL-CAN-12X18"],
+    ["canvas", "40x60", "16x24", "GLOBAL-CAN-16X24"],
     ["canvas", "50x70", "20x28", "GLOBAL-CAN-20X28"],
+    ["canvas", "50x75", "20x30", "GLOBAL-CAN-20X30"],
+    ["canvas", "60x90", "24x36", "GLOBAL-CAN-24X36"],
     ["canvas", "70x100", "28x40", "GLOBAL-CAN-28X40"],
   ] as const;
   for (const [format, cm, inch, sku] of table) {

@@ -93,7 +93,7 @@ test("the other physical formats refuse a finish rather than drop it", () => {
 });
 
 test("a size offered only by another format is refused with its own reason", () => {
-  // The pinned nine contain every pair, so the branch is unreachable from the
+  // The pinned table contains every pair, so the branch is unreachable from the
   // real catalogue; the injected table is what proves it. Giclée offers no
   // 70x100 here, so it is the pair — not the size — that is refused.
   const table = [

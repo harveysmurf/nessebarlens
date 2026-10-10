@@ -11,14 +11,15 @@
  *
  * For each SKU it records the print area of the variant we order (frame color
  * black, canvas wrap ImageWrap, no attributes otherwise), the attributes the
- * order body sends, and the variant's shipsTo list. It takes a SKU list, so
- * #303 can capture new size candidates with the same script.
+ * order body sends, and the variant's shipsTo list. It takes a SKU list, so a
+ * new size is captured with the same script — #303 added the 2:3 range this
+ * way.
  *
  * Sandbox only: it refuses any base that is not the sandbox host, and it
  * refuses a key that is not present. It never contacts the live host.
  *
  * Usage: PRODIGI_SANDBOX_API_KEY=... node scripts/capture-prodigi-products.mjs [SKU ...]
- * With no SKUs it captures the nine pinned products.
+ * With no SKUs it captures the pinned products.
  */
 
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
@@ -37,16 +38,35 @@ const FIXTURE_DIR = path.join(
 );
 const FIXTURE_FILE = path.join(FIXTURE_DIR, "products.json");
 
-/** The nine products we sell today, in catalog order (format-major). */
+/**
+ * The products we sell, in catalog order (format-major, small to large by
+ * area). The 2:3 range (#303) is interleaved with the 3:4 and 5:7 sizes so the
+ * table stays monotonic — see PRINT_PRODUCTS.
+ */
 export const DEFAULT_SKUS = [
+  "GLOBAL-FAP-8X12",
   "GLOBAL-FAP-12X16",
+  "GLOBAL-FAP-12X18",
+  "GLOBAL-FAP-16X24",
   "GLOBAL-FAP-20X28",
+  "GLOBAL-FAP-20X30",
+  "GLOBAL-FAP-24X36",
   "GLOBAL-FAP-28X40",
+  "GLOBAL-CFPM-8X12",
   "GLOBAL-CFPM-12X16",
+  "GLOBAL-CFPM-12X18",
+  "GLOBAL-CFPM-16X24",
   "GLOBAL-CFPM-20X28",
+  "GLOBAL-CFPM-20X30",
+  "GLOBAL-CFPM-24X36",
   "GLOBAL-CFPM-28X40",
+  "GLOBAL-CAN-8X12",
   "GLOBAL-CAN-12X16",
+  "GLOBAL-CAN-12X18",
+  "GLOBAL-CAN-16X24",
   "GLOBAL-CAN-20X28",
+  "GLOBAL-CAN-20X30",
+  "GLOBAL-CAN-24X36",
   "GLOBAL-CAN-28X40",
 ];
 

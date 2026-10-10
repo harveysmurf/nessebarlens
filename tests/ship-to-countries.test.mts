@@ -11,9 +11,13 @@ import { parseCheckoutBody, parseQuoteBody } from "../src/domain/ordering/checko
 
 test("ship-to list is Prodigi∩Stripe sized and defaults to BG", () => {
   assert.equal(DEFAULT_SHIPPING_COUNTRY, "BG");
-  assert.equal(SHIP_TO_COUNTRIES.length, 220);
-  assert.equal(SHIP_TO_COUNTRY_CODES.length, 220);
-  assert.equal(STRIPE_SHIP_TO_COUNTRIES.length, 220);
+  // 222: the 24-product 2:3 intersection (#303). This is +2 over the old 220
+  // because the list had gone stale after the Stripe SDK added BL (St.
+  // Barthélemy) and SH (St. Helena) to AllowedCountry — the regeneration the
+  // gate required picked them up. No product lost a country.
+  assert.equal(SHIP_TO_COUNTRIES.length, 222);
+  assert.equal(SHIP_TO_COUNTRY_CODES.length, 222);
+  assert.equal(STRIPE_SHIP_TO_COUNTRIES.length, 222);
   assert.ok(isShipToCountryCode("BG"));
   assert.ok(isShipToCountryCode("US"));
   assert.ok(isShipToCountryCode("JP"));

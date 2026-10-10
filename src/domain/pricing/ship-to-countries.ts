@@ -3,7 +3,7 @@
  *
  * Generated from tests/fixtures/prodigi/products.json by
  * scripts/generate-ship-to-countries.mjs (#296):
- * 1. Intersection of the captured variants' `shipsTo` across the nine pinned
+ * 1. Intersection of the captured variants' `shipsTo` across the pinned
  *    SKUs.
  * 2. Filtered to Stripe Checkout `ShippingAddressCollection.AllowedCountry`
  *    (the `stripe` SDK's Sessions.d.ts).
@@ -197,6 +197,8 @@ export const SHIP_TO_COUNTRIES = [
   { code: "KR", name: "South Korea" },
   { code: "ES", name: "Spain" },
   { code: "LK", name: "Sri Lanka" },
+  { code: "BL", name: "St. Barthélemy" },
+  { code: "SH", name: "St. Helena" },
   { code: "KN", name: "St. Kitts & Nevis" },
   { code: "LC", name: "St. Lucia" },
   { code: "MF", name: "St. Martin" },

@@ -2,7 +2,7 @@
  * The sandbox-gated half of the print-product contract (#296).
  *
  * The fixture is only trustworthy if it can be re-derived from Prodigi. This
- * test re-captures the nine products from the sandbox and compares, so a run
+ * test re-captures the pinned products from the sandbox and compares, so a run
  * with PRODIGI_SANDBOX_API_KEY set fails when the live catalogue has moved on
  * from what the committed table encodes. Without a key it skips, exactly as
  * the other sandbox-gated tests do.
@@ -44,7 +44,7 @@ test("assertSandboxBase allows the sandbox host and refuses everything else", ()
   }
 });
 
-test("parseArgs defaults to the nine pinned SKUs and reads --check", () => {
+test("parseArgs defaults to the pinned SKUs and reads --check", () => {
   const env = { PRODIGI_SANDBOX_API_KEY: "k" };
   assert.deepEqual(parseArgs([], env).skus, DEFAULT_SKUS);
   assert.equal(parseArgs([], env).check, false);
