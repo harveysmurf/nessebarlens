@@ -61,7 +61,7 @@ export async function POST(request: Request) {
         );
   if (!offers(photo.printOffer, spec)) {
     return NextResponse.json(
-      { error: "Print option not available for this photo" },
+      { error: "This print option is not available for this photo" },
       { status: 400 },
     );
   }
