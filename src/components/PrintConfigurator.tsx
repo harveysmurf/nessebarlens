@@ -21,10 +21,11 @@ import {
   DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
   firstOfferedSize,
+  masterResolutionLabel,
   offeredFormats,
   sizeOptions,
 } from "@/domain/ordering/print-copy";
-import type { Orientation } from "@/domain/catalog/master-facts";
+import type { MasterFacts } from "@/domain/catalog/master-facts";
 import type { PrintOffer } from "@/domain/catalog/print-offer";
 import {
   checkoutUrl,
@@ -39,13 +40,18 @@ export function PrintConfigurator({
   photoSlug,
   title,
   offer,
-  orientation,
+  master,
 }: {
   photoSlug: string;
   title: string;
   offer: PrintOffer;
-  orientation: Orientation;
+  master: MasterFacts;
 }) {
+  // The whole MasterFacts is passed in (#295/#325): the size labels read its
+  // orientation and the Digital Copy reads its dimensions, both from the one
+  // measured source rather than re-derived here.
+  const orientation = master.orientation;
+  const resolutionLabel = masterResolutionLabel(master);
   // #302: only the formats this photo offers, digital always. The list is never
   // empty — digital is in it — so the opening selection always exists.
   const formats = offeredFormats(offer);
@@ -266,13 +272,36 @@ export function PrintConfigurator({
                     {f.sub}
                     {f.id === "digital" ? ` · €${DIGITAL_PRICE_EUR}` : ""}
                   </div>
+                  {f.id === "digital" && (
+                    <div
+                      className="text-[10px] text-stone-500 mt-0.5"
+                      data-testid="digital-option-resolution"
+                    >
+                      {resolutionLabel}
+                    </div>
+                  )}
                 </label>
               );
             })}
           </div>
         </fieldset>
 
-        {!isDigital && (
+        {isDigital ? (
+          // The digital copy is the master file itself, so its detail slot
+          // states the delivered pixel size instead of offering print sizes
+          // (#325). Physical formats are unchanged below.
+          <div>
+            <span className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-1">
+              Resolution
+            </span>
+            <p
+              className="text-xs text-stone-700"
+              data-testid="digital-resolution"
+            >
+              {resolutionLabel}
+            </p>
+          </div>
+        ) : (
           <div>
             <label
               htmlFor="print-size"

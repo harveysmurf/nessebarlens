@@ -9,9 +9,11 @@ import {
   DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
   firstOfferedSize,
+  masterResolutionLabel,
   offeredFormats,
   sizeOptions,
 } from "../src/domain/ordering/print-copy.ts";
+import type { MasterFacts } from "../src/domain/catalog/master-facts.ts";
 import { sizeLabel } from "../src/domain/pricing/pricing.ts";
 import { FRAME_FINISHES, PRINT_SIZES, SELLABLE_FORMATS } from "../src/domain/pricing/sku-map.ts";
 
@@ -80,6 +82,17 @@ test("firstOfferedSize is the first table size, and undefined for digital (#302)
     "50x70",
   );
   assert.equal(firstOfferedSize(FULL_OFFER, "digital"), undefined);
+});
+
+test("masterResolutionLabel states the master's oriented pixel size (#325)", () => {
+  // The digital copy delivers the master file unchanged, so its stated
+  // resolution must be the master's own width × height, formatted one way.
+  const landscape: MasterFacts = { width: 7952, height: 5304, orientation: "landscape" };
+  assert.equal(masterResolutionLabel(landscape), "7952 × 5304 px");
+  // Portrait swaps the axes as measured; the label follows the facts, never a
+  // hard-coded pair.
+  const portrait: MasterFacts = { width: 5304, height: 7952, orientation: "portrait" };
+  assert.equal(masterResolutionLabel(portrait), "5304 × 7952 px");
 });
 
 test("every option carries display copy, and no copy is blank", () => {

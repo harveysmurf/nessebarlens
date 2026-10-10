@@ -22,7 +22,7 @@
  * not copies of each other, so neither is derived from the other.
  */
 
-import type { Orientation } from "../catalog/master-facts";
+import type { MasterFacts, Orientation } from "../catalog/master-facts";
 import type { PrintOffer } from "../catalog/print-offer";
 import {
   sizeLabel,
@@ -88,6 +88,18 @@ export function firstOfferedSize(
 ): PrintSize | undefined {
   if (format === "digital") return undefined;
   return offer[format][0];
+}
+
+/**
+ * The digital copy's delivered pixel size, e.g. `7952 × 5304 px` (#325).
+ *
+ * The download streams the master file unchanged, so the master's oriented
+ * dimensions are exactly the pixels the buyer receives. Formatting lives here
+ * rather than in the component so the page, the configurator and any test read
+ * the same string from the same `MasterFacts` (#295), never a hand-typed size.
+ */
+export function masterResolutionLabel(master: MasterFacts): string {
+  return `${master.width} × ${master.height} px`;
 }
 
 /**
