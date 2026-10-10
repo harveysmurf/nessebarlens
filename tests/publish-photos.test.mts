@@ -21,14 +21,19 @@ import {
 } from "../src/domain/catalog/derivative-ladder.ts";
 import {
   branchName,
+  createReadMastersS3,
   createS3,
   pairInputs,
   parseArgs,
+  patchCatalogFactsYaml,
   planWebObjects,
   prBody,
+  readCatalogForSync,
   renderCatalogYaml,
   resolutionFindings,
   runPublish,
+  syncCatalogFacts,
+  syncDecision,
   validatePhoto,
 } from "../scripts/publish-photos.mjs";
 
@@ -80,6 +85,20 @@ function fakeS3() {
   };
 }
 
+// The #297 read-only masters client. By default every master is absent, so the
+// automatic sync warns "unpromoted" and continues; a test that needs a decision
+// (measure / mismatch / in-sync) passes its own head/getObject.
+function fakeSyncS3({ head = null, getObject } = {}) {
+  return {
+    head: typeof head === "function" ? head : async () => head,
+    getObject:
+      getObject ??
+      (async () => {
+        throw new Error("fakeSyncS3.getObject was not expected");
+      }),
+  };
+}
+
 function fakeExec({ dirty = [], prUrl = "https://github.com/harveysmurf/nessebarlens/pull/999" } = {}) {
   const calls = [];
   const exec = async (command, args) => {
@@ -103,6 +122,7 @@ function deps(overrides = {}) {
   return {
     logs,
     s3: overrides.s3 ?? fakeS3(),
+    syncS3: overrides.syncS3 ?? fakeSyncS3(),
     exec: overrides.exec ?? fakeExec(),
     env: ENV,
     now: () => new Date("2026-10-06T12:00:00Z"),
@@ -553,4 +573,483 @@ test("the launcher spawns publish-photos and is wired as the npm script", () => 
   // #278: the deprecated `npm run ingest` alias was removed after its
   // transition; publish-photos is the one supported command.
   assert.equal(pkg.scripts.ingest, undefined);
+});
+
+// ---------------------------------------------------------------------------
+// Backfill #297: syncDecision, patchCatalogFactsYaml, createReadMastersS3,
+// syncCatalogFacts
+// ---------------------------------------------------------------------------
+
+const SHA_A = "a".repeat(64);
+const SHA_B = "b".repeat(64);
+
+test("syncDecision picks the right action for each head/catalog combination", () => {
+  // Master not in the bucket yet.
+  assert.equal(syncDecision({ catalogSha: SHA_A, catalogFacts: undefined, head: null }), "unpromoted");
+
+  // Sha matches, facts present → already synced.
+  assert.equal(
+    syncDecision({ catalogSha: SHA_A, catalogFacts: FACTS, head: { metadata: { sha256: SHA_A }, contentLength: 100 } }),
+    "in-sync",
+  );
+
+  // Sha matches, facts absent → need to measure.
+  assert.equal(
+    syncDecision({ catalogSha: SHA_A, catalogFacts: undefined, head: { metadata: { sha256: SHA_A }, contentLength: 100 } }),
+    "measure",
+  );
+
+  // Sha disagrees → refuse.
+  assert.equal(
+    syncDecision({ catalogSha: SHA_A, catalogFacts: FACTS, head: { metadata: { sha256: SHA_B }, contentLength: 100 } }),
+    "mismatch",
+  );
+
+  // Head present but no sha256 metadata → mismatch (sha unknown but expected).
+  assert.equal(
+    syncDecision({ catalogSha: SHA_A, catalogFacts: undefined, head: { metadata: {}, contentLength: 100 } }),
+    "mismatch",
+  );
+});
+
+test("syncDecision reads sha256 case-insensitively from metadata (#297)", () => {
+  // S3/HTTP lowercases metadata keys; the function must still find sha256.
+  assert.equal(
+    syncDecision({ catalogSha: SHA_A, catalogFacts: undefined, head: { metadata: { SHA256: SHA_A }, contentLength: 100 } }),
+    "measure",
+  );
+});
+
+test("patchCatalogFactsYaml appends facts to a YAML that lacks them, preserving comments", () => {
+  const yaml = [
+    "# owner note",
+    "title: Dawn",
+    "category: fine-art",
+    "# written by publish-photos",
+    "master_sha256: " + SHA_A,
+    "image_hash: aaaaaaaa",
+  ].join("\n") + "\n";
+
+  const out = patchCatalogFactsYaml(yaml, { width: 4901, height: 3351, orientation: "landscape" });
+  assert.match(out, /# owner note/);
+  assert.match(out, /# written by publish-photos/);
+  assert.match(out, new RegExp(`master_sha256: ${SHA_A}`));
+  assert.match(out, /master_width: 4901/);
+  assert.match(out, /master_height: 3351/);
+  assert.match(out, /orientation: landscape/);
+});
+
+test("patchCatalogFactsYaml is idempotent: a second call does not duplicate keys", () => {
+  const yaml = patchCatalogFactsYaml("title: Dawn\n", FACTS);
+  const round2 = patchCatalogFactsYaml(yaml, { width: 3000, height: 2000, orientation: "portrait" });
+  // Each key appears exactly once.
+  assert.equal((round2.match(/^master_width:/gm) || []).length, 1);
+  assert.equal((round2.match(/^master_height:/gm) || []).length, 1);
+  assert.equal((round2.match(/^orientation:/gm) || []).length, 1);
+  // The updated values are there.
+  assert.match(round2, /master_width: 3000/);
+  assert.match(round2, /master_height: 2000/);
+  assert.match(round2, /orientation: portrait/);
+});
+
+test("readCatalogForSync reads published/unpublished entries with facts and text", () => {
+  const dir = mkdtempSync(path.join(os.tmpdir(), "sync-catalog-"));
+  try {
+    mkdirSync(dir, { recursive: true });
+    writeFileSync(
+      path.join(dir, "dawn.yaml"),
+      ["slug: dawn", "title: Dawn", "caption: c", "description: d", "alt: a", "category: fine-art",
+       "master_sha256: " + SHA_A, "image_hash: aaaaaaaa",
+       "master_width: 4901", "master_height: 3351", "orientation: landscape"].join("\n") + "\n",
+    );
+    writeFileSync(
+      path.join(dir, "draft.yaml"),
+      ["slug: draft", "title: Draft", "caption: c", "description: d", "alt: a", "category: fine-art",
+       "published: false"].join("\n") + "\n",
+    );
+    writeFileSync(path.join(dir, "notes.txt"), "ignore me");
+
+    const { entries, problems } = readCatalogForSync(dir);
+    assert.equal(problems.length, 0);
+    const bySlug = Object.fromEntries(entries.map((e) => [e.slug, e]));
+
+    // Published photo: has sha + facts.
+    assert.equal(bySlug.dawn.published, true);
+    assert.equal(bySlug.dawn.masterSha256, SHA_A);
+    assert.deepEqual(bySlug.dawn.catalogFacts, FACTS);
+
+    // Unpublished draft: no sha, no facts.
+    assert.equal(bySlug.draft.published, false);
+    assert.equal(bySlug.draft.masterSha256, undefined);
+    assert.equal(bySlug.draft.catalogFacts, undefined);
+
+    // notes.txt was ignored.
+    assert.equal(bySlug.notes, undefined);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("syncCatalogFacts backfills a photo whose facts are missing (#297)", async () => {
+  const dir = makeProject();
+  try {
+    // A YAML with sha + hash but no master facts.
+    writeFileSync(
+      path.join(dir, "content/photos/dawn.yaml"),
+      ["slug: dawn", "title: Dawn", "caption: c", "description: d", "alt: a", "category: fine-art",
+       "master_sha256: " + SHA_A, "image_hash: aaaaaaaa"].join("\n") + "\n",
+    );
+
+    let measured = false;
+    const s3 = {
+      async head() {
+        return { metadata: { sha256: SHA_A }, contentLength: 1234 };
+      },
+      async getObject() {
+        measured = true;
+        return Buffer.from("jpeg-bytes");
+      },
+    };
+    const measures = await syncCatalogFacts(
+      { cwd: dir },
+      {
+        log: () => {},
+        env: {},
+        s3,
+        measure: async () => FACTS,
+        writeYaml: async () => {},
+      },
+    );
+    assert.equal(measured, true);
+    assert.equal(measures.status, 0);
+    assert.deepEqual(measures.measured, [{ slug: "dawn", facts: FACTS }]);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("syncCatalogFacts leaves an in-sync photo untouched", async () => {
+  const dir = makeProject();
+  try {
+    writeFileSync(
+      path.join(dir, "content/photos/dawn.yaml"),
+      ["slug: dawn", "title: Dawn", "caption: c", "description: d", "alt: a", "category: fine-art",
+       "master_sha256: " + SHA_A, "image_hash: aaaaaaaa",
+       "master_width: 4901", "master_height: 3351", "orientation: landscape"].join("\n") + "\n",
+    );
+
+    let headCalls = 0;
+    const s3 = {
+      async head() {
+        headCalls++;
+        return { metadata: { sha256: SHA_A }, contentLength: 1234 };
+      },
+      async getObject() {
+        throw new Error("should not download");
+      },
+    };
+    const measures = await syncCatalogFacts({ cwd: dir }, {
+      log: () => {},
+      env: {},
+      s3,
+      measure: async () => FACTS,
+      writeYaml: async () => {},
+    });
+    assert.equal(headCalls, 1);
+    assert.equal(measures.status, 0);
+    assert.equal(measures.measured.length, 0);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("syncCatalogFacts refuses on a sha mismatch and writes nothing", async () => {
+  const dir = makeProject();
+  try {
+    writeFileSync(
+      path.join(dir, "content/photos/dawn.yaml"),
+      ["slug: dawn", "title: Dawn", "caption: c", "description: d", "alt: a", "category: fine-art",
+       "master_sha256: " + SHA_A, "image_hash: aaaaaaaa"].join("\n") + "\n",
+    );
+
+    let written = false;
+    const s3 = {
+      async head() {
+        return { metadata: { sha256: SHA_B }, contentLength: 999 };
+      },
+      async getObject() {
+        throw new Error("should not download on mismatch");
+      },
+    };
+    const measures = await syncCatalogFacts(
+      { cwd: dir },
+      {
+        log: () => {},
+        env: {},
+        s3,
+        measure: async () => FACTS,
+        writeYaml: async () => { written = true; },
+      },
+    );
+    assert.equal(measures.status, 1);
+    assert.match(measures.fatals[0], /dawn.*sha256/);
+    assert.equal(written, false);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("syncCatalogFacts refuses before writing when a later photo mismatches (#297 two-pass)", async () => {
+  const dir = makeProject();
+  try {
+    // dawn: sha matches → "measure" (would write)
+    writeFileSync(
+      path.join(dir, "content/photos/dawn.yaml"),
+      ["slug: dawn", "title: Dawn", "caption: c", "description: d", "alt: a", "category: fine-art",
+       "master_sha256: " + SHA_A, "image_hash: aaaaaaaa"].join("\n") + "\n",
+    );
+    // dusk: sha mismatches → "mismatch" (should NOT write, and should NOT download)
+    writeFileSync(
+      path.join(dir, "content/photos/dusk.yaml"),
+      ["slug: dusk", "title: Dusk", "caption: c", "description: d", "alt: a", "category: fine-art",
+       "master_sha256: " + SHA_A, "image_hash: aaaaaaaa"].join("\n") + "\n",
+    );
+
+    let written = false;
+    let downloaded = false;
+    const s3 = {
+      async head(_bucket, key) {
+        // dawn's master exists with matching sha; dusk's has a different sha.
+        return { metadata: { sha256: key.endsWith("dusk.jpg") ? SHA_B : SHA_A }, contentLength: 100 };
+      },
+      async getObject() {
+        downloaded = true;
+        return Buffer.from("jpeg-bytes");
+      },
+    };
+    const measures = await syncCatalogFacts(
+      { cwd: dir },
+      {
+        log: () => {},
+        env: {},
+        s3,
+        measure: async () => FACTS,
+        writeYaml: async () => { written = true; },
+      },
+    );
+    assert.equal(measures.status, 1);
+    assert.match(measures.fatals[0], /dusk.*sha256/);
+    assert.equal(written, false, "no YAML written when any photo mismatches");
+    assert.equal(downloaded, false, "no master downloaded when a mismatch exists");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("syncCatalogFacts warns on unpromoted masters and continues", async () => {
+  const dir = makeProject();
+  try {
+    writeFileSync(
+      path.join(dir, "content/photos/dawn.yaml"),
+      ["slug: dawn", "title: Dawn", "caption: c", "description: d", "alt: a", "category: fine-art",
+       "master_sha256: " + SHA_A, "image_hash: aaaaaaaa"].join("\n") + "\n",
+    );
+
+    const logLines = [];
+    const s3 = {
+      async head() {
+        return null; // master not yet promoted
+      },
+      async getObject() {
+        throw new Error("should not download when unpromoted");
+      },
+    };
+    const measures = await syncCatalogFacts(
+      { cwd: dir },
+      {
+        log: (line) => logLines.push(line),
+        env: {},
+        s3,
+        measure: async () => FACTS,
+        writeYaml: async () => {},
+      },
+    );
+    assert.equal(measures.status, 0);
+    assert.equal(measures.measured.length, 0);
+    assert.ok(logLines.some((l) => l.includes("dawn") && l.includes("not yet promoted")));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("syncCatalogFacts integration: real sharp JPEG measured from a fake getObject", async () => {
+  const dir = makeProject();
+  try {
+    const jpegPath = path.join(dir, "ingest/dawn.jpg");
+    await writeMaster(jpegPath, { width: 3600, height: 2400 });
+    const bytes = readFileSync(jpegPath);
+    const sha = await sha256Hex(bytes);
+
+    writeFileSync(
+      path.join(dir, "content/photos/dawn.yaml"),
+      ["slug: dawn", "title: Dawn", "caption: c", "description: d", "alt: a", "category: fine-art",
+       "master_sha256: " + sha, "image_hash: aaaaaaaa"].join("\n") + "\n",
+    );
+
+    const s3 = {
+      async head() {
+        return { metadata: { sha256: sha }, contentLength: bytes.length };
+      },
+      async getObject() {
+        return bytes;
+      },
+    };
+    let writtenText = null;
+    const measures = await syncCatalogFacts(
+      { cwd: dir },
+      {
+        log: () => {},
+        env: {},
+        s3,
+        writeYaml: async (_path, text) => { writtenText = text; },
+      },
+    );
+    assert.equal(measures.status, 0);
+    assert.equal(measures.measured.length, 1);
+    assert.match(writtenText, /master_width: 3600/);
+    assert.match(writtenText, /master_height: 2400/);
+    assert.match(writtenText, /orientation: landscape/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("createReadMastersS3 refuses any bucket but the production masters bucket", async () => {
+  const s3 = createReadMastersS3({
+    R2_S3_ENDPOINT: "https://r2.example.com",
+    R2_MASTERS_READ_ACCESS_KEY_ID: "key",
+    R2_MASTERS_READ_SECRET_ACCESS_KEY: "secret",
+  });
+  assert.equal(Object.keys(s3).sort().join(","), "getObject,head");
+  await assert.rejects(() => s3.head("nessebar-lens-web", "k"), /refusing to read nessebar-lens-web/);
+  await assert.rejects(() => s3.getObject("nessebar-lens-masters-staging", "prints/dawn.jpg"), /refusing to read/);
+});
+
+test("createReadMastersS3 refuses to construct without R2_MASTERS_READ_* creds", () => {
+  assert.throws(
+    () => createReadMastersS3({ R2_S3_ENDPOINT: "https://r2.example.com" }),
+    /missing env: R2_MASTERS_READ_ACCESS_KEY_ID/,
+  );
+  assert.throws(
+    () => createReadMastersS3({ R2_S3_ENDPOINT: "https://r2.example.com", R2_MASTERS_READ_ACCESS_KEY_ID: "key" }),
+    /R2_MASTERS_READ_SECRET_ACCESS_KEY/,
+  );
+  assert.throws(
+    () => createReadMastersS3({}),
+    /R2_S3_ENDPOINT/,
+  );
+});
+
+// ---------------------------------------------------------------------------
+// #297 Option A: the sync runs automatically inside every publish run
+// ---------------------------------------------------------------------------
+
+const PUBLISHED_NO_FACTS = [
+  "slug: harbour",
+  "title: Harbour",
+  "caption: c",
+  "description: d",
+  "alt: a",
+  "category: fine-art",
+  "master_sha256: " + SHA_A,
+  "image_hash: aaaaaaaa",
+].join("\n") + "\n";
+
+test("publish refuses to start without the read-only masters creds (#297)", async () => {
+  const dir = makeProject();
+  try {
+    await writeMaster(path.join(dir, "ingest/dawn.jpg"));
+    writeFileSync(path.join(dir, "ingest/dawn.yaml"), OWNER_YAML);
+    const d = deps();
+    delete d.syncS3;
+    const result = await runPublish({ cwd: dir, apply: false }, d);
+    assert.equal(result.status, 1);
+    assert.equal(d.s3.puts.length, 0);
+    assert.match(result.fatals.join("\n"), /R2_MASTERS_READ_ACCESS_KEY_ID/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("an automatic sync sha mismatch stops the publish before any upload (#297)", async () => {
+  const dir = makeProject();
+  try {
+    await writeMaster(path.join(dir, "ingest/dawn.jpg"));
+    writeFileSync(path.join(dir, "ingest/dawn.yaml"), OWNER_YAML);
+    writeFileSync(path.join(dir, "content/photos/harbour.yaml"), PUBLISHED_NO_FACTS);
+    const d = deps({
+      syncS3: fakeSyncS3({ head: { metadata: { sha256: SHA_B }, contentLength: 1 } }),
+    });
+    const result = await runPublish({ cwd: dir, apply: true }, d);
+    assert.equal(result.status, 1);
+    assert.equal(d.s3.puts.length, 0);
+    assert.match(result.fatals.join("\n"), /harbour.*sha256/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("the automatic sync backfills an existing photo and the write passes the dirty-tree gate (#297)", async () => {
+  const dir = makeProject();
+  try {
+    await writeMaster(path.join(dir, "ingest/dawn.jpg"));
+    writeFileSync(path.join(dir, "ingest/dawn.yaml"), OWNER_YAML);
+    writeFileSync(path.join(dir, "content/photos/harbour.yaml"), PUBLISHED_NO_FACTS);
+    const d = deps({
+      syncS3: fakeSyncS3({
+        head: { metadata: { sha256: SHA_A }, contentLength: 100 },
+        getObject: async () => Buffer.from("jpeg"),
+      }),
+      // The sync's write shows up as a tree change; it must be allowlisted or
+      // the run would refuse itself.
+      exec: fakeExec({ dirty: ["content/photos/harbour.yaml"] }),
+    });
+    d.measure = async () => ({ width: 4901, height: 3351, orientation: "landscape" });
+    const result = await runPublish({ cwd: dir, apply: true }, d);
+    assert.equal(result.status, 0, result.fatals?.join("\n"));
+    assert.ok(d.logs.some((line) => line.includes("backfilled: harbour")));
+    assert.match(
+      readFileSync(path.join(dir, "content/photos/harbour.yaml"), "utf8"),
+      /master_width: 4901/,
+    );
+    assert.ok(d.exec.calls.some((c) => c.join(" ") === "git add -- content/photos"));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("a publish dry run reports the drift but writes no YAML (#297)", async () => {
+  const dir = makeProject();
+  try {
+    await writeMaster(path.join(dir, "ingest/dawn.jpg"));
+    writeFileSync(path.join(dir, "ingest/dawn.yaml"), OWNER_YAML);
+    writeFileSync(path.join(dir, "content/photos/harbour.yaml"), PUBLISHED_NO_FACTS);
+    const d = deps({
+      syncS3: fakeSyncS3({
+        head: { metadata: { sha256: SHA_A }, contentLength: 100 },
+        getObject: async () => Buffer.from("jpeg"),
+      }),
+    });
+    d.measure = async () => ({ width: 4901, height: 3351, orientation: "landscape" });
+    const result = await runPublish({ cwd: dir, apply: false }, d);
+    assert.equal(result.status, 0, result.fatals?.join("\n"));
+    assert.ok(d.logs.some((line) => line.includes("would backfill: harbour")));
+    assert.equal(
+      readFileSync(path.join(dir, "content/photos/harbour.yaml"), "utf8"),
+      PUBLISHED_NO_FACTS,
+      "a dry run must leave the catalog YAML untouched",
+    );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
 });

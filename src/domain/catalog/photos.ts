@@ -20,8 +20,8 @@ export type Photo = {
   featured?: boolean;
   /** Master content hash; when present the web derivative ladder is keyed by it. */
   imageHash?: string;
-  /** Oriented pixel size and orientation; drives print eligibility (#295). */
-  master?: MasterFacts;
+  /** Oriented pixel size and orientation; drives print eligibility (#295/#297). */
+  master: MasterFacts;
 };
 
 /**
@@ -55,7 +55,9 @@ function toPhoto(file: PhotoFile): Photo {
     filmLook: file.filmLook,
     featured: file.featured,
     imageHash: file.imageHash,
-    master: file.master,
+    // The generated catalog only contains published photos, which build-catalog
+    // validates with requireMasterFacts: true — so master is guaranteed here.
+    master: file.master!,
   };
 }
 

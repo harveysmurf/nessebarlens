@@ -11,3 +11,6 @@ category: fine-art
 # written by publish-photos
 master_sha256: a1817960e4e4d6fb37481b0e568c50508482318fea53029b3dd11ec7f242dcad
 image_hash: a1817960
+master_width: 7952
+master_height: 5304
+orientation: landscape

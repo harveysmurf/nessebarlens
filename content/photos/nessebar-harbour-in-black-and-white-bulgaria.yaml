@@ -14,3 +14,6 @@ film_look: grayscale
 # Recovery PR: run guarded master promotion after PR #290 merged before promotion.
 master_sha256: 967f47eb7ec6397c9237e9db35fa5fa3d6aaf7b8f9306a1f93682d0e06fd12b3
 image_hash: 967f47eb
+master_width: 4901
+master_height: 3351
+orientation: landscape

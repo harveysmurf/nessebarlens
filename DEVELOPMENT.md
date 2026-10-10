@@ -1265,20 +1265,31 @@ Simo runs this from his own box, not CI. Three prerequisites, in order:
    R2_S3_ENDPOINT=https://<account>.r2.cloudflarestorage.com
    R2_ACCESS_KEY_ID=...
    R2_SECRET_ACCESS_KEY=...
+   R2_MASTERS_READ_ACCESS_KEY_ID=...
+   R2_MASTERS_READ_SECRET_ACCESS_KEY=...
    ```
 
    From Cloudflare → R2 → Manage R2 API Tokens → *Object Read & Write* scoped
    to exactly `nessebar-lens-web` and `nessebar-lens-masters-staging` (and
-   `nessebar-lens-masters` for `--promote`, #242). The workspace copy lives in
+   `nessebar-lens-masters` for `--promote`, #242). The read-only
+   `R2_MASTERS_READ_*` pair is *Object Read* on `nessebar-lens-masters` alone —
+   the same token `verify:masters` uses (#243). Every publish run syncs the
+   catalog against that bucket (#297), so the pair is **required even for the
+   dry run**: `publish-photos` refuses to start without it, and a catalog whose
+   recorded `master_sha256` disagrees with the bucket stops the run before any
+   upload. The workspace copy lives in
    `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`. Missing keys fail as
    `missing env: R2_ACCESS_KEY_ID ...`, never as a 403.
 
 Then, per photo, drop a `<slug>.jpg` **and** a `<slug>.yaml` (the catalog entry
 from §7) into `ingest/` (repo root, gitignored), both named for the same slug:
 
-- `npm run publish-photos` — **dry run.** Validates the batch and prints the
-  eight web objects, the staging master and the YAML path per photo. Nothing is
-  uploaded.
+- `npm run publish-photos` — **dry run.** Syncs the catalog against the
+  production masters (#297): requires `R2_MASTERS_READ_*`, stops on any master
+  whose recorded sha disagrees, and logs (without writing) the facts it would
+  backfill. Then validates the batch and prints the eight web objects, the
+  staging master and the YAML path per photo. Nothing is uploaded and no YAML is
+  written.
 - `npm run publish-photos -- --apply` — uploads the eight web objects per photo
   (four widths × JPEG/WebP) to
   `nessebar-lens-web/{slug}/{hash8}/{400,750,1500,2000}.{jpg,webp}`, uploads the
@@ -1287,7 +1298,9 @@ from §7) into `ingest/` (repo root, gitignored), both named for the same slug:
   `master_sha256`, `image_hash`, `master_width`, `master_height` and
   `orientation` into `content/photos/{slug}.yaml` preserving the owner's
   comments and key order, then opens **one PR** for the run. That PR
-  is `content/photos/**` only. (Before #245 it also wrote a committed
+  is `content/photos/**` only. Before the new entries are written it syncs the
+  existing published photos against the production masters (#297) and commits
+  any facts it backfills in the same PR. (Before #245 it also wrote a committed
   `public/placeholders/{slug}.jpg` fallback; that path is gone.)
 - `--only dawn,dusk` narrows a run; `--replace-image dawn` re-publishes an
   existing slug (the new master's hash must differ).
