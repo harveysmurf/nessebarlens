@@ -208,6 +208,20 @@ export function operatorAlertConfig(env: ConfigEnv = process.env): {
 }
 
 /**
+ * The public Turnstile site key (#293), or undefined when unset/blank.
+ *
+ * Public by definition — it is embedded in the contact page's HTML and is not a
+ * secret. Read here rather than in the page so the env access stays in the one
+ * allowlisted module. The contact page reads it at request time (the page is
+ * `force-dynamic`), so a missing key disables the widget visibly instead of
+ * rendering a broken challenge. Unlike `siteUrl`, an absent key is not fatal:
+ * the rest of the site works without a contact form.
+ */
+export function turnstileSiteKey(env: ConfigEnv = process.env): string | undefined {
+  return envString("NEXT_PUBLIC_TURNSTILE_SITE_KEY", env);
+}
+
+/**
  * The deployment's own Prodigi configuration, for callers that must reach an
  * env read they are not allowed to make themselves.
  *

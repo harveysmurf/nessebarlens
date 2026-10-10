@@ -7,6 +7,7 @@ const NAV = [
   { href: "/fine-art", label: "Fine Art" },
   { href: "/archive", label: "Archive" },
   { href: "/film", label: "Film Photography" },
+  { href: "/contact", label: "Contact" },
 ] as const;
 
 export function SiteHeader() {

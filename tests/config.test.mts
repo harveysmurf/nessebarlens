@@ -56,6 +56,7 @@ const ALL_KEYS = [
   "PRODIGI_SANDBOX_API_KEY",
   "PRINT_ASSET_HMAC_SECRET",
   "NEXT_PUBLIC_WEB_IMAGES_BASE",
+  "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
 ] as const;
 
 /** Nothing in the ambient environment: what "unconfigured" actually means. */

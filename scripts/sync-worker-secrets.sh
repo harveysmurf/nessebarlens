@@ -147,6 +147,35 @@ else
   export OPERATOR_ALERT_EMAIL="$OP_ALERT"
 fi
 
+# Contact-form secrets (#293). TURNSTILE_SECRET_KEY verifies the anti-bot token,
+# CONTACT_TO_EMAIL is the recipient. The Turnstile secret is required in staging
+# and production: without it /api/contact answers 503 and no message is ever
+# delivered, a shipped feature silently off. The recipient is optional like
+# OPERATOR_ALERT_EMAIL — a missing one only 503s the contact form — so it warns
+# rather than failing a deploy.
+TURNSTILE_SECRET="${TURNSTILE_SECRET_KEY:-}"
+TURNSTILE_SECRET="${TURNSTILE_SECRET#"${TURNSTILE_SECRET%%[![:space:]]*}"}"
+TURNSTILE_SECRET="${TURNSTILE_SECRET%"${TURNSTILE_SECRET##*[![:space:]]}"}"
+if [[ -z "$TURNSTILE_SECRET" ]]; then
+  if [[ "$STRICT" == "1" ]]; then
+    echo "$TARGET requires TURNSTILE_SECRET_KEY" >&2
+    echo "without it /api/contact answers 503 and no contact message is delivered" >&2
+    exit 1
+  fi
+  echo "warning: TURNSTILE_SECRET_KEY unset — /api/contact will 503 on this preview" >&2
+else
+  export TURNSTILE_SECRET_KEY="$TURNSTILE_SECRET"
+fi
+
+CONTACT_TO="${CONTACT_TO_EMAIL:-}"
+CONTACT_TO="${CONTACT_TO#"${CONTACT_TO%%[![:space:]]*}"}"
+CONTACT_TO="${CONTACT_TO%"${CONTACT_TO##*[![:space:]]}"}"
+if [[ -z "$CONTACT_TO" ]]; then
+  echo "warning: CONTACT_TO_EMAIL unset — contact-form messages will not be delivered" >&2
+else
+  export CONTACT_TO_EMAIL="$CONTACT_TO"
+fi
+
 # Bearer token for the Prodigi CloudEvent callback (#117). Prodigi signs nothing,
 # so this is our own secret and Prodigi must be configured to send it. Unset
 # means the route answers 503 "prodigi-webhook-unconfigured" rather than
@@ -252,7 +281,7 @@ secrets = {
 # Empty is not shipped: a blank binding would read as present-but-wrong and
 # hide the real problem behind a URL that resolves nowhere. The bash guard
 # already treats these as required in both scopes.
-for name in ("NEXT_PUBLIC_SITE_URL", "NEXT_PUBLIC_WEB_IMAGES_BASE"):
+for name in ("NEXT_PUBLIC_SITE_URL", "NEXT_PUBLIC_WEB_IMAGES_BASE", "NEXT_PUBLIC_TURNSTILE_SITE_KEY"):
     value = os.environ.get(name, "").strip()
     if value:
         secrets[name] = value
@@ -279,6 +308,14 @@ if resend_key:
 operator_alert_email = os.environ.get("OPERATOR_ALERT_EMAIL", "").strip()
 if operator_alert_email:
     secrets["OPERATOR_ALERT_EMAIL"] = operator_alert_email
+# Contact form (#293). Re-checked here for the same reason as the print HMAC:
+# bash judged whether the value survived, Python must not disagree.
+turnstile_secret = os.environ.get("TURNSTILE_SECRET_KEY", "").strip()
+if turnstile_secret:
+    secrets["TURNSTILE_SECRET_KEY"] = turnstile_secret
+contact_to = os.environ.get("CONTACT_TO_EMAIL", "").strip()
+if contact_to:
+    secrets["CONTACT_TO_EMAIL"] = contact_to
 webhook_token = os.environ.get("PRODIGI_WEBHOOK_TOKEN", "").strip()
 if len(webhook_token) >= 32:
     secrets["PRODIGI_WEBHOOK_TOKEN"] = webhook_token

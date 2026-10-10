@@ -407,6 +407,9 @@ jobs:
           PRODIGI_WEBHOOK_TOKEN=e2e-prodigi-webhook-token
           RECONCILE_SECRET=e2e-reconcile-secret
           RESEND_API_KEY=re_e2e_dummy
+          TURNSTILE_SECRET_KEY=1x0000000000000000000000000000000AA
+          CONTACT_TO_EMAIL=contact@example.com
+          NEXT_PUBLIC_TURNSTILE_SITE_KEY=1x00000000000000000000AA
           EOF
           npx wrangler d1 migrations apply nessebar-lens-orders --local
           SLUG="$(basename "$(ls content/photos/*.yaml | sort | head -1)" .yaml)"

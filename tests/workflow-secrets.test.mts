@@ -64,7 +64,9 @@ const EXPECTED: Record<string, ReadonlySet<string>> = {
   staging: new Set([
     "CLOUDFLARE_ACCOUNT_ID",
     "CLOUDFLARE_API_TOKEN",
+    "CONTACT_TO_EMAIL",
     "NEXT_PUBLIC_SITE_URL",
+    "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
     "NEXT_PUBLIC_WEB_IMAGES_BASE",
     "PRINT_ASSET_HMAC_SECRET",
     "PRODIGI_API_KEY",
@@ -75,11 +77,14 @@ const EXPECTED: Record<string, ReadonlySet<string>> = {
     "SITE_URL",
     "STRIPE_SECRET_KEY",
     "STRIPE_WEBHOOK_SECRET",
+    "TURNSTILE_SECRET_KEY",
   ]),
   production: new Set([
     "CLOUDFLARE_ACCOUNT_ID",
     "CLOUDFLARE_API_TOKEN",
+    "CONTACT_TO_EMAIL",
     "NEXT_PUBLIC_SITE_URL",
+    "NEXT_PUBLIC_TURNSTILE_SITE_KEY",
     "NEXT_PUBLIC_WEB_IMAGES_BASE",
     "PRINT_ASSET_HMAC_SECRET",
     "PRODIGI_API_KEY",
@@ -93,6 +98,7 @@ const EXPECTED: Record<string, ReadonlySet<string>> = {
     "SITE_URL",
     "STRIPE_SECRET_KEY",
     "STRIPE_WEBHOOK_SECRET",
+    "TURNSTILE_SECRET_KEY",
   ]),
   repository: new Set(["PRINT_ASSET_HMAC_SECRET"]),
 };

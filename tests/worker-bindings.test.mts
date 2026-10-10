@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import {
+  isContactRateLimiter,
   isMastersBucket,
   isOrdersDatabase,
   isOrdersStore,
@@ -206,4 +207,60 @@ test("a Worker context with no env at all reads as empty, not as a crash", async
   const bindings = await readWorkerBindings({ readEnv: async () => env });
   assert.equal(bindings.ORDERS_DB, undefined);
   assert.equal(bindings.MASTERS, undefined);
+});
+
+test("isContactRateLimiter accepts only an object exposing limit", () => {
+  assert.equal(isContactRateLimiter({ limit: async () => ({ success: true }) }), true);
+  assert.equal(isContactRateLimiter({ limit: "yes" }), false);
+  assert.equal(isContactRateLimiter({ other: 1 }), false);
+  assert.equal(isContactRateLimiter(null), false);
+});
+
+test("contact bindings are read, and the rate limiter passes its shape guard", async () => {
+  const saved = {
+    turnstile: process.env.TURNSTILE_SECRET_KEY,
+    contact: process.env.CONTACT_TO_EMAIL,
+    resend: process.env.RESEND_API_KEY,
+  };
+  try {
+    delete process.env.TURNSTILE_SECRET_KEY;
+    delete process.env.CONTACT_TO_EMAIL;
+    delete process.env.RESEND_API_KEY;
+    const limiter = { limit: async () => ({ success: true }) };
+    const bindings = await readWorkerBindings({
+      readEnv: async () => ({
+        TURNSTILE_SECRET_KEY: "turnstile-secret",
+        CONTACT_TO_EMAIL: "simeon@example.com",
+        RESEND_API_KEY: "re_test_key",
+        CONTACT_RATE_LIMIT: limiter,
+      }),
+    });
+    assert.equal(bindings.turnstileSecret, "turnstile-secret");
+    assert.equal(bindings.contactRecipient, "simeon@example.com");
+    assert.equal(bindings.resendApiKey, "re_test_key");
+    assert.equal(bindings.contactRateLimiter, limiter);
+  } finally {
+    for (const [key, value] of [
+      ["TURNSTILE_SECRET_KEY", saved.turnstile],
+      ["CONTACT_TO_EMAIL", saved.contact],
+      ["RESEND_API_KEY", saved.resend],
+    ] as const) {
+      if (value === undefined) delete process.env[key];
+      else process.env[key] = value;
+    }
+  }
+});
+
+test("a CONTACT_RATE_LIMIT binding missing limit() is dropped, not passed through", async () => {
+  const saved = process.env.CONTACT_RATE_LIMIT;
+  try {
+    delete process.env.CONTACT_RATE_LIMIT;
+    const bindings = await readWorkerBindings({
+      readEnv: async () => ({ CONTACT_RATE_LIMIT: { notLimit: 1 } }),
+    });
+    assert.equal(bindings.contactRateLimiter, undefined);
+  } finally {
+    if (saved === undefined) delete process.env.CONTACT_RATE_LIMIT;
+    else process.env.CONTACT_RATE_LIMIT = saved;
+  }
 });

@@ -1,5 +1,6 @@
 import type { MastersBucket } from "../../domain/catalog/master-key";
 import type { OrdersStore } from "../../domain/ordering/orders-store";
+import type { ContactRateLimiter } from "../../application/contact/submit-contact";
 import { envString } from "../config/env";
 import { printAssetSecret } from "../config/config";
 import { prodigiKeyConfigured } from "../prodigi/prodigi-config";
@@ -23,6 +24,21 @@ export type WorkerBindings = {
    * a structured log line, never a throw on a paid webhook path.
    */
   resendApiKey?: string;
+  /**
+   * Turnstile secret for the contact form (#293). Absent ⇒ /api/contact answers
+   * 503 rather than accepting a submission it cannot verify.
+   */
+  turnstileSecret?: string;
+  /**
+   * Recipient of contact-form messages (#293). Absent ⇒ /api/contact answers
+   * 503 rather than accepting a message it cannot deliver.
+   */
+  contactRecipient?: string;
+  /**
+   * Workers rate-limit binding for /api/contact (#293). Optional defence in
+   * depth: absent skips the rate check, Turnstile still gates.
+   */
+  contactRateLimiter?: ContactRateLimiter;
   prodigiKeyConfigured: boolean;
 };
 
@@ -83,6 +99,8 @@ export async function readWorkerBindings(
   // fallback inside envString, and an empty string is absent.
   const prodigiWebhookToken = envString("PRODIGI_WEBHOOK_TOKEN", env);
   const resendApiKey = envString("RESEND_API_KEY", env);
+  const turnstileSecret = envString("TURNSTILE_SECRET_KEY", env);
+  const contactRecipient = envString("CONTACT_TO_EMAIL", env);
 
   // The dev seed wins *over* a binding, not only in its absence. `next dev`
   // mounts a real local D1 (or empty proxy) for ORDERS_DB through
@@ -107,6 +125,11 @@ export async function readWorkerBindings(
     reconcileSecret,
     prodigiWebhookToken,
     resendApiKey,
+    turnstileSecret,
+    contactRecipient,
+    contactRateLimiter: isContactRateLimiter(env.CONTACT_RATE_LIMIT)
+      ? env.CONTACT_RATE_LIMIT
+      : undefined,
     prodigiKeyConfigured: prodigiKeyConfigured(env),
   };
 }
@@ -152,4 +175,13 @@ export function isOrdersStore(value: unknown): value is OrdersStore {
 /** R2 is read-only from here, so get() is the whole contract. */
 export function isMastersBucket(value: unknown): value is MastersBucket {
   return hasMethods(value, "get");
+}
+
+/**
+ * The Workers rate-limit binding. Only `limit` is part of the contract the
+ * contact route uses; a binding missing it would throw on first submission, so
+ * the shape is checked rather than trusted. Exported for the binding tests.
+ */
+export function isContactRateLimiter(value: unknown): value is ContactRateLimiter {
+  return hasMethods(value, "limit");
 }

@@ -44,18 +44,20 @@ function parseBindings(toml: string): Binding[] {
   let current: { section: string; fields: Record<string, string> } | null = null;
   const flush = () => {
     if (!current) return;
-    const m = current.section.match(/^(?:env\.([\w-]+)\.)?(r2_buckets|d1_databases)$/);
+    const m = current.section.match(/^(?:env\.([\w-]+)\.)?(r2_buckets|d1_databases|ratelimits)$/);
     if (m) {
       const kind = m[2];
       found.push({
         section: current.section,
         env: m[1] ?? "",
         kind,
-        binding: current.fields.binding ?? "",
+        binding: current.fields.binding ?? current.fields.name ?? "",
         resource:
           (kind === "r2_buckets"
             ? current.fields.bucket_name
-            : current.fields.database_name) ?? "",
+            : kind === "d1_databases"
+              ? current.fields.database_name
+              : current.fields.namespace_id) ?? "",
       });
     }
     current = null;
@@ -128,6 +130,15 @@ test("staging's MASTERS is a distinct bucket ending in -staging", () => {
 
 test("no [env.*] binds the production masters bucket or orders database", () => {
   assert.deepEqual(bindingViolations(bindings), []);
+});
+
+test("the contact rate limiter is declared at the top level and redeclared in staging", () => {
+  // #293: wrangler does not inherit bindings into [env.*], so a staging deploy
+  // without its own CONTACT_RATE_LIMIT would skip the rate check while
+  // production rate-limits — the same class of silent divergence #201 hit.
+  const rateLimits = bindings.filter((b) => b.kind === "ratelimits");
+  assert.equal(rateLimits.find((b) => b.env === "")?.binding, "CONTACT_RATE_LIMIT");
+  assert.equal(rateLimits.find((b) => b.env === "staging")?.binding, "CONTACT_RATE_LIMIT");
 });
 
 test("negative control: a staging block pointing at the production bucket is rejected", () => {
