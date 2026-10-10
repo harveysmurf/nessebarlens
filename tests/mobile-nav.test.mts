@@ -8,6 +8,7 @@ const read = (path: string) =>
 const NAV = read("../src/components/nav.ts");
 const HEADER = read("../src/components/SiteHeader.tsx");
 const MOBILE = read("../src/components/MobileNav.tsx");
+const GLOBALS = read("../src/app/globals.css");
 
 test("one NAV array is the source of truth for desktop and mobile", () => {
   // The desktop nav and the mobile panel must read the same list, or a new
@@ -64,4 +65,15 @@ test("the panel is portaled out of the header's blurred containing block", () =>
 test("motion respects prefers-reduced-motion", () => {
   assert.match(MOBILE, /motion-reduce:animate-none/);
   assert.match(MOBILE, /motion-reduce:transition-none/);
+});
+
+test("the reduced-motion override outranks the unlayered .fade-in", () => {
+  // `.fade-in` is unlayered, so Tailwind's layered `motion-reduce:animate-none`
+  // cannot cancel it — media queries add no specificity and unlayered CSS beats
+  // every @layer. The override must therefore live in globals.css, unlayered
+  // (#331 review). The class string alone proves nothing; this does.
+  const override = GLOBALS.match(
+    /@media\s*\(prefers-reduced-motion:\s*reduce\)\s*\{[^}]*\.fade-in\s*\{[^}]*animation:\s*none/,
+  );
+  assert.ok(override, "globals.css must disable .fade-in under reduced motion");
 });

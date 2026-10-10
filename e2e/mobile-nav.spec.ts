@@ -119,4 +119,25 @@ test.describe("mobile navigation (#331)", () => {
     await expect(page.getByRole("button", { name: "Open menu" })).toBeHidden();
     await expect(page.getByRole("link", { name: "Contact", exact: true })).toBeVisible();
   });
+
+  test.describe("prefers-reduced-motion", () => {
+    test.use({ reducedMotion: "reduce" });
+
+    test("the panel animates not at all", async ({ page }) => {
+      await page.setViewportSize({ width: 375, height: 844 });
+      await page.goto("/");
+      await page.getByRole("button", { name: "Open menu" }).click();
+
+      const panel = page.locator("#mobile-nav-panel");
+      await expect(panel).toBeVisible();
+
+      // `.fade-in` is unlayered and would otherwise win over the layered
+      // `motion-reduce:animate-none` utility; the unlayered globals.css
+      // override is the only thing that can make this read "none" (#331 review).
+      const animationName = await panel.evaluate(
+        (el) => getComputedStyle(el).animationName,
+      );
+      expect(animationName).toBe("none");
+    });
+  });
 });

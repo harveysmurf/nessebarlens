@@ -31,6 +31,16 @@ body {
   animation: fadeIn 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* `.fade-in` is unlayered, so it outranks Tailwind's layered
+   `motion-reduce:animate-none` utility (media queries add no specificity, and
+   unlayered CSS beats any @layer). Override it here, unlayered, so every
+   `.fade-in` — the mobile panel included — honours the user's preference. */
+@media (prefers-reduced-motion: reduce) {
+  .fade-in {
+    animation: none;
+  }
+}
+
 @keyframes fadeIn {
   from {
     opacity: 0;
