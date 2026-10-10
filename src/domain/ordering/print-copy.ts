@@ -31,7 +31,7 @@ import {
   type PrintSize,
 } from "../pricing/pricing";
 import { FRAME_FINISHES, SELLABLE_FORMATS } from "../pricing/sku-map";
-import type { PreviewGeometry } from "./print-preview";
+import { CANVAS_BAR_DEPTH_MM, type PreviewGeometry } from "./print-preview";
 import type { PrintSelection } from "./print-selection";
 
 export type FormatCopy = { title: string; sub: string };
@@ -118,7 +118,7 @@ const PREVIEW_LABEL: Record<
   framed: (alt, selection, orientation) =>
     `${alt} — framed print, ${sizeLabel(selection.size, orientation)}, ${FRAME_COPY[selection.frame]} frame with white mount`,
   canvas: (alt, selection, orientation) =>
-    `${alt} — stretched canvas, ${sizeLabel(selection.size, orientation)}, image wrapped around the edges`,
+    `${alt} — stretched canvas, ${sizeLabel(selection.size, orientation)}, image wrapped around the ${CANVAS_BAR_DEPTH_MM} mm edges`,
   digital: (alt) => alt,
 };
 

@@ -177,6 +177,118 @@ test.describe("product preview (#326)", () => {
     });
   });
 
+  test.describe("canvas angled view (#327)", () => {
+    function toggle(page: Page) {
+      return page.getByRole("radiogroup", { name: "Preview view" });
+    }
+
+    /** The stage shows alt text, not an image, when the site has no ladder base. */
+    async function hasFrontImage(page: Page): Promise<boolean> {
+      return (await preview(page).locator('[data-face="front"] img').count()) > 0;
+    }
+
+    async function expectAngled(page: Page) {
+      await expect(preview(page)).toHaveAttribute("data-preview-view", "angled");
+      if (!(await hasFrontImage(page))) {
+        // The Worker build has no NEXT_PUBLIC_WEB_IMAGES_BASE, so there is no
+        // resolved URL for the sides either; the front shows its alt text.
+        await expect(preview(page).locator("span").first()).toBeVisible();
+        return;
+      }
+      const right = preview(page).locator('[data-face="right"]').first();
+      const box = await right.boundingBox();
+      expect(box).not.toBeNull();
+      expect(box!.width).toBeGreaterThan(0);
+      await expect
+        .poll(() =>
+          right
+            .locator("img")
+            .evaluate((node: HTMLImageElement) => node.naturalWidth > 0),
+        )
+        .toBe(true);
+    }
+
+    test("canvas opens angled with the photo wrapping onto the right side", async ({
+      page,
+    }, testInfo) => {
+      await page.goto(`/prints/${HARBOUR}`);
+      await page.getByText(/stretched canvas/i).click();
+      await expectAngled(page);
+      await testInfo.attach("canvas-angled-harbour", {
+        body: await preview(page).screenshot(),
+        contentType: "image/png",
+      });
+    });
+
+    test("the second photo opens angled too", async ({ page }, testInfo) => {
+      await page.goto(`/prints/${GOLDEN}`);
+      await page.getByText(/stretched canvas/i).click();
+      await expectAngled(page);
+      await testInfo.attach("canvas-angled-golden", {
+        body: await preview(page).screenshot(),
+        contentType: "image/png",
+      });
+    });
+
+    test("Front is the flat #326 view, and the toggle returns to angled", async ({
+      page,
+    }) => {
+      await page.goto(`/prints/${HARBOUR}`);
+      await page.getByText(/stretched canvas/i).click();
+      await toggle(page).getByText("Front", { exact: true }).click();
+      await expect(preview(page)).toHaveAttribute("data-preview-view", "front");
+      const right = preview(page).locator('[data-face="right"]');
+      if ((await right.count()) > 0) await expect(right).toBeHidden();
+
+      await toggle(page).getByText("Angled", { exact: true }).click();
+      await expect(preview(page)).toHaveAttribute("data-preview-view", "angled");
+    });
+
+    test("the toggle is canvas-only, and leaving canvas resets to angled", async ({
+      page,
+    }) => {
+      await page.goto(`/prints/${HARBOUR}`);
+      await page.getByText(/stretched canvas/i).click();
+      await toggle(page).getByText("Front", { exact: true }).click();
+      await expect(preview(page)).toHaveAttribute("data-preview-view", "front");
+
+      await page.getByText(/framed print/i).click();
+      await expect(toggle(page)).toHaveCount(0);
+
+      await page.getByText(/stretched canvas/i).click();
+      await expect(preview(page)).toHaveAttribute("data-preview-view", "angled");
+    });
+
+    test("switching views makes no additional image request", async ({ page }) => {
+      const images: string[] = [];
+      page.on("request", (request) => {
+        if (request.url().startsWith(IMAGES_BASE)) images.push(request.url());
+      });
+      await page.goto(`/prints/${HARBOUR}`);
+      await page.getByText(/stretched canvas/i).click();
+      const before = images.length;
+      await toggle(page).getByText("Front", { exact: true }).click();
+      await toggle(page).getByText("Angled", { exact: true }).click();
+      await toggle(page).getByText("Front", { exact: true }).click();
+      expect(images.length).toBe(before);
+    });
+
+    test("angled stays inside the stage at mobile width", async ({ page }) => {
+      await page.setViewportSize({ width: 360, height: 800 });
+      await page.goto(`/prints/${HARBOUR}`);
+      await page.getByText(/stretched canvas/i).click();
+      await expectAngled(page);
+      const stage = await preview(page).boundingBox();
+      const product = await preview(page).locator("[data-product]").boundingBox();
+      expect(stage).not.toBeNull();
+      expect(product).not.toBeNull();
+      expect(product!.x).toBeGreaterThanOrEqual(stage!.x - 1);
+      expect(product!.y).toBeGreaterThanOrEqual(stage!.y - 1);
+      expect(product!.x + product!.width).toBeLessThanOrEqual(stage!.x + stage!.width + 1);
+      expect(product!.y + product!.height).toBeLessThanOrEqual(stage!.y + stage!.height + 1);
+    });
+  });
+
   test("the landscape photo renders at mobile width", async ({ page }, testInfo) => {
     await page.setViewportSize({ width: 360, height: 800 });
     await page.goto(`/prints/${GOLDEN}`);
