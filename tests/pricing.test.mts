@@ -33,8 +33,15 @@ test("every sellable format has a buyer-facing label", () => {
     assert.ok(label.length > 0, `empty label for ${format}`);
   }
   // The configurator renders these verbatim; they must stay human text.
-  assert.equal(formatLabel("framed"), "Framed Fine Art");
+  // #334: the receipt has to match the framed print that arrives, and every
+  // framed SKU is a "with mount" CFPM.
+  assert.equal(formatLabel("framed"), "Framed Fine Art (White Mount)");
   assert.match(formatLabel("giclee"), /Gicl/);
+  // #334: nothing on the framed path may promise glazing or paper we do not
+  // ship — a CFPM is acrylic over EMA 200gsm, never glass, never Hahnemühle.
+  for (const label of [formatLabel("framed"), formatLabel("giclee"), formatLabel("canvas")]) {
+    assert.doesNotMatch(label, /glass/i);
+  }
 });
 
 test("every print size has a label with both unit systems", () => {
