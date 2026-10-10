@@ -20,12 +20,15 @@ import {
 import {
   createPromoteS3,
   metadataValue,
+  md5Hex,
+  planPrintAssetAction,
   planPromoteAction,
   repoFromPrUrl,
   runPromote,
   selectPromoteFiles,
   verifyPromotePr,
 } from "../scripts/publish-photos.mjs";
+import { renderPrintAsset } from "../scripts/derivative-image.mjs";
 
 const ENV = {
   R2_S3_ENDPOINT: "https://r2.example.com",
@@ -49,7 +52,15 @@ async function writeMaster(file, { width = 3600, height = 2400, exif = true } = 
   await pipeline.jpeg({ quality: 90 }).toFile(file);
 }
 
-function catalogYaml(slug, masterSha256) {
+/**
+ * A publish-PR head YAML as #307 writes it: master facts for the landscape
+ * fixture, plus the print asset's sha256 and md5 rendered from the same local
+ * bytes #307 promote re-renders. `masterSha256` is overridable so a test can
+ * make the catalog disagree with the local file.
+ */
+async function headYaml(dir, slug, masterSha256) {
+  const bytes = readFileSync(path.join(dir, `ingest/${slug}.jpg`));
+  const asset = await renderPrintAsset(bytes, "landscape");
   return [
     "# owner note",
     "title: Dawn",
@@ -60,6 +71,41 @@ function catalogYaml(slug, masterSha256) {
     `slug: ${slug}`,
     `master_sha256: ${masterSha256}`,
     `image_hash: ${masterSha256.slice(0, 8)}`,
+    "master_width: 3600",
+    "master_height: 2400",
+    "orientation: landscape",
+    `print_asset_sha256: ${await sha256Hex(asset)}`,
+    `print_asset_md5: ${md5Hex(asset)}`,
+    "",
+  ].join("\n");
+}
+
+/** The base branch's YAML; only its master_sha256 is read, for isReplacement. */
+function baseYaml(slug, masterSha256) {
+  return [
+    "title: Dawn",
+    "category: fine-art",
+    `slug: ${slug}`,
+    `master_sha256: ${masterSha256}`,
+    "",
+  ].join("\n");
+}
+
+/**
+ * A head YAML with the required facts and a valid (but not recomputed) print
+ * asset, for tests that must not read a local master.
+ */
+function staticYaml(slug, masterSha256) {
+  return [
+    "title: Dawn",
+    "category: fine-art",
+    `slug: ${slug}`,
+    `master_sha256: ${masterSha256}`,
+    "master_width: 3600",
+    "master_height: 2400",
+    "orientation: landscape",
+    `print_asset_sha256: ${"c".repeat(64)}`,
+    `print_asset_md5: ${"d".repeat(32)}`,
     "",
   ].join("\n");
 }
@@ -257,6 +303,46 @@ test("planPromoteAction uploads, skips, replaces or refuses", () => {
   assert.equal(metadataValue(undefined, "sha256"), undefined);
 });
 
+test("planPrintAssetAction uploads, skips, replaces or refuses (#307)", () => {
+  const sha = "a".repeat(64);
+  assert.deepEqual(
+    planPrintAssetAction({ existing: null, printAssetSha256: sha, isReplace: false }),
+    { action: "upload" },
+  );
+  assert.deepEqual(
+    planPrintAssetAction({
+      existing: { metadata: { sha256: sha } },
+      printAssetSha256: sha,
+      isReplace: false,
+    }),
+    { action: "skip" },
+  );
+  assert.deepEqual(
+    planPrintAssetAction({
+      existing: { metadata: { SHA256: sha } },
+      printAssetSha256: sha,
+      isReplace: false,
+    }),
+    { action: "skip" },
+  );
+  const refused = planPrintAssetAction({
+    existing: { metadata: { sha256: "b".repeat(64) } },
+    printAssetSha256: sha,
+    isReplace: false,
+  });
+  assert.equal(refused.action, "refuse");
+  assert.match(refused.reason, /print asset/);
+  assert.match(refused.reason, /--replace-image/);
+  assert.deepEqual(
+    planPrintAssetAction({
+      existing: { metadata: { sha256: "b".repeat(64) } },
+      printAssetSha256: sha,
+      isReplace: true,
+    }),
+    { action: "replace" },
+  );
+});
+
 test("repoFromPrUrl reads owner/repo and rejects a non-GitHub URL", () => {
   assert.deepEqual(repoFromPrUrl(PR_URL), { owner: "harveysmurf", repo: "nessebarlens" });
   assert.equal(repoFromPrUrl("https://example.com/x"), null);
@@ -276,7 +362,7 @@ test("a happy promote puts the master with sha256 metadata, reads it back, then 
     const timeline = [];
     const s3 = fakePromoteS3({}, timeline);
     const exec = fakeGh(
-      { pull: pull(), yamlByPath: { "content/photos/dawn.yaml": catalogYaml("dawn", sha) } },
+      { pull: pull(), yamlByPath: { "content/photos/dawn.yaml": await headYaml(dir, "dawn", sha) } },
       timeline,
     );
     const d = deps({ s3, exec });
@@ -289,7 +375,19 @@ test("a happy promote puts the master with sha256 metadata, reads it back, then 
     // The promoted object is the unmodified JPEG with the headers the spec asks for.
     assert.equal(stored!.contentType, "image/jpeg");
     assert.equal(stored!.cacheControl, "private, no-store");
-    assert.deepEqual(s3.puts.map((p) => p.contentType), ["image/jpeg"]);
+
+    // The print asset (#307) lands in production too, with the sha256 metadata
+    // verify-masters reads back.
+    const asset = await renderPrintAsset(bytes, "landscape");
+    const assetSha = await sha256Hex(asset);
+    const storedPrint = s3.objects.get("print-assets/dawn.jpg");
+    assert.equal(storedPrint!.metadata!.sha256, assetSha);
+    assert.equal(storedPrint!.contentLength, asset.length);
+    assert.equal(storedPrint!.contentType, "image/jpeg");
+    assert.equal(storedPrint!.cacheControl, "private, no-store");
+
+    assert.equal(s3.puts.length, 2, "master and print asset are the only puts");
+    assert.ok(s3.puts.every((p) => p.contentType === "image/jpeg"));
     // Every bucket touched is the production masters bucket.
     assert.ok(
       s3.calls.every((call) => call[1] === MASTERS_BUCKET_NAME),
@@ -335,9 +433,9 @@ test("a checksum mismatch refuses with zero uploads even when other photos match
         ],
       }),
       yamlByPath: {
-        "content/photos/dawn.yaml": catalogYaml("dawn", hashes.dawn!),
+        "content/photos/dawn.yaml": await headYaml(dir, "dawn", hashes.dawn!),
         // The previewed hash for dusk is not what is in ingest/ now.
-        "content/photos/dusk.yaml": catalogYaml("dusk", "f".repeat(64)),
+        "content/photos/dusk.yaml": await headYaml(dir, "dusk", "f".repeat(64)),
       },
     });
     const d = deps({ s3, exec });
@@ -358,7 +456,7 @@ test("a missing local master is refused before any upload", async () => {
     const s3 = fakePromoteS3();
     const exec = fakeGh({
       pull: pull(),
-      yamlByPath: { "content/photos/dawn.yaml": catalogYaml("dawn", "a".repeat(64)) },
+      yamlByPath: { "content/photos/dawn.yaml": staticYaml("dawn", "a".repeat(64)) },
     });
     const result = await runPromote({ cwd: dir, promote: true, pr: 255 }, deps({ s3, exec }));
     assert.equal(result.status, 1);
@@ -383,7 +481,7 @@ test("a PR touching files outside content/photos is refused", async () => {
           { path: "src/lib/foo.ts", changeType: "MODIFIED" },
         ],
       }),
-      yamlByPath: { "content/photos/dawn.yaml": catalogYaml("dawn", sha) },
+      yamlByPath: { "content/photos/dawn.yaml": await headYaml(dir, "dawn", sha) },
     });
     const result = await runPromote({ cwd: dir, promote: true, pr: 255 }, deps({ s3, exec }));
     assert.equal(result.status, 1);
@@ -404,7 +502,7 @@ test("a catalog-only publish PR is promoted normally", async () => {
       pull: pull({
         files: [{ path: "content/photos/dawn.yaml", changeType: "ADDED" }],
       }),
-      yamlByPath: { "content/photos/dawn.yaml": catalogYaml("dawn", sha) },
+      yamlByPath: { "content/photos/dawn.yaml": await headYaml(dir, "dawn", sha) },
     });
     const result = await runPromote({ cwd: dir, promote: true, pr: 255 }, deps({ s3, exec }));
     assert.equal(result.status, 0);
@@ -436,7 +534,7 @@ test("a read-back mismatch does not enable auto-merge", async () => {
     };
     const exec = fakeGh({
       pull: pull(),
-      yamlByPath: { "content/photos/dawn.yaml": catalogYaml("dawn", sha) },
+      yamlByPath: { "content/photos/dawn.yaml": await headYaml(dir, "dawn", sha) },
     });
     const result = await runPromote({ cwd: dir, promote: true, pr: 255 }, deps({ s3, exec }));
     assert.equal(result.status, 1);
@@ -460,7 +558,7 @@ test("a failed gh api user refuses and does not guess the owner", async () => {
     const exec = fakeGh({
       userStatus: 1,
       pull: pull(),
-      yamlByPath: { "content/photos/dawn.yaml": catalogYaml("dawn", sha) },
+      yamlByPath: { "content/photos/dawn.yaml": await headYaml(dir, "dawn", sha) },
     });
     const result = await runPromote({ cwd: dir, promote: true, pr: 255 }, deps({ s3, exec }));
     assert.equal(result.status, 1);
@@ -477,14 +575,18 @@ test("an existing same-hash master is skipped, and a different one without a rep
     await writeMaster(path.join(dir, "ingest/dawn.jpg"));
     const bytes = readFileSync(path.join(dir, "ingest/dawn.jpg"));
     const sha = await sha256Hex(bytes);
+    const asset = await renderPrintAsset(bytes, "landscape");
+    const assetSha = await sha256Hex(asset);
 
-    // Same hash: skip, no put, still auto-merge.
+    // Same hash: skip, no put, still auto-merge. The print asset is already in
+    // the bucket with a matching sha too, so neither is rewritten.
     const same = fakePromoteS3({
       "prints/dawn.jpg": { metadata: { sha256: sha }, contentLength: bytes.length },
+      "print-assets/dawn.jpg": { metadata: { sha256: assetSha }, contentLength: asset.length },
     });
     const sameExec = fakeGh({
       pull: pull(),
-      yamlByPath: { "content/photos/dawn.yaml": catalogYaml("dawn", sha) },
+      yamlByPath: { "content/photos/dawn.yaml": await headYaml(dir, "dawn", sha) },
     });
     const sameResult = await runPromote(
       { cwd: dir, promote: true, pr: 255 },
@@ -504,7 +606,7 @@ test("an existing same-hash master is skipped, and a different one without a rep
         s3: different,
         exec: fakeGh({
           pull: pull(),
-          yamlByPath: { "content/photos/dawn.yaml": catalogYaml("dawn", sha) },
+          yamlByPath: { "content/photos/dawn.yaml": await headYaml(dir, "dawn", sha) },
         }),
       }),
     );
@@ -519,14 +621,16 @@ test("an existing same-hash master is skipped, and a different one without a rep
     });
     const replaceExec = fakeGh({
       pull: pull({ files: [{ path: "content/photos/dawn.yaml", changeType: "MODIFIED" }] }),
-      yamlByPath: { "content/photos/dawn.yaml": catalogYaml("dawn", sha) },
-      baseYamlByPath: { "content/photos/dawn.yaml": catalogYaml("dawn", "b".repeat(64)) },
+      yamlByPath: { "content/photos/dawn.yaml": await headYaml(dir, "dawn", sha) },
+      baseYamlByPath: { "content/photos/dawn.yaml": baseYaml("dawn", "b".repeat(64)) },
     });
     const replaceDeps = deps({ s3: replace, exec: replaceExec });
     const replaceResult = await runPromote({ cwd: dir, promote: true, pr: 255 }, replaceDeps);
     assert.equal(replaceResult.status, 0);
-    assert.equal(replace.calls.filter((c) => c[0] === "put").length, 1);
+    // The replacement master and the missing print asset are both uploaded.
+    assert.equal(replace.calls.filter((c) => c[0] === "put").length, 2);
     assert.equal(replace.objects.get("prints/dawn.jpg")!.metadata!.sha256, sha);
+    assert.equal(replace.objects.get("print-assets/dawn.jpg")!.metadata!.sha256, assetSha);
     assert.equal(replaceDeps.logs.some((line) => line.includes("past buyers")), true);
 
     // A caption-only edit (base hash equals the head hash) is NOT a
@@ -540,8 +644,8 @@ test("an existing same-hash master is skipped, and a different one without a rep
         s3: caption,
         exec: fakeGh({
           pull: pull({ files: [{ path: "content/photos/dawn.yaml", changeType: "MODIFIED" }] }),
-          yamlByPath: { "content/photos/dawn.yaml": catalogYaml("dawn", sha) },
-          baseYamlByPath: { "content/photos/dawn.yaml": catalogYaml("dawn", sha) },
+          yamlByPath: { "content/photos/dawn.yaml": await headYaml(dir, "dawn", sha) },
+          baseYamlByPath: { "content/photos/dawn.yaml": await headYaml(dir, "dawn", sha) },
         }),
       }),
     );

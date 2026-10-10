@@ -175,3 +175,58 @@ test("main needs the read-only credentials as soon as a real photo must be check
     /missing env: R2_S3_ENDPOINT/,
   );
 });
+
+// ---------------------------------------------------------------------------
+// Print assets (#307)
+// ---------------------------------------------------------------------------
+
+const PRINT = { sha256: SHA_B, md5: "c".repeat(32) };
+
+test("a print asset is checked where the catalog has one (#307)", async () => {
+  const s3 = fakeS3({
+    "prints/dawn.jpg": { sha256: SHA_A, contentLength: 1234 },
+    "print-assets/dawn.jpg": { sha256: SHA_B, contentLength: 5678 },
+  });
+  const failures = await verifyMasters({
+    photos: [PHOTO({ slug: "dawn", printAsset: PRINT })],
+    s3,
+  });
+  assert.deepEqual(failures, []);
+  assert.deepEqual(s3.calls, [
+    [MASTERS_BUCKET_NAME, "prints/dawn.jpg"],
+    [MASTERS_BUCKET_NAME, "print-assets/dawn.jpg"],
+  ]);
+});
+
+test("a print asset missing, empty or mismatched is reported (#307)", async () => {
+  const missing = await verifyMasters({
+    photos: [PHOTO({ slug: "dawn", printAsset: PRINT })],
+    s3: fakeS3({ "prints/dawn.jpg": { sha256: SHA_A, contentLength: 10 } }),
+  });
+  assert.deepEqual(missing, [`dawn: print asset missing from ${MASTERS_BUCKET_NAME}`]);
+
+  const empty = await verifyMasters({
+    photos: [PHOTO({ slug: "dawn", printAsset: PRINT })],
+    s3: fakeS3({
+      "prints/dawn.jpg": { sha256: SHA_A, contentLength: 10 },
+      "print-assets/dawn.jpg": { sha256: SHA_B, contentLength: 0 },
+    }),
+  });
+  assert.deepEqual(empty, ["dawn: print asset empty"]);
+
+  const mismatch = await verifyMasters({
+    photos: [PHOTO({ slug: "dawn", printAsset: PRINT })],
+    s3: fakeS3({
+      "prints/dawn.jpg": { sha256: SHA_A, contentLength: 10 },
+      "print-assets/dawn.jpg": { sha256: SHA_A, contentLength: 10 },
+    }),
+  });
+  assert.match(mismatch[0]!, /dawn: print asset sha256 mismatch/);
+});
+
+test("a photo without a print asset is not checked for one (#307 PR 1)", async () => {
+  const s3 = fakeS3({ "prints/dawn.jpg": { sha256: SHA_A, contentLength: 10 } });
+  const failures = await verifyMasters({ photos: [PHOTO({ slug: "dawn" })], s3 });
+  assert.deepEqual(failures, []);
+  assert.deepEqual(s3.calls, [[MASTERS_BUCKET_NAME, "prints/dawn.jpg"]]);
+});

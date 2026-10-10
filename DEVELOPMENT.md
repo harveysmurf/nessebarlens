@@ -820,7 +820,7 @@ Until (1) lands, every staging purchase races production for the same Prodigi
 order, and the operator alert (`order-ops-alert`, #195) is what tells you it
 happened.
 
-### Print-area orientation (#298)
+### Print-area orientation and the print asset (#298, #307)
 
 Placed sandbox orders for `GLOBAL-FAP-12X16`, `GLOBAL-CFPM-12X16` and
 `GLOBAL-CAN-12X16` with a landscape 3:2 asset, using the same body the code
@@ -829,19 +829,44 @@ sends (`sizing: "fillPrintArea"`). Prodigi accepted all three (`Created`, asset
 
 **Prodigi does not rotate.** The dashboard preview shows the landscape photo
 **centre-cropped to the portrait print area**, not turned to match the SKU's
-short/long edges. So a landscape photo ordered as a portrait SKU arrives
-heavily cropped today.
+short/long edges. Every pinned print area is portrait (`horizontalResolution ≤
+verticalResolution`), there is no landscape SKU (`GLOBAL-*-16X12` →
+`EntityNotFound`), and the v4 API exposes no rendered-print preview — so the
+turn has to happen before upload.
 
-Consequences:
+**The print asset (#307).** When a photo is published, `publish-photos` renders
+a second file for Prodigi and uploads it to `print-assets/{slug}.jpg` (staging
+now, production on `--promote`). It is the only file Prodigi receives:
 
-- `/api/print-asset` must rotate the streamed master to the SKU's orientation
-  before Prodigi fetches it. The signed URL carries only `slug`, `exp` and
-  `sig`, so the requested orientation (or the SKU) has to join the signed
-  payload — a protocol change. Tracked in **#307**, which **blocks #299**.
-- The v4 API exposes no rendered-print preview — only a thumbnail of the
-  *uploaded* asset (verified: a 100×66 copy of the 3:2 source, not the 3:4
-  print) — so orientation cannot be asserted from the API; it was read from the
-  dashboard.
+- source is the original master bytes (`ingest/{slug}.jpg`, the bytes
+  `master_sha256` hashes);
+- EXIF orientation applied, then **90° clockwise when `master.orientation ===
+  "landscape"`** (`printAssetRotation`, #307); portrait and square are not
+  turned;
+- converted to sRGB with an **sRGB ICC profile embedded**, and all other
+  metadata stripped (no EXIF, GPS or XMP — so no orientation tag);
+- full resolution, JPEG quality 95, `4:4:4`, no mozjpeg.
+
+The catalog records `print_asset_sha256` and `print_asset_md5` next to the
+master facts. The MD5 is sent to Prodigi as `assets[0].md5Hash`, so **staging
+and production must hold byte-identical assets** — `--promote` re-renders from
+the same bytes and refuses if the sha256 no longer matches (`sharp`/libvips
+changed → re-run publish). The signed URL is unchanged (`slug` + `exp` + `sig`);
+`/api/print-asset` serves `print-assets/{slug}.jpg` and never falls back to
+`prints/{slug}.jpg`, returning 503 if the asset is missing. Digital downloads
+and `master_sha256` are untouched. Tracked in **#307**, which blocks #299.
+
+Backfill for the photos published before #307:
+
+```bash
+npm run publish-photos -- --apply --backfill-print-assets   # writes the two keys, opens a PR
+npm run publish-photos -- --promote --pr <n>                # uploads the production print assets
+```
+
+The backfill prefers the local `ingest/{slug}.jpg` (when its sha256 matches
+`master_sha256`) and otherwise downloads `prints/{slug}.jpg` with the read-only
+`R2_MASTERS_READ_*` creds. It never changes `master_sha256`, `image_hash` or the
+master objects.
 
 Cancellation note: the v4 cancel action is
 `POST /v4.0/orders/{orderId}/actions/cancel`; `/cancel` answers
@@ -1294,16 +1319,24 @@ from §7) into `ingest/` (repo root, gitignored), both named for the same slug:
   (four widths × JPEG/WebP) to
   `nessebar-lens-web/{slug}/{hash8}/{400,750,1500,2000}.{jpg,webp}`, uploads the
   **staging master** (long edge ≤ 2500 px, JPEG q80, sRGB, metadata stripped) to
-  `nessebar-lens-masters-staging/prints/{slug}.jpg`, writes `slug`,
-  `master_sha256`, `image_hash`, `master_width`, `master_height` and
-  `orientation` into `content/photos/{slug}.yaml` preserving the owner's
-  comments and key order, then opens **one PR** for the run. That PR
+  `nessebar-lens-masters-staging/prints/{slug}.jpg` **and the print asset**
+  (#307) to `nessebar-lens-masters-staging/print-assets/{slug}.jpg`, writes
+  `slug`, `master_sha256`, `image_hash`, `master_width`, `master_height`,
+  `orientation`, `print_asset_sha256` and `print_asset_md5` into
+  `content/photos/{slug}.yaml` preserving the owner's comments and key order,
+  then opens **one PR** for the run. That PR
   is `content/photos/**` only. Before the new entries are written it syncs the
   existing published photos against the production masters (#297) and commits
   any facts it backfills in the same PR. (Before #245 it also wrote a committed
   `public/placeholders/{slug}.jpg` fallback; that path is gone.)
 - `--only dawn,dusk` narrows a run; `--replace-image dawn` re-publishes an
   existing slug (the new master's hash must differ).
+- `--apply --backfill-print-assets` gives already-published photos their print
+  asset (#307): it takes the master from `ingest/{slug}.jpg` when the local
+  sha256 matches `master_sha256`, otherwise downloads `prints/{slug}.jpg` with
+  the read-only `R2_MASTERS_READ_*` creds, renders the asset, uploads it to
+  staging, writes the two keys and opens the usual catalog PR. It never changes
+  `master_sha256`, `image_hash` or the master objects.
 - The production masters bucket is **never** written by `--apply`. Its client
   only has the web and staging buckets, so a `--promote` object is unreachable
   from this command.
@@ -1329,13 +1362,19 @@ previewed — **stop before any upload** if one file does not match.
 For each master it writes the **unmodified** bytes to
 `nessebar-lens-masters/prints/{slug}.jpg` with `Content-Type: image/jpeg`, user
 metadata `sha256=<master_sha256>` (the header the release check reads, #243) and
-`Cache-Control: private, no-store`. An object already holding the same hash is
+`Cache-Control: private, no-store`. It re-renders the **print asset** (#307)
+from the same local bytes, refuses if the result's sha256 no longer matches the
+YAML's `print_asset_sha256` (`sharp`/libvips changed → re-run publish), and
+otherwise writes it to `nessebar-lens-masters/print-assets/{slug}.jpg` with the
+same headers and `sha256=<print_asset_sha256>` metadata. An object already
+holding the same hash is
 skipped; a different hash is refused unless the PR **modified** an existing
 catalog entry (a `--replace-image`), which overwrites the fixed key and reminds
 you that past buyers' downloads now get the new file. It then `HeadObject`s each
-key and confirms the `sha256` metadata and byte length before running
+master **and print-asset** key and confirms the `sha256` metadata and byte
+length before running
 `gh pr merge <n> --auto --squash`. Merging deploys staging → smoke tests →
-master check → production.
+master check (which now also verifies the print assets) → production.
 
 What to do if `--promote` refuses:
 
@@ -1355,7 +1394,8 @@ content-addressed, so they are never rewritten by a promote.
 
 Validation runs before any upload and reports every problem: the YAML must pass
 the schema with the generated keys (`master_sha256`, `image_hash`,
-`master_width`, `master_height`, `orientation`) absent; the long edge must be
+`master_width`, `master_height`, `orientation`, `print_asset_sha256`,
+`print_asset_md5`) absent; the long edge must be
 ≥ 3500 px (a warning below 6000 px); a new slug must not already exist; the
 working tree must be clean apart from `ingest/` and `content/photos/`. Web keys
 are content-addressed (`{slug}/{hash8}/…`), so re-running skips identical

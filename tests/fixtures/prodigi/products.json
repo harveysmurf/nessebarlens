@@ -5,6 +5,8 @@
       "sku": "GLOBAL-FAP-12X16",
       "attributes": {},
       "printAreaPx": {
+        "width": 3600,
+        "height": 4800,
         "short": 3600,
         "long": 4800
       },
@@ -252,6 +254,8 @@
       "sku": "GLOBAL-FAP-20X28",
       "attributes": {},
       "printAreaPx": {
+        "width": 6000,
+        "height": 8400,
         "short": 6000,
         "long": 8400
       },
@@ -499,6 +503,8 @@
       "sku": "GLOBAL-FAP-28X40",
       "attributes": {},
       "printAreaPx": {
+        "width": 8400,
+        "height": 12000,
         "short": 8400,
         "long": 12000
       },
@@ -747,6 +753,8 @@
         "color": "black"
       },
       "printAreaPx": {
+        "width": 2400,
+        "height": 3600,
         "short": 2400,
         "long": 3600
       },
@@ -995,6 +1003,8 @@
         "color": "black"
       },
       "printAreaPx": {
+        "width": 4800,
+        "height": 7200,
         "short": 4800,
         "long": 7200
       },
@@ -1240,6 +1250,8 @@
         "color": "black"
       },
       "printAreaPx": {
+        "width": 7200,
+        "height": 10800,
         "short": 7200,
         "long": 10800
       },
@@ -1485,6 +1497,8 @@
         "wrap": "ImageWrap"
       },
       "printAreaPx": {
+        "width": 4545,
+        "height": 5745,
         "short": 4545,
         "long": 5745
       },
@@ -1730,6 +1744,8 @@
         "wrap": "ImageWrap"
       },
       "printAreaPx": {
+        "width": 6945,
+        "height": 9345,
         "short": 6945,
         "long": 9345
       },
@@ -1975,6 +1991,8 @@
         "wrap": "ImageWrap"
       },
       "printAreaPx": {
+        "width": 9600,
+        "height": 13200,
         "short": 9600,
         "long": 13200
       },

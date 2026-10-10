@@ -7,6 +7,7 @@
  * store/interaction functions stay in `application/fulfillment/download-token.ts`.
  */
 
+import { HEX_32_PATTERN } from "../pricing/crypto-hex";
 import { isCheckoutSessionId } from "./order-decision";
 
 /** Default lifetime of a download token: 30 days from issuance. */
@@ -16,7 +17,7 @@ export const DOWNLOAD_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
 export const DOWNLOAD_TOKEN_MAX_DOWNLOADS = 5;
 
 /** 128 bits, hex. The length *is* the grammar, so no two spellings pass. */
-const TOKEN_PATTERN = /^[0-9a-f]{32}$/;
+const TOKEN_PATTERN = HEX_32_PATTERN;
 
 export type DownloadTokenRecord = {
   v: 1;

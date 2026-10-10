@@ -12,6 +12,7 @@ import sharp from "sharp";
 import { parse as parseYaml } from "yaml";
 
 import { buildCatalog } from "../scripts/build-catalog.mjs";
+import { renderPrintAsset } from "../scripts/derivative-image.mjs";
 import {
   MASTERS_BUCKET_NAME,
   STAGING_MASTERS_BUCKET_NAME,
@@ -23,6 +24,7 @@ import {
   branchName,
   createReadMastersS3,
   createS3,
+  md5Hex,
   pairInputs,
   parseArgs,
   patchCatalogFactsYaml,
@@ -31,6 +33,7 @@ import {
   readCatalogForSync,
   renderCatalogYaml,
   resolutionFindings,
+  runBackfillPrintAssets,
   runPublish,
   syncCatalogFacts,
   syncDecision,
@@ -68,6 +71,23 @@ async function writeMaster(
     create: { width, height, channels: 3, background: { r: 128, g: 64, b: 32 } },
   });
   if (exif) pipeline = pipeline.withMetadata({ exif: { IFD0: { Make: "Fixture" } } });
+  if (orientation) pipeline = pipeline.withMetadata({ orientation });
+  await pipeline.jpeg({ quality: 90 }).toFile(file);
+}
+
+/**
+ * A master with a red square in the top-left on a blue field, so a rotation can
+ * be read from the pixels rather than inferred from the dimensions (#307).
+ */
+async function writeCornerMaster(file, { width = 3600, height = 2400, orientation } = {}) {
+  const red = await sharp({
+    create: { width: 400, height: 400, channels: 3, background: { r: 255, g: 0, b: 0 } },
+  })
+    .png()
+    .toBuffer();
+  let pipeline = sharp({
+    create: { width, height, channels: 3, background: { r: 0, g: 0, b: 255 } },
+  }).composite([{ input: red, top: 0, left: 0 }]);
   if (orientation) pipeline = pipeline.withMetadata({ orientation });
   await pipeline.jpeg({ quality: 90 }).toFile(file);
 }
@@ -144,6 +164,7 @@ test("parseArgs reads the flags", () => {
     only: undefined,
     replaceImage: undefined,
     dir: undefined,
+    backfillPrintAssets: false,
   });
   assert.deepEqual(parseArgs(["--apply", "--only", "dawn, dusk", "--replace-image", "dawn", "--dir", "drop"]), {
     apply: true,
@@ -154,6 +175,7 @@ test("parseArgs reads the flags", () => {
     only: ["dawn", "dusk"],
     replaceImage: "dawn",
     dir: "drop",
+    backfillPrintAssets: false,
   });
   assert.deepEqual(parseArgs(["--promote", "--pr", "242", "--dir", "drop"]), {
     apply: false,
@@ -164,6 +186,7 @@ test("parseArgs reads the flags", () => {
     only: undefined,
     replaceImage: undefined,
     dir: "drop",
+    backfillPrintAssets: false,
   });
   assert.deepEqual(parseArgs(["--audit", "--json"]), {
     apply: false,
@@ -174,6 +197,7 @@ test("parseArgs reads the flags", () => {
     only: undefined,
     replaceImage: undefined,
     dir: undefined,
+    backfillPrintAssets: false,
   });
   // A missing or non-numeric --pr is left undefined rather than treated as 0.
   assert.equal(parseArgs(["--promote"]).pr, undefined);
@@ -220,6 +244,19 @@ test("validatePhoto checks the schema, the generated keys, and the hash rules", 
   });
   assert.match(withGenerated.errors.join("\n"), /master_sha256 must be absent/);
 
+  // The #307 print-asset keys are generated too: an owner must not set them.
+  for (const key of ["print_asset_sha256", "print_asset_md5"]) {
+    const withPrintAssetKey = validatePhoto({
+      ...base,
+      yamlText: OWNER_YAML + `${key}: ${"a".repeat(64)}\n`,
+    });
+    assert.match(
+      withPrintAssetKey.errors.join("\n"),
+      new RegExp(`${key} must be absent`),
+      key,
+    );
+  }
+
   const badSchema = validatePhoto({ ...base, yamlText: "title: ''\ncategory: fine-art\n" });
   assert.match(badSchema.errors.join("\n"), /dawn\.yaml: title:/);
 
@@ -257,6 +294,7 @@ test("planWebObjects is four widths × two formats under {slug}/{hash}", () => {
 });
 
 const FACTS = { width: 4901, height: 3351, orientation: "landscape" };
+const PRINT_ASSET = { sha256: "b".repeat(64), md5: "c".repeat(32) };
 
 test("renderCatalogYaml keeps the owner's comment and appends the generated keys", () => {
   const out = renderCatalogYaml(OWNER_YAML, {
@@ -264,6 +302,7 @@ test("renderCatalogYaml keeps the owner's comment and appends the generated keys
     masterSha256: "a".repeat(64),
     imageHash: "abcd1234",
     masterFacts: FACTS,
+    printAsset: PRINT_ASSET,
   });
   assert.match(out, /# owner note/);
   assert.match(out, /title: Dawn/);
@@ -273,10 +312,12 @@ test("renderCatalogYaml keeps the owner's comment and appends the generated keys
   assert.match(out, /master_width: 4901/);
   assert.match(out, /master_height: 3351/);
   assert.match(out, /orientation: landscape/);
+  assert.match(out, new RegExp(`print_asset_sha256: ${"b".repeat(64)}`));
+  assert.match(out, new RegExp(`print_asset_md5: ${"c".repeat(32)}`));
   assert.match(out, /# written by publish-photos/);
   // The generated keys are last, in the order publish-photos writes them.
   assert.ok(out.indexOf("image_hash") > out.indexOf("category:"));
-  const order = ["master_sha256", "image_hash", "master_width", "master_height", "orientation"];
+  const order = ["master_sha256", "image_hash", "master_width", "master_height", "orientation", "print_asset_sha256", "print_asset_md5"];
   const indices = order.map((key) => out.indexOf(`${key}:`));
   assert.deepEqual([...indices].sort((a, b) => a - b), indices);
 });
@@ -287,6 +328,7 @@ test("renderCatalogYaml does not duplicate an owner slug", () => {
     masterSha256: "a".repeat(64),
     imageHash: "abcd1234",
     masterFacts: FACTS,
+    printAsset: PRINT_ASSET,
   });
   assert.equal(out.match(/^slug:/gm)?.length, 1);
 });
@@ -347,7 +389,7 @@ test("one bad photo in a batch of three uploads nothing and reports every error"
   }
 });
 
-test("--apply uploads 8 web objects + 1 staging master and never production masters", async () => {
+test("--apply uploads 8 web objects + a staging master + a print asset", async () => {
   const dir = makeProject();
   try {
     await writeMaster(path.join(dir, "ingest/dawn.jpg"), { exif: true });
@@ -358,16 +400,29 @@ test("--apply uploads 8 web objects + 1 staging master and never production mast
     const web = d.s3.puts.filter((p) => p.bucket === WEB_BUCKET_NAME);
     const staging = d.s3.puts.filter((p) => p.bucket === STAGING_MASTERS_BUCKET_NAME);
     assert.equal(web.length, 8);
-    assert.equal(staging.length, 1);
+    assert.equal(staging.length, 2);
     assert.equal(d.s3.puts.some((p) => p.bucket === MASTERS_BUCKET_NAME), false);
-    assert.equal(staging[0]!.key, "prints/dawn.jpg");
+
+    const stagingMaster = staging.find((p) => p.key === "prints/dawn.jpg");
+    const stagingPrint = staging.find((p) => p.key === "print-assets/dawn.jpg");
+    assert.ok(stagingMaster, "staging master uploaded");
+    assert.ok(stagingPrint, "print asset uploaded to staging");
 
     // The staging master is a <=2500px, EXIF-stripped, aspect-preserving JPEG.
-    const meta = await sharp(staging[0]!.body).metadata();
+    const meta = await sharp(stagingMaster!.body).metadata();
     assert.equal(meta.format, "jpeg");
     assert.equal(meta.width, 2500);
     assert.ok(Math.abs((meta.height ?? 0) - (2500 * 2400) / 3600) <= 1, `height ${meta.height}`);
     assert.equal(meta.exif, undefined, "staging master must have no EXIF");
+
+    // The print asset (#307): the 3600x2400 landscape is turned 90° clockwise
+    // to a 2400x3600 portrait, sRGB with an ICC profile and no EXIF.
+    const printMeta = await sharp(stagingPrint!.body).metadata();
+    assert.equal(printMeta.format, "jpeg");
+    assert.equal(printMeta.width, 2400, "landscape rotated to portrait width");
+    assert.equal(printMeta.height, 3600, "landscape rotated to portrait height");
+    assert.equal(printMeta.exif, undefined, "print asset must have no EXIF");
+    assert.ok(printMeta.icc, "print asset must embed an sRGB ICC profile");
 
     // The written YAML gains the generated keys and keeps the owner's comment.
     const written = readFileSync(path.join(dir, "content/photos/dawn.yaml"), "utf8");
@@ -378,7 +433,16 @@ test("--apply uploads 8 web objects + 1 staging master and never production mast
     assert.match(written, /master_width: 3600/);
     assert.match(written, /master_height: 2400/);
     assert.match(written, /orientation: landscape/);
+    assert.match(written, /print_asset_sha256: [0-9a-f]{64}/);
+    assert.match(written, /print_asset_md5: [0-9a-f]{32}/);
     assert.match(written, /# written by publish-photos/);
+
+    // The catalog's print_asset_sha256 is the digest of the exact bytes both
+    // buckets received, and print_asset_md5 is their MD5 — the value Prodigi
+    // checks (#307).
+    const writtenData = parseYaml(written) as Record<string, string>;
+    assert.equal(writtenData.print_asset_sha256, await sha256Hex(stagingPrint!.body));
+    assert.equal(writtenData.print_asset_md5, md5Hex(stagingPrint!.body));
 
     // No committed placeholder is written anymore (#245).
     assert.equal(existsSync(path.join(dir, "public/placeholders")), false);
@@ -1049,6 +1113,110 @@ test("a publish dry run reports the drift but writes no YAML (#297)", async () =
       PUBLISHED_NO_FACTS,
       "a dry run must leave the catalog YAML untouched",
     );
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("--backfill-print-assets renders from ingest and writes the two keys (#307)", async () => {
+  const dir = makeProject();
+  try {
+    await writeMaster(path.join(dir, "ingest/dawn.jpg"));
+    const bytes = readFileSync(path.join(dir, "ingest/dawn.jpg"));
+    const sha = await sha256Hex(bytes);
+    // A published entry with facts but no print asset — the state #307 fixes.
+    writeFileSync(
+      path.join(dir, "content/photos/dawn.yaml"),
+      [
+        "title: Dawn",
+        "category: fine-art",
+        "slug: dawn",
+        `master_sha256: ${sha}`,
+        "image_hash: aaaaaaaa",
+        "master_width: 3600",
+        "master_height: 2400",
+        "orientation: landscape",
+        "",
+      ].join("\n"),
+    );
+
+    const d = deps();
+    d.readS3 = d.syncS3;
+    const result = await runBackfillPrintAssets({ cwd: dir, apply: true }, d);
+    assert.equal(result.status, 0, result.fatals?.join("\n"));
+
+    const staging = d.s3.puts.filter(
+      (p) => p.bucket === STAGING_MASTERS_BUCKET_NAME && p.key === "print-assets/dawn.jpg",
+    );
+    assert.equal(staging.length, 1, "the print asset is uploaded to staging");
+
+    const written = parseYaml(
+      readFileSync(path.join(dir, "content/photos/dawn.yaml"), "utf8"),
+    ) as Record<string, unknown>;
+    assert.equal(written.master_sha256, sha, "master_sha256 is unchanged");
+    assert.equal(written.image_hash, "aaaaaaaa", "image_hash is unchanged");
+    assert.equal(written.print_asset_sha256, await sha256Hex(staging[0]!.body));
+    assert.equal(written.print_asset_md5, md5Hex(staging[0]!.body));
+    assert.ok(d.exec.calls.some((c) => c[0] === "gh" && c[1] === "pr"), "a PR is opened");
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("renderPrintAsset turns a landscape master 90° clockwise and leaves portrait/square (#307)", async () => {
+  const dir = makeProject();
+  try {
+    const readPixel = async (file, orientation) => {
+      const out = await renderPrintAsset(readFileSync(file), orientation);
+      const { data, info } = await sharp(out)
+        .raw()
+        .toBuffer({ resolveWithObject: true });
+      const { width, height, channels } = info;
+      const at = (x, y) => {
+        const i = (y * width + x) * channels;
+        return { r: data[i]!, g: data[i + 1]!, b: data[i + 2]! };
+      };
+      return { width, height, at, out };
+    };
+
+    // Landscape 3600×2400 with the red corner top-left: after a 90° clockwise
+    // turn the red corner must be top-right, and the output must be portrait.
+    const landscape = path.join(dir, "landscape.jpg");
+    await writeCornerMaster(landscape, { width: 3600, height: 2400 });
+    const turned = await readPixel(landscape, "landscape");
+    assert.equal(turned.width, 2400);
+    assert.equal(turned.height, 3600);
+    const tr = turned.at(turned.width - 100, 100);
+    assert.ok(tr.r > 200 && tr.g < 80, `red corner expected top-right, got ${JSON.stringify(tr)}`);
+    const bl = turned.at(100, turned.height - 100);
+    assert.ok(bl.b > 200, `blue expected bottom-left, got ${JSON.stringify(bl)}`);
+
+    // Portrait is not turned.
+    const portraitFile = path.join(dir, "portrait.jpg");
+    await writeCornerMaster(portraitFile, { width: 2400, height: 3600 });
+    const portrait = await readPixel(portraitFile, "portrait");
+    assert.equal(portrait.width, 2400);
+    assert.equal(portrait.height, 3600);
+    assert.ok(portrait.at(100, 100).r > 200, "portrait keeps the red corner top-left");
+
+    // An EXIF-orientation-6 master is stored landscape but read as portrait;
+    // autoOrient turns it upright and no #307 rotation is added. Orientation 6
+    // is "rotate 90° CW", so the stored top-left red corner reads top-right.
+    const tagged = path.join(dir, "tagged.jpg");
+    await writeCornerMaster(tagged, { width: 3600, height: 2400, orientation: 6 });
+    const taggedOut = await readPixel(tagged, "portrait");
+    assert.equal(taggedOut.width, 2400);
+    assert.equal(taggedOut.height, 3600);
+    const taggedTr = taggedOut.at(taggedOut.width - 100, 100);
+    assert.ok(taggedTr.r > 200 && taggedTr.g < 80, "EXIF-6 red corner reads top-right");
+
+    // Square is not turned.
+    const squareFile = path.join(dir, "square.jpg");
+    await writeCornerMaster(squareFile, { width: 3000, height: 3000 });
+    const square = await readPixel(squareFile, "square");
+    assert.equal(square.width, 3000);
+    assert.equal(square.height, 3000);
+    assert.ok(square.at(100, 100).r > 200, "square keeps the red corner top-left");
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }

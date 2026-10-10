@@ -67,7 +67,13 @@ function variantMatches(variant, attributes) {
   );
 }
 
-/** The default print area of one SKU, as an unordered short/long pair. */
+/**
+ * The default print area of one SKU. The `{ short, long }` pair is the ordering
+ * view the resolution maths uses; `width` and `height` keep the raw orientation
+ * (#307), because every pinned print area is portrait and the print asset must
+ * be turned to match. A landscape value here would be a captured-catalogue
+ * change worth a failing contract test, not a silent flip.
+ */
 export function printAreaOf(product, attributes) {
   const variant = product.variants?.find((v) => variantMatches(v, attributes));
   if (!variant) {
@@ -78,7 +84,12 @@ export function printAreaOf(product, attributes) {
     throw new Error("variant has no printAreaSizes.default");
   }
   const { horizontalResolution, verticalResolution } = area;
-  return { short: Math.min(horizontalResolution, verticalResolution), long: Math.max(horizontalResolution, verticalResolution) };
+  return {
+    width: horizontalResolution,
+    height: verticalResolution,
+    short: Math.min(horizontalResolution, verticalResolution),
+    long: Math.max(horizontalResolution, verticalResolution),
+  };
 }
 
 export function shipsToOf(product, attributes) {

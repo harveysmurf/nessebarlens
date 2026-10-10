@@ -4,6 +4,8 @@ import test from "node:test";
 
 import {
   assertUploadIsSafe,
+  isPrintAssetKey,
+  printAssetKeyFromSlug,
   slugFromDroppedName,
   webDerivativeKey,
 } from "../src/domain/catalog/derivative-ladder.ts";
@@ -72,6 +74,17 @@ test("an upload is refused when a bucket is not one we own", () => {
       }),
     /masters bucket must be/,
   );
+});
+
+test("printAssetKeyFromSlug builds print-assets/{slug}.jpg and isPrintAssetKey accepts it (#307)", () => {
+  assert.equal(printAssetKeyFromSlug("dawn"), "print-assets/dawn.jpg");
+  assert.equal(printAssetKeyFromSlug("nessebar-harbour"), "print-assets/nessebar-harbour.jpg");
+  assert.equal(isPrintAssetKey("print-assets/dawn.jpg"), true);
+  // Not a print asset, and not confused with the digital master key.
+  assert.equal(isPrintAssetKey("prints/dawn.jpg"), false);
+  assert.equal(isPrintAssetKey("print-assets/dawn.png"), false);
+  assert.equal(isPrintAssetKey("print-assets/Dawn.jpg"), false);
+  assert.equal(isPrintAssetKey("print-assets/dawn/extra.jpg"), false);
 });
 
 test("the drop folder is gitignored, so masters never reach a commit", () => {
