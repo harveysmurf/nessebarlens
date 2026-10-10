@@ -1,4 +1,4 @@
-import { HEX_64_PATTERN } from "../pricing/crypto-hex";
+import { HEX_32_PATTERN, HEX_64_PATTERN } from "../pricing/crypto-hex";
 import { PHOTO_SLUG_PATTERN } from "./derivative-ladder";
 import {
   type MasterFacts,
@@ -43,6 +43,12 @@ export type PhotoFile = {
   imageHash?: string;
   /** Oriented pixel size and orientation, measured from the master file (#295/#297). */
   master?: MasterFacts;
+  /**
+   * The pre-rotated file Prodigi receives (#307): its SHA-256 and the MD5 sent
+   * as `assets[0].md5Hash`. Generated together by `publish-photos`; a file
+   * carries both keys or neither.
+   */
+  printAsset?: { sha256: string; md5: string };
 };
 
 export type PhotoValidation =
@@ -69,6 +75,8 @@ const KNOWN_KEYS = new Set([
   "master_width",
   "master_height",
   "orientation",
+  "print_asset_sha256",
+  "print_asset_md5",
 ]);
 
 const ALT_MAX = 200;
@@ -223,7 +231,7 @@ const MASTER_FACTS_MESSAGE: Record<MasterFactsReason, string> = {
     "orientation does not match master_width and master_height",
 };
 
-  /**
+/**
  * The master facts, if the file carries any of the three keys. A set that is
  * present must be complete and consistent: a half-written trio is a publish
  * bug, not a missing value, so it fails rather than being ignored. `undefined`
@@ -258,6 +266,45 @@ function readMasterFacts(
 }
 
 /**
+ * The print asset's sha256 and md5 (#307). The two keys travel together: a file
+ * with only one is a publish bug (the asset would be uploaded without the MD5
+ * Prodigi checks, or vice versa), so it fails rather than being ignored.
+ * `undefined` means the file carries neither key — allowed until #307's PR 2
+ * makes a published photo require one.
+ */
+function readPrintAsset(
+  data: Record<string, unknown>,
+  problems: string[],
+): { sha256: string; md5: string } | undefined {
+  const hasSha = data.print_asset_sha256 !== undefined;
+  const hasMd5 = data.print_asset_md5 !== undefined;
+  if (!hasSha && !hasMd5) return undefined;
+  if (hasSha !== hasMd5) {
+    problems.push(
+      "print_asset_sha256 and print_asset_md5: required together",
+    );
+    return undefined;
+  }
+
+  const sha256 = readHex(
+    "print_asset_sha256",
+    data.print_asset_sha256,
+    64,
+    HEX_64_PATTERN,
+    problems,
+  );
+  const md5 = readHex(
+    "print_asset_md5",
+    data.print_asset_md5,
+    32,
+    HEX_32_PATTERN,
+    problems,
+  );
+  if (sha256 === undefined || md5 === undefined) return undefined;
+  return { sha256, md5 };
+}
+
+/**
  * Validates one photo file against every rule, collecting all problems rather
  * than stopping at the first, so a single run reports the whole file. The
  * filename is the slug the file declares — a `slug:` that disagrees with it is
@@ -280,7 +327,12 @@ export function validatePhotoFile(
   {
     requirePublishedHashes = true,
     requireMasterFacts = true,
-  }: { requirePublishedHashes?: boolean; requireMasterFacts?: boolean } = {},
+    requirePrintAssets = false,
+  }: {
+    requirePublishedHashes?: boolean;
+    requireMasterFacts?: boolean;
+    requirePrintAssets?: boolean;
+  } = {},
 ): PhotoValidation {
   if (!isMapping(data)) {
     return { ok: false, problems: ["file: expected a YAML mapping"] };
@@ -317,6 +369,7 @@ export function validatePhotoFile(
     problems,
   );
   const master = readMasterFacts(data, problems);
+  const printAsset = readPrintAsset(data, problems);
 
   // A published photo is served from the real ladder, so the two values the
   // publish script writes are required, not optional: without them the gallery
@@ -338,6 +391,16 @@ export function validatePhotoFile(
   if (published && requireMasterFacts && !master) {
     problems.push(
       "master_width, master_height and orientation: required for a published photo",
+    );
+  }
+
+  // A published photo requires a print asset once #307's PR 2 lands and the
+  // catalog is backfilled: without it checkout would send Prodigi the
+  // unrotated master (#307). PR 1 leaves this off so the backfill can read the
+  // catalog before the assets exist.
+  if (published && requirePrintAssets && !printAsset) {
+    problems.push(
+      "print_asset_sha256 and print_asset_md5: required for a published photo",
     );
   }
 
@@ -364,6 +427,7 @@ export function validatePhotoFile(
       masterSha256,
       imageHash,
       master,
+      printAsset,
     },
   };
 }

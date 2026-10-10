@@ -372,3 +372,56 @@ test("one run reports every problem in the file, not only the first", () => {
   assert.ok(found.some((p) => p.startsWith("alt:")), found.join("; "));
   assert.ok(found.length >= 5, found.join("; "));
 });
+
+// ---------------------------------------------------------------------------
+// Print asset (#307)
+// ---------------------------------------------------------------------------
+
+const PRINT_ASSET = { print_asset_sha256: "b".repeat(64), print_asset_md5: "c".repeat(32) };
+
+test("a print asset is optional in PR 1, and kept when present", () => {
+  // Without the keys the published photo still validates (PR 1), and image_hash
+  // and master facts are unaffected.
+  assert.equal(validate(VALID).ok, true);
+  const withAsset = validate({ ...VALID, ...PRINT_ASSET });
+  assert.equal(withAsset.ok, true);
+  if (!withAsset.ok) return;
+  assert.deepEqual(withAsset.photo.printAsset, {
+    sha256: "b".repeat(64),
+    md5: "c".repeat(32),
+  });
+});
+
+test("a print asset half-written is refused, and bad hex is refused (#307)", () => {
+  const onlySha = problems({ ...VALID, print_asset_sha256: "b".repeat(64) });
+  assert.ok(
+    onlySha.some((p) => p.includes("required together")),
+    onlySha.join("; "),
+  );
+  const onlyMd5 = problems({ ...VALID, print_asset_md5: "c".repeat(32) });
+  assert.ok(
+    onlyMd5.some((p) => p.includes("required together")),
+    onlyMd5.join("; "),
+  );
+  const shortSha = problems({ ...VALID, print_asset_sha256: "b".repeat(63), print_asset_md5: "c".repeat(32) });
+  assert.ok(shortSha.some((p) => p.includes("print_asset_sha256: must be 64")), shortSha.join("; "));
+  const upperMd5 = problems({ ...VALID, print_asset_sha256: "b".repeat(64), print_asset_md5: "C".repeat(32) });
+  assert.ok(upperMd5.some((p) => p.includes("print_asset_md5: must be 32")), upperMd5.join("; "));
+  const badMd5 = problems({ ...VALID, print_asset_sha256: "b".repeat(64), print_asset_md5: "z".repeat(32) });
+  assert.ok(badMd5.some((p) => p.includes("print_asset_md5: must be 32")), badMd5.join("; "));
+});
+
+test("requirePrintAssets: true fails a published photo without one (PR 2)", () => {
+  const result = validatePhotoFile("photo", VALID, { requirePrintAssets: true });
+  assert.equal(result.ok, false);
+  if (result.ok) return;
+  assert.ok(
+    result.problems.some((p) => p.includes("print_asset_sha256 and print_asset_md5: required")),
+    result.problems.join("; "),
+  );
+  // With the asset present the requirement is satisfied.
+  assert.equal(
+    validatePhotoFile("photo", { ...VALID, ...PRINT_ASSET }, { requirePrintAssets: true }).ok,
+    true,
+  );
+});

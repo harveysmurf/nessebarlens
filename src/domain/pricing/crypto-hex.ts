@@ -7,6 +7,13 @@
  */
 export const HEX_64_PATTERN = /^[0-9a-f]{64}$/i;
 
+/**
+ * A 16-byte value as 32 lowercase hex characters — a download token, or a print
+ * asset's MD5 (#307). Owned here with `HEX_64_PATTERN` so the repository has one
+ * declaration of "what a 32-hex value looks like" rather than a copy per field.
+ */
+export const HEX_32_PATTERN = /^[0-9a-f]{32}$/;
+
 export async function hmacSha256Hex(
   content: string,
   secret: string,

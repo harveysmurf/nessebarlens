@@ -39,6 +39,7 @@ import {
   MASTER_SHA256_PATTERN,
   MASTERS_BUCKET_NAME,
   masterKeyFromSlug,
+  printAssetKeyFromSlug,
 } from "../src/domain/catalog/derivative-ladder";
 import { PHOTOS } from "../src/generated/catalog";
 
@@ -95,6 +96,38 @@ export async function verifyMasters({
       failures.push(
         `${photo.slug}: sha256 mismatch (catalog ${photo.masterSha256.slice(0, 8)}…, ` +
           `bucket ${stored ? `${stored.slice(0, 8)}…` : "unset"})`,
+      );
+      continue;
+    }
+
+    // The print asset (#307). PR 1 checks it only where the catalog has one;
+    // PR 2 makes a published photo require it. Same three failures as the
+    // master, on `print-assets/{slug}.jpg`.
+    if (!photo.printAsset) continue;
+    const printKey = printAssetKeyFromSlug(photo.slug);
+    let printHead;
+    try {
+      printHead = await s3.head(MASTERS_BUCKET_NAME, printKey);
+    } catch (error) {
+      failures.push(
+        `${photo.slug}: print asset head failed: ${error?.message ?? error}`,
+      );
+      continue;
+    }
+    if (!printHead) {
+      failures.push(`${photo.slug}: print asset missing from ${MASTERS_BUCKET_NAME}`);
+      continue;
+    }
+    if (!(printHead.contentLength > 0)) {
+      failures.push(`${photo.slug}: print asset empty`);
+      continue;
+    }
+    const printStored = metadataValue(printHead.metadata, MASTER_METADATA_KEY);
+    if (printStored !== photo.printAsset.sha256) {
+      failures.push(
+        `${photo.slug}: print asset sha256 mismatch (catalog ` +
+          `${photo.printAsset.sha256.slice(0, 8)}…, ` +
+          `bucket ${printStored ? `${printStored.slice(0, 8)}…` : "unset"})`,
       );
     }
   }

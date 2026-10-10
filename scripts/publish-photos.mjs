@@ -9,6 +9,7 @@
  *   npm run publish-photos -- --apply --only dawn,dusk
  *   npm run publish-photos -- --apply --replace-image dawn
  *   npm run publish-photos -- --promote --pr 42  # upload the masters, auto-merge
+ *   npm run publish-photos -- --apply --backfill-print-assets  # add print assets (#307)
  *   npm run publish-photos -- --audit            # read-only bucket vs catalog report (#244)
  *
  * `--audit` is handled in scripts/audit-photos.mjs; it never writes. Every
@@ -44,6 +45,7 @@
 
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import path from "node:path";
 import process from "node:process";
 import { spawnSync } from "node:child_process";
@@ -68,6 +70,7 @@ import {
   WEB_DERIVATIVE_WIDTHS,
   assertUploadIsSafe,
   masterKeyFromSlug,
+  printAssetKeyFromSlug,
   sha256Hex,
   slugFromDroppedName,
   webDerivativeKey,
@@ -78,6 +81,7 @@ import {
   derivativeContentType,
   masterDimensions,
   renderDerivative,
+  renderPrintAsset,
   renderStagingMaster,
 } from "./derivative-image.mjs";
 import { runAudit } from "./audit-photos.mjs";
@@ -91,6 +95,8 @@ const GENERATED_KEYS = [
   "master_width",
   "master_height",
   "orientation",
+  "print_asset_sha256",
+  "print_asset_md5",
 ];
 /** A re-ingest overwrites the staging master's same key; a week is enough. */
 const STAGING_MASTER_CACHE_CONTROL = "public, max-age=604800";
@@ -130,6 +136,7 @@ export function parseArgs(argv) {
     only: only && only.length > 0 ? only : undefined,
     replaceImage: valueOf("--replace-image"),
     dir: valueOf("--dir"),
+    backfillPrintAssets: has("--backfill-print-assets"),
   };
 }
 
@@ -266,15 +273,26 @@ export function planWebObjects(slug, hash8) {
 }
 
 /**
+ * The MD5 of a byte buffer, as the catalog stores it and Prodigi receives it
+ * (`assets[0].md5Hash`). Node's crypto, unlike the pure modules' Web Crypto,
+ * because MD5 is not exposed there — this is scripts-only code.
+ */
+export function md5Hex(bytes) {
+  return createHash("md5").update(bytes).digest("hex");
+}
+
+/**
  * The owner's YAML with the generated keys appended and the block kept under
  * one comment. The Document API preserves the owner's comments and key order.
  *
  * The master's pixel size and orientation are written here, in the same step as
- * the hash they measure, so the facts can never drift from the file — #295.
+ * the hash they measure, so the facts can never drift from the file — #295. The
+ * print asset's `print_asset_sha256` and `print_asset_md5` are written next to
+ * them (#307): the digest of the exact bytes uploaded for Prodigi.
  */
 export function renderCatalogYaml(
   ownerText,
-  { slug, masterSha256, imageHash, masterFacts },
+  { slug, masterSha256, imageHash, masterFacts, printAsset },
 ) {
   const doc = parseDocument(ownerText);
   const map = doc.contents;
@@ -298,6 +316,12 @@ export function renderCatalogYaml(
     new Pair(new Scalar("orientation"), new Scalar(masterFacts.orientation)),
   );
   generated.push("orientation");
+  map.add(
+    new Pair(new Scalar("print_asset_sha256"), new Scalar(printAsset.sha256)),
+  );
+  generated.push("print_asset_sha256");
+  map.add(new Pair(new Scalar("print_asset_md5"), new Scalar(printAsset.md5)));
+  generated.push("print_asset_md5");
 
   const keyOf = (pair) =>
     pair.key && typeof pair.key === "object" ? pair.key.value : pair.key;
@@ -458,6 +482,25 @@ export function planPromoteAction({ existing, masterSha256, isReplace }) {
     action: "refuse",
     reason:
       `already holds a different master (sha256 ${stored ?? "unset"}); ` +
+      `re-run publish-photos with --replace-image to overwrite it`,
+  };
+}
+
+/**
+ * The print-asset twin of `planPromoteAction` (#307). Same four outcomes, on
+ * the print asset's own key and sha256: absent → upload, same sha → skip, a
+ * different sha after `--replace-image` → replace, otherwise refuse. Kept a
+ * separate function so the refusal names the print asset, not the master.
+ */
+export function planPrintAssetAction({ existing, printAssetSha256, isReplace }) {
+  if (!existing) return { action: "upload" };
+  const stored = metadataValue(existing.metadata, MASTER_METADATA_KEY);
+  if (stored === printAssetSha256) return { action: "skip" };
+  if (isReplace) return { action: "replace" };
+  return {
+    action: "refuse",
+    reason:
+      `already holds a different print asset (sha256 ${stored ?? "unset"}); ` +
       `re-run publish-photos with --replace-image to overwrite it`,
   };
 }
@@ -650,6 +693,27 @@ export function patchCatalogFactsYaml(yamlText, facts) {
   map.set("master_width", facts.width);
   map.set("master_height", facts.height);
   map.set("orientation", facts.orientation);
+  return doc.toString();
+}
+
+/** The print asset's sha256 and md5 from raw YAML, if both are present. */
+function readPrintAssetSafe(data) {
+  if (!data || typeof data !== "object") return undefined;
+  const { print_asset_sha256: sha256, print_asset_md5: md5 } = data;
+  if (typeof sha256 !== "string" || typeof md5 !== "string") return undefined;
+  return { sha256, md5 };
+}
+
+/**
+ * Patches `print_asset_sha256` and `print_asset_md5` into an existing YAML
+ * document (#307), preserving comments and key order. `parseDocument` + `set`
+ * replaces existing keys, so a re-run is idempotent.
+ */
+export function patchCatalogPrintAssetYaml(yamlText, { sha256, md5 }) {
+  const doc = parseDocument(yamlText);
+  const map = doc.contents;
+  map.set("print_asset_sha256", sha256);
+  map.set("print_asset_md5", md5);
   return doc.toString();
 }
 
@@ -1019,6 +1083,14 @@ export async function runPublish(options, deps = {}) {
     const masterFacts = { width, height, orientation: orientationOf(width, height) };
     const masterSha256 = await sha256Hex(bytes);
     const hash8 = masterSha256.slice(0, 8);
+    // The print asset (#307): rendered once here from the same master bytes, so
+    // its sha256 and md5 describe the exact file both buckets receive. A
+    // landscape master is turned 90° clockwise for the portrait print area.
+    const printAssetBytes = await renderPrintAsset(bytes, masterFacts.orientation);
+    const printAsset = {
+      sha256: await sha256Hex(printAssetBytes),
+      md5: md5Hex(printAssetBytes),
+    };
     const existing = readExistingCatalog(path.join(catalogDir, `${pair.slug}.yaml`));
     const { data, errors, warnings } = validatePhoto({
       slug: pair.slug,
@@ -1042,6 +1114,9 @@ export async function runPublish(options, deps = {}) {
       yamlText,
       webObjects: planWebObjects(pair.slug, hash8),
       stagingKey: masterKeyFromSlug(pair.slug),
+      printAssetBytes,
+      printAsset,
+      stagingPrintAssetKey: printAssetKeyFromSlug(pair.slug),
       yamlPath: path.join(catalogDir, `${pair.slug}.yaml`),
     });
   }
@@ -1067,6 +1142,10 @@ export async function runPublish(options, deps = {}) {
       log(`  ${WEB_BUCKET_NAME}/${object.key}  ${object.width}px ${object.format}`);
     }
     log(`  ${STAGING_MASTERS_BUCKET_NAME}/${plan.stagingKey}  staging master`);
+    log(
+      `  ${STAGING_MASTERS_BUCKET_NAME}/${plan.stagingPrintAssetKey}  print asset ` +
+        `(md5 ${plan.printAsset.md5.slice(0, 8)}…)`,
+    );
     log(`  write ${path.relative(cwd, plan.yamlPath) || plan.yamlPath}`);
   }
 
@@ -1140,6 +1219,17 @@ export async function runPublish(options, deps = {}) {
         contentType: "image/jpeg",
         cacheControl: STAGING_MASTER_CACHE_CONTROL,
       });
+      // The print asset lands next to the staging master, byte-identical to
+      // what --promote will upload, so a sandbox order's md5Hash matches (#307).
+      if (plan.printAssetBytes) {
+        await s3.put({
+          bucket: STAGING_MASTERS_BUCKET_NAME,
+          key: plan.stagingPrintAssetKey,
+          body: plan.printAssetBytes,
+          contentType: "image/jpeg",
+          cacheControl: STAGING_MASTER_CACHE_CONTROL,
+        });
+      }
     }
   } catch (error) {
     log(`error: upload failed: ${error?.message ?? error}`);
@@ -1156,11 +1246,38 @@ export async function runPublish(options, deps = {}) {
         masterSha256: plan.masterSha256,
         imageHash: plan.hash8,
         masterFacts: plan.masterFacts,
+        printAsset: plan.printAsset,
       }),
     );
     log(`  wrote ${path.relative(cwd, plan.yamlPath)}`);
   }
 
+  const opened = await openCatalogPr({
+    exec,
+    cwd,
+    log,
+    branch,
+    commitMessage,
+    body,
+    slugs,
+  });
+  return { ...opened, plans, branch, body };
+}
+
+/**
+ * The shared tail of a catalog PR: branch off origin/main, commit the catalog
+ * folder, push, and open the PR. Used by both a publish run and the #307
+ * print-asset backfill so the two cannot drift in how they open a PR.
+ */
+async function openCatalogPr({
+  exec,
+  cwd,
+  log,
+  branch,
+  commitMessage,
+  body,
+  slugs,
+}) {
   const gitSteps = [
     ["git", ["fetch", "origin"]],
     ["git", ["checkout", "-b", branch, "origin/main"]],
@@ -1196,7 +1313,7 @@ export async function runPublish(options, deps = {}) {
   }
   const prUrl = (pr.stdout.match(/https:\/\/\S+\/pull\/\d+/g) ?? []).pop() ?? "";
   log(prUrl || "PR created");
-  return { status: 0, plans, branch, body, prUrl };
+  return { status: 0, prUrl };
 }
 
 function finishByHand(log, branch, commitMessage, body, slugs, failed) {
@@ -1305,6 +1422,30 @@ export async function runPromote(options, deps = {}) {
         continue;
       }
 
+      // The print asset (#307). Its sha256 is required: --promote uploads it to
+      // production, and a photo without one is sold but unfulfillable. The
+      // orientation decides the rotation, so it comes from the catalog facts.
+      const expectedPrintSha =
+        data && typeof data === "object" ? data.print_asset_sha256 : undefined;
+      if (
+        typeof expectedPrintSha !== "string" ||
+        !MASTER_SHA256_PATTERN.test(expectedPrintSha)
+      ) {
+        fatals.push(
+          `${yaml.path}: print_asset_sha256 is missing or malformed; ` +
+            `run publish-photos --apply first`,
+        );
+        continue;
+      }
+      const facts = parseMasterFactsSafe(data);
+      if (!facts) {
+        fatals.push(
+          `${yaml.path}: master facts are missing or malformed; ` +
+            `run publish-photos --apply first`,
+        );
+        continue;
+      }
+
       // A replacement must be a genuinely new master, not a caption-only edit:
       // compare the head hash against the base branch's. An unreadable base is
       // treated as not-a-replacement, which refuses rather than overwrites.
@@ -1335,12 +1476,32 @@ export async function runPromote(options, deps = {}) {
         );
         continue;
       }
+
+      // Re-render the print asset from the same bytes. If sharp or libvips
+      // changed between publish and promote the bytes differ, the catalog's
+      // md5Hash would be wrong, and every Prodigi order would fail its check —
+      // so refuse and send the owner back to a fresh publish (#307).
+      const printAssetBytes = await renderPrintAsset(bytes, facts.orientation);
+      const actualPrintSha = await sha256Hex(printAssetBytes);
+      if (actualPrintSha !== expectedPrintSha) {
+        fatals.push(
+          `${yaml.slug}: the re-rendered print asset does not match ` +
+            `print_asset_sha256; re-run publish for ${yaml.slug} ` +
+            `(sharp or libvips changed since the photo was published)`,
+        );
+        continue;
+      }
+
       entries.push({
         slug: yaml.slug,
         key: masterKeyFromSlug(yaml.slug),
         masterSha256: expected,
         length: bytes.length,
         bytes,
+        printAssetKey: printAssetKeyFromSlug(yaml.slug),
+        printAssetSha256: expectedPrintSha,
+        printAssetLength: printAssetBytes.length,
+        printAssetBytes,
         isReplace: isReplacement({
           changeType: yaml.changeType,
           baseMasterSha256,
@@ -1371,46 +1532,87 @@ export async function runPromote(options, deps = {}) {
     actions = [];
     for (const entry of entries) {
       const existing = await s3.head(MASTERS_BUCKET_NAME, entry.key);
-      const plan = planPromoteAction({
+      const printExisting = await s3.head(
+        MASTERS_BUCKET_NAME,
+        entry.printAssetKey,
+      );
+      const master = planPromoteAction({
         existing,
         masterSha256: entry.masterSha256,
         isReplace: entry.isReplace,
       });
-      actions.push({ ...entry, ...plan });
+      const printAsset = planPrintAssetAction({
+        existing: printExisting,
+        printAssetSha256: entry.printAssetSha256,
+        isReplace: entry.isReplace,
+      });
+      actions.push({ ...entry, master, printAsset });
     }
   } catch (error) {
     log(`error: ${error?.message ?? error}`);
     return { status: 1, fatals: [String(error?.message ?? error)] };
   }
-  const refused = actions.filter((action) => action.action === "refuse");
+  const refused = actions.filter(
+    (action) =>
+      action.master.action === "refuse" ||
+      action.printAsset.action === "refuse",
+  );
   if (refused.length > 0) {
     log("");
     for (const action of refused) {
-      log(`error: ${MASTERS_BUCKET_NAME}/${action.key} ${action.reason}`);
+      if (action.master.action === "refuse") {
+        log(`error: ${MASTERS_BUCKET_NAME}/${action.key} ${action.master.reason}`);
+      }
+      if (action.printAsset.action === "refuse") {
+        log(
+          `error: ${MASTERS_BUCKET_NAME}/${action.printAssetKey} ${action.printAsset.reason}`,
+        );
+      }
     }
     log("nothing was uploaded and auto-merge was not enabled.");
-    return { status: 1, fatals: refused.map((a) => `${a.key}: ${a.reason}`) };
+    return {
+      status: 1,
+      fatals: refused.map((a) =>
+        a.master.action === "refuse"
+          ? `${a.key}: ${a.master.reason}`
+          : `${a.printAssetKey}: ${a.printAsset.reason}`,
+      ),
+    };
   }
 
   try {
     for (const action of actions) {
       log("");
       log(`${action.slug}: master_sha256 ${action.masterSha256.slice(0, 8)}`);
-      log(`  ${MASTERS_BUCKET_NAME}/${action.key}  ${action.action}`);
-      if (action.action === "skip") {
+      log(`  ${MASTERS_BUCKET_NAME}/${action.key}  ${action.master.action}`);
+      if (action.master.action !== "skip") {
+        await s3.put({
+          bucket: MASTERS_BUCKET_NAME,
+          key: action.key,
+          body: action.bytes,
+          contentType: "image/jpeg",
+          cacheControl: PROMOTE_MASTER_CACHE_CONTROL,
+          metadata: { [MASTER_METADATA_KEY]: action.masterSha256 },
+        });
+        if (action.master.action === "replace") {
+          log("  replacement: past buyers' downloads now get the new file");
+        }
+      } else {
         log("  skip (already holds this master)");
-        continue;
       }
-      await s3.put({
-        bucket: MASTERS_BUCKET_NAME,
-        key: action.key,
-        body: action.bytes,
-        contentType: "image/jpeg",
-        cacheControl: PROMOTE_MASTER_CACHE_CONTROL,
-        metadata: { [MASTER_METADATA_KEY]: action.masterSha256 },
-      });
-      if (action.action === "replace") {
-        log("  replacement: past buyers' downloads now get the new file");
+
+      log(`  ${MASTERS_BUCKET_NAME}/${action.printAssetKey}  ${action.printAsset.action}`);
+      if (action.printAsset.action !== "skip") {
+        await s3.put({
+          bucket: MASTERS_BUCKET_NAME,
+          key: action.printAssetKey,
+          body: action.printAssetBytes,
+          contentType: "image/jpeg",
+          cacheControl: PROMOTE_MASTER_CACHE_CONTROL,
+          metadata: { [MASTER_METADATA_KEY]: action.printAssetSha256 },
+        });
+      } else {
+        log("  skip (already holds this print asset)");
       }
     }
   } catch (error) {
@@ -1428,10 +1630,14 @@ export async function runPromote(options, deps = {}) {
   const mismatches = [];
   for (const action of actions) {
     let head;
+    let printHead;
     try {
       head = await s3.head(MASTERS_BUCKET_NAME, action.key);
+      printHead = await s3.head(MASTERS_BUCKET_NAME, action.printAssetKey);
     } catch (error) {
-      mismatches.push(`${action.key}: read-back failed: ${error?.message ?? error}`);
+      mismatches.push(
+        `${action.slug}: read-back failed: ${error?.message ?? error}`,
+      );
       continue;
     }
     const stored = metadataValue(head?.metadata, MASTER_METADATA_KEY);
@@ -1440,6 +1646,20 @@ export async function runPromote(options, deps = {}) {
         `${action.key}: read-back ${stored ?? "unset"} / ` +
           `${head?.contentLength ?? "?"} bytes does not match ` +
           `${action.masterSha256} / ${action.length} bytes`,
+      );
+    }
+    const storedPrint = metadataValue(
+      printHead?.metadata,
+      MASTER_METADATA_KEY,
+    );
+    if (
+      storedPrint !== action.printAssetSha256 ||
+      printHead?.contentLength !== action.printAssetLength
+    ) {
+      mismatches.push(
+        `${action.printAssetKey}: read-back ${storedPrint ?? "unset"} / ` +
+          `${printHead?.contentLength ?? "?"} bytes does not match ` +
+          `${action.printAssetSha256} / ${action.printAssetLength} bytes`,
       );
     }
   }
@@ -1465,6 +1685,235 @@ export async function runPromote(options, deps = {}) {
 }
 
 // ---------------------------------------------------------------------------
+// Backfill print assets (#307)
+// ---------------------------------------------------------------------------
+
+/**
+ * `--backfill-print-assets`: give already-published photos their print asset.
+ *
+ * For every published photo that lacks `print_asset_sha256`, it takes the
+ * master from the local `ingest/{slug}.jpg` when that file's sha256 equals the
+ * catalog's `master_sha256`; otherwise it downloads `prints/{slug}.jpg` from
+ * the production masters bucket with the read-only `R2_MASTERS_READ_*` creds
+ * and checks the sha256. It renders the print asset, uploads it to staging, and
+ * writes `print_asset_sha256` + `print_asset_md5` into the catalog. It never
+ * touches `master_sha256`, `image_hash` or the master objects.
+ *
+ * With `--apply` it uploads and opens the usual catalog PR, whose later
+ * `--promote` uploads the production print assets. Without it, it is a dry run.
+ */
+export async function runBackfillPrintAssets(options, deps = {}) {
+  const cwd = options.cwd ?? ROOT;
+  const dir = path.resolve(cwd, options.dir ?? DEFAULT_DIR);
+  const catalogDir = path.resolve(cwd, CATALOG_DIR);
+  const log = deps.log ?? ((line) => console.log(line));
+  const now = deps.now ?? (() => new Date());
+  const env = deps.env ?? process.env;
+  const exec = deps.exec ?? runCommand;
+  const s3 = deps.s3 ?? createS3(env);
+  const readFileImpl = deps.readFile ?? readFile;
+
+  let readS3;
+  try {
+    readS3 = deps.readS3 ?? createReadMastersS3(env);
+  } catch (error) {
+    const message = String(error?.message ?? error);
+    log(`error: ${message}`);
+    return { status: 1, fatals: [message] };
+  }
+
+  const { entries, problems: readProblems } = readCatalogForSync(catalogDir);
+  if (readProblems.length > 0) {
+    for (const problem of readProblems) log(`error: ${problem}`);
+    return { status: 1, fatals: readProblems };
+  }
+
+  const plans = [];
+  const fatals = [];
+  for (const entry of entries) {
+    if (!entry.published) continue;
+    let data;
+    try {
+      data = parseYaml(entry.yamlText);
+    } catch (error) {
+      fatals.push(`${entry.slug}: ${error.message}`);
+      continue;
+    }
+    if (readPrintAssetSafe(data)) {
+      log(`  skip: ${entry.slug} already has a print asset`);
+      continue;
+    }
+    if (
+      typeof entry.masterSha256 !== "string" ||
+      !MASTER_SHA256_PATTERN.test(entry.masterSha256)
+    ) {
+      fatals.push(`${entry.slug}: master_sha256 is missing or malformed`);
+      continue;
+    }
+    const facts = entry.catalogFacts ?? parseMasterFactsSafe(data);
+    if (!facts) {
+      fatals.push(
+        `${entry.slug}: master facts are missing; run a publish to sync the catalog first`,
+      );
+      continue;
+    }
+
+    // Prefer the local master bytes; fall back to the production object only
+    // when the drop folder no longer has them. Either way the bytes must hash
+    // to the catalog's master_sha256 — the asset is rendered from the master
+    // the catalog already promises.
+    let bytes;
+    let source;
+    const ingestPath = path.join(dir, `${entry.slug}.jpg`);
+    if (existsSync(ingestPath)) {
+      bytes = await readFileImpl(ingestPath);
+      if ((await sha256Hex(bytes)) !== entry.masterSha256) {
+        fatals.push(
+          `${path.relative(cwd, ingestPath) || ingestPath} does not match the catalog master_sha256`,
+        );
+        continue;
+      }
+      source = path.relative(cwd, ingestPath) || ingestPath;
+    } else {
+      const key = masterKeyFromSlug(entry.slug);
+      try {
+        bytes = await readS3.getObject(MASTERS_BUCKET_NAME, key);
+      } catch (error) {
+        fatals.push(
+          `${entry.slug}: no ${path.relative(cwd, ingestPath) || ingestPath} and ` +
+            `could not read ${MASTERS_BUCKET_NAME}/${key}: ${error?.message ?? error}`,
+        );
+        continue;
+      }
+      if ((await sha256Hex(bytes)) !== entry.masterSha256) {
+        fatals.push(
+          `${MASTERS_BUCKET_NAME}/${key}: sha256 does not match the catalog master_sha256`,
+        );
+        continue;
+      }
+      source = `${MASTERS_BUCKET_NAME}/${key}`;
+    }
+
+    const printAssetBytes = await renderPrintAsset(bytes, facts.orientation);
+    plans.push({
+      slug: entry.slug,
+      yamlPath: entry.yamlPath,
+      yamlText: entry.yamlText,
+      source,
+      printAssetBytes,
+      printAsset: {
+        sha256: await sha256Hex(printAssetBytes),
+        md5: md5Hex(printAssetBytes),
+      },
+    });
+  }
+
+  if (fatals.length > 0) {
+    log("");
+    for (const problem of fatals) log(`error: ${problem}`);
+    return { status: 1, fatals };
+  }
+
+  if (plans.length === 0) {
+    log("every published photo already has a print asset; nothing to do");
+    return { status: 0, plans: [] };
+  }
+
+  for (const plan of plans) {
+    log(
+      `  ${plan.slug}: print asset from ${plan.source} ` +
+        `(sha256 ${plan.printAsset.sha256.slice(0, 8)}…, md5 ${plan.printAsset.md5.slice(0, 8)}…)`,
+    );
+  }
+
+  const slugs = plans.map((plan) => plan.slug);
+  const date = now().toISOString().slice(0, 10);
+  const branch = branchName(date, slugs);
+  const commitMessage = `feat(catalog): backfill print assets for ${slugs.join(", ")} (#307)`;
+  const body = [
+    `Backfill print assets (#307) for ${slugs.length} published photo(s).`,
+    "",
+    "| slug | master source | print_asset_sha256 |",
+    "|---|---|---|",
+    ...plans.map(
+      (plan) =>
+        `| ${plan.slug} | ${plan.source} | ${plan.printAsset.sha256.slice(0, 12)}… |`,
+    ),
+    "",
+    "The print asset is the portrait, sRGB, EXIF-free file Prodigi receives.",
+    "`master_sha256`, `image_hash` and the master objects are unchanged.",
+    "",
+    `Next: \`npm run publish-photos -- --promote --pr <n>\` uploads the production print assets.`,
+    "",
+    `_Generated ${date}._`,
+  ].join("\n");
+
+  if (!options.apply) {
+    log("");
+    log("dry run — nothing uploaded, no YAML written. Re-run with --apply.");
+    return { status: 0, plans, branch, body };
+  }
+
+  const written = plans.map(
+    (plan) => path.relative(cwd, plan.yamlPath),
+  );
+  const status = await exec("git", ["status", "--porcelain"], { cwd });
+  const dirty = status.stdout
+    .split("\n")
+    .map((line) => line.slice(3).trim())
+    .filter(Boolean)
+    .filter((file) => !written.includes(file) && !file.startsWith(`${DEFAULT_DIR}/`));
+  if (dirty.length > 0) {
+    log("error: the working tree has changes this run does not write:");
+    for (const file of dirty) log(`  ${file}`);
+    return { status: 1, plans, branch, body, fatals: dirty };
+  }
+
+  assertUploadIsSafe({
+    mastersBucket: STAGING_MASTERS_BUCKET_NAME,
+    webBucket: WEB_BUCKET_NAME,
+  });
+  requiredEnv(["R2_S3_ENDPOINT", "R2_ENDPOINT"], env);
+  requiredEnv(["R2_ACCESS_KEY_ID"], env);
+  requiredEnv(["R2_SECRET_ACCESS_KEY"], env);
+
+  try {
+    for (const plan of plans) {
+      await s3.put({
+        bucket: STAGING_MASTERS_BUCKET_NAME,
+        key: printAssetKeyFromSlug(plan.slug),
+        body: plan.printAssetBytes,
+        contentType: "image/jpeg",
+        cacheControl: STAGING_MASTER_CACHE_CONTROL,
+      });
+    }
+  } catch (error) {
+    log(`error: upload failed: ${error?.message ?? error}`);
+    log("nothing was written and no PR was opened; a re-run is safe.");
+    return { status: 1, plans, branch, body, fatals: [String(error?.message ?? error)] };
+  }
+
+  for (const plan of plans) {
+    await writeFile(
+      plan.yamlPath,
+      patchCatalogPrintAssetYaml(plan.yamlText, plan.printAsset),
+    );
+    log(`  wrote ${path.relative(cwd, plan.yamlPath)}`);
+  }
+
+  const opened = await openCatalogPr({
+    exec,
+    cwd,
+    log,
+    branch,
+    commitMessage,
+    body,
+    slugs,
+  });
+  return { ...opened, plans, branch, body };
+}
+
+// ---------------------------------------------------------------------------
 // CLI
 // ---------------------------------------------------------------------------
 
@@ -1479,7 +1928,9 @@ async function main() {
     ? await runAudit({ cwd: ROOT, json: options.json })
     : options.promote
       ? await runPromote({ ...options, cwd: ROOT })
-      : await runPublish({ ...options, cwd: ROOT });
+      : options.backfillPrintAssets
+        ? await runBackfillPrintAssets({ ...options, cwd: ROOT })
+        : await runPublish({ ...options, cwd: ROOT });
   if (result.status !== 0) process.exitCode = result.status;
 }
 

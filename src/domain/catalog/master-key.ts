@@ -1,6 +1,6 @@
 import type { R2ObjectBody } from "@cloudflare/workers-types";
 
-import { isMasterKey } from "./derivative-ladder";
+import { isMasterKey, isPrintAssetKey, printAssetKeyFromSlug } from "./derivative-ladder";
 import { getPhoto } from "./photos";
 
 /**
@@ -18,6 +18,19 @@ export function masterKeyForSlug(slug: string): string | null {
   const key = getPhoto(slug)?.imageKey;
   if (typeof key !== "string" || !isMasterKey(key)) return null;
   return key;
+}
+
+/**
+ * The print asset key for a slug (#307), or null for a slug not in the catalog
+ * or for a photo that has no print asset yet. Serving code resolves through
+ * this, never through `masterKeyForSlug`, so a missing asset is an error rather
+ * than a silent fallback to the unrotated master.
+ */
+export function printAssetKeyForSlug(slug: string): string | null {
+  const photo = getPhoto(slug);
+  if (!photo?.printAsset) return null;
+  const key = printAssetKeyFromSlug(slug);
+  return isPrintAssetKey(key) ? key : null;
 }
 
 /**

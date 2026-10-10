@@ -22,6 +22,8 @@ export type Photo = {
   imageHash?: string;
   /** Oriented pixel size and orientation; drives print eligibility (#295/#297). */
   master: MasterFacts;
+  /** The pre-rotated file Prodigi receives (#307); absent until it is backfilled. */
+  printAsset?: { sha256: string; md5: string };
 };
 
 /**
@@ -58,6 +60,7 @@ function toPhoto(file: PhotoFile): Photo {
     // The generated catalog only contains published photos, which build-catalog
     // validates with requireMasterFacts: true — so master is guaranteed here.
     master: file.master!,
+    printAsset: file.printAsset,
   };
 }
 

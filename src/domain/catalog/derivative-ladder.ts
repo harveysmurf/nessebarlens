@@ -51,6 +51,19 @@ export const MASTER_KEY_PATTERN = new RegExp(
 );
 
 /**
+ * Where a photo's print asset lives (#307): the portrait, sRGB, EXIF-free file
+ * Prodigi actually receives, distinct from the digital master at `prints/…`.
+ * Never inverted — the two keys must not be confused, because a fallback to the
+ * master silently brings back the crop #307 exists to remove.
+ */
+const PRINT_ASSET_KEY_PREFIX = "print-assets/";
+
+/** Shape of a private MASTERS print-asset key. */
+export const PRINT_ASSET_KEY_PATTERN = new RegExp(
+  `^${PRINT_ASSET_KEY_PREFIX}${SLUG_BODY}\\.jpg$`,
+);
+
+/**
  * The rung list, in one place. Adding a rung is a one-line change here and
  * nothing else: the srcSet, the ingest plan and the tests all read it. Kept a
  * literal, ascending, unique and positive, so it cannot be a runtime value the
@@ -108,6 +121,11 @@ export function isMasterKey(key: string): boolean {
   return MASTER_KEY_PATTERN.test(key);
 }
 
+/** True only for a well-formed `print-assets/{slug}.jpg` print-asset key. */
+export function isPrintAssetKey(key: string): boolean {
+  return PRINT_ASSET_KEY_PATTERN.test(key);
+}
+
 /** The slug inside a well-formed `prints/{slug}.jpg` key, or null. */
 export function slugFromMasterKey(key: string): string | null {
   return isMasterKey(key)
@@ -162,6 +180,15 @@ export function slugFromDroppedName(name: string): string | null {
  */
 export function masterKeyFromSlug(slug: string): string {
   return `${MASTER_KEY_PREFIX}${slug}.jpg`;
+}
+
+/**
+ * The key a photo's print asset is stored under, built from the slug alone
+ * (#307). Distinct from `masterKeyFromSlug`, which points at the digital master
+ * Prodigi must never receive.
+ */
+export function printAssetKeyFromSlug(slug: string): string {
+  return `${PRINT_ASSET_KEY_PREFIX}${slug}.jpg`;
 }
 
 export type UploadTarget = {

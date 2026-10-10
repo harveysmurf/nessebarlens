@@ -29,7 +29,7 @@ import type { OrderRecipient } from "../src/domain/ordering/order-recipient.ts";
 type FixtureProduct = {
   sku: string;
   attributes: Record<string, string>;
-  printAreaPx: { short: number; long: number };
+  printAreaPx: { width: number; height: number; short: number; long: number };
   shipsTo: string[];
 };
 
@@ -80,13 +80,42 @@ test("every table print area matches the capture exactly", () => {
   for (const product of PRINT_PRODUCTS) {
     const captured = bySku.get(product.sku);
     assert.ok(captured, `no fixture for ${product.sku}`);
-    assert.deepEqual(
-      product.printAreaPx,
-      captured.printAreaPx,
-      `${product.sku} print area drifted`,
+    assert.equal(
+      product.printAreaPx.short,
+      captured.printAreaPx.short,
+      `${product.sku} short edge drifted`,
+    );
+    assert.equal(
+      product.printAreaPx.long,
+      captured.printAreaPx.long,
+      `${product.sku} long edge drifted`,
     );
     assert.ok(product.printAreaPx.short > 0);
     assert.ok(product.printAreaPx.long >= product.printAreaPx.short);
+  }
+});
+
+test("every pinned print area is portrait (#307)", () => {
+  // The print asset is rotated to the print area's orientation; if a pinned
+  // product were ever landscape the rotation decision would be wrong, so the
+  // captured orientation is a contract, not a detail (#307). A landscape value
+  // here is a real catalogue change that must re-open the rotation design.
+  for (const product of fixture.products) {
+    const { width, height } = product.printAreaPx;
+    assert.ok(
+      height >= width,
+      `${product.sku} print area is ${width}×${height} (landscape), not portrait`,
+    );
+    assert.equal(
+      Math.min(width, height),
+      product.printAreaPx.short,
+      `${product.sku} width/height disagree with short/long`,
+    );
+    assert.equal(
+      Math.max(width, height),
+      product.printAreaPx.long,
+      `${product.sku} width/height disagree with short/long`,
+    );
   }
 });
 

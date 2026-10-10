@@ -27,6 +27,7 @@ import {
   STAGING_MASTER_JPEG_QUALITY,
   STAGING_MASTER_MAX_EDGE,
 } from "../src/domain/catalog/derivative-ladder";
+import { printAssetRotation } from "../src/domain/catalog/print-asset";
 
 /** The Content-Type for a derivative's format. */
 export function derivativeContentType(format) {
@@ -82,5 +83,29 @@ export async function renderStagingMaster(bytes) {
       withoutEnlargement: true,
     })
     .jpeg({ quality: STAGING_MASTER_JPEG_QUALITY, mozjpeg: true })
+    .toBuffer();
+}
+
+/**
+ * The print asset (#307): the only file Prodigi ever receives. The master's
+ * EXIF orientation is applied, then a landscape master is turned a further 90°
+ * clockwise so it fills the portrait print area (Prodigi does not rotate,
+ * #298). Portrait and square masters are not rotated.
+ *
+ * `autoOrient()` applies the EXIF tag; a second explicit `.rotate()` would
+ * replace that rotation rather than compose with it, so the EXIF pass and the
+ * #307 turn are one call each, never two `.rotate()`s. The output is sRGB with
+ * an embedded sRGB profile and no other metadata — no EXIF, GPS or XMP, and so
+ * no orientation tag for Prodigi to reinterpret.
+ */
+export async function renderPrintAsset(bytes, orientation) {
+  let pipeline = sharp(bytes).autoOrient();
+  if (printAssetRotation(orientation) !== 0) {
+    pipeline = pipeline.rotate(90);
+  }
+  return pipeline
+    .toColorspace("srgb")
+    .withIccProfile("srgb")
+    .jpeg({ quality: 95, chromaSubsampling: "4:4:4" })
     .toBuffer();
 }
