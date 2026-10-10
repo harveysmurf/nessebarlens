@@ -21,3 +21,18 @@ test("printAssetKeyForSlug is null until the catalog carries a print asset", () 
   // back to the digital master, so a null is the whole contract here.
   assert.equal(printAssetKeyForSlug("not-a-photo"), null);
 });
+
+test("printAssetKeyForSlug resolves the asset key once a photo carries one (#307)", () => {
+  // The catalog has no print asset yet, so inject a photo to exercise the
+  // branch that only a backfilled/PR-2 catalog reaches.
+  const slug = "dawn-over-nessebar";
+  const key = "print-assets/dawn-over-nessebar.jpg";
+  assert.equal(
+    printAssetKeyForSlug(slug, [
+      { slug, printAsset: { sha256: "a".repeat(64), md5: "b".repeat(32) } },
+    ]),
+    key,
+  );
+  // A photo present but without the asset still fails closed.
+  assert.equal(printAssetKeyForSlug(slug, [{ slug }]), null);
+});

@@ -1,7 +1,7 @@
 import type { R2ObjectBody } from "@cloudflare/workers-types";
 
-import { isMasterKey, isPrintAssetKey, printAssetKeyFromSlug } from "./derivative-ladder";
-import { getPhoto } from "./photos";
+import { isMasterKey, printAssetKeyFromSlug } from "./derivative-ladder";
+import { getPhoto, PHOTOS, type Photo } from "./photos";
 
 /**
  * Reading a master key out of the catalog.
@@ -25,12 +25,19 @@ export function masterKeyForSlug(slug: string): string | null {
  * or for a photo that has no print asset yet. Serving code resolves through
  * this, never through `masterKeyForSlug`, so a missing asset is an error rather
  * than a silent fallback to the unrotated master.
+ *
+ * The catalog is injectable (`PHOTOS` by default) so a test can exercise the
+ * "photo carries an asset" branch while no published photo has one yet — the
+ * same shape `featuredPhoto` uses. The key is built from the slug alone, so no
+ * second `isPrintAssetKey` guard is needed or useful here.
  */
-export function printAssetKeyForSlug(slug: string): string | null {
-  const photo = getPhoto(slug);
+export function printAssetKeyForSlug(
+  slug: string,
+  photos: readonly Pick<Photo, "slug" | "printAsset">[] = PHOTOS,
+): string | null {
+  const photo = photos.find((p) => p.slug === slug);
   if (!photo?.printAsset) return null;
-  const key = printAssetKeyFromSlug(slug);
-  return isPrintAssetKey(key) ? key : null;
+  return printAssetKeyFromSlug(slug);
 }
 
 /**
