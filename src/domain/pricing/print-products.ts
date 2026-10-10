@@ -51,7 +51,7 @@ export type PrintSize = PrintProduct["size"];
 export type ProdigiSizeIn = PrintProduct["sizeIn"];
 
 /** A product's print area in inches, short/long — the unit #299 computes in. */
-export function printAreaIn(product: PrintProduct): {
+export function printAreaIn(product: PrintProductEntry): {
   short: number;
   long: number;
 } {
