@@ -1,3 +1,4 @@
+import type { Orientation } from "../catalog/master-facts";
 import { Eur, eurToCents } from "./money";
 import { PRINT_PRODUCTS, type PrintSize } from "./print-products";
 
@@ -49,23 +50,41 @@ function sizeWords(size: string): string {
   return `${a} × ${b}`;
 }
 
-/**
- * Label per size, derived from the table so a size cannot be offered without
- * words. The tier words ("Standard"/"Medium"/"Gallery") are gone: the area
- * order already tells the buyer which is larger, and a tier name that is not
- * in the table is a second vocabulary to maintain.
- */
-const SIZE_LABELS: Record<PrintSize, string> = Object.fromEntries(
-  PRINT_PRODUCTS.map((product) => [
-    product.size,
-    `${sizeWords(product.size)} cm (${sizeWords(product.sizeIn)}")`,
-  ]),
-) as Record<PrintSize, string>;
+/** "30 × 40" → "40 × 30". */
+function reversedWords(words: string): string {
+  const [a, b] = words.split(" × ");
+  return `${b} × ${a}`;
+}
+
+/** The cm and inch words per size, short edge first, derived from the table. */
+const SIZE_WORDS: Record<PrintSize, { cm: string; inches: string }> =
+  Object.fromEntries(
+    PRINT_PRODUCTS.map((product) => [
+      product.size,
+      { cm: sizeWords(product.size), inches: sizeWords(product.sizeIn) },
+    ]),
+  ) as Record<PrintSize, { cm: string; inches: string }>;
 
 export function formatLabel(format: PrintFormat): string {
   return FORMAT_LABELS[format];
 }
 
-export function sizeLabel(size: PrintSize): string {
-  return SIZE_LABELS[size];
+/**
+ * Label per size, derived from the table so a size cannot be offered without
+ * words. The tier words ("Standard"/"Medium"/"Gallery") are gone: the area
+ * order already tells the buyer which is larger, and a tier name that is not
+ * in the table is a second vocabulary to maintain.
+ *
+ * A landscape photo reads long edge first (#302): the frame is the product's
+ * (portrait) orientation, but the *photo* hangs landscape, so its width is the
+ * long edge and naming it first matches what the buyer sees. The cm size and
+ * the Prodigi SKU stay short edge first — this is presentation only, and the
+ * value the checkout carries is unchanged.
+ */
+export function sizeLabel(size: PrintSize, orientation?: Orientation): string {
+  const { cm, inches } = SIZE_WORDS[size];
+  if (orientation === "landscape") {
+    return `${reversedWords(cm)} cm (${reversedWords(inches)}")`;
+  }
+  return `${cm} cm (${inches}")`;
 }
