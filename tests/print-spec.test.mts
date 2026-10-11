@@ -113,7 +113,7 @@ test("framed honours a known mount, defaults an absent one, and refuses an unkno
   for (const mount of ["sandwich", 7]) {
     assert.deepEqual(
       parsePrintSpecification("framed", "50x70", "black", mount),
-      { ok: false, reason: "mount-required" },
+      { ok: false, reason: "mount-invalid" },
       String(mount),
     );
   }

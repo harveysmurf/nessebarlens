@@ -59,7 +59,7 @@ export type PrintSpecificationReason =
   | "size-not-offered-for-format"
   | "frame-required"
   | "frame-not-allowed"
-  | "mount-required"
+  | "mount-invalid"
   | "mount-not-allowed";
 
 export type PrintSpecificationResult =
@@ -189,7 +189,7 @@ export function parsePrintSpecification(
     } else if (isFramedMountValue(mount)) {
       mountValue = mount;
     } else {
-      return { ok: false, reason: "mount-required" };
+      return { ok: false, reason: "mount-invalid" };
     }
   }
   if (!findProduct(format, size, mountValue, products)) {

@@ -72,7 +72,7 @@ const DIGITAL_SPEC_ERRORS = {
 const FRAME_SPEC_ERRORS = {
   "frame-required": `frame required for framed (${FRAME_LABEL})`,
   "frame-not-allowed": "frame only allowed when format is framed",
-  "mount-required": `mount required for framed (${MOUNT_LABEL})`,
+  "mount-invalid": `mount must be ${MOUNT_LABEL}`,
   "mount-not-allowed": `mount only allowed when format is framed (${MOUNT_LABEL})`,
 };
 
