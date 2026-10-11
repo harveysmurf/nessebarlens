@@ -18,7 +18,11 @@ import {
 } from "../../domain/ordering/prodigi-timeout";
 import type { ProdigiResult } from "../../domain/ordering/prodigi-result";
 import { prodigiConfig } from "../config/config";
-import { resolveSku, type PhysicalFormat } from "../../domain/pricing/sku-map";
+import {
+  resolveSku,
+  type FramedMount,
+  type PhysicalFormat,
+} from "../../domain/pricing/sku-map";
 import type { PhysicalQuote } from "../../domain/ordering/print-provider";
 
 type ProdigiQuoteResponse = {
@@ -32,9 +36,16 @@ export async function quotePhysical(opts: {
   format: PhysicalFormat;
   size: PrintSize;
   frame?: FrameFinish | null;
+  /** Framed only (#335); absent means the default (mounted). */
+  mount?: FramedMount | null;
   destinationCountryCode?: string;
 }): Promise<ProdigiResult<PhysicalQuote>> {
-  const entry = resolveSku(opts.format, opts.size, opts.frame ?? null);
+  const entry = resolveSku(
+    opts.format,
+    opts.size,
+    opts.frame ?? null,
+    opts.mount ?? null,
+  );
   const destinationCountryCode =
     opts.destinationCountryCode?.trim() || DEFAULT_SHIPPING_COUNTRY;
 

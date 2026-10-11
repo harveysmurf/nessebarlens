@@ -17,12 +17,15 @@
 
 import type { FrameFinish, PrintFormat, PrintSize } from "../pricing/pricing";
 import {
+  DEFAULT_FRAMED_MOUNT,
   findProduct,
   PRINT_PRODUCTS,
+  type FramedMount,
   type PrintProductEntry,
 } from "../pricing/print-products";
 import {
   isFrameFinishValue,
+  isFramedMountValue,
   isPrintSize,
   type PhysicalFormat,
 } from "../pricing/sku-map";
@@ -34,6 +37,8 @@ export type PhysicalPrintSpecification = {
   format: PhysicalFormat;
   size: PrintSize;
   frame: FrameFinish | null;
+  /** The framed mount (#335); null for every non-framed format. */
+  mount: FramedMount | null;
 };
 
 export type PrintSpecification =
@@ -49,10 +54,12 @@ export type PrintSpecification =
 export type PrintSpecificationReason =
   | "digital-rejects-size"
   | "digital-rejects-frame"
+  | "digital-rejects-mount"
   | "size-required"
   | "size-not-offered-for-format"
   | "frame-required"
-  | "frame-not-allowed";
+  | "frame-not-allowed"
+  | "mount-not-allowed";
 
 export type PrintSpecificationResult =
   | { ok: true; value: PrintSpecification }
@@ -77,6 +84,20 @@ export function frameForFormat(
 }
 
 /**
+ * The mount projection, in its total form: the mount travels only with framed,
+ * and a framed spec with no mount reads as the default (#335) so an order or
+ * selection written before mounts existed still fulfils. Everything else
+ * carries null.
+ */
+export function mountForFormat(
+  format: PrintFormat,
+  mount: FramedMount | null,
+): FramedMount | null {
+  if (format !== "framed") return null;
+  return mount ?? DEFAULT_FRAMED_MOUNT;
+}
+
+/**
  * The physical arm of the specification, for call sites whose format, size
  * and frame are already typed: the configurator's own state, which a request
  * builder normalises rather than validates. Nothing is re-checked here,
@@ -88,12 +109,14 @@ export function physicalSpecification(
   format: PhysicalFormat,
   size: PrintSize,
   frame: FrameFinish | null,
+  mount: FramedMount | null = null,
 ): PhysicalPrintSpecification {
   return {
     kind: "physical",
     format,
     size,
     frame: frameForFormat(format, frame),
+    mount: mountForFormat(format, mount),
   };
 }
 
@@ -114,18 +137,21 @@ export function parsePrintSpecification(
   format: PhysicalFormat,
   size: unknown,
   frame: unknown,
+  mount: unknown,
   products?: readonly PrintProductEntry[],
 ): PhysicalPrintResult;
 export function parsePrintSpecification(
   format: PrintFormat,
   size: unknown,
   frame: unknown,
+  mount: unknown,
   products?: readonly PrintProductEntry[],
 ): PrintSpecificationResult;
 export function parsePrintSpecification(
   format: PrintFormat,
   size: unknown,
   frame: unknown,
+  mount: unknown,
   products: readonly PrintProductEntry[] = PRINT_PRODUCTS,
 ): PrintSpecificationResult {
   if (format === "digital") {
@@ -135,6 +161,9 @@ export function parsePrintSpecification(
     if (frame !== null && frame !== undefined) {
       return { ok: false, reason: "digital-rejects-frame" };
     }
+    if (mount !== null && mount !== undefined) {
+      return { ok: false, reason: "digital-rejects-mount" };
+    }
     return { ok: true, value: { kind: "digital" } };
   }
 
@@ -143,10 +172,11 @@ export function parsePrintSpecification(
   }
 
   // A size the table carries for some other format is not a size this format
-  // offers: the pair is the identity, not the size alone. With today's table
-  // this cannot fire, but the check is what lets a format-specific catalogue
-  // grow without silently selling a size Prodigi has no SKU for.
-  if (!findProduct(format, size, products)) {
+  // offers: the pair is the identity, not the size alone, and for framed the
+  // mount joins that identity (#335). An absent or unknown mount reads as the
+  // default, so a body written before mounts existed still resolves.
+  const mountValue = isFramedMountValue(mount) ? mount : null;
+  if (!findProduct(format, size, mountValue, products)) {
     return { ok: false, reason: "size-not-offered-for-format" };
   }
 
@@ -154,17 +184,29 @@ export function parsePrintSpecification(
     if (!isFrameFinishValue(frame)) {
       return { ok: false, reason: "frame-required" };
     }
-    return { ok: true, value: { kind: "physical", format, size, frame } };
+    return {
+      ok: true,
+      value: {
+        kind: "physical",
+        format,
+        size,
+        frame,
+        mount: mountForFormat(format, mountValue),
+      },
+    };
   }
 
-  // Every other physical format carries no finish, so a present one is a
-  // refusal rather than a value to drop: the body asked for something the
+  // Every other physical format carries no finish or mount, so a present one
+  // is a refusal rather than a value to drop: the body asked for something the
   // format cannot have.
   if (frame !== null && frame !== undefined) {
     return { ok: false, reason: "frame-not-allowed" };
   }
+  if (mount !== null && mount !== undefined) {
+    return { ok: false, reason: "mount-not-allowed" };
+  }
   return {
     ok: true,
-    value: { kind: "physical", format, size, frame: null },
+    value: { kind: "physical", format, size, frame: null, mount: null },
   };
 }

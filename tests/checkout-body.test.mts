@@ -22,6 +22,8 @@ test("checkout accepts every format×size the SKU table can build", () => {
         format,
         size,
         frame,
+        // The body carries no mount, so framed reads as the default (mounted).
+        mount: format === "framed" ? "white" : null,
         destinationCountryCode: null,
       });
       // Guard the SKU table itself so validation coverage is meaningful.
@@ -69,7 +71,13 @@ test("quote accepts every physical SKU combination and rejects digital", () => {
     for (const size of PRINT_SIZES) {
       const frame = format === "framed" ? "white" : null;
       const parsed = parseQuoteBody({ format, size, frame });
-      assert.deepEqual(parsed, { format, size, frame, destinationCountryCode: null });
+      assert.deepEqual(parsed, {
+        format,
+        size,
+        frame,
+        mount: format === "framed" ? "white" : null,
+        destinationCountryCode: null,
+      });
     }
   }
   assert.match(
@@ -145,10 +153,22 @@ test("a non-object checkout body is rejected before any field is read", () => {
 
 test("a quote with no frame is accepted; a frame on a non-framed format is not", () => {
   const giclee = parseQuoteBody({ format: "giclee", size: "30x40" });
-  assert.deepEqual(giclee, { format: "giclee", size: "30x40", frame: null, destinationCountryCode: null });
+  assert.deepEqual(giclee, {
+    format: "giclee",
+    size: "30x40",
+    frame: null,
+    mount: null,
+    destinationCountryCode: null,
+  });
   // An explicitly undefined frame is as absent as a null one.
   const undefinedFrame = parseQuoteBody({ format: "canvas", size: "50x70", frame: undefined });
-  assert.deepEqual(undefinedFrame, { format: "canvas", size: "50x70", frame: null, destinationCountryCode: null });
+  assert.deepEqual(undefinedFrame, {
+    format: "canvas",
+    size: "50x70",
+    frame: null,
+    mount: null,
+    destinationCountryCode: null,
+  });
   for (const frame of ["black", ""]) {
     const rejected = parseQuoteBody({ format: "giclee", size: "30x40", frame });
     assert.equal("error" in rejected, true, frame);

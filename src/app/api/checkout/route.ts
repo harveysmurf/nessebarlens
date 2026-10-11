@@ -11,11 +11,14 @@ import {
 } from "@/domain/pricing/ship-to-countries";
 import { getPhoto } from "@/domain/catalog/photos";
 import { offers } from "@/domain/catalog/print-offer";
+import { assess } from "@/domain/catalog/print-eligibility";
+import { findProduct } from "@/domain/pricing/print-products";
 import {
   DIGITAL_PRICE_EUR,
   type FrameFinish,
   type PrintSize,
 } from "@/domain/pricing/pricing";
+import type { FramedMount } from "@/domain/pricing/sku-map";
 import { webDerivativeUrls } from "@/infrastructure/media/derivatives";
 import { prodigiFailureFrom } from "@/infrastructure/prodigi/prodigi-config";
 import { canSignMasterAsset } from "@/application/fulfillment/print-asset";
@@ -58,12 +61,27 @@ export async function POST(request: Request) {
           parsed.format,
           parsed.size,
           parsed.frame ?? null,
+          parsed.mount,
         );
   if (!offers(photo.printOffer, spec)) {
     return NextResponse.json(
       { error: "This print option is not available for this photo" },
       { status: 400 },
     );
+  }
+
+  // The offer is the mounted view (#335), so an unmounted selection needs its
+  // own eligibility check against this master: a size can be offered mounted
+  // and not unmounted (bigger print area, different aspect). Enforced here as
+  // well as in the configurator, because the body is unauthenticated input.
+  if (parsed.format === "framed" && parsed.mount === "none") {
+    const product = findProduct("framed", parsed.size, "none");
+    if (!product || !assess(photo.master, product).verdict.eligible) {
+      return NextResponse.json(
+        { error: "This print option is not available for this photo" },
+        { status: 400 },
+      );
+    }
   }
 
   const isPhysical = parsed.format !== "digital";
@@ -75,12 +93,14 @@ export async function POST(request: Request) {
   // than read off the union (where they would not exist).
   let size = "";
   let frame = "";
+  let mount = "";
   let destinationCountryCode: ShipToCountryCode | null = null;
   // The typed spec for the payment intent, set only in the physical arm (the
   // union narrows there without a cast; the metadata strings above stay the
   // wire-format values).
   let intentSize: PrintSize | null = null;
   let intentFrame: FrameFinish | null = null;
+  let intentMount: FramedMount | null = null;
 
   if (parsed.format !== "digital") {
     // `parsed` is now the physical arm: size/frame/destinationCountryCode are
@@ -92,6 +112,7 @@ export async function POST(request: Request) {
       format: parsed.format,
       size: parsed.size,
       frame: parsed.frame,
+      mount: parsed.mount,
       destinationCountryCode,
     });
     if (!result.ok) {
@@ -109,8 +130,10 @@ export async function POST(request: Request) {
     sku = result.value.sku;
     size = parsed.size;
     frame = parsed.frame ?? "";
+    mount = parsed.mount ?? "";
     intentSize = parsed.size;
     intentFrame = parsed.frame ?? null;
+    intentMount = parsed.mount;
 
     // Fail closed before taking the money. A physical order is fulfilled from
     // an HMAC-signed /api/print-asset URL; without a usable
@@ -140,6 +163,7 @@ export async function POST(request: Request) {
     format: parsed.format,
     size,
     frame,
+    mount,
     quoteEur: String(quoteEur),
   };
   // No merchandiseEur here. quoteEur is written unconditionally above and
@@ -161,6 +185,7 @@ export async function POST(request: Request) {
     format: parsed.format,
     size: intentSize,
     frame: intentFrame,
+    mount: intentMount,
     previewImage: previewImage ?? null,
     quoteEur,
     shippingEur,

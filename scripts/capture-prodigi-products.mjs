@@ -60,6 +60,14 @@ export const DEFAULT_SKUS = [
   "GLOBAL-CFPM-20X30",
   "GLOBAL-CFPM-24X36",
   "GLOBAL-CFPM-28X40",
+  "GLOBAL-CFP-8X12",
+  "GLOBAL-CFP-12X16",
+  "GLOBAL-CFP-12X18",
+  "GLOBAL-CFP-16X24",
+  "GLOBAL-CFP-20X28",
+  "GLOBAL-CFP-20X30",
+  "GLOBAL-CFP-24X36",
+  "GLOBAL-CFP-28X40",
   "GLOBAL-CAN-8X12",
   "GLOBAL-CAN-12X16",
   "GLOBAL-CAN-12X18",
@@ -76,10 +84,15 @@ export const DEFAULT_SKUS = [
  * ship with a black frame, canvas with ImageWrap, giclée with nothing.
  */
 export function selectorFor(sku) {
-  if (sku.startsWith("GLOBAL-CFPM-")) return { color: "black" };
+  // CFPM (with mount) and CFP (no mount) both need `color`; the prefix covers
+  // both. CFP is wanted too, so match the shorter prefix.
+  if (sku.startsWith("GLOBAL-CFP")) return { color: "black" };
   if (sku.startsWith("GLOBAL-CAN-")) return { wrap: "ImageWrap" };
   return {};
 }
+
+/** The frame colours we offer, in the order the configurator shows them. */
+export const FRAME_COLORS = ["black", "white", "brown"];
 
 function variantMatches(variant, attributes) {
   return Object.entries(attributes).every(
@@ -120,6 +133,24 @@ export function shipsToOf(product, attributes) {
   return [...variant.shipsTo].sort();
 }
 
+/**
+ * The print areas a framed SKU reports for each colour, deduped. One size in
+ * the catalogue (GLOBAL-CFP-12X16) reports a slightly different area for the
+ * black/white variants than for the other colours; the table stores the safe
+ * minimum across these, and this records all of them so the contract test can
+ * prove that. Returns one entry per distinct area; a SKU whose colours agree
+ * yields a single entry.
+ */
+export function colourVariantsOf(product) {
+  const seen = new Map();
+  for (const color of FRAME_COLORS) {
+    const area = printAreaOf(product, { color });
+    const key = `${area.short}x${area.long}`;
+    if (!seen.has(key)) seen.set(key, { color, ...area });
+  }
+  return [...seen.values()];
+}
+
 /** Read one SKU from the sandbox, as the fixture record the table is tested against. */
 export async function captureSku({ base, key, sku, fetchImpl = fetch }) {
   const attributes = selectorFor(sku);
@@ -132,12 +163,19 @@ export async function captureSku({ base, key, sku, fetchImpl = fetch }) {
   const body = await res.json();
   const product = body.product;
   if (!product) throw new Error(`response for ${sku} has no product`);
-  return {
+  const record = {
     sku,
     attributes,
     printAreaPx: printAreaOf(product, attributes),
     shipsTo: shipsToOf(product, attributes),
   };
+  // Only framed SKUs carry a colour, and only 12×16 reports different areas
+  // per colour; record the variants so the table's safe bound is provable.
+  if (attributes.color) {
+    const variants = colourVariantsOf(product);
+    if (variants.length > 1) record.printAreaVariants = variants;
+  }
+  return record;
 }
 
 /** The fixture document, deterministic: products in the order asked for. */

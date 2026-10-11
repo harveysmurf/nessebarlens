@@ -30,6 +30,14 @@ type FixtureProduct = {
   sku: string;
   attributes: Record<string, string>;
   printAreaPx: { width: number; height: number; short: number; long: number };
+  /** Present when a framed SKU reports different areas per colour (#335). */
+  printAreaVariants?: Array<{
+    color: string;
+    width: number;
+    height: number;
+    short: number;
+    long: number;
+  }>;
   shipsTo: string[];
 };
 
@@ -76,20 +84,39 @@ test("the fixture and the table describe the same products, with no orphans", ()
   assert.equal(new Set(tableSkus).size, tableSkus.length);
 });
 
-test("every table print area matches the capture exactly", () => {
+test("every table print area matches the capture, or its safe colour bound", () => {
   for (const product of PRINT_PRODUCTS) {
     const captured = bySku.get(product.sku);
     assert.ok(captured, `no fixture for ${product.sku}`);
-    assert.equal(
-      product.printAreaPx.short,
-      captured.printAreaPx.short,
-      `${product.sku} short edge drifted`,
-    );
-    assert.equal(
-      product.printAreaPx.long,
-      captured.printAreaPx.long,
-      `${product.sku} long edge drifted`,
-    );
+    if (captured.printAreaVariants) {
+      // A per-colour variant (GLOBAL-CFP-12X16): the table stores the safe
+      // minimum across colours, so the resolution maths never over-estimates
+      // the area it prints into. Proven against every captured variant (#335).
+      const minShort = Math.min(
+        ...captured.printAreaVariants.map((v) => v.short),
+      );
+      const minLong = Math.min(...captured.printAreaVariants.map((v) => v.long));
+      assert.equal(product.printAreaPx.short, minShort, `${product.sku} short`);
+      assert.equal(product.printAreaPx.long, minLong, `${product.sku} long`);
+      for (const variant of captured.printAreaVariants) {
+        assert.ok(
+          product.printAreaPx.short <= variant.short &&
+            product.printAreaPx.long <= variant.long,
+          `${product.sku} ${variant.color} is smaller than the stored bound`,
+        );
+      }
+    } else {
+      assert.equal(
+        product.printAreaPx.short,
+        captured.printAreaPx.short,
+        `${product.sku} short edge drifted`,
+      );
+      assert.equal(
+        product.printAreaPx.long,
+        captured.printAreaPx.long,
+        `${product.sku} long edge drifted`,
+      );
+    }
     assert.ok(product.printAreaPx.short > 0);
     assert.ok(product.printAreaPx.long >= product.printAreaPx.short);
   }
@@ -135,6 +162,7 @@ test("the attributes we send match the captured variant's selector", () => {
       product.format,
       product.size,
       product.format === "framed" ? "black" : null,
+      product.format === "framed" ? product.mount : null,
     );
     assert.deepEqual(
       entry.attributes,
@@ -194,6 +222,7 @@ async function quoteItems(product: PrintProductEntry) {
       format: product.format,
       size: product.size,
       frame: product.format === "framed" ? "black" : null,
+      mount: product.format === "framed" ? product.mount : null,
     });
     assert.equal(result.ok, true, `${product.sku} quote failed`);
     return seen.items?.[0];
@@ -229,6 +258,7 @@ test("every product orders with the table's SKU and attributes", () => {
       format: product.format,
       size: product.size,
       frame: product.format === "framed" ? "black" : null,
+      mount: product.format === "framed" ? product.mount : null,
       recipient: RECIPIENT,
       assetUrl: ASSET_URL,
       assetMd5: ASSET_MD5,
@@ -251,7 +281,7 @@ test("findProduct is the pair lookup, and null for a pair the table lacks", () =
   const first = PRINT_PRODUCTS[0]!;
   assert.equal(findProduct(first.format, first.size)?.sku, first.sku);
   assert.equal(
-    findProduct("giclee", "70x100", [
+    findProduct("giclee", "70x100", null, [
       {
         format: "giclee",
         size: "30x40",

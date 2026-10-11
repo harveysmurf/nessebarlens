@@ -8,7 +8,7 @@
  */
 
 import type { PrintSize, FrameFinish } from "../pricing/pricing";
-import type { PhysicalFormat } from "../pricing/sku-map";
+import type { FramedMount, PhysicalFormat } from "../pricing/sku-map";
 import type { ProdigiResult } from "./prodigi-result";
 import type { OrderRecipient } from "./order-recipient";
 
@@ -17,6 +17,8 @@ export type QuotePhysical = (opts: {
   format: PhysicalFormat;
   size: PrintSize;
   frame?: FrameFinish | null;
+  /** Framed only (#335); absent means the default (mounted). */
+  mount?: FramedMount | null;
   destinationCountryCode?: string;
 }) => Promise<ProdigiResult<PhysicalQuote>>;
 
@@ -50,6 +52,8 @@ export type CreateProdigiOrder = (input: {
   format: PhysicalFormat;
   size: PrintSize;
   frame: FrameFinish | null;
+  /** Framed only (#335); null means the default (mounted). */
+  mount: FramedMount | null;
   recipient: OrderRecipient;
   /**
    * The HMAC /api/print-asset URL Prodigi fetches. Required: the caller

@@ -28,6 +28,7 @@ import type { OrderRecipient } from "./order-recipient";
 import { eurToCents, parseEurAmount, type PrintFormat } from "../pricing/pricing";
 import {
   isFrameFinishValue,
+  isFramedMountValue,
   isPhysicalFormat,
   isPrintSize,
   isSellableFormat,
@@ -198,12 +199,13 @@ export type OrderRecordCommon = {
   emailsSent: EmailKind[];
 };
 
-/** A paid or revocable digital order: no size, frame or shipping recipient. */
+/** A paid or revocable digital order: no size, frame, mount or shipping recipient. */
 export type DigitalOrder = OrderRecordCommon & {
   kind: "digital";
   format: "digital";
   size: "";
   frame: "";
+  mount: "";
   recipient: null;
 };
 
@@ -218,6 +220,8 @@ export type PhysicalOrder = OrderRecordCommon & {
   format: PhysicalFormat;
   size: string;
   frame: string;
+  /** The framed mount (#335); "" for non-framed and for pre-mount records. */
+  mount: string;
   recipient: OrderRecipient | null;
 };
 
@@ -232,6 +236,7 @@ export type UnknownOrder = OrderRecordCommon & {
   format: string;
   size: string;
   frame: string;
+  mount: string;
   recipient: OrderRecipient | null;
 };
 
@@ -435,6 +440,10 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
   if (typeof row.photoSlug !== "string") return null;
   if (typeof row.size !== "string" || typeof row.frame !== "string")
     return null;
+  // Pre-#335 records have no mount; default to "" rather than reject, exactly
+  // as shipments/emailsSent default (#335). A present value must be a string.
+  if (row.mount !== undefined && typeof row.mount !== "string") return null;
+  const mount: string = typeof row.mount === "string" ? row.mount : "";
   if (!isEurAmount(row.quoteEur) || !isInt(row.amountTotal)) return null;
   if (row.currency !== "eur") return null;
   if (!isNullableString(row.reason)) return null;
@@ -556,6 +565,7 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
       format: "digital",
       size: "",
       frame: "",
+      mount: "",
       recipient: null,
     };
   }
@@ -566,6 +576,7 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
       format: row.format,
       size: row.size,
       frame: row.frame,
+      mount,
       recipient,
     };
   }
@@ -575,6 +586,7 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
     format: row.format,
     size: row.size,
     frame: row.frame,
+    mount,
     recipient,
   };
 }
@@ -695,6 +707,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
   const masterKey = masterKeyForSlug(photoSlug);
   const size = clip(meta.size);
   const frame = clip(meta.frame);
+  const mount = clip(meta.mount);
   const recipient = parseRecipient(
     input.shippingDetails,
     input.customerEmail,
@@ -736,6 +749,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       format: "unknown",
       size,
       frame,
+      mount,
       recipient: null,
       status: "paid-unfulfilled",
       reason: "bad-metadata",
@@ -753,6 +767,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
         format: "digital",
         size: "",
         frame: "",
+        mount: "",
         recipient: null,
         status: "paid-unfulfilled",
         reason: "bad-metadata",
@@ -765,6 +780,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
         format: "digital",
         size: "",
         frame: "",
+        mount: "",
         recipient: null,
         status: "paid-unfulfilled",
         reason: "unknown-photo",
@@ -780,6 +796,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
         format: "digital",
         size: "",
         frame: "",
+        mount: "",
         recipient: null,
         status: "paid-unfulfilled",
         reason: "amount-mismatch",
@@ -791,6 +808,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       format: "digital",
       size: "",
       frame: "",
+      mount: "",
       recipient: null,
       status: "paid",
       reason: null,
@@ -806,6 +824,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       format,
       size,
       frame,
+      mount,
       recipient: null,
       status: "paid-unfulfilled",
       reason: "bad-metadata",
@@ -818,6 +837,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       format,
       size,
       frame,
+      mount,
       recipient: null,
       status: "paid-unfulfilled",
       reason: "unknown-photo",
@@ -834,6 +854,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       format,
       size,
       frame,
+      mount,
       recipient: null,
       status: "paid-unfulfilled",
       reason: "bad-metadata",
@@ -850,6 +871,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       format,
       size,
       frame,
+      mount,
       recipient: null,
       status: "paid-unfulfilled",
       reason: "amount-mismatch",
@@ -858,7 +880,12 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
 
   if (
     !isPrintSize(size) ||
-    (format === "framed" && !isFrameFinishValue(frame))
+    (format === "framed" && !isFrameFinishValue(frame)) ||
+    // A framed mount is a known mount, or "" for the default (#335, pre-mount
+    // orders). A non-framed order must carry none.
+    (format === "framed"
+      ? mount !== "" && !isFramedMountValue(mount)
+      : mount !== "")
   ) {
     return {
       ...common,
@@ -866,6 +893,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       format,
       size,
       frame,
+      mount,
       recipient: null,
       status: "paid-unfulfilled",
       reason: "bad-metadata",
@@ -878,6 +906,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       format,
       size,
       frame,
+      mount,
       recipient: null,
       status: "paid-unfulfilled",
       reason: "bad-metadata",
@@ -891,6 +920,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       format,
       size,
       frame,
+      mount,
       recipient: null,
       status: "paid-unfulfilled",
       reason: "missing-shipping",
@@ -911,6 +941,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       format,
       size,
       frame,
+      mount,
       recipient,
       status: "paid-unfulfilled",
       terminal: false,
@@ -925,6 +956,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     format,
     size,
     frame,
+    mount,
     recipient,
     status: "paid-unfulfilled",
     reason: AWAITING_PRODIGI_REASON,

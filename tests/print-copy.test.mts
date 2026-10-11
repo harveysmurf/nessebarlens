@@ -221,7 +221,12 @@ test("every select is named by a label, and every label names a select", () => {
   const labelled = [...source.matchAll(/<select\b[^>]*?\bid="([^"]+)"/g)].map((m) => m[1]);
   const pointing = [...source.matchAll(/<label\b[^>]*?\bhtmlFor="([^"]+)"/g)].map((m) => m[1]);
 
-  assert.deepEqual(labelled, ["print-size", "frame-finish", "shipping-country"]);
+  assert.deepEqual(labelled, [
+    "print-size",
+    "frame-finish",
+    "frame-mount",
+    "shipping-country",
+  ]);
   assert.deepEqual(pointing, labelled, "each select needs a label with a matching htmlFor");
 });
 
@@ -312,8 +317,9 @@ function sel(
   format: PrintSelection["format"],
   size: PrintSelection["size"] = "30x40",
   frame: PrintSelection["frame"] = "black",
+  mount: PrintSelection["mount"] = "white",
 ): PrintSelection {
-  return { format, size, frame };
+  return { format, size, frame, mount };
 }
 
 test("previewLabel names the format, size and, for framed, the finish (#326)", () => {
@@ -324,6 +330,10 @@ test("previewLabel names the format, size and, for framed, the finish (#326)", (
   assert.equal(
     previewLabel(ALT, sel("framed", "30x40", "white"), "landscape"),
     `${ALT} — framed print, ${sizeLabel("30x40", "landscape")}, Satin White frame with white mount`,
+  );
+  assert.equal(
+    previewLabel(ALT, sel("framed", "30x40", "white", "none"), "landscape"),
+    `${ALT} — framed print, ${sizeLabel("30x40", "landscape")}, Satin White frame with no mount`,
   );
   assert.equal(
     previewLabel(ALT, sel("canvas"), "landscape"),
@@ -340,7 +350,11 @@ test("previewCaption names the product and, for framed, the finish (#326)", () =
   );
   assert.equal(
     previewCaption(sel("framed", "30x40", "brown"), "landscape"),
-    `Framed Print · ${sizeLabel("30x40", "landscape")} · Brown Wood`,
+    `Framed Print · ${sizeLabel("30x40", "landscape")} · Brown Wood · White Mount`,
+  );
+  assert.equal(
+    previewCaption(sel("framed", "30x40", "brown", "none"), "landscape"),
+    `Framed Print · ${sizeLabel("30x40", "landscape")} · Brown Wood · No Mount`,
   );
   assert.equal(
     previewCaption(sel("canvas"), "landscape"),
@@ -417,14 +431,35 @@ const MOUNT_WINDOW_CM: Record<string, string> = {
   "70x100": "61 × 91 cm",
 };
 
-test("the visible image size is derived from every framed SKU, both orientations (#334)", () => {
+/**
+ * The unmounted visible size (#335), the full glaze rather than the mount
+ * window, transcribed from the same verified Prodigi capture. 12×16's stored
+ * area is the safe colour bound (3600×4795), so its long edge rounds to 41 cm.
+ */
+const NO_MOUNT_CM: Record<string, string> = {
+  "20x30": "20 × 30 cm",
+  "30x40": "30 × 41 cm",
+  "30x45": "30 × 46 cm",
+  "40x60": "41 × 61 cm",
+  "50x70": "51 × 71 cm",
+  "50x75": "51 × 76 cm",
+  "60x90": "61 × 91 cm",
+  "70x100": "71 × 102 cm",
+};
+
+const VISIBLE_CM: Record<string, Record<string, string>> = {
+  white: MOUNT_WINDOW_CM,
+  none: NO_MOUNT_CM,
+};
+
+test("the visible image size is derived from every framed SKU and mount, both orientations (#334/#335)", () => {
   const framed = PRINT_PRODUCTS.filter((product) => product.format === "framed");
-  // The table is checked in full so a size cannot be added without a row here.
-  assert.equal(framed.length, Object.keys(MOUNT_WINDOW_CM).length);
-  // And the other way round: `IMAGE_SIZE_CM` is built by casting the framed
-  // products to `Record<PrintSize, …>`, so a size with no framed SKU would be a
-  // missing key the cast hides — `imageSizeLabel` would throw on it in the
-  // configurator, for every size, the moment someone picks framed.
+  // Two mounts per size now, so the framed block is twice the size count.
+  assert.equal(framed.length, Object.keys(MOUNT_WINDOW_CM).length * 2);
+  // And the other way round: `MOUNT_IMAGE_SIZE_CM` is built by casting the
+  // framed products to `Record<PrintSize, …>`, so a size with no framed SKU
+  // would be a missing key the cast hides — `imageSizeLabel` would throw on it
+  // in the configurator, for every size, the moment someone picks framed.
   const framedSizes = new Set(framed.map((product) => product.size));
   assert.deepEqual(
     PRINT_SIZES.filter((size) => !framedSizes.has(size)),
@@ -433,12 +468,20 @@ test("the visible image size is derived from every framed SKU, both orientations
   );
 
   for (const product of framed) {
-    const expected = MOUNT_WINDOW_CM[product.size];
-    assert.ok(expected, `no reference row for framed ${product.size}`);
-    assert.equal(imageSizeLabel(product.size, "portrait"), expected, product.sku);
+    const expected = VISIBLE_CM[product.mount]?.[product.size];
+    assert.ok(expected, `no reference row for framed ${product.mount} ${product.size}`);
+    assert.equal(
+      imageSizeLabel(product.size, "portrait", product.mount),
+      expected,
+      product.sku,
+    );
     // Landscape turns the window with the photo, exactly as `sizeLabel` does.
     const [short, long] = expected.replace(/ cm$/, "").split(" × ");
-    assert.equal(imageSizeLabel(product.size, "landscape"), `${long} × ${short} cm`, product.sku);
+    assert.equal(
+      imageSizeLabel(product.size, "landscape", product.mount),
+      `${long} × ${short} cm`,
+      product.sku,
+    );
   }
 });
 
@@ -509,15 +552,26 @@ test("no framed copy anywhere promises glass or Hahnemühle paper (#334)", () =>
   assert.doesNotMatch(framedCopy, /glass|hahnem/i);
 });
 
-test("the configurator renders the mount helper beside the frame finish (#334)", () => {
+test("the no-mount helper states the full-glaze size, not the window (#335)", () => {
+  const none = framedMountNote("30x40", "portrait", "none");
+  assert.match(none, /no mount/i);
+  assert.match(none, new RegExp(NO_MOUNT_CM["30x40"]));
+  assert.doesNotMatch(none, /behind the mount/i);
+  assert.notEqual(none, framedMountNote("30x40", "portrait", "white"));
+});
+
+test("the configurator renders the mount control and helper beside the frame finish (#334/#335)", () => {
   // The .tsx is not importable from node --test, so this checks the source:
   // the helper has to live under the Frame Finish select, in the established
-  // style, and come from the typed copy rather than a literal.
+  // style, and come from the typed copy rather than a literal. The mount
+  // control is framed-only and reads the typed mount list.
   const source = fs.readFileSync(
     new URL("../src/components/PrintConfigurator.tsx", import.meta.url),
     "utf8",
   );
-  assert.ok(source.includes("framedMountNote(size, orientation)"));
+  assert.ok(source.includes("framedMountNote(size, orientation, mount)"));
+  assert.ok(source.includes("CONFIGURATOR_MOUNTS"));
+  assert.ok(source.includes('id="frame-mount"'));
   assert.ok(
     source.includes("text-[10px] text-stone-500"),
     "the helper line lost its style",

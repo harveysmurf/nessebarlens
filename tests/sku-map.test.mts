@@ -3,47 +3,64 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import { PRODIGI_SHIPPING_METHOD } from "../src/infrastructure/prodigi/prodigi-config.ts";
 import type { FrameFinish, PrintSize } from "../src/domain/pricing/pricing.ts";
+import type { FramedMount } from "../src/domain/pricing/sku-map.ts";
 import {
   CANVAS_WRAP,
   FRAME_COLOR,
   FRAME_FINISHES,
+  FRAMED_MOUNTS,
   PHYSICAL_FORMATS,
   PINNED_SKUS,
   PRINT_SIZES,
   SIZE_TO_INCH,
   allPhysicalSkus,
   isFrameFinishValue,
+  isFramedMountValue,
   isPhysicalFormat,
   isPrintSize,
   isSellableFormat,
   resolveSku,
 } from "../src/domain/pricing/sku-map.ts";
 
-test("every UI format×size resolves to a pinned Prodigi SKU", () => {
+test("every UI format×size (and framed mount) resolves to a pinned SKU", () => {
   const resolved = new Set<string>();
   for (const format of PHYSICAL_FORMATS) {
     for (const size of PRINT_SIZES) {
-      const entry = resolveSku(
-        format,
-        size,
-        format === "framed" ? "black" : null,
-      );
-      assert.ok(
-        (PINNED_SKUS as readonly string[]).includes(entry.sku),
-        `${format}/${size} → ${entry.sku} not in PINNED_SKUS`,
-      );
-      assert.equal(entry.sizeCm, size);
-      assert.equal(entry.sizeIn, SIZE_TO_INCH[size]);
-      resolved.add(entry.sku);
+      const mounts: (FramedMount | null)[] =
+        format === "framed" ? [...FRAMED_MOUNTS] : [null];
+      for (const mount of mounts) {
+        const entry = resolveSku(
+          format,
+          size,
+          format === "framed" ? "black" : null,
+          mount,
+        );
+        assert.ok(
+          (PINNED_SKUS as readonly string[]).includes(entry.sku),
+          `${format}/${size}/${mount} → ${entry.sku} not in PINNED_SKUS`,
+        );
+        assert.equal(entry.sizeCm, size);
+        assert.equal(entry.sizeIn, SIZE_TO_INCH[size]);
+        resolved.add(entry.sku);
+      }
     }
   }
-  assert.equal(resolved.size, 24);
+  assert.equal(resolved.size, 32);
   assert.deepEqual([...resolved].sort(), [...PINNED_SKUS].sort());
 });
 
-test("allPhysicalSkus returns exactly the 24 pinned SKUs", () => {
+test("a framed mount picks CFPM (white) or CFP (none)", () => {
+  assert.equal(resolveSku("framed", "50x70", "black", "white").sku, "GLOBAL-CFPM-20X28");
+  assert.equal(resolveSku("framed", "50x70", "black", "none").sku, "GLOBAL-CFP-20X28");
+  // A null/absent mount is the default, so pre-#335 callers are unchanged.
+  assert.equal(resolveSku("framed", "50x70", "black").sku, "GLOBAL-CFPM-20X28");
+  assert.equal(isFramedMountValue("none"), true);
+  assert.equal(isFramedMountValue("gold"), false);
+});
+
+test("allPhysicalSkus returns exactly the 32 pinned SKUs", () => {
   const entries = allPhysicalSkus();
-  assert.equal(entries.length, 24);
+  assert.equal(entries.length, 32);
   assert.deepEqual(
     entries.map((e) => e.sku).sort(),
     [...PINNED_SKUS].sort(),
@@ -131,9 +148,11 @@ test("PINNED_SKUS is derived: complete, unique, and in catalog order", () => {
     allPhysicalSkus().map((entry) => entry.sku),
   );
   assert.equal(new Set(PINNED_SKUS).size, PINNED_SKUS.length);
+  // Every format × size, plus one extra for the second framed mount (#335).
   assert.equal(
     PINNED_SKUS.length,
-    PHYSICAL_FORMATS.length * PRINT_SIZES.length,
+    PHYSICAL_FORMATS.length * PRINT_SIZES.length +
+      (FRAMED_MOUNTS.length - 1) * PRINT_SIZES.length,
   );
 });
 

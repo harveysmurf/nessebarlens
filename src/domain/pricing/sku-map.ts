@@ -9,14 +9,18 @@
 
 import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";
 import {
+  DEFAULT_FRAMED_MOUNT,
   findProduct,
+  FRAMED_MOUNTS,
   PRINT_PRODUCTS,
+  type FramedMount,
   type ProdigiSizeIn,
 } from "./print-products";
 
 export type PhysicalFormat = Exclude<PrintFormat, "digital">;
 
-export type { ProdigiSizeIn };
+export type { FramedMount, ProdigiSizeIn };
+export { FRAMED_MOUNTS };
 
 export type SkuEntry = {
   sku: string;
@@ -105,16 +109,25 @@ export function isFrameFinishValue(value: unknown): value is FrameFinish {
   return typeof value === "string" && FRAME_FINISHES.includes(value as FrameFinish);
 }
 
+/** Membership test for the framed-mount allow-list, owned with the list. */
+export function isFramedMountValue(value: unknown): value is FramedMount {
+  return (
+    typeof value === "string" && FRAMED_MOUNTS.includes(value as FramedMount)
+  );
+}
+
 export function resolveSku(
   format: PhysicalFormat,
   size: PrintSize,
   frame: FrameFinish | null = null,
+  mount: FramedMount | null = null,
 ): SkuEntry {
-  const product = findProduct(format, size);
+  // A null mount means the default (mounted); only framed products carry one.
+  const product = findProduct(format, size, mount);
   if (!product) {
-    // The typed callers only pass pairs from PRINT_SIZES, which the table
+    // The typed callers only pass keys from PRINT_SIZES, which the table
     // defines, so this is a programming error rather than a customer path.
-    throw new Error(`no print product for ${format}/${size}`);
+    throw new Error(`no print product for ${format}/${size}/${mount ?? DEFAULT_FRAMED_MOUNT}`);
   }
   // The table's own type is the entry shape (sizeIn: string); the derived
   // ProdigiSizeIn union is a projection of the same table, so the literal is
@@ -136,18 +149,28 @@ export function resolveSku(
   return { sku, sizeCm: size, sizeIn, attributes };
 }
 
-/** All 9 physical SKUs (format × size). Frame defaults to black for CFPM. */
+/**
+ * Every physical SKU (format × size, and mount for framed): 32 today. Frame
+ * defaults to black, mount to the default (mounted), so the list is complete
+ * without a hand-typed pair.
+ */
 export function allPhysicalSkus(): SkuEntry[] {
   const out: SkuEntry[] = [];
   for (const format of PHYSICAL_FORMATS) {
     for (const size of PRINT_SIZES) {
-      out.push(resolveSku(format, size, format === "framed" ? "black" : null));
+      if (format === "framed") {
+        for (const mount of FRAMED_MOUNTS) {
+          out.push(resolveSku(format, size, "black", mount));
+        }
+      } else {
+        out.push(resolveSku(format, size, null));
+      }
     }
   }
   return out;
 }
 
-/** The same 9 SKUs allPhysicalSkus() builds, in that order — derived, not listed. */
+/** The same SKUs allPhysicalSkus() builds, in that order — derived, not listed. */
 export const PINNED_SKUS: readonly string[] = allPhysicalSkus().map(
   (entry) => entry.sku,
 );

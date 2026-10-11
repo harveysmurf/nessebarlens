@@ -12,6 +12,7 @@
 
 import type { PrintSize } from "../pricing/pricing";
 import {
+  DEFAULT_FRAMED_MOUNT,
   findProduct,
   PRINT_PRODUCTS,
   type PrintProductEntry,
@@ -70,6 +71,17 @@ function emptyOffer(): Record<PhysicalFormat, PrintSize[]> {
 }
 
 /**
+ * Whether a table entry is one the *offer* lists. The offer is the mounted
+ * (default) view of the catalogue (#335): framed sizes come from the mount
+ * window product, and the no-mount variant is an option the configurator
+ * enables per size against the master, not a second offer line. Including it
+ * here would list every framed size twice.
+ */
+export function isOfferedProduct(product: PrintProductEntry): boolean {
+  return product.format !== "framed" || product.mount === DEFAULT_FRAMED_MOUNT;
+}
+
+/**
  * The offer a master is eligible for, derived from the table. Sizes come out in
  * table order, so the smallest is first. This never returns options the caller
  * must narrow; `narrowOffer` does the narrowing against an owner's edits.
@@ -77,6 +89,7 @@ function emptyOffer(): Record<PhysicalFormat, PrintSize[]> {
 export function eligibleOffer(master: MasterFacts): PrintOffer {
   const offer = emptyOffer();
   for (const product of PRINT_PRODUCTS) {
+    if (!isOfferedProduct(product)) continue;
     if (assess(master, product).verdict.eligible) {
       offer[product.format].push(product.size);
     }
@@ -143,7 +156,7 @@ export function parsePrintOffer(
       }
       seen.add(entry);
 
-      const product = findProduct(format, entry, products);
+      const product = findProduct(format, entry, null, products);
       if (!product) {
         problems.push({
           format,
@@ -188,6 +201,7 @@ export function narrowOffer(
   const newlyEligible: Assessment[] = [];
 
   for (const product of PRINT_PRODUCTS) {
+    if (!isOfferedProduct(product)) continue;
     const assessment = assess(master, product);
     const listed = current[product.format].includes(product.size);
 

@@ -31,8 +31,11 @@ import {
   type PrintSize,
 } from "../pricing/pricing";
 import {
+  DEFAULT_FRAMED_MOUNT,
+  FRAMED_MOUNTS,
   PRINT_PRODUCTS,
   printAreaIn,
+  type FramedMount,
   type PrintProductEntry,
 } from "../pricing/print-products";
 import { FRAME_FINISHES, SELLABLE_FORMATS } from "../pricing/sku-map";
@@ -62,6 +65,21 @@ const FRAME_COPY: Record<FrameFinish, string> = {
   brown: "Brown Wood",
 };
 
+/**
+ * The mount control's copy (#335), keyed by mount so a new mount is a compile
+ * error until it has words — the same rule the format and frame Records follow.
+ */
+const MOUNT_COPY: Record<FramedMount, string> = {
+  white: "White Mount",
+  none: "No Mount",
+};
+
+/** The lower-case phrase for the mount, for the preview label. */
+const MOUNT_PHRASE: Record<FramedMount, string> = {
+  white: "white mount",
+  none: "no mount",
+};
+
 const CM_PER_INCH = 2.54;
 
 /** A framed product's mount window in whole cm, short edge first. */
@@ -77,45 +95,54 @@ function imageSizeCm(product: PrintProductEntry): {
 }
 
 /**
- * Every framed size's mount window in whole cm (#334), derived from the pinned
- * print areas rather than typed in. This is the same `printAreaIn` the preview
- * geometry draws from, so the number on the size option is the number inside
- * the mount on screen; the issue's reference table is checked against this in
- * tests, which is what catches a drifted Prodigi catalogue.
+ * Every framed size's visible area in whole cm, per mount (#334, #335):
+ * the mount window for White Mount, the full glaze for No Mount. Derived from
+ * the pinned print areas rather than typed in, so the number on the option is
+ * the number the preview draws. The issue's reference table is checked against
+ * this in tests, which is what catches a drifted Prodigi catalogue.
  *
  * Whole cm because that is the unit the size on the button is in: a 12 × 16 in
  * window is 20.32 × 30.48 cm, and the honest thing to tell a buyer next to
  * "30 × 40 cm" is "20 × 30 cm".
  */
-const IMAGE_SIZE_CM: Record<PrintSize, { short: number; long: number }> =
-  Object.fromEntries(
-    PRINT_PRODUCTS.filter((product) => product.format === "framed").map(
-      (product) => [product.size, imageSizeCm(product)],
+const MOUNT_IMAGE_SIZE_CM: Record<
+  FramedMount,
+  Record<PrintSize, { short: number; long: number }>
+> = Object.fromEntries(
+  FRAMED_MOUNTS.map((mount) => [
+    mount,
+    Object.fromEntries(
+      PRINT_PRODUCTS.filter(
+        (product) => product.format === "framed" && product.mount === mount,
+      ).map((product) => [product.size, imageSizeCm(product)]),
     ),
-  ) as Record<PrintSize, { short: number; long: number }>;
+  ]),
+) as Record<FramedMount, Record<PrintSize, { short: number; long: number }>>;
 
 /**
- * The photo's visible size behind the mount (#334), e.g. `20 × 30 cm` for a
- * 30 × 40 frame. Orientation is the photo's, exactly as `sizeLabel`: a
- * landscape photo hangs long edge first, and the window turns with it.
+ * The photo's visible size for a framed product (#334), e.g. `20 × 30 cm` for a
+ * framed window, or the full glaze size for an unmounted print (#335).
+ * Orientation is the photo's, exactly as `sizeLabel`: a landscape photo hangs
+ * long edge first, and the window turns with it.
  */
 export function imageSizeLabel(
   size: PrintSize,
   orientation: Orientation,
+  mount: FramedMount = DEFAULT_FRAMED_MOUNT,
 ): string {
-  const area = IMAGE_SIZE_CM[size];
+  const area = MOUNT_IMAGE_SIZE_CM[mount][size];
   return orientation === "landscape"
     ? `${area.long} × ${area.short} cm`
     : `${area.short} × ${area.long} cm`;
 }
 
 /**
- * The helper line under the Frame Finish select (#334).
+ * The helper line under the Frame Finish / Mount selects (#334, #335).
  *
  * A function, not a constant, because the one fact that matters here — how big
- * the photo actually is — depends on the size the buyer just chose. This is
- * also why the visible size is not on the size option: the select has to stay
- * short enough to fit at 320px (#331), and this line wraps and has room.
+ * the photo actually is — depends on the size and mount the buyer just chose.
+ * This is also why the visible size is not on the size option: the select has
+ * to stay short enough to fit at 320px (#331), and this line wraps and has room.
  *
  * Deliberately says acrylic and never glass, and never names a paper: a CFPM
  * is EMA 200gsm, and the Hahnemühle copy elsewhere on the site belongs to the
@@ -124,11 +151,20 @@ export function imageSizeLabel(
 export function framedMountNote(
   size: PrintSize,
   orientation: Orientation,
+  mount: FramedMount = DEFAULT_FRAMED_MOUNT,
 ): string {
+  const moulding = Math.round(CLASSIC_FRAME_MOULDING_MM / 10);
+  if (mount === "none") {
+    return (
+      `Acrylic glazing, no mount, ready to hang. ` +
+      `Your photo fills the frame edge to edge at ${imageSizeLabel(size, orientation, mount)}; ` +
+      `the frame adds about ${moulding} cm on each side.`
+    );
+  }
   return (
     `Snow-white acid-free mount, acrylic glazing, ready to hang. ` +
-    `Your photo shows at ${imageSizeLabel(size, orientation)} behind the mount; ` +
-    `the frame adds about ${Math.round(CLASSIC_FRAME_MOULDING_MM / 10)} cm ` +
+    `Your photo shows at ${imageSizeLabel(size, orientation, mount)} behind the mount; ` +
+    `the frame adds about ${moulding} cm ` +
     `on each side.`
   );
 }
@@ -199,7 +235,7 @@ const PREVIEW_LABEL: Record<
   giclee: (alt, selection, orientation) =>
     `${alt} — giclée fine art print, ${sizeLabel(selection.size, orientation)}`,
   framed: (alt, selection, orientation) =>
-    `${alt} — framed print, ${sizeLabel(selection.size, orientation)}, ${FRAME_COPY[selection.frame]} frame with white mount`,
+    `${alt} — framed print, ${sizeLabel(selection.size, orientation)}, ${FRAME_COPY[selection.frame]} frame with ${MOUNT_PHRASE[selection.mount]}`,
   canvas: (alt, selection, orientation) =>
     `${alt} — stretched canvas, ${sizeLabel(selection.size, orientation)}, image wrapped around the ${CANVAS_BAR_DEPTH_MM} mm edges`,
   digital: (alt) => alt,
@@ -225,7 +261,7 @@ const PREVIEW_CAPTION: Record<
   giclee: (selection, orientation) =>
     `Giclée Fine Art · ${sizeLabel(selection.size, orientation)}`,
   framed: (selection, orientation) =>
-    `Framed Print · ${sizeLabel(selection.size, orientation)} · ${FRAME_COPY[selection.frame]}`,
+    `Framed Print · ${sizeLabel(selection.size, orientation)} · ${FRAME_COPY[selection.frame]} · ${MOUNT_COPY[selection.mount]}`,
   canvas: (selection, orientation) =>
     `Stretched Canvas · ${sizeLabel(selection.size, orientation)}`,
   digital: () => "Digital Copy · full frame",
@@ -268,9 +304,23 @@ export function previewNote(geometry: PreviewGeometry): string | null {
 export const DEFAULT_PRINT_FORMAT: PrintFormat = "giclee";
 export const DEFAULT_PRINT_SIZE: PrintSize = "50x70";
 export const DEFAULT_FRAME_FINISH: FrameFinish = "black";
+// The default mount is owned by print-products (it is part of the product key);
+// re-exported here so the configurator's defaults all come from one module.
+export { DEFAULT_FRAMED_MOUNT };
 
 /** One entry per frame finish, in catalog order. */
 export const CONFIGURATOR_FRAMES = FRAME_FINISHES.map((id) => ({
   id,
   label: FRAME_COPY[id],
 }));
+
+/** One entry per framed mount, in catalog order (#335). */
+export const CONFIGURATOR_MOUNTS = FRAMED_MOUNTS.map((id) => ({
+  id,
+  label: MOUNT_COPY[id],
+}));
+
+/** The copy for one mount, for the configurator's control label. */
+export function mountLabel(mount: FramedMount): string {
+  return MOUNT_COPY[mount];
+}

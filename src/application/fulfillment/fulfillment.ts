@@ -44,7 +44,12 @@ import {
 import { ensureDownloadToken } from "./download-token";
 import type { DownloadTokenLimits } from "../../domain/ordering/download-token";
 import type { FrameFinish } from "../../domain/pricing/pricing";
-import { isFrameFinishValue, isPrintSize } from "../../domain/pricing/sku-map";
+import {
+  isFrameFinishValue,
+  isFramedMountValue,
+  isPrintSize,
+  type FramedMount,
+} from "../../domain/pricing/sku-map";
 import { getPhoto } from "../../domain/catalog/photos";
 import type { OrdersStore } from "../../domain/ordering/orders-store";
 import { emailCopyFor } from "../../domain/ordering/email-copy";
@@ -329,7 +334,8 @@ export async function fulfillCheckoutSession(
       record.kind !== "physical" ||
       !isPrintSize(record.size) ||
       record.recipient === null ||
-      (record.frame !== "" && !isFrameFinishValue(record.frame))
+      (record.frame !== "" && !isFrameFinishValue(record.frame)) ||
+      (record.mount !== "" && !isFramedMountValue(record.mount))
     ) {
       // A record in the retryable state that is not a complete physical order
       // cannot be a normal write: buildRecord only writes awaiting-prodigi and
@@ -355,6 +361,14 @@ export async function fulfillCheckoutSession(
           ? null
           : isFrameFinishValue(record.frame)
             ? record.frame
+            : null;
+      // "" is a pre-mount (or non-framed) record: the provider defaults it to
+      // the mounted frame, which is what those orders shipped as (#335).
+      const mount: FramedMount | null =
+        record.mount === ""
+          ? null
+          : isFramedMountValue(record.mount)
+            ? record.mount
             : null;
       // Sign the asset URL before calling the provider — createProdigiOrder
       // requires it (no placeholder fallback since #245). The MD5 comes from
@@ -393,6 +407,7 @@ export async function fulfillCheckoutSession(
         format: record.format,
         size: record.size,
         frame,
+        mount,
         recipient: record.recipient,
         assetUrl,
         assetMd5,

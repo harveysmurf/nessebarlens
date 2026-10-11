@@ -1935,6 +1935,85 @@ test("quote: a physical quote is priced from the Prodigi response", async () => 
   }
 });
 
+test("quote: a no-mount framed selection quotes and caches the CFP SKU (#335)", async () => {
+  // The route has to carry the mount into the Prodigi request and the cache
+  // key: an unmounted selection is a different product (GLOBAL-CFP-*), so a
+  // mount dropped here would both quote the mounted price and, worse, let the
+  // two shares share one cache entry.
+  const saved = { ...process.env };
+  const originalFetch = globalThis.fetch;
+  const originalCaches = (globalThis as { caches?: unknown }).caches;
+  process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
+  process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
+
+  const entries = new Map<string, string>();
+  (globalThis as { caches?: unknown }).caches = {
+    default: {
+      async match(request: Request) {
+        const stored = entries.get(request.url);
+        return stored === undefined
+          ? undefined
+          : new Response(stored, {
+              headers: { "content-type": "application/json" },
+            });
+      },
+      async put(request: Request, response: Response) {
+        entries.set(request.url, await response.text());
+      },
+    },
+  };
+
+  const quotedSkus: string[] = [];
+  globalThis.fetch = (async (_url: string, init?: RequestInit) => {
+    const sent = JSON.parse(String(init?.body ?? "{}")) as {
+      items?: Array<{ sku?: string }>;
+    };
+    const sku = sent.items?.[0]?.sku;
+    if (sku) quotedSkus.push(sku);
+    return new Response(
+      JSON.stringify({
+        quotes: [
+          {
+            items: [{ unitCost: { amount: "9.5" } }],
+            costSummary: { shipping: { amount: "4.99" } },
+          },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as typeof fetch;
+
+  const request = (mount: string) =>
+    jsonRequest(`${SITE}/api/quote`, {
+      format: "framed",
+      size: "30x40",
+      frame: "black",
+      mount,
+      destinationCountryCode: "BG",
+    });
+
+  try {
+    const unmounted = await quote.POST(request("none"));
+    assert.equal(unmounted.status, 200);
+    assert.equal(quotedSkus[0], "GLOBAL-CFP-12X16", "mount none must quote CFP");
+
+    // The mounted frame is a different product, so it is a different cache
+    // entry and reaches Prodigi again with the CFPM SKU.
+    const mounted = await quote.POST(request("white"));
+    assert.equal(mounted.status, 200);
+    assert.equal(quotedSkus[1], "GLOBAL-CFPM-12X16", "mount white must quote CFPM");
+    assert.equal(quotedSkus.length, 2, "the two mounts must not share a cache entry");
+  } finally {
+    globalThis.fetch = originalFetch;
+    if (originalCaches === undefined) {
+      delete (globalThis as { caches?: unknown }).caches;
+    } else {
+      (globalThis as { caches?: unknown }).caches = originalCaches;
+    }
+    restoreEnv(saved);
+  }
+});
+
 test("quote: a repeated identical quote is served from cache, and checkout still quotes live", async () => {
   // #113: /api/quote is unauthenticated and shares Prodigi's rate limit with
   // checkout, so the second identical request must not reach Prodigi. Checkout

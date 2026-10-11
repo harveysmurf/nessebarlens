@@ -58,7 +58,7 @@ function buildSessionParams(
           currency: "eur",
           unit_amount: eurToCents(intent.quoteEur),
           product_data: {
-            name: `${intent.title} — ${formatLabel(intent.format)}`,
+            name: `${intent.title} — ${formatLabel(intent.format, intent.mount ?? undefined)}`,
             description: isPhysical
               ? `${intent.size}${intent.frame ? ` · ${intent.frame} frame` : ""}`
               : "Digital high-resolution license",

@@ -463,15 +463,17 @@ function FramedLayers({
       {geometry.frame === "brown" && (
         <MitreJoints outer={outer} m={geometry.mouldingMm} />
       )}
-      <div
-        data-mount
-        className="absolute"
-        style={{
-          ...percentRect(geometry.mount, outer),
-          background: MOUNT_BACKGROUND,
-          boxShadow: "inset 1px 2px 4px rgba(0,0,0,.28)",
-        }}
-      />
+      {geometry.mount && (
+        <div
+          data-mount
+          className="absolute"
+          style={{
+            ...percentRect(geometry.mount, outer),
+            background: MOUNT_BACKGROUND,
+            boxShadow: "inset 1px 2px 4px rgba(0,0,0,.28)",
+          }}
+        />
+      )}
       <ImageLayer
         dataWindow
         containerStyle={{
@@ -489,10 +491,13 @@ function FramedLayers({
           style={{ boxShadow: "inset 1px 1px 2px rgba(0,0,0,.18)" }}
         />
       </ImageLayer>
+      {/* The glaze sheen spans the whole inner area: the mount rect when
+          mounted, or the full-glaze window when unmounted (#335), so the
+          unmounted preview keeps the same glazing cue. */}
       <div
         className="absolute pointer-events-none"
         style={{
-          ...percentRect(geometry.mount, outer),
+          ...percentRect(geometry.mount ?? geometry.window, outer),
           background:
             "linear-gradient(120deg, transparent 35%, rgba(255,255,255,.07) 48%, transparent 62%)",
         }}
