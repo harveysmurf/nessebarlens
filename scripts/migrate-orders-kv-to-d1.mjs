@@ -131,7 +131,7 @@ export function tokenInsertSql(overwrite) {
   ON CONFLICT(token) DO NOTHING`;
 }
 
-export function orderBinds(sessionId, raw) {
+function orderBinds(sessionId, raw) {
   const record = JSON.parse(raw);
   const attempts =
     typeof record.attempts === "number" && record.attempts >= 1
@@ -158,7 +158,7 @@ export function orderBinds(sessionId, raw) {
   ];
 }
 
-export function tokenBinds(token, recordRaw, indexRaw) {
+function tokenBinds(token, recordRaw, indexRaw) {
   const record = JSON.parse(recordRaw);
   const remaining =
     typeof record.remaining === "number" ? Math.max(0, record.remaining) : 0;

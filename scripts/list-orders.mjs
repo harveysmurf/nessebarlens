@@ -173,7 +173,7 @@ export function extractRows(wranglerJson) {
   return [];
 }
 
-export function runListOrders(argv, options = {}) {
+function runListOrders(argv, options = {}) {
   const spawn = options.spawnSync ?? spawnSync;
   let parsed;
   try {

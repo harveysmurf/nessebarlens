@@ -18,7 +18,7 @@ const PLACEHOLDER = /\?/g;
 const SINGLE_QUOTE = /'/g;
 
 /** Render one bind as a SQL literal. */
-export function sqlLiteral(value) {
+function sqlLiteral(value) {
   if (value === null || value === undefined) return "NULL";
   if (typeof value === "number") return String(value);
   return `'${String(value).replace(SINGLE_QUOTE, "''")}'`;

@@ -83,7 +83,7 @@ export const DEFAULT_SKUS = [
  * for which Prodigi variant's print area and shipsTo we record: framed prints
  * ship with a black frame, canvas with ImageWrap, giclée with nothing.
  */
-export function selectorFor(sku) {
+function selectorFor(sku) {
   // CFPM (with mount) and CFP (no mount) both need `color`; the prefix covers
   // both. CFP is wanted too, so match the shorter prefix.
   if (sku.startsWith("GLOBAL-CFP")) return { color: "black" };
@@ -107,7 +107,7 @@ function variantMatches(variant, attributes) {
  * be turned to match. A landscape value here would be a captured-catalogue
  * change worth a failing contract test, not a silent flip.
  */
-export function printAreaOf(product, attributes) {
+function printAreaOf(product, attributes) {
   const variant = product.variants?.find((v) => variantMatches(v, attributes));
   if (!variant) {
     throw new Error(`no variant matches ${JSON.stringify(attributes)}`);
@@ -125,7 +125,7 @@ export function printAreaOf(product, attributes) {
   };
 }
 
-export function shipsToOf(product, attributes) {
+function shipsToOf(product, attributes) {
   const variant = product.variants?.find((v) => variantMatches(v, attributes));
   if (!variant || !Array.isArray(variant.shipsTo)) {
     throw new Error("variant has no shipsTo list");
@@ -152,7 +152,7 @@ export function colourVariantsOf(product) {
 }
 
 /** Read one SKU from the sandbox, as the fixture record the table is tested against. */
-export async function captureSku({ base, key, sku, fetchImpl = fetch }) {
+async function captureSku({ base, key, sku, fetchImpl = fetch }) {
   const attributes = selectorFor(sku);
   const res = await fetchImpl(`${base}/v4.0/products/${sku}`, {
     headers: { "X-API-Key": key },

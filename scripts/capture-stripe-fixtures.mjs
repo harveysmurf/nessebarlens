@@ -121,7 +121,7 @@ export function pickEvent(type, events) {
   return type === "checkout.session.completed" ? pickCheckoutEvent(events) : (events[0] ?? null);
 }
 
-export function fixtureFileName(type) {
+function fixtureFileName(type) {
   return `${type}.json`;
 }
 
