@@ -69,6 +69,7 @@ test("recipient line2, state, email and phone are only sent when present", () =>
       format: "giclee",
       size: "50x70",
       frame: null,
+      mount: null,
       recipient,
       assetUrl: ASSET_URL,
       assetMd5: "c".repeat(32),

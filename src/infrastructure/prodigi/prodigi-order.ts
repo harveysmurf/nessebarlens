@@ -121,8 +121,12 @@ export function buildProdigiOrderBody(input: {
   format: PhysicalFormat;
   size: PrintSize;
   frame: FrameFinish | null;
-  /** Framed only (#335); null reads as the default (mounted). */
-  mount?: FramedMount | null;
+  /**
+   * Framed only (#335). Required, like the port: the legacy default resolves
+   * upstream at the order-record read boundary, so a caller that omits mount
+   * cannot silently price the default mounted SKU for a framed order.
+   */
+  mount: FramedMount | null;
   recipient: OrderRecipient;
   /** The HMAC /api/print-asset URL Prodigi fetches. Required: there is no
    * public-placeholder fallback anymore (#245). */
@@ -137,7 +141,7 @@ export function buildProdigiOrderBody(input: {
     input.format,
     input.size,
     input.frame,
-    input.mount ?? null,
+    input.mount,
   );
   const assetUrl = input.assetUrl;
   const assetMd5 = input.assetMd5;

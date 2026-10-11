@@ -45,6 +45,7 @@ const INPUT = {
   format: "giclee" as const,
   size: "30x40" as const,
   frame: null,
+  mount: null,
   recipient: RECIPIENT,
   assetMd5: "c".repeat(32),
 };
