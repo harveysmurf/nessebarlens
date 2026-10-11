@@ -114,6 +114,13 @@ for (const width of [320, 360]) {
       // point of moving it off the size option, so asserting visibility alone
       // would pass even if the size were dropped from the string.
       await expect(note).toHaveText(/shows at \d+ × \d+ cm behind the mount/);
+
+      // The note sits under Frame Finish and changes with the size, so it is
+      // the finish select's description — otherwise a screen reader hears the
+      // control, its options, and none of the disclosure it depends on.
+      await expect(page.locator("#frame-finish")).toHaveAccessibleDescription(
+        /shows at \d+ × \d+ cm behind the mount/,
+      );
     });
   });
 }

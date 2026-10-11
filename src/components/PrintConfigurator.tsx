@@ -335,6 +335,9 @@ export function PrintConfigurator({
               id="frame-finish"
               value={frame}
               onChange={(e) => selectFrame(e.target.value)}
+              // The mount note is visually tied to this control and carries the
+              // size a screen reader user would otherwise never hear (#334).
+              aria-describedby="frame-mount-note"
               className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900"
             >
               {CONFIGURATOR_FRAMES.map((f) => (
@@ -347,7 +350,7 @@ export function PrintConfigurator({
                 and the photo behind the mount is smaller. Saying so here,
                 beside the finish the mount is fixed to, is the last point
                 before checkout where it can still change the buyer's mind. */}
-            <p className="text-[10px] text-stone-500 mt-1.5">
+            <p id="frame-mount-note" className="text-[10px] text-stone-500 mt-1.5">
               {framedMountNote(size, orientation)}
             </p>
           </div>
