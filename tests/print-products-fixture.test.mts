@@ -122,6 +122,30 @@ test("every table print area matches the capture, or its safe colour bound", () 
   }
 });
 
+test("both giclée papers share a print area at every size (#337)", () => {
+  // Offer eligibility is computed from the default (EMA) product only
+  // (print-offer.ts), and a framed no-mount size gets its own per-variant
+  // check in the checkout route — but the HPR paper does not. So the feature
+  // rests on the captured fact that a size's Photo Rag print area equals its
+  // Matte Art one. Encode it here: if a future capture ever showed HPR
+  // narrower, this fails and the offer maths must be revisited rather than
+  // selling an HPR size whose master lacks the resolution.
+  const giclee = PRINT_PRODUCTS.filter((p) => p.format === "giclee");
+  const sizes = [...new Set(giclee.map((p) => p.size))];
+  for (const size of sizes) {
+    const ema = giclee.find((p) => p.size === size && p.paper === "ema");
+    const hpr = giclee.find((p) => p.size === size && p.paper === "hpr");
+    assert.ok(ema, `no Matte Art product for giclée ${size}`);
+    assert.ok(hpr, `no Photo Rag product for giclée ${size}`);
+    assert.deepEqual(
+      hpr.printAreaPx,
+      ema.printAreaPx,
+      `Photo Rag ${size} print area differs from Matte Art`,
+    );
+    assert.equal(hpr.printAreaDpi, ema.printAreaDpi, `Photo Rag ${size} DPI`);
+  }
+});
+
 test("every pinned print area is portrait (#307)", () => {
   // The print asset is rotated to the print area's orientation; if a pinned
   // product were ever landscape the rotation decision would be wrong, so the
