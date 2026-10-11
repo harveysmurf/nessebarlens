@@ -1,7 +1,11 @@
 {
   "compilerOptions": {
     "target": "ES2017",
-    "lib": ["dom", "dom.iterable", "esnext"],
+    "lib": [
+      "dom",
+      "dom.iterable",
+      "esnext"
+    ],
     "allowJs": true,
     "skipLibCheck": true,
     "strict": true,
@@ -11,7 +15,7 @@
     "moduleResolution": "bundler",
     "resolveJsonModule": true,
     "isolatedModules": true,
-    "jsx": "preserve",
+    "jsx": "react-jsx",
     "incremental": true,
     "plugins": [
       {
@@ -19,15 +23,27 @@
       }
     ],
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": [
+        "./src/*"
+      ]
     }
   },
-  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
   // `worker.ts` is excluded because its only import, `.open-next/worker.js`,
   // is a build artifact: `next build` type-checks before OpenNext generates it,
   // and a relative `declare module` cannot stand in for an unresolved relative
   // specifier. Its behaviour is pinned by `tests/reconcile-cron.test.mts`
   // instead, and `src/infrastructure/cloudflare/reconcile-cron.ts` — where the cron logic actually
   // lives — stays typechecked and covered.
-  "exclude": ["node_modules", "tests", "worker.ts"]
+  "exclude": [
+    "node_modules",
+    "tests",
+    "worker.ts"
+  ]
 }
