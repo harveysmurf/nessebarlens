@@ -30,8 +30,17 @@ import {
   type PrintFormat,
   type PrintSize,
 } from "../pricing/pricing";
+import {
+  PRINT_PRODUCTS,
+  printAreaIn,
+  type PrintProductEntry,
+} from "../pricing/print-products";
 import { FRAME_FINISHES, SELLABLE_FORMATS } from "../pricing/sku-map";
-import { CANVAS_BAR_DEPTH_MM, type PreviewGeometry } from "./print-preview";
+import {
+  CANVAS_BAR_DEPTH_MM,
+  CLASSIC_FRAME_MOULDING_MM,
+  type PreviewGeometry,
+} from "./print-preview";
 import type { PrintSelection } from "./print-selection";
 
 export type FormatCopy = { title: string; sub: string };
@@ -39,7 +48,10 @@ export type FormatOption = { id: PrintFormat } & FormatCopy;
 
 const FORMAT_COPY: Record<PrintFormat, FormatCopy> = {
   giclee: { title: "Giclée Fine Art", sub: "Hahnemühle 308gsm" },
-  framed: { title: "Framed Print", sub: "Solid Wood Frame" },
+  // #334: the mount is half of what ships, so the button says so. "Wood Frame",
+  // not "Solid Wood Frame" — the brown finish is an oak-effect laminate, and
+  // the mount is the fact the buyer is actually missing.
+  framed: { title: "Framed Print", sub: "Wood Frame · White Mount" },
   canvas: { title: "Stretched Canvas", sub: "Cotton Canvas" },
   digital: { title: "Digital Copy", sub: "Full Resolution JPG" },
 };
@@ -49,6 +61,77 @@ const FRAME_COPY: Record<FrameFinish, string> = {
   white: "Satin White",
   brown: "Brown Wood",
 };
+
+const CM_PER_INCH = 2.54;
+
+/** A framed product's mount window in whole cm, short edge first. */
+function imageSizeCm(product: PrintProductEntry): {
+  short: number;
+  long: number;
+} {
+  const area = printAreaIn(product);
+  return {
+    short: Math.round(area.short * CM_PER_INCH),
+    long: Math.round(area.long * CM_PER_INCH),
+  };
+}
+
+/**
+ * Every framed size's mount window in whole cm (#334), derived from the pinned
+ * print areas rather than typed in. This is the same `printAreaIn` the preview
+ * geometry draws from, so the number on the size option is the number inside
+ * the mount on screen; the issue's reference table is checked against this in
+ * tests, which is what catches a drifted Prodigi catalogue.
+ *
+ * Whole cm because that is the unit the size on the button is in: a 12 × 16 in
+ * window is 20.32 × 30.48 cm, and the honest thing to tell a buyer next to
+ * "30 × 40 cm" is "20 × 30 cm".
+ */
+const IMAGE_SIZE_CM: Record<PrintSize, { short: number; long: number }> =
+  Object.fromEntries(
+    PRINT_PRODUCTS.filter((product) => product.format === "framed").map(
+      (product) => [product.size, imageSizeCm(product)],
+    ),
+  ) as Record<PrintSize, { short: number; long: number }>;
+
+/**
+ * The photo's visible size behind the mount (#334), e.g. `20 × 30 cm` for a
+ * 30 × 40 frame. Orientation is the photo's, exactly as `sizeLabel`: a
+ * landscape photo hangs long edge first, and the window turns with it.
+ */
+export function imageSizeLabel(
+  size: PrintSize,
+  orientation: Orientation,
+): string {
+  const area = IMAGE_SIZE_CM[size];
+  return orientation === "landscape"
+    ? `${area.long} × ${area.short} cm`
+    : `${area.short} × ${area.long} cm`;
+}
+
+/**
+ * The helper line under the Frame Finish select (#334).
+ *
+ * A function, not a constant, because the one fact that matters here — how big
+ * the photo actually is — depends on the size the buyer just chose. This is
+ * also why the visible size is not on the size option: the select has to stay
+ * short enough to fit at 320px (#331), and this line wraps and has room.
+ *
+ * Deliberately says acrylic and never glass, and never names a paper: a CFPM
+ * is EMA 200gsm, and the Hahnemühle copy elsewhere on the site belongs to the
+ * giclée format, which is a separate problem (#334's Notes).
+ */
+export function framedMountNote(
+  size: PrintSize,
+  orientation: Orientation,
+): string {
+  return (
+    `Snow-white acid-free mount, acrylic glazing, ready to hang. ` +
+    `Your photo shows at ${imageSizeLabel(size, orientation)} behind the mount; ` +
+    `the frame adds about ${Math.round(CLASSIC_FRAME_MOULDING_MM / 10)} cm ` +
+    `on each side.`
+  );
+}
 
 /** One entry per sellable format, in catalog order. */
 export const CONFIGURATOR_FORMATS: FormatOption[] = SELLABLE_FORMATS.map(

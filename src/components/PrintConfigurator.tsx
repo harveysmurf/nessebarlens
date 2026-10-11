@@ -15,6 +15,7 @@ import {
 import { checkoutRequest, quoteRequest } from "@/domain/ordering/request-bodies";
 import {
   CONFIGURATOR_FRAMES,
+  framedMountNote,
   masterResolutionLabel,
   offeredFormats,
   sizeOptions,
@@ -342,6 +343,13 @@ export function PrintConfigurator({
                 </option>
               ))}
             </select>
+            {/* #334: the size named above is the window inside the moulding,
+                and the photo behind the mount is smaller. Saying so here,
+                beside the finish the mount is fixed to, is the last point
+                before checkout where it can still change the buyer's mind. */}
+            <p className="text-[10px] text-stone-500 mt-1.5">
+              {framedMountNote(size, orientation)}
+            </p>
           </div>
         )}
 

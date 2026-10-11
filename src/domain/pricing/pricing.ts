@@ -37,9 +37,12 @@ export function merchandiseFromUnitCost(unitCostEur: number): number {
 // Typed as Record<union, string> rather than switch: adding a member to
 // PrintFormat/PrintSize then fails to compile here instead of silently
 // returning undefined at runtime.
+//
+// Framed names the mount (#334): every framed SKU is a CFPM, and the receipt
+// has to match the framed print that arrives.
 const FORMAT_LABELS: Record<PrintFormat, string> = {
   giclee: "Giclée Fine Art Print",
-  framed: "Framed Fine Art",
+  framed: "Framed Fine Art (White Mount)",
   canvas: "Stretched Canvas",
   digital: "High-Res Digital Download",
 };

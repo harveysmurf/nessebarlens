@@ -8,7 +8,9 @@ import {
   DEFAULT_FRAME_FINISH,
   DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
+  framedMountNote,
   firstOfferedSize,
+  imageSizeLabel,
   masterResolutionLabel,
   offeredFormats,
   previewCaption,
@@ -20,6 +22,7 @@ import { CANVAS_BAR_DEPTH_MM, type PreviewGeometry } from "../src/domain/orderin
 import type { PrintSelection } from "../src/domain/ordering/print-selection.ts";
 import type { MasterFacts } from "../src/domain/catalog/master-facts.ts";
 import { sizeLabel } from "../src/domain/pricing/pricing.ts";
+import { PRINT_PRODUCTS } from "../src/domain/pricing/print-products.ts";
 import { FRAME_FINISHES, PRINT_SIZES, SELLABLE_FORMATS } from "../src/domain/pricing/sku-map.ts";
 
 /** Every size on every format — the offer of a very high-resolution master. */
@@ -390,4 +393,133 @@ test("previewNote explains the wrap, or a real trim, and nothing else (#326)", (
   assert.equal(previewNote(barely), null);
   // Digital is never trimmed.
   assert.equal(previewNote({ kind: "digital" }), null);
+});
+
+// ---------------------------------------------------------------------------
+// #334 — framed prints tell the buyer about the mount and the visible size.
+// ---------------------------------------------------------------------------
+
+/**
+ * The issue's reference table, transcribed from the verified Prodigi catalogue
+ * (issue #334, "What Prodigi actually ships"). `imageSizeLabel` derives these
+ * from `printAreaPx` / `printAreaDpi` instead of reading this table; keeping
+ * both means a silently re-pinned SKU (a drifted catalogue) fails here rather
+ * than reaching a buyer's size option.
+ */
+const MOUNT_WINDOW_CM: Record<string, string> = {
+  "20x30": "15 × 25 cm",
+  "30x40": "20 × 30 cm",
+  "30x45": "20 × 36 cm",
+  "40x60": "31 × 51 cm",
+  "50x70": "41 × 61 cm",
+  "50x75": "41 × 66 cm",
+  "60x90": "51 × 81 cm",
+  "70x100": "61 × 91 cm",
+};
+
+test("the visible image size is derived from every framed SKU, both orientations (#334)", () => {
+  const framed = PRINT_PRODUCTS.filter((product) => product.format === "framed");
+  // The table is checked in full so a size cannot be added without a row here.
+  assert.equal(framed.length, Object.keys(MOUNT_WINDOW_CM).length);
+  // And the other way round: `IMAGE_SIZE_CM` is built by casting the framed
+  // products to `Record<PrintSize, …>`, so a size with no framed SKU would be a
+  // missing key the cast hides — `imageSizeLabel` would throw on it in the
+  // configurator, for every size, the moment someone picks framed.
+  const framedSizes = new Set(framed.map((product) => product.size));
+  assert.deepEqual(
+    PRINT_SIZES.filter((size) => !framedSizes.has(size)),
+    [],
+    "a size is offered that no framed SKU backs",
+  );
+
+  for (const product of framed) {
+    const expected = MOUNT_WINDOW_CM[product.size];
+    assert.ok(expected, `no reference row for framed ${product.size}`);
+    assert.equal(imageSizeLabel(product.size, "portrait"), expected, product.sku);
+    // Landscape turns the window with the photo, exactly as `sizeLabel` does.
+    const [short, long] = expected.replace(/ cm$/, "").split(" × ");
+    assert.equal(imageSizeLabel(product.size, "landscape"), `${long} × ${short} cm`, product.sku);
+  }
+});
+
+test("giclée, canvas and digital keep their bare size labels (#334)", () => {
+  // The second size is framed-only: those formats print to the edge of the
+  // size named, so there is no smaller window to warn about.
+  for (const format of ["giclee", "canvas"] as const) {
+    assert.deepEqual(
+      sizeOptions(FULL_OFFER, format, "portrait"),
+      PRINT_SIZES.map((size) => ({ id: size, label: sizeLabel(size, "portrait") })),
+    );
+  }
+});
+
+test("the framed format button names the mount (#334)", () => {
+  const framed = CONFIGURATOR_FORMATS.find((format) => format.id === "framed");
+  assert.equal(framed?.title, "Framed Print");
+  assert.match(framed?.sub ?? "", /white mount/i);
+});
+
+test("the mount helper states only what a CFPM actually ships (#334)", () => {
+  // Snow-white mount, acrylic (never glass — it is Perspex), ready to hang,
+  // and the size is the window with ~2 cm of moulding each side.
+  const note = framedMountNote("30x40", "portrait");
+  assert.match(note, /snow-white/i);
+  assert.match(note, /acrylic/i);
+  assert.doesNotMatch(note, /glass/i);
+  // #334 §5: a CFPM is EMA 200gsm. Never claim Hahnemühle here, and never
+  // promise a finish we do not laminate ("solid oak"/"stained").
+  assert.doesNotMatch(note, /hahnem/i);
+  assert.doesNotMatch(note, /stained|solid oak/i);
+  assert.match(note, /\b2 cm on each side\b/);
+});
+
+test("the mount helper names the photo's visible size for the chosen size (#334)", () => {
+  // The visible size is the thing #334 exists to disclose, and it is
+  // orientation-dependent because a landscape photo hangs long edge first.
+  // It tracks the selection rather than being one constant: switching size in
+  // the configurator must change this line.
+  const portrait = framedMountNote("30x40", "portrait");
+  const landscape = framedMountNote("30x40", "landscape");
+  // Read from MOUNT_WINDOW_CM rather than guessed, so this test and the
+  // catalogue table cannot drift apart.
+  const bigger = framedMountNote("50x70", "portrait");
+
+  assert.match(portrait, /20 × 30 cm/);
+  assert.match(landscape, /30 × 20 cm/);
+  // Read from MOUNT_WINDOW_CM rather than guessed, so this test and the
+  // catalogue table cannot drift apart.
+  assert.match(bigger, new RegExp(MOUNT_WINDOW_CM["50x70"]));
+
+  assert.notEqual(portrait, landscape);
+  assert.notEqual(portrait, bigger);
+  // The outer size stays on the option itself, so the helper has to make the
+  // difference legible rather than just repeating the frame size.
+  assert.doesNotMatch(portrait, /30 × 40/);
+});
+
+test("no framed copy anywhere promises glass or Hahnemühle paper (#334)", () => {
+  // Belt-and-braces over the specific strings: if a future edit reintroduces
+  // either promise in any framed-facing string, this fails.
+  const framedCopy = [
+    CONFIGURATOR_FORMATS.find((format) => format.id === "framed")?.sub ?? "",
+    ...PRINT_SIZES.map((size) => framedMountNote(size, "portrait")),
+    ...PRINT_SIZES.map((size) => framedMountNote(size, "landscape")),
+    ...CONFIGURATOR_FRAMES.map((frame) => frame.label),
+  ].join(" ");
+  assert.doesNotMatch(framedCopy, /glass|hahnem/i);
+});
+
+test("the configurator renders the mount helper beside the frame finish (#334)", () => {
+  // The .tsx is not importable from node --test, so this checks the source:
+  // the helper has to live under the Frame Finish select, in the established
+  // style, and come from the typed copy rather than a literal.
+  const source = fs.readFileSync(
+    new URL("../src/components/PrintConfigurator.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.ok(source.includes("framedMountNote(size, orientation)"));
+  assert.ok(
+    source.includes("text-[10px] text-stone-500"),
+    "the helper line lost its style",
+  );
 });
