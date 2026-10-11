@@ -178,6 +178,16 @@ test.describe("product preview (#326)", () => {
   });
 
   test.describe("canvas angled view (#327)", () => {
+    // The angled product carries `motion-safe:transition-transform
+    // duration-300`, so on mount its transform animates from flat to the
+    // rotated pose. A geometry assertion made mid-transition measures the
+    // pose, not the final layout — the same failure the scroll race caused.
+    // Emulating reduced motion drops every `motion-safe:` transition (they are
+    // gated on `prefers-reduced-motion: no-preference`), so the product is at
+    // its settled geometry as soon as it renders. Layout is unaffected: the
+    // transform itself is inline style, only its animation is disabled.
+    test.use({ reducedMotion: "reduce" });
+
     function toggle(page: Page) {
       return page.getByRole("radiogroup", { name: "Preview view" });
     }
@@ -278,14 +288,34 @@ test.describe("product preview (#326)", () => {
       await page.goto(`/prints/${HARBOUR}`);
       await page.getByText(/stretched canvas/i).click();
       await expectAngled(page);
-      const stage = await preview(page).boundingBox();
-      const product = await preview(page).locator("[data-product]").boundingBox();
-      expect(stage).not.toBeNull();
-      expect(product).not.toBeNull();
-      expect(product!.x).toBeGreaterThanOrEqual(stage!.x - 1);
-      expect(product!.y).toBeGreaterThanOrEqual(stage!.y - 1);
-      expect(product!.x + product!.width).toBeLessThanOrEqual(stage!.x + stage!.width + 1);
-      expect(product!.y + product!.height).toBeLessThanOrEqual(stage!.y + stage!.height + 1);
+
+      // Read both rects in one evaluate: a single snapshot is the only way the
+      // two rects are guaranteed to share a scroll offset. `locator.boundingBox()`
+      // is not atomic across calls — each is its own round trip, and anything
+      // that moves the page between them (a click that leaves `scroll-smooth`
+      // still animating, scroll anchoring, a late image load) shifts the second
+      // rect relative to the first. This reddened main twice with a phantom
+      // overflow; the CI trace shows the cause — `__playwright_scroll_top_` was
+      // 787 at the stage read and 691 at the product read, a 96px scroll-up
+      // between the two round trips that reads as a 63px bottom overflow while
+      // the product truly sits ~31px inside the stage. One evaluate makes the
+      // assertion about geometry, not about scroll timing.
+      const { stage, product } = await page.evaluate(() => {
+        const rect = (selector: string) => {
+          const node = document.querySelector(selector);
+          if (node === null) throw new Error(`no element for ${selector}`);
+          const { x, y, width, height } = node.getBoundingClientRect();
+          return { x, y, width, height };
+        };
+        return {
+          stage: rect("[data-preview-kind]"),
+          product: rect("[data-preview-kind] [data-product]"),
+        };
+      });
+      expect(product.x).toBeGreaterThanOrEqual(stage.x - 1);
+      expect(product.y).toBeGreaterThanOrEqual(stage.y - 1);
+      expect(product.x + product.width).toBeLessThanOrEqual(stage.x + stage.width + 1);
+      expect(product.y + product.height).toBeLessThanOrEqual(stage.y + stage.height + 1);
     });
   });
 
