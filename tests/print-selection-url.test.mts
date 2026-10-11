@@ -75,6 +75,24 @@ test("a size not offered by the chosen format falls back to its first size", () 
   });
 });
 
+test("the size fallback follows the queried format, not the opening one", () => {
+  // The opening format is giclee (first size 50x70); framed sells 30x40. A bare
+  // `?format=framed` must open framed on framed's own first size, never the
+  // opening format's, or the select points at a size framed does not sell.
+  const split: PrintOffer = { giclee: ["50x70"], framed: ["30x40"], canvas: [] };
+  assert.deepEqual(parse("format=framed", split), {
+    format: "framed",
+    size: "30x40",
+    frame: DEFAULT_FRAME_FINISH,
+  });
+  // A size the queried format does not sell falls back to that format's first.
+  assert.deepEqual(parse("format=framed&size=50x70", split), {
+    format: "framed",
+    size: "30x40",
+    frame: DEFAULT_FRAME_FINISH,
+  });
+});
+
 test("a size is honoured for the opening format when format is absent", () => {
   assert.deepEqual(parse("size=50x70"), {
     format: "giclee",

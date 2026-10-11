@@ -36,14 +36,21 @@ import { PrintConfigurator } from "./PrintConfigurator";
 import { PrintPreview } from "./PrintPreview";
 
 /**
- * The URL is the configurator's source of truth (#333). `replaceState` does not
- * emit `popstate`, so a change we make dispatches one itself; a real Back or
- * Forward does too, which is what keeps the selection and the address bar in
- * step without a navigation.
+ * The URL is the configurator's source of truth (#333). A real Back or Forward
+ * fires `popstate`, which keeps the selection and the address bar in step. A
+ * change we make uses `replaceState`, which fires nothing, so it announces
+ * itself with its own event — not a synthetic `popstate`, which would also wake
+ * Next's router listeners for a navigation that did not happen.
  */
+const LOCATION_CHANGED = "print-selection:locationchange";
+
 function subscribeToLocation(onChange: () => void): () => void {
   window.addEventListener("popstate", onChange);
-  return () => window.removeEventListener("popstate", onChange);
+  window.addEventListener(LOCATION_CHANGED, onChange);
+  return () => {
+    window.removeEventListener("popstate", onChange);
+    window.removeEventListener(LOCATION_CHANGED, onChange);
+  };
 }
 
 const getLocationSearch = () => window.location.search;
@@ -83,7 +90,7 @@ export function PrintDetail({
   // leaves the page instead of stepping through every control the buyer moved.
   function changeSelection(next: PrintSelection) {
     window.history.replaceState(null, "", `?${selectionToParams(next)}`);
-    window.dispatchEvent(new PopStateEvent("popstate"));
+    window.dispatchEvent(new Event(LOCATION_CHANGED));
   }
 
   const geometry = previewGeometry(selection, master);

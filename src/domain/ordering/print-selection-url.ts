@@ -24,6 +24,7 @@ import {
 import {
   DEFAULT_FRAME_FINISH,
   DEFAULT_PRINT_SIZE,
+  firstOfferedSize,
   offeredFormats,
 } from "./print-copy";
 import {
@@ -55,7 +56,13 @@ export function selectionFromParams(
     };
   }
 
-  const size = selectionSize(params.get("size"), offer, format) ?? opening.size;
+  // The size fallback is the *queried* format's first offered size, not the
+  // opening format's: `?format=framed` on a photo whose framed sizes differ must
+  // never point the select at a size framed does not sell.
+  const size =
+    selectionSize(params.get("size"), offer, format) ??
+    firstOfferedSize(offer, format) ??
+    opening.size;
 
   const frame =
     format === "framed"
