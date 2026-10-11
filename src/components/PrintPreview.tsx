@@ -41,8 +41,9 @@ import {
   CANVAS_EDGE_SHADOW,
   CANVAS_WEAVE,
   FRAME_BASE,
-  FRAME_GRAIN_STOPS,
+  FRAME_GRAIN_URI,
   FRAME_LIGHT,
+  FRAME_MITRE,
   FRAME_PROFILE,
   MOUNT_BACKGROUND,
   PRODUCT_SHADOW,
@@ -459,6 +460,9 @@ function FramedLayers({
           finish={geometry.frame}
         />
       ))}
+      {geometry.frame === "brown" && (
+        <MitreJoints outer={outer} m={geometry.mouldingMm} />
+      )}
       <div
         data-mount
         className="absolute"
@@ -528,16 +532,7 @@ function MouldingPiece({
     bottom: "to top",
     left: "to right",
   };
-  const alongDirection: Record<CanvasSide, string> = {
-    top: "to right",
-    right: "to bottom",
-    bottom: "to right",
-    left: "to bottom",
-  };
-  const grain =
-    finish === "brown"
-      ? `repeating-linear-gradient(${alongDirection[side]}, ${FRAME_GRAIN_STOPS}), `
-      : "";
+  const brown = finish === "brown";
   return (
     <div
       className="absolute pointer-events-none"
@@ -545,11 +540,70 @@ function MouldingPiece({
         ...box[side],
         clipPath: clip[side],
         backgroundColor: FRAME_BASE[finish],
-        backgroundImage: `${grain}linear-gradient(${insideDirection[side]}, ${FRAME_PROFILE})`,
+        // Black and white keep their exact #326 paint: one profile gradient.
+        // Brown stacks the grain, then the profile, as child layers so the
+        // shading still reads on top of the wood (#332).
+        backgroundImage: brown
+          ? undefined
+          : `linear-gradient(${insideDirection[side]}, ${FRAME_PROFILE})`,
       }}
     >
+      {brown && (
+        <>
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: FRAME_GRAIN_URI[side],
+              backgroundSize: "100% 100%",
+              backgroundRepeat: "no-repeat",
+            }}
+          />
+          <div
+            className="absolute inset-0"
+            style={{
+              backgroundImage: `linear-gradient(${insideDirection[side]}, ${FRAME_PROFILE})`,
+            }}
+          />
+        </>
+      )}
       <div className="absolute inset-0" style={{ backgroundColor: FRAME_LIGHT[side] }} />
     </div>
+  );
+}
+
+/**
+ * The 45° mitre joints (#332): a hairline from each outer corner to the matching
+ * inner corner, in the outer box's millimetre coordinates so it lines up with
+ * the clipped moulding pieces at any size. `non-scaling-stroke` keeps it one
+ * CSS pixel (× device pixel ratio) on every side and viewport.
+ */
+function MitreJoints({ outer, m }: { outer: Extent; m: number }) {
+  const joints: [number, number, number, number][] = [
+    [0, 0, m, m],
+    [outer.width, 0, outer.width - m, m],
+    [0, outer.height, m, outer.height - m],
+    [outer.width, outer.height, outer.width - m, outer.height - m],
+  ];
+  return (
+    <svg
+      aria-hidden
+      className="absolute inset-0 w-full h-full pointer-events-none"
+      viewBox={`0 0 ${outer.width} ${outer.height}`}
+      preserveAspectRatio="none"
+    >
+      {joints.map(([x1, y1, x2, y2]) => (
+        <line
+          key={`${x1}-${y1}`}
+          x1={x1}
+          y1={y1}
+          x2={x2}
+          y2={y2}
+          stroke={FRAME_MITRE}
+          strokeWidth={1}
+          vectorEffect="non-scaling-stroke"
+        />
+      ))}
+    </svg>
   );
 }
 
