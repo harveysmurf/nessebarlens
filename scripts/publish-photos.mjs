@@ -339,7 +339,7 @@ function sameOffer(a, b) {
  * `eligible`; an ineligible one names why, with the format's own floor for the
  * PPI case, so the line reads the same way a human would say it.
  */
-export function offerStatus(assessment) {
+function offerStatus(assessment) {
   if (assessment.verdict.eligible) return "eligible";
   if (assessment.verdict.reason === "below-min-ppi") {
     return `unavailable: below ${MIN_PRINT_PPI[assessment.product.format]} PPI`;
@@ -875,7 +875,7 @@ function readPrintAssetSafe(data) {
  * document (#307), preserving comments and key order. `parseDocument` + `set`
  * replaces existing keys, so a re-run is idempotent.
  */
-export function patchCatalogPrintAssetYaml(yamlText, { sha256, md5 }) {
+function patchCatalogPrintAssetYaml(yamlText, { sha256, md5 }) {
   const doc = parseDocument(yamlText);
   const map = doc.contents;
   map.set("print_asset_sha256", sha256);

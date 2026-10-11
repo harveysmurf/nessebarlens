@@ -183,7 +183,7 @@ export function findUnmigratedOrderKeys({ keys, readValue, d1Sessions }) {
  * absent check would be a check that was never run (not safe), so the caller
  * treats null as a failed gate.
  */
-export function parseD1Column(stdout, column) {
+function parseD1Column(stdout, column) {
   let parsed;
   try {
     parsed = JSON.parse(stdout || "null");

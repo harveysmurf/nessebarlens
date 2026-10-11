@@ -46,7 +46,7 @@ const ciFile = path.join(root, ".github", "workflows", "ci.yml");
  * this reads `jobs:`, then each two-space-indented job id and its body up to
  * the next one.
  */
-export function parseJobs(text) {
+function parseJobs(text) {
   const lines = text.split("\n");
   const jobsAt = lines.findIndex((line) => /^jobs:[ \t]*$/.test(line));
   if (jobsAt === -1) throw new Error("no jobs: block");
@@ -101,7 +101,7 @@ async function protection({ repo, token, baseUrl }) {
 }
 
 /** Both spellings: the `checks` array when app_id is set, else legacy contexts. */
-export function liveContexts(rule) {
+function liveContexts(rule) {
   const checks = rule.required_status_checks?.checks ?? [];
   return checks.length > 0
     ? checks.map((check) => check.context)
