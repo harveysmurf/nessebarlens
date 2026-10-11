@@ -116,11 +116,20 @@ export function isFramedMountValue(value: unknown): value is FramedMount {
   );
 }
 
+/**
+ * The pinned SKU for a `(format, size, frame, mount)` selection.
+ *
+ * `mount` is required (#335) and must be threaded from the one identity that
+ * owns it: an omitted mount is what let /api/quote silently price the mounted
+ * product for an unmounted selection. Callers that do not care pass `null`
+ * explicitly. `frame` keeps its null default because a non-framed selection
+ * genuinely has none and the framed arm throws below.
+ */
 export function resolveSku(
   format: PhysicalFormat,
   size: PrintSize,
   frame: FrameFinish | null = null,
-  mount: FramedMount | null = null,
+  mount: FramedMount | null,
 ): SkuEntry {
   // A null mount means the default (mounted); only framed products carry one.
   const product = findProduct(format, size, mount);
@@ -163,7 +172,7 @@ export function allPhysicalSkus(): SkuEntry[] {
           out.push(resolveSku(format, size, "black", mount));
         }
       } else {
-        out.push(resolveSku(format, size, null));
+        out.push(resolveSku(format, size, null, null));
       }
     }
   }

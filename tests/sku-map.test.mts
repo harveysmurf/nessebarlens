@@ -52,8 +52,9 @@ test("every UI format×size (and framed mount) resolves to a pinned SKU", () => 
 test("a framed mount picks CFPM (white) or CFP (none)", () => {
   assert.equal(resolveSku("framed", "50x70", "black", "white").sku, "GLOBAL-CFPM-20X28");
   assert.equal(resolveSku("framed", "50x70", "black", "none").sku, "GLOBAL-CFP-20X28");
-  // A null/absent mount is the default, so pre-#335 callers are unchanged.
-  assert.equal(resolveSku("framed", "50x70", "black").sku, "GLOBAL-CFPM-20X28");
+  // A null mount is the default, so a pre-#335 caller that passes null is
+  // unchanged. (The mount is required since #335 so this cannot be omitted.)
+  assert.equal(resolveSku("framed", "50x70", "black", null).sku, "GLOBAL-CFPM-20X28");
   assert.equal(isFramedMountValue("none"), true);
   assert.equal(isFramedMountValue("gold"), false);
 });
@@ -72,22 +73,22 @@ test("resolveSku refuses a pair the table does not offer", () => {
   // backstop for a format-specific catalogue that dropped a size: without it a
   // missing pair would resolve to another product's SKU rather than fail.
   assert.throws(
-    () => resolveSku("giclee", "99x99" as PrintSize),
+    () => resolveSku("giclee", "99x99" as PrintSize, null, null),
     /no print product for giclee\/99x99/,
   );
 });
 
 test("framed requires a frame color; giclee/canvas reject needing color", () => {
-  assert.throws(() => resolveSku("framed", "30x40", null), /frame required/);
+  assert.throws(() => resolveSku("framed", "30x40", null, null), /frame required/);
   for (const finish of FRAME_FINISHES) {
-    const entry = resolveSku("framed", "50x70", finish);
+    const entry = resolveSku("framed", "50x70", finish, null);
     assert.equal(entry.sku, "GLOBAL-CFPM-20X28");
     assert.equal(entry.attributes.color, finish);
   }
-  const giclee = resolveSku("giclee", "70x100", null);
+  const giclee = resolveSku("giclee", "70x100", null, null);
   assert.equal(giclee.sku, "GLOBAL-FAP-28X40");
   assert.deepEqual(giclee.attributes, {});
-  const canvas = resolveSku("canvas", "30x40", null);
+  const canvas = resolveSku("canvas", "30x40", null, null);
   assert.equal(canvas.sku, "GLOBAL-CAN-12X16");
   // Prodigi rejects a CAN quote with 400 MissingRequiredAttributes unless `wrap`
   // is present, so this is not decorative: an empty map means canvas never quotes.
@@ -99,7 +100,7 @@ test("every canvas SKU carries the required wrap attribute", () => {
   // format branch: a single resolveSku("canvas", ...) would have passed while
   // some other size drifted. Prodigi validates per SKU, so all three must hold.
   for (const size of PRINT_SIZES) {
-    const entry = resolveSku("canvas", size, null);
+    const entry = resolveSku("canvas", size, null, null);
     assert.equal(entry.attributes.wrap, CANVAS_WRAP, `${entry.sku} has no wrap`);
   }
 });
@@ -136,6 +137,7 @@ test("SKU table: format / cm / in / sku", () => {
       format,
       cm,
       format === "framed" ? "brown" : null,
+      null,
     );
     assert.equal(entry.sku, sku);
     assert.equal(entry.sizeIn, inch);
@@ -179,11 +181,11 @@ test("FRAME_FINISHES is the FRAME_COLOR key set, not a second hand-written list"
 
 test("the missing-frame error lists the finishes resolveSku actually accepts", () => {
   assert.throws(
-    () => resolveSku("framed", "30x40", null),
+    () => resolveSku("framed", "30x40", null, null),
     new RegExp(`frame required .*\\(${FRAME_FINISHES.join("\\|")}\\)`),
   );
   assert.throws(
-    () => resolveSku("framed", "30x40", "gold" as FrameFinish),
+    () => resolveSku("framed", "30x40", "gold" as FrameFinish, null),
     /frame required/,
   );
 });

@@ -36,8 +36,8 @@ export async function quotePhysical(opts: {
   format: PhysicalFormat;
   size: PrintSize;
   frame?: FrameFinish | null;
-  /** Framed only (#335); absent means the default (mounted). */
-  mount?: FramedMount | null;
+  /** Framed only (#335); required and null for the formats without one. */
+  mount: FramedMount | null;
   destinationCountryCode?: string;
 }): Promise<ProdigiResult<PhysicalQuote>> {
   const entry = resolveSku(

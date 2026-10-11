@@ -59,6 +59,7 @@ export type PrintSpecificationReason =
   | "size-not-offered-for-format"
   | "frame-required"
   | "frame-not-allowed"
+  | "mount-required"
   | "mount-not-allowed";
 
 export type PrintSpecificationResult =
@@ -104,12 +105,16 @@ export function mountForFormat(
  * because the types already say it holds; what the builder needs is the
  * projection, so the frame rule is read off the specification instead of
  * being spelled a second time in the client.
+ *
+ * `mount` is required (#335): it is part of the product key, and a caller that
+ * omits it would normalise an unmounted selection into the mounted default.
+ * Callers without a mount pass `null` explicitly.
  */
 export function physicalSpecification(
   format: PhysicalFormat,
   size: PrintSize,
   frame: FrameFinish | null,
-  mount: FramedMount | null = null,
+  mount: FramedMount | null,
 ): PhysicalPrintSpecification {
   return {
     kind: "physical",
@@ -173,9 +178,20 @@ export function parsePrintSpecification(
 
   // A size the table carries for some other format is not a size this format
   // offers: the pair is the identity, not the size alone, and for framed the
-  // mount joins that identity (#335). An absent or unknown mount reads as the
-  // default, so a body written before mounts existed still resolves.
-  const mountValue = isFramedMountValue(mount) ? mount : null;
+  // mount joins that identity (#335). An absent mount reads as the default, so
+  // a body written before mounts existed still resolves; a present-but-unknown
+  // one is refused with its own reason rather than silently swapped to the
+  // default, which would be a different product at a different price.
+  let mountValue: FramedMount | null = null;
+  if (format === "framed") {
+    if (mount === null || mount === undefined) {
+      mountValue = DEFAULT_FRAMED_MOUNT;
+    } else if (isFramedMountValue(mount)) {
+      mountValue = mount;
+    } else {
+      return { ok: false, reason: "mount-required" };
+    }
+  }
   if (!findProduct(format, size, mountValue, products)) {
     return { ok: false, reason: "size-not-offered-for-format" };
   }

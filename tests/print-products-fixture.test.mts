@@ -279,7 +279,7 @@ test("every product orders with the table's SKU and attributes", () => {
 
 test("findProduct is the pair lookup, and null for a pair the table lacks", () => {
   const first = PRINT_PRODUCTS[0]!;
-  assert.equal(findProduct(first.format, first.size)?.sku, first.sku);
+  assert.equal(findProduct(first.format, first.size, null)?.sku, first.sku);
   assert.equal(
     findProduct("giclee", "70x100", null, [
       {

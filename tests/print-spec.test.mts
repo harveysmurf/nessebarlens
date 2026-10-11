@@ -84,7 +84,7 @@ test("framed carries a known finish and defaults its mount to the mounted one", 
   }
 });
 
-test("framed honours a known mount and falls back for an unknown one", () => {
+test("framed honours a known mount, defaults an absent one, and refuses an unknown one", () => {
   for (const mount of FRAMED_MOUNTS) {
     assert.deepEqual(
       parsePrintSpecification("framed", "50x70", "black", mount),
@@ -95,15 +95,25 @@ test("framed honours a known mount and falls back for an unknown one", () => {
       mount,
     );
   }
-  // Absent or unknown mount reads as the default, so a pre-#335 body still
-  // resolves rather than being refused.
-  for (const mount of [undefined, null, "sandwich", 7]) {
+  // An absent mount reads as the default, so a pre-#335 body still resolves
+  // rather than being refused.
+  for (const mount of [undefined, null]) {
     assert.deepEqual(
       parsePrintSpecification("framed", "50x70", "black", mount),
       {
         ok: true,
         value: { kind: "physical", format: "framed", size: "50x70", frame: "black", mount: "white" },
       },
+      String(mount),
+    );
+  }
+  // A present-but-unknown mount is refused with its own reason rather than
+  // silently swapped to the default: "sandwich" would otherwise become a White
+  // Mount at a different price, which is the silent swap this rule forbids.
+  for (const mount of ["sandwich", 7]) {
+    assert.deepEqual(
+      parsePrintSpecification("framed", "50x70", "black", mount),
+      { ok: false, reason: "mount-required" },
       String(mount),
     );
   }
@@ -185,7 +195,7 @@ test("the frame and mount projections carry each only with framed", () => {
 });
 
 test("physicalSpecification normalises into a selection the factory accepts", () => {
-  assert.deepEqual(physicalSpecification("giclee", "30x40", "black"), {
+  assert.deepEqual(physicalSpecification("giclee", "30x40", "black", null), {
     kind: "physical",
     format: "giclee",
     size: "30x40",

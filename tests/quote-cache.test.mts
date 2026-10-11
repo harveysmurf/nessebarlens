@@ -14,6 +14,7 @@ const BASE = {
   format: "giclee" as const,
   size: "30x40" as const,
   frame: null,
+  mount: null,
   destinationCountryCode: "BG",
 };
 

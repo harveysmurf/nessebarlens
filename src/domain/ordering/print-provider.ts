@@ -12,13 +12,18 @@ import type { FramedMount, PhysicalFormat } from "../pricing/sku-map";
 import type { ProdigiResult } from "./prodigi-result";
 import type { OrderRecipient } from "./order-recipient";
 
-/** Price a physical print for a destination. */
+/**
+ * Price a physical print for a destination.
+ *
+ * `mount` is required (#335): it selects the SKU, so a caller that leaves it
+ * off silently quotes the mounted product. Callers that do not care pass
+ * `null` explicitly; that explicitness is the point.
+ */
 export type QuotePhysical = (opts: {
   format: PhysicalFormat;
   size: PrintSize;
   frame?: FrameFinish | null;
-  /** Framed only (#335); absent means the default (mounted). */
-  mount?: FramedMount | null;
+  mount: FramedMount | null;
   destinationCountryCode?: string;
 }) => Promise<ProdigiResult<PhysicalQuote>>;
 

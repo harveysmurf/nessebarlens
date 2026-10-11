@@ -124,9 +124,15 @@ export function printAreaIn(product: PrintProductEntry): {
  * The product for a `(format, size, mount)` key, or null. The key is the
  * identity: there is no assumption that every size exists in every format, so
  * callers that accept a raw size must handle a miss. The mount only narrows a
- * framed lookup; for the other formats it is ignored, and a null/absent mount
- * means the default (the mounted frame), so a caller that predates #335 reads
- * the same product it always did.
+ * framed lookup; for the other formats it is ignored, and a null mount means
+ * the default (the mounted frame), so a caller that predates #335 reads the
+ * same product it always did.
+ *
+ * `mount` is required (#335): a caller that does not care passes `null`
+ * explicitly. Leaving it defaulted let /api/quote omit it and still compile,
+ * which is the exact shape of the bug where an unmounted selection was priced
+ * as the mounted CFPM SKU — the mount is part of the key, and an omitted one
+ * must be a decision the caller writes down, not a default.
  *
  * `products` defaults to the pinned table and is injectable so a missing key
  * can be exercised before the catalogue has one.
@@ -134,7 +140,7 @@ export function printAreaIn(product: PrintProductEntry): {
 export function findProduct(
   format: PhysicalFormat,
   size: string,
-  mount: FramedMount | null = null,
+  mount: FramedMount | null,
   products: readonly PrintProductEntry[] = PRINT_PRODUCTS,
 ): PrintProductEntry | null {
   return (
