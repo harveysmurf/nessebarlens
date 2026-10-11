@@ -230,13 +230,16 @@ test("the documented universe is the one actually walked", () => {
   assert.ok(REFERENCE_ROOTS.includes("tests"), "universe misses tests/");
   assert.ok(REFERENCE_ROOTS.includes("e2e"), "universe misses e2e/");
   // The root's own files are walked too, and non-recursively: node_modules/ is
-  // a directory and must not appear.
-  const rootFiles = rootCodeFiles(REPO).map((file) => path.basename(file));
-  assert.ok(rootFiles.includes("worker.ts"), "universe misses the worker");
+  // a directory and must not appear. Asserted by stat, not by banning dots — a
+  // real root dotfile (`.eslintrc.mjs`) is a legitimate source file, and the
+  // directory claim is what has to hold.
+  const rootFiles = rootCodeFiles(REPO);
   assert.ok(
-    !rootFiles.some((name) => name === "node_modules" || name.startsWith(".")),
-    `root walk picked up a directory: ${rootFiles.join(", ")}`,
+    rootFiles.map((file) => path.basename(file)).includes("worker.ts"),
+    "universe misses the worker",
   );
+  const directories = rootFiles.filter((file) => !fs.statSync(file).isFile());
+  assert.deepEqual(directories, [], "root walk picked up a directory");
 });
 
 test("the measured noise floor on this repository is zero", () => {
