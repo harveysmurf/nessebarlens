@@ -10,8 +10,13 @@
  * The server page passes plain serialisable props — the resolved `GalleryImage`
  * is computed on the server, because `galleryImage()` reads `process.env` and a
  * client component would see it as undefined.
+ *
+ * The selection's source of truth is the URL (#333), so a variation is
+ * shareable. The server snapshot is empty, so SSR and the first paint render
+ * the opening selection with no hydration mismatch; the client then reads
+ * `window.location` through `useSyncExternalStore`.
  */
-import { useState, type ReactNode } from "react";
+import { useMemo, useSyncExternalStore, type ReactNode } from "react";
 import type { GalleryImage } from "@/infrastructure/media/gallery-image";
 import type { MasterFacts } from "@/domain/catalog/master-facts";
 import type { PrintOffer } from "@/domain/catalog/print-offer";
@@ -22,12 +27,27 @@ import {
   previewNote,
 } from "@/domain/ordering/print-copy";
 import { previewGeometry } from "@/domain/ordering/print-preview";
+import type { PrintSelection } from "@/domain/ordering/print-selection";
 import {
-  openingSelection,
-  type PrintSelection,
-} from "@/domain/ordering/print-selection";
+  selectionFromParams,
+  selectionToParams,
+} from "@/domain/ordering/print-selection-url";
 import { PrintConfigurator } from "./PrintConfigurator";
 import { PrintPreview } from "./PrintPreview";
+
+/**
+ * The URL is the configurator's source of truth (#333). `replaceState` does not
+ * emit `popstate`, so a change we make dispatches one itself; a real Back or
+ * Forward does too, which is what keeps the selection and the address bar in
+ * step without a navigation.
+ */
+function subscribeToLocation(onChange: () => void): () => void {
+  window.addEventListener("popstate", onChange);
+  return () => window.removeEventListener("popstate", onChange);
+}
+
+const getLocationSearch = () => window.location.search;
+const getServerLocationSearch = () => "";
 
 export function PrintDetail({
   photoSlug,
@@ -48,9 +68,23 @@ export function PrintDetail({
   filmLookClassName: string;
   children: ReactNode;
 }) {
-  const [selection, setSelection] = useState<PrintSelection>(() =>
-    openingSelection(offer),
+  const search = useSyncExternalStore(
+    subscribeToLocation,
+    getLocationSearch,
+    getServerLocationSearch,
   );
+  const selection = useMemo(
+    () => selectionFromParams(new URLSearchParams(search), offer),
+    [search, offer],
+  );
+
+  // Reflect every change back into the URL in place (#333): no navigation, no
+  // reload, no request. `replaceState` keeps variations out of history, so Back
+  // leaves the page instead of stepping through every control the buyer moved.
+  function changeSelection(next: PrintSelection) {
+    window.history.replaceState(null, "", `?${selectionToParams(next)}`);
+    window.dispatchEvent(new PopStateEvent("popstate"));
+  }
 
   const geometry = previewGeometry(selection, master);
   const label = previewLabel(alt, selection, master.orientation);
@@ -90,7 +124,7 @@ export function PrintDetail({
           offer={offer}
           master={master}
           selection={selection}
-          onSelectionChange={setSelection}
+          onSelectionChange={changeSelection}
         />
       </div>
     </div>
