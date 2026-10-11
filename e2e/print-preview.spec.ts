@@ -50,6 +50,54 @@ function preview(page: Page) {
 }
 
 /**
+ * Mean absolute Laplacian of an element's pixels: for each interior pixel, how
+ * far its luminance sits from the average of its two neighbours, averaged over
+ * both axes. This separates texture from shading without any baseline image:
+ * a smooth fill or a linear gradient (black/white mouldings) has a Laplacian of
+ * ~0, while high-frequency noise (the brown feTurbulence grain) is strictly
+ * positive. Sampled from a screenshot decoded in the browser, so no PNG
+ * dependency is added. Only fully opaque pixels (alpha 255) are sampled, and a
+ * proportional margin drops the antialiased clip edges.
+ */
+async function roughness(page: Page, selector: string): Promise<number> {
+  const shot = (await page.locator(selector).screenshot()).toString("base64");
+  return page.evaluate(async (b64) => {
+    const img = new Image();
+    img.src = `data:image/png;base64,${b64}`;
+    await img.decode();
+    const canvas = document.createElement("canvas");
+    canvas.width = img.naturalWidth;
+    canvas.height = img.naturalHeight;
+    const ctx = canvas.getContext("2d");
+    if (ctx === null) throw new Error("no 2d context");
+    ctx.drawImage(img, 0, 0);
+    const { data, width, height } = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const lum = (x: number, y: number) => {
+      const i = (y * width + x) * 4;
+      return 0.299 * data[i]! + 0.587 * data[i + 1]! + 0.114 * data[i + 2]!;
+    };
+    const opaque = (x: number, y: number) => data[(y * width + x) * 4 + 3]! === 255;
+    // A proportional margin keeps the diagonally clipped corners (whose
+    // antialiased edge is high-frequency by nature) out of the sample.
+    const margin = Math.max(2, Math.floor(Math.min(width, height) * 0.1));
+    let sum = 0;
+    let n = 0;
+    for (let y = margin; y < height - margin; y++) {
+      for (let x = margin; x < width - margin; x++) {
+        if (!opaque(x, y) || !opaque(x - 1, y) || !opaque(x + 1, y) ||
+            !opaque(x, y - 1) || !opaque(x, y + 1)) continue;
+        const c = lum(x, y);
+        const lapX = Math.abs(lum(x - 1, y) + lum(x + 1, y) - 2 * c);
+        const lapY = Math.abs(lum(x, y - 1) + lum(x, y + 1) - 2 * c);
+        sum += Math.max(lapX, lapY);
+        n++;
+      }
+    }
+    return n === 0 ? 0 : sum / n;
+  }, shot);
+}
+
+/**
  * The preview shows the server-resolved ladder image when the site has a
  * derivative base, and the alt text when it does not. CI builds the Worker
  * without `NEXT_PUBLIC_WEB_IMAGES_BASE`, so the no-image path is a real state:
@@ -124,6 +172,33 @@ test.describe("product preview (#326)", () => {
         contentType: "image/png",
       });
     }
+  });
+
+  test("the brown moulding carries grain; black and white stay smooth (#347)", async ({
+    page,
+  }) => {
+    await page.goto(`/prints/${HARBOUR}`);
+    await page.getByText(/framed print/i).click();
+
+    const readings: Record<string, number> = {};
+    for (const finish of ["black", "white", "brown"] as const) {
+      await page.locator("#frame-finish").selectOption(finish);
+      await expect(preview(page)).toHaveAttribute("data-frame", finish);
+      readings[finish] = await roughness(
+        page,
+        `[data-frame="${finish}"] [data-moulding="top"]`,
+      );
+    }
+    // The brown rail's feTurbulence grain is real texture: strictly positive
+    // Laplacian energy. Black and white are a single smooth profile gradient
+    // (Laplacian ~0). A regression that drops the grain layer — or repaints
+    // brown flat or as the same smooth profile — collapses brown into that
+    // near-zero band and fails here. The gap, not an absolute pixel value, is
+    // the guard, so a colour tweak does not red the build. Measured locally
+    // (1280×720): black ≈ 1.4, white ≈ 1.3, brown ≈ 13.
+    expect(readings.brown).toBeGreaterThan(8);
+    expect(readings.brown).toBeGreaterThan(readings.black * 5);
+    expect(readings.brown).toBeGreaterThan(readings.white * 5);
   });
 
   test("changing size updates the preview and keeps the window inside the mount", async ({

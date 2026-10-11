@@ -540,6 +540,7 @@ function MouldingPiece({
   const brown = finish === "brown";
   return (
     <div
+      data-moulding={side}
       className="absolute pointer-events-none"
       style={{
         ...box[side],
