@@ -23,7 +23,7 @@ import { sqlWithBinds } from "./sql-binds.mjs";
 
 export const DATABASE_NAME = "nessebar-lens-orders";
 export const DEFAULT_LIMIT = 100;
-export const MAX_LIMIT = 500;
+const MAX_LIMIT = 500;
 
 const STATUS_ALLOW = new Set([
   "paid-unfulfilled",

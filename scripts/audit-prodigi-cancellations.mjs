@@ -47,9 +47,9 @@ import {
   isSafeProdigiOrderId,
 } from "../src/infrastructure/prodigi/prodigi-cancel.ts";
 
-export const AUDIT_STATUSES = REVOKED_STATUSES;
+const AUDIT_STATUSES = REVOKED_STATUSES;
 
-export const AUDIT_USAGE = [
+const AUDIT_USAGE = [
   "Usage: node --import ./scripts/register.mjs scripts/audit-prodigi-cancellations.mjs [--cancel] [--limit N]",
   "  --cancel  Attempt cancellation of orders Prodigi still reports as cancellable.",
   "           Review the read-only output before running with --cancel.",
@@ -181,7 +181,7 @@ function formatShipments(shipments) {
 /**
  * The audit table header.
  */
-export const AUDIT_HEADER = [
+const AUDIT_HEADER = [
   "session_id",
   "prodigi_order_id",
   "local_stage",
@@ -281,7 +281,7 @@ export function formatAuditTable(entries) {
 }
 
 /** The cancel summary table header. */
-export const CANCEL_HEADER = [
+const CANCEL_HEADER = [
   "session_id",
   "prodigi_order_id",
   "cancel_result",

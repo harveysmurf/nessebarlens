@@ -89,7 +89,7 @@ export async function fillCard(page: import("@playwright/test").Page) {
  * have supplied one. Nothing here is required to exist, so a session with no
  * billing block at all is still a valid pass.
  */
-export async function fillBillingAddress(page: import("@playwright/test").Page) {
+async function fillBillingAddress(page: import("@playwright/test").Page) {
   // The tokens are the ones Stripe actually shipped on the failing CI run
   // (`autocomplete="billing postal-code"` and `autocomplete="tel"`, read out of
   // the uploaded trace), not the ones a US form is usually expected to use.

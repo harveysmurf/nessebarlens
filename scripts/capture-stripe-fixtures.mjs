@@ -32,7 +32,7 @@ const FIXTURE_DIR = path.join(import.meta.dirname, "..", "tests", "fixtures", "s
 const OUR_METADATA_KEYS = ["photoSlug", "format", "size", "quoteEur"];
 const PHYSICAL_FORMATS = ["giclee", "framed", "canvas"];
 
-export const FIXTURE_TYPES = [
+const FIXTURE_TYPES = [
   "checkout.session.completed",
   "charge.refunded",
   "charge.dispute.created",

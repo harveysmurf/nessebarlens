@@ -63,7 +63,7 @@ import { classifyKvKey, looksLikeOrderRecord } from "./migrate-orders-kv-to-d1.m
 
 export const DATABASE_NAME = "nessebar-lens-orders";
 export const KV_BINDING = "ORDERS";
-export const WRANGLER_TOML = "wrangler.toml";
+const WRANGLER_TOML = "wrangler.toml";
 
 export function parseArgs(argv) {
   let confirmed = false;
@@ -206,7 +206,7 @@ function parseD1Column(stdout, column) {
 }
 
 export const parseD1Sessions = (stdout) => parseD1Column(stdout, "session_id");
-export const parseD1Tokens = (stdout) => parseD1Column(stdout, "token");
+const parseD1Tokens = (stdout) => parseD1Column(stdout, "token");
 
 /**
  * KV download tokens with no row in D1's download_tokens.
