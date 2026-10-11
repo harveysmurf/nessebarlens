@@ -538,7 +538,7 @@ export function prBody(plans, branchDate) {
  * else means the PR is not a photo publish and `--promote` must not auto-merge
  * it.
  */
-export const PROMOTE_ALLOWED_DIRS = [CATALOG_DIR];
+const PROMOTE_ALLOWED_DIRS = [CATALOG_DIR];
 
 /**
  * Splits a PR's `files` (gh's `pr view --json files` shape, `{path, changeType}`)

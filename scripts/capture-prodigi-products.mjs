@@ -92,7 +92,7 @@ function selectorFor(sku) {
 }
 
 /** The frame colours we offer, in the order the configurator shows them. */
-export const FRAME_COLORS = ["black", "white", "brown"];
+const FRAME_COLORS = ["black", "white", "brown"];
 
 function variantMatches(variant, attributes) {
   return Object.entries(attributes).every(
@@ -141,7 +141,7 @@ function shipsToOf(product, attributes) {
  * prove that. Returns one entry per distinct area; a SKU whose colours agree
  * yields a single entry.
  */
-export function colourVariantsOf(product) {
+function colourVariantsOf(product) {
   const seen = new Map();
   for (const color of FRAME_COLORS) {
     const area = printAreaOf(product, { color });
