@@ -394,12 +394,22 @@ jobs:
               # account was unreachable should close, not wedge on a leftover
               # version. Versions are also inert once undeployed, so a stale one
               # costs quota, not correctness.
+              #
+              # Best-effort is a reason not to FAIL the job; it is not a reason
+              # to exit 0 in silence. Before #339's follow-up this printed and
+              # vanished, so an account-level outage and a clean run looked
+              # identical in the job log. A warning annotation is visible on the
+              # run without making the close block.
               print("could not list versions:", e)
+              print("::warning::could not list nessebar-lens-staging versions; "
+                    "preview versions for this PR may still exist")
               sys.exit(0)
           if isinstance(vs, dict):
               vs = vs.get("versions") or vs.get("result") or []
 
+          matched = 0
           deleted = 0
+          failed = 0
           for v in vs:
               # The tag --tag set at upload lives in annotations["workers/tag"],
               # NOT in a `tags` array. The deploy step was reading `tags` and
@@ -417,10 +427,30 @@ jobs:
               if not vid or not any(n and n.endswith("-" + branch) for n in names):
                   continue
               print("delete", vid, names)
-              subprocess.run(
+              matched += 1
+              # `check=False` is what makes this best-effort, but it also meant a
+              # delete that errored was counted as a delete and the step printed
+              # a clean `deleted=N` -- a failed cleanup passed green and nothing
+              # in the log said so. Count the real outcome instead.
+              proc = subprocess.run(
                   ["npx", "wrangler", "versions", "delete", vid, "--env", "staging", "--force"],
                   check=False,
               )
-              deleted += 1
-          print(f"deleted={deleted}")
+              if proc.returncode == 0:
+                  deleted += 1
+              else:
+                  failed += 1
+                  print(f"::warning::failed to delete version {vid} "
+                        f"(wrangler exited {proc.returncode}); it is still live")
+          print(f"matched={matched} deleted={deleted} failed={failed}")
+          # `matched=0` is NOT an error and must not warn: a PR whose deploy
+          # never ran -- red lint, or a push before the first preview build --
+          # legitimately has nothing to clean up, and warning on it would train
+          # everyone to ignore the annotation above. It is logged as its own
+          # number so it is distinguishable at a glance from "ran and failed",
+          # which is the state #339's original symptom actually produced.
+          if failed:
+              print(f"::warning::cleanup removed {deleted} of {matched} preview "
+                    f"version(s) for branch={branch}; {failed} delete(s) failed "
+                    f"and the leftovers are still live on nessebar-lens-staging")
           PYEOF
