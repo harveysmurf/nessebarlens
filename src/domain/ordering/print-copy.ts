@@ -50,7 +50,9 @@ export type FormatCopy = { title: string; sub: string };
 export type FormatOption = { id: PrintFormat } & FormatCopy;
 
 const FORMAT_COPY: Record<PrintFormat, FormatCopy> = {
-  giclee: { title: "Giclée Fine Art", sub: "Hahnemühle 308gsm" },
+  // #336: every giclée SKU is GLOBAL-FAP-* — Prodigi's Enhanced Matte Art
+  // 200gsm (paperType EMA), never Hahnemühle. Say the paper we actually ship.
+  giclee: { title: "Giclée Fine Art", sub: "Matte Art Paper 200gsm" },
   // #334: the mount is half of what ships, so the button says so. "Wood Frame",
   // not "Solid Wood Frame" — the brown finish is an oak-effect laminate, and
   // the mount is the fact the buyer is actually missing.
@@ -145,8 +147,8 @@ export function imageSizeLabel(
  * to stay short enough to fit at 320px (#331), and this line wraps and has room.
  *
  * Deliberately says acrylic and never glass, and never names a paper: a CFPM
- * is EMA 200gsm, and the Hahnemühle copy elsewhere on the site belongs to the
- * giclée format, which is a separate problem (#334's Notes).
+ * is EMA 200gsm, and the giclée button carries the paper claim for its own
+ * format (#336), so this note must not repeat or invent one.
  */
 export function framedMountNote(
   size: PrintSize,
