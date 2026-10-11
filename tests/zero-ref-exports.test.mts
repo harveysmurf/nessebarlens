@@ -25,6 +25,7 @@ import {
   REFERENCE_ROOTS,
   formatReport,
   main,
+  rootCodeFiles,
   scanRepository,
 } from "../scripts/zero-ref-exports.mjs";
 
@@ -135,6 +136,25 @@ test("a `.js` consumer counts the same as a `.mjs` one", () => {
   );
 });
 
+test("a worker.ts-only consumer lives: the root's own code files are in the universe", () => {
+  // The #349 near-miss was a consumer outside the scanned extensions; this is
+  // the same bug one directory up. worker.ts imports from src/, and the
+  // reconcile-cron helper is reached from there, so a root-only consumer must
+  // count. (Masked in the real repo today only because tests/ also names it.)
+  withTree(
+    {
+      "src/cron.ts": "export const runCron = (): number => 1;\n",
+      "worker.ts": "import { runCron } from './src/cron';\nvoid runCron();\n",
+    },
+    (base) => {
+      assert.deepEqual(names(base), []);
+      // Drop the root consumer and the same export is correctly reported.
+      fs.rmSync(path.join(base, "worker.ts"));
+      assert.deepEqual(names(base), ["src/cron.ts:runCron"]);
+    },
+  );
+});
+
 test("the basename trap: a component imported by extensionless name is not reported", () => {
   // A scan keyed on filenames flagged all ten of these; they are live. The
   // exported symbol is what has to be referenced, and the import never spells
@@ -209,6 +229,14 @@ test("the documented universe is the one actually walked", () => {
   assert.ok(REFERENCE_ROOTS.includes("scripts"), "universe misses scripts/");
   assert.ok(REFERENCE_ROOTS.includes("tests"), "universe misses tests/");
   assert.ok(REFERENCE_ROOTS.includes("e2e"), "universe misses e2e/");
+  // The root's own files are walked too, and non-recursively: node_modules/ is
+  // a directory and must not appear.
+  const rootFiles = rootCodeFiles(REPO).map((file) => path.basename(file));
+  assert.ok(rootFiles.includes("worker.ts"), "universe misses the worker");
+  assert.ok(
+    !rootFiles.some((name) => name === "node_modules" || name.startsWith(".")),
+    `root walk picked up a directory: ${rootFiles.join(", ")}`,
+  );
 });
 
 test("the measured noise floor on this repository is zero", () => {

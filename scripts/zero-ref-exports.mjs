@@ -13,14 +13,16 @@
  *
  * The lesson is that a reference count is only as good as *what it read*, so
  * the universe is the load-bearing part of this module and is declared here in
- * one place (REFERENCE_ROOTS / REFERENCE_EXTENSIONS) rather than spelled into
- * a grep. A test (tests/zero-ref-exports.test.mts) drives the classifier.
+ * one place (REFERENCE_ROOTS / REFERENCE_EXTENSIONS, plus the root's own code
+ * files) rather than spelled into a grep. A test
+ * (tests/zero-ref-exports.test.mts) drives the classifier.
  *
  * It is a classifier, not a counter. Measured on this repo:
  *
  *   value export, zero references anywhere ......... the target, report it
  *   type export (type/interface alias) ............. out of scope, never read
  *   value export consumed only by scripts/*.mjs .... live, universe includes it
+ *   value export consumed only by worker.ts ........ live, root files included
  *   Next.js entry file (page/layout/route/...) ..... framework consumer, skipped
  *
  * Types are out of scope by construction: ~75 type exports are used only as
@@ -32,7 +34,12 @@
  * raw text, so a name inside a string, template or comment does not count as a
  * consumer. The direction of error is deliberate: a name reused as an unrelated
  * local binding in another file reads as "still referenced", which can hide a
- * dead export but can never red a live one.
+ * dead export but can never red a live one. The AST-only choice has one
+ * false-positive mode of its own: a binding reached only through a computed or
+ * string key (`m["widget"]`, `settings["CONFIG"]`) is not an Identifier node,
+ * so an export consumed solely that way would be reported. No such consumer
+ * exists today; if one lands, it belongs in the report as a named decision, not
+ * as a text scan that would count names inside every string literal instead.
  *
  * The gate lives in tests/zero-ref-exports.test.mts, which runs on every test
  * run and asserts this repo's floor is still zero. This CLI stays report-only
@@ -56,6 +63,9 @@ const root = path.join(import.meta.dirname, "..");
  * The include set is the whole game (#350): every directory an exported symbol
  * can be consumed from. `scripts/` is here because MASTER_SHA256_PATTERN is used
  * only from `.mjs` ops scripts; a src-only universe would have called it dead.
+ * The repo root's own code files are walked too (see rootCodeFiles): worker.ts
+ * imports `runReconcileCron` from src/, so a worker-only helper is the same
+ * class of miss, and the config files at the root live there as well.
  */
 export const REFERENCE_ROOTS = ["src", "tests", "e2e", "scripts"];
 
@@ -124,6 +134,23 @@ export function sourceFiles(dir, extensions = REFERENCE_EXTENSIONS) {
     }
   }
   return out;
+}
+
+/**
+ * The repository root's own code files, non-recursively: worker.ts and the
+ * config files. Files-only on purpose — descending into the root would walk
+ * node_modules/ and .git/.
+ */
+export function rootCodeFiles(base) {
+  return fs
+    .readdirSync(base, { withFileTypes: true })
+    .filter(
+      (entry) =>
+        entry.isFile() &&
+        !entry.name.endsWith(".d.ts") &&
+        REFERENCE_EXTENSIONS.some((ext) => entry.name.endsWith(ext)),
+    )
+    .map((entry) => path.join(base, entry.name));
 }
 
 function isFrameworkEntry(file) {
@@ -250,9 +277,12 @@ export function findZeroReferenceExports({ declaringFiles, universeFiles, readFi
 /** Walk the real tree and classify. Paths in the result are repo-relative. */
 export function scanRepository(base = root) {
   const exists = (dir) => fs.existsSync(path.join(base, dir));
-  const universeFiles = REFERENCE_ROOTS.filter(exists).flatMap((dir) =>
-    sourceFiles(path.join(base, dir)),
-  );
+  const universeFiles = [
+    ...rootCodeFiles(base),
+    ...REFERENCE_ROOTS.filter(exists).flatMap((dir) =>
+      sourceFiles(path.join(base, dir)),
+    ),
+  ];
   const declaringFiles = sourceFiles(path.join(base, DECLARING_ROOT)).filter(
     (file) => !isFrameworkEntry(file),
   );
