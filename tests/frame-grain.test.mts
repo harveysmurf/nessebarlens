@@ -11,8 +11,10 @@ import {
  * The brown moulding grain (#332): an inline SVG data URI whose noise runs
  * *along* each piece. These assertions pin the orientation (so a future edit
  * cannot silently put the grain back across the moulding) and the per-side
- * seeds (so the four pieces stay distinct). The pixels themselves are covered
- * by e2e/print-preview.spec.ts, which attaches framed-brown at three widths.
+ * seeds (so the four pieces stay distinct). The pixels are guarded in
+ * e2e/print-preview.spec.ts (#347): it measures the moulding's Laplacian
+ * energy and asserts brown's grain is far rougher than the smooth black and
+ * white profiles, so a render regression fails rather than shipping.
  */
 
 const SIDES: FrameSide[] = ["top", "right", "bottom", "left"];
