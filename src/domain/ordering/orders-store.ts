@@ -14,10 +14,10 @@ export const ORDERS_STORE_UNAVAILABLE_ERROR = "orders-store-unavailable";
 export const ORDERS_STORE_UNAVAILABLE_STATUS = 503;
 
 /** Default page size for `listOrders` when the caller omits `limit`. */
-export const ORDERS_LIST_DEFAULT_LIMIT = 100;
+const ORDERS_LIST_DEFAULT_LIMIT = 100;
 
 /** Hard ceiling on `listOrders`. A caller that asks for more is clamped, not refused. */
-export const ORDERS_LIST_MAX_LIMIT = 500;
+const ORDERS_LIST_MAX_LIMIT = 500;
 
 export type OrderStatusFilter = {
   /** Exact statuses. Omit for "every status". */
