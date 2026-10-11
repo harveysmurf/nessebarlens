@@ -22,6 +22,7 @@ import {
   resolveSku,
   type FramedMount,
   type PhysicalFormat,
+  type PrintPaper,
 } from "../../domain/pricing/sku-map";
 import type { PhysicalQuote } from "../../domain/ordering/print-provider";
 
@@ -38,6 +39,8 @@ export async function quotePhysical(opts: {
   frame?: FrameFinish | null;
   /** Framed only (#335); required and null for the formats without one. */
   mount: FramedMount | null;
+  /** Giclée only (#337); required and null for the formats without one. */
+  paper: PrintPaper | null;
   destinationCountryCode?: string;
 }): Promise<ProdigiResult<PhysicalQuote>> {
   const entry = resolveSku(
@@ -45,6 +48,7 @@ export async function quotePhysical(opts: {
     opts.size,
     opts.frame ?? null,
     opts.mount ?? null,
+    opts.paper ?? null,
   );
   const destinationCountryCode =
     opts.destinationCountryCode?.trim() || DEFAULT_SHIPPING_COUNTRY;

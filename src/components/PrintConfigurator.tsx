@@ -16,15 +16,18 @@ import { checkoutRequest, quoteRequest } from "@/domain/ordering/request-bodies"
 import {
   CONFIGURATOR_FRAMES,
   CONFIGURATOR_MOUNTS,
+  CONFIGURATOR_PAPERS,
   framedMountNote,
   masterResolutionLabel,
   offeredFormats,
+  paperNote,
   sizeOptions,
 } from "@/domain/ordering/print-copy";
 import {
   withFormat,
   withFrame,
   withMount,
+  withPaper,
   withSize,
   type PrintSelection,
 } from "@/domain/ordering/print-selection";
@@ -42,6 +45,7 @@ import {
 import {
   isFrameFinishValue,
   isFramedMountValue,
+  isPrintPaperValue,
   isPrintSize,
 } from "@/domain/pricing/sku-map";
 
@@ -70,7 +74,7 @@ export function PrintConfigurator({
   const formats = offeredFormats(offer);
   // #326: the selection is owned by the parent (PrintDetail), so the preview
   // and the configurator read the same value. These are views of it.
-  const { format, size, frame, mount } = selection;
+  const { format, size, frame, mount, paper } = selection;
   const [destinationCountry, setDestinationCountry] =
     useState<ShipToCountryCode>(DEFAULT_SHIPPING_COUNTRY);
   const [busy, setBusy] = useState(false);
@@ -81,6 +85,7 @@ export function PrintConfigurator({
 
   const isDigital = format === "digital";
   const isFramed = format === "framed";
+  const isGiclee = format === "giclee";
   // #302: sizes come from the photo's offer, in table order, labelled for its
   // orientation. The component no longer names the size list itself.
   const sizes = sizeOptions(offer, format, orientation);
@@ -90,7 +95,7 @@ export function PrintConfigurator({
   // and say why not otherwise. The offer stays mounted-based; this is the one
   // place the second mount is judged, and it never swaps the product silently.
   const noMountVerdict = isFramed
-    ? assess(master, findProduct("framed", size, "none")!)
+    ? assess(master, findProduct("framed", size, "none", null)!)
     : null;
   const noMountEligible = noMountVerdict?.verdict.eligible ?? false;
   const noMountReason =
@@ -108,7 +113,14 @@ export function PrintConfigurator({
       setQuoteLoading(true);
       setQuoteError(null);
       try {
-        const body = quoteRequest(format, size, frame, destinationCountry, mount);
+        const body = quoteRequest(
+          format,
+          size,
+          frame,
+          destinationCountry,
+          mount,
+          paper,
+        );
         const res = await fetch("/api/quote", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -146,7 +158,7 @@ export function PrintConfigurator({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [format, size, frame, mount, destinationCountry, isDigital]);
+  }, [format, size, frame, mount, paper, destinationCountry, isDigital]);
 
   // The three selects validate with `isPrintSize` / `isFrameFinish` /
   // `isShipToCountryCode` rather than narrowing with `as`. A cast asserts; it
@@ -181,6 +193,12 @@ export function PrintConfigurator({
     }
   }
 
+  function selectPaper(value: string) {
+    // Both papers are sold for every giclée size, so any known paper is valid;
+    // the guard keeps a value the selector could not produce out of the state.
+    if (isPrintPaperValue(value)) onSelectionChange(withPaper(selection, value));
+  }
+
   function selectDestination(value: string) {
     if (isShipToCountryCode(value)) setDestinationCountry(value);
   }
@@ -196,6 +214,7 @@ export function PrintConfigurator({
         frame,
         destinationCountry,
         mount,
+        paper,
       );
 
       const res = await fetch("/api/checkout", {
@@ -352,6 +371,35 @@ export function PrintConfigurator({
           </div>
         )}
 
+        {isGiclee && (
+          <div>
+            <label
+              htmlFor="print-paper"
+              className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-1"
+            >
+              Paper
+            </label>
+            <select
+              id="print-paper"
+              value={paper}
+              onChange={(e) => selectPaper(e.target.value)}
+              aria-describedby="print-paper-note"
+              className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900"
+            >
+              {CONFIGURATOR_PAPERS.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.label}
+                </option>
+              ))}
+            </select>
+            {/* The paper changes the price and the print, not the geometry, so
+                the one thing worth saying here is what the paper actually is. */}
+            <p id="print-paper-note" className="text-[10px] text-stone-500 mt-1.5">
+              {paperNote(paper)}
+            </p>
+          </div>
+        )}
+
         {isFramed && (
           <div>
             <label
@@ -473,7 +521,7 @@ export function PrintConfigurator({
             </p>
           )}
           <p className="sr-only">
-            {title} — {formatLabel(format, mount)}
+            {title} — {formatLabel(format, mount, paper)}
           </p>
         </div>
       </div>

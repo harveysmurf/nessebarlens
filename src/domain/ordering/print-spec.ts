@@ -18,14 +18,17 @@
 import type { FrameFinish, PrintFormat, PrintSize } from "../pricing/pricing";
 import {
   DEFAULT_FRAMED_MOUNT,
+  DEFAULT_PRINT_PAPER,
   findProduct,
   PRINT_PRODUCTS,
   type FramedMount,
+  type PrintPaper,
   type PrintProductEntry,
 } from "../pricing/print-products";
 import {
   isFrameFinishValue,
   isFramedMountValue,
+  isPrintPaperValue,
   isPrintSize,
   type PhysicalFormat,
 } from "../pricing/sku-map";
@@ -39,6 +42,8 @@ export type PhysicalPrintSpecification = {
   frame: FrameFinish | null;
   /** The framed mount (#335); null for every non-framed format. */
   mount: FramedMount | null;
+  /** The giclée paper (#337); null for every non-giclée format. */
+  paper: PrintPaper | null;
 };
 
 export type PrintSpecification =
@@ -55,12 +60,15 @@ export type PrintSpecificationReason =
   | "digital-rejects-size"
   | "digital-rejects-frame"
   | "digital-rejects-mount"
+  | "digital-rejects-paper"
   | "size-required"
   | "size-not-offered-for-format"
   | "frame-required"
   | "frame-not-allowed"
   | "mount-invalid"
-  | "mount-not-allowed";
+  | "mount-not-allowed"
+  | "paper-invalid"
+  | "paper-not-allowed";
 
 export type PrintSpecificationResult =
   | { ok: true; value: PrintSpecification }
@@ -99,6 +107,20 @@ export function mountForFormat(
 }
 
 /**
+ * The paper projection, in its total form: the paper travels only with giclée,
+ * and a giclée spec with no paper reads as the default (Matte Art) (#337) so an
+ * order or selection written before papers existed still fulfils. Everything
+ * else carries null.
+ */
+export function paperForFormat(
+  format: PrintFormat,
+  paper: PrintPaper | null,
+): PrintPaper | null {
+  if (format !== "giclee") return null;
+  return paper ?? DEFAULT_PRINT_PAPER;
+}
+
+/**
  * The physical arm of the specification, for call sites whose format, size
  * and frame are already typed: the configurator's own state, which a request
  * builder normalises rather than validates. Nothing is re-checked here,
@@ -106,15 +128,16 @@ export function mountForFormat(
  * projection, so the frame rule is read off the specification instead of
  * being spelled a second time in the client.
  *
- * `mount` is required (#335): it is part of the product key, and a caller that
- * omits it would normalise an unmounted selection into the mounted default.
- * Callers without a mount pass `null` explicitly.
+ * `mount` (#335) and `paper` (#337) are required: each is part of the product
+ * key, and a caller that omits one would normalise a different selection into
+ * the default. Callers without a mount or paper pass `null` explicitly.
  */
 export function physicalSpecification(
   format: PhysicalFormat,
   size: PrintSize,
   frame: FrameFinish | null,
   mount: FramedMount | null,
+  paper: PrintPaper | null,
 ): PhysicalPrintSpecification {
   return {
     kind: "physical",
@@ -122,6 +145,7 @@ export function physicalSpecification(
     size,
     frame: frameForFormat(format, frame),
     mount: mountForFormat(format, mount),
+    paper: paperForFormat(format, paper),
   };
 }
 
@@ -143,6 +167,7 @@ export function parsePrintSpecification(
   size: unknown,
   frame: unknown,
   mount: unknown,
+  paper: unknown,
   products?: readonly PrintProductEntry[],
 ): PhysicalPrintResult;
 export function parsePrintSpecification(
@@ -150,6 +175,7 @@ export function parsePrintSpecification(
   size: unknown,
   frame: unknown,
   mount: unknown,
+  paper: unknown,
   products?: readonly PrintProductEntry[],
 ): PrintSpecificationResult;
 export function parsePrintSpecification(
@@ -157,6 +183,7 @@ export function parsePrintSpecification(
   size: unknown,
   frame: unknown,
   mount: unknown,
+  paper: unknown,
   products: readonly PrintProductEntry[] = PRINT_PRODUCTS,
 ): PrintSpecificationResult {
   if (format === "digital") {
@@ -169,6 +196,9 @@ export function parsePrintSpecification(
     if (mount !== null && mount !== undefined) {
       return { ok: false, reason: "digital-rejects-mount" };
     }
+    if (paper !== null && paper !== undefined) {
+      return { ok: false, reason: "digital-rejects-paper" };
+    }
     return { ok: true, value: { kind: "digital" } };
   }
 
@@ -178,10 +208,11 @@ export function parsePrintSpecification(
 
   // A size the table carries for some other format is not a size this format
   // offers: the pair is the identity, not the size alone, and for framed the
-  // mount joins that identity (#335). An absent mount reads as the default, so
-  // a body written before mounts existed still resolves; a present-but-unknown
-  // one is refused with its own reason rather than silently swapped to the
-  // default, which would be a different product at a different price.
+  // mount joins that identity (#335) as the paper does for giclée (#337). An
+  // absent variant reads as the default, so a body written before that variant
+  // existed still resolves; a present-but-unknown one is refused with its own
+  // reason rather than silently swapped to the default, which would be a
+  // different product at a different price.
   let mountValue: FramedMount | null = null;
   if (format === "framed") {
     if (mount === null || mount === undefined) {
@@ -192,7 +223,17 @@ export function parsePrintSpecification(
       return { ok: false, reason: "mount-invalid" };
     }
   }
-  if (!findProduct(format, size, mountValue, products)) {
+  let paperValue: PrintPaper | null = null;
+  if (format === "giclee") {
+    if (paper === null || paper === undefined) {
+      paperValue = DEFAULT_PRINT_PAPER;
+    } else if (isPrintPaperValue(paper)) {
+      paperValue = paper;
+    } else {
+      return { ok: false, reason: "paper-invalid" };
+    }
+  }
+  if (!findProduct(format, size, mountValue, paperValue, products)) {
     return { ok: false, reason: "size-not-offered-for-format" };
   }
 
@@ -208,21 +249,46 @@ export function parsePrintSpecification(
         size,
         frame,
         mount: mountForFormat(format, mountValue),
+        paper: null,
       },
     };
   }
 
-  // Every other physical format carries no finish or mount, so a present one
-  // is a refusal rather than a value to drop: the body asked for something the
-  // format cannot have.
+  if (format === "giclee") {
+    // Giclée carries a paper and nothing a frame or mount would carry.
+    if (frame !== null && frame !== undefined) {
+      return { ok: false, reason: "frame-not-allowed" };
+    }
+    if (mount !== null && mount !== undefined) {
+      return { ok: false, reason: "mount-not-allowed" };
+    }
+    return {
+      ok: true,
+      value: {
+        kind: "physical",
+        format,
+        size,
+        frame: null,
+        mount: null,
+        paper: paperForFormat(format, paperValue),
+      },
+    };
+  }
+
+  // Every other physical format carries no finish, mount or paper, so a present
+  // one is a refusal rather than a value to drop: the body asked for something
+  // the format cannot have.
   if (frame !== null && frame !== undefined) {
     return { ok: false, reason: "frame-not-allowed" };
   }
   if (mount !== null && mount !== undefined) {
     return { ok: false, reason: "mount-not-allowed" };
   }
+  if (paper !== null && paper !== undefined) {
+    return { ok: false, reason: "paper-not-allowed" };
+  }
   return {
     ok: true,
-    value: { kind: "physical", format, size, frame: null, mount: null },
+    value: { kind: "physical", format, size, frame: null, mount: null, paper: null },
   };
 }

@@ -32,10 +32,13 @@ import {
 } from "../pricing/pricing";
 import {
   DEFAULT_FRAMED_MOUNT,
+  DEFAULT_PRINT_PAPER,
   FRAMED_MOUNTS,
+  PRINT_PAPERS,
   PRINT_PRODUCTS,
   printAreaIn,
   type FramedMount,
+  type PrintPaper,
   type PrintProductEntry,
 } from "../pricing/print-products";
 import { FRAME_FINISHES, SELLABLE_FORMATS } from "../pricing/sku-map";
@@ -50,9 +53,10 @@ export type FormatCopy = { title: string; sub: string };
 export type FormatOption = { id: PrintFormat } & FormatCopy;
 
 const FORMAT_COPY: Record<PrintFormat, FormatCopy> = {
-  // #336: every giclée SKU is GLOBAL-FAP-* — Prodigi's Enhanced Matte Art
-  // 200gsm (paperType EMA), never Hahnemühle. Say the paper we actually ship.
-  giclee: { title: "Giclée Fine Art", sub: "Matte Art Paper 200gsm" },
+  // #337: the subtitle is now true for both papers, so it names neither. The
+  // paper is a per-size choice below, and the concrete paper is on the selected
+  // paper's own helper line and on the order line.
+  giclee: { title: "Giclée Fine Art", sub: "Matte Art or Hahnemühle" },
   // #334: the mount is half of what ships, so the button says so. "Wood Frame",
   // not "Solid Wood Frame" — the brown finish is an oak-effect laminate, and
   // the mount is the fact the buyer is actually missing.
@@ -80,6 +84,23 @@ const MOUNT_COPY: Record<FramedMount, string> = {
 const MOUNT_PHRASE: Record<FramedMount, string> = {
   white: "white mount",
   none: "no mount",
+};
+
+/**
+ * The giclée Paper control's copy (#337), keyed by paper so a new paper is a
+ * compile error until it has words — the same rule the format, frame and mount
+ * Records follow. The weights are the verified Prodigi facts (EMA 200gsm,
+ * Photo Rag 308gsm); the note under the select is one short true line each.
+ */
+const PAPER_COPY: Record<PrintPaper, string> = {
+  ema: "Matte Art · 200gsm",
+  hpr: "Hahnemühle Photo Rag · 308gsm",
+};
+
+const PAPER_NOTE: Record<PrintPaper, string> = {
+  ema: "Smooth heavyweight matte, natural white.",
+  // Deliberately no acid-free claim: Prodigi does not state it for Photo Rag.
+  hpr: "100% cotton rag, soft matte with a fine felt texture.",
 };
 
 const CM_PER_INCH = 2.54;
@@ -306,9 +327,10 @@ export function previewNote(geometry: PreviewGeometry): string | null {
 export const DEFAULT_PRINT_FORMAT: PrintFormat = "giclee";
 export const DEFAULT_PRINT_SIZE: PrintSize = "50x70";
 export const DEFAULT_FRAME_FINISH: FrameFinish = "black";
-// The default mount is owned by print-products (it is part of the product key);
-// re-exported here so the configurator's defaults all come from one module.
-export { DEFAULT_FRAMED_MOUNT };
+// The default mount and paper are owned by print-products (each is part of the
+// product key); re-exported here so the configurator's defaults all come from
+// one module.
+export { DEFAULT_FRAMED_MOUNT, DEFAULT_PRINT_PAPER };
 
 /** One entry per frame finish, in catalog order. */
 export const CONFIGURATOR_FRAMES = FRAME_FINISHES.map((id) => ({
@@ -321,3 +343,18 @@ export const CONFIGURATOR_MOUNTS = FRAMED_MOUNTS.map((id) => ({
   id,
   label: MOUNT_COPY[id],
 }));
+
+/** One entry per giclée paper, in catalog order (#337). */
+export const CONFIGURATOR_PAPERS = PRINT_PAPERS.map((id) => ({
+  id,
+  label: PAPER_COPY[id],
+}));
+
+/**
+ * The helper line under the Paper select (#337). A paper is one product we
+ * actually stock, so the line states its real material — and no acid-free
+ * claim, which Prodigi does not make for Photo Rag.
+ */
+export function paperNote(paper: PrintPaper): string {
+  return PAPER_NOTE[paper];
+}

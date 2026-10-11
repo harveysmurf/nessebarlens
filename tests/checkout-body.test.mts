@@ -24,6 +24,8 @@ test("checkout accepts every format×size the SKU table can build", () => {
         frame,
         // The body carries no mount, so framed reads as the default (mounted).
         mount: format === "framed" ? "white" : null,
+        // The body carries no paper, so giclée reads as the default (Matte Art).
+        paper: format === "giclee" ? "ema" : null,
         destinationCountryCode: null,
       });
       // Guard the SKU table itself so validation coverage is meaningful.
@@ -76,6 +78,7 @@ test("quote accepts every physical SKU combination and rejects digital", () => {
         size,
         frame,
         mount: format === "framed" ? "white" : null,
+        paper: format === "giclee" ? "ema" : null,
         destinationCountryCode: null,
       });
     }
@@ -158,6 +161,7 @@ test("a quote with no frame is accepted; a frame on a non-framed format is not",
     size: "30x40",
     frame: null,
     mount: null,
+    paper: "ema",
     destinationCountryCode: null,
   });
   // An explicitly undefined frame is as absent as a null one.
@@ -167,6 +171,7 @@ test("a quote with no frame is accepted; a frame on a non-framed format is not",
     size: "50x70",
     frame: null,
     mount: null,
+    paper: null,
     destinationCountryCode: null,
   });
   for (const frame of ["black", ""]) {
@@ -174,6 +179,30 @@ test("a quote with no frame is accepted; a frame on a non-framed format is not",
     assert.equal("error" in rejected, true, frame);
     assert.match("error" in rejected ? rejected.error : "", /frame only allowed/);
   }
+});
+
+test("the body honours a known giclée paper and refuses an unknown or misplaced one", () => {
+  const hpr = parseQuoteBody({ format: "giclee", size: "50x70", paper: "hpr" });
+  assert.deepEqual(hpr, {
+    format: "giclee",
+    size: "50x70",
+    frame: null,
+    mount: null,
+    paper: "hpr",
+    destinationCountryCode: null,
+  });
+  // An absent paper reads as the default, so a pre-#337 body still resolves.
+  const absent = parseQuoteBody({ format: "giclee", size: "50x70", paper: undefined });
+  assert.equal((absent as { paper: string }).paper, "ema");
+  // A present-but-unknown paper is refused with the allow-list in the message.
+  for (const paper of ["vellum", "EMA"]) {
+    const rejected = parseQuoteBody({ format: "giclee", size: "50x70", paper });
+    assert.equal("error" in rejected, true, String(paper));
+    assert.match("error" in rejected ? rejected.error : "", /paper must be ema\|hpr/);
+  }
+  // A paper on a non-giclée format is refused, not dropped.
+  const misplaced = parseQuoteBody({ format: "canvas", size: "50x70", paper: "hpr" });
+  assert.match("error" in misplaced ? misplaced.error : "", /paper only allowed/);
 });
 
 test("a quote body that is not an object is rejected before any field is read", () => {

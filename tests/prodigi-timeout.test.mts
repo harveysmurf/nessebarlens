@@ -84,6 +84,7 @@ test("a hung quote fails with a timeout rather than hanging", async () => {
       size: "50x70",
       frame: null,
       mount: null,
+      paper: null,
       destinationCountryCode: "BG",
     });
     assert.equal(result.ok, false);

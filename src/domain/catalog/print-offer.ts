@@ -13,6 +13,7 @@
 import type { PrintSize } from "../pricing/pricing";
 import {
   DEFAULT_FRAMED_MOUNT,
+  DEFAULT_PRINT_PAPER,
   findProduct,
   PRINT_PRODUCTS,
   type PrintProductEntry,
@@ -71,14 +72,16 @@ function emptyOffer(): Record<PhysicalFormat, PrintSize[]> {
 }
 
 /**
- * Whether a table entry is one the *offer* lists. The offer is the mounted
- * (default) view of the catalogue (#335): framed sizes come from the mount
- * window product, and the no-mount variant is an option the configurator
- * enables per size against the master, not a second offer line. Including it
- * here would list every framed size twice.
+ * Whether a table entry is one the *offer* lists. The offer is the default view
+ * of the catalogue: framed sizes come from the mounted product (#335) and
+ * giclée sizes from the Matte Art paper (#337), and the no-mount or
+ * Hahnemühle variant is an option the configurator offers per size, not a
+ * second offer line. Including them would list every such size twice.
  */
 export function isOfferedProduct(product: PrintProductEntry): boolean {
-  return product.format !== "framed" || product.mount === DEFAULT_FRAMED_MOUNT;
+  if (product.format === "framed") return product.mount === DEFAULT_FRAMED_MOUNT;
+  if (product.format === "giclee") return product.paper === DEFAULT_PRINT_PAPER;
+  return true;
 }
 
 /**
@@ -156,7 +159,7 @@ export function parsePrintOffer(
       }
       seen.add(entry);
 
-      const product = findProduct(format, entry, null, products);
+      const product = findProduct(format, entry, null, null, products);
       if (!product) {
         problems.push({
           format,

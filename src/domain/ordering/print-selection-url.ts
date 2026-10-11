@@ -6,8 +6,8 @@
  * the grammar without a browser. Validation is against the photo's own print
  * offer (#302): a param naming a format or size the photo does not sell is
  * ignored and the opening selection's value is used — never an error page. The
- * params are `format`, `size` and `frame`; a digital selection carries only
- * `format`.
+ * params are `format`, `size`, `frame` (framed), `mount` (framed) and `paper`
+ * (giclée); a digital selection carries only `format`.
  *
  * The canvas angled/front view (#327) is deliberately not encoded. It is a way
  * of looking at the product, not part of what is bought, and a link should
@@ -18,6 +18,7 @@ import type { PrintOffer } from "../catalog/print-offer";
 import {
   isFrameFinishValue,
   isFramedMountValue,
+  isPrintPaperValue,
   isPrintSize,
   isSellableFormat,
   type PhysicalFormat,
@@ -25,6 +26,7 @@ import {
 import {
   DEFAULT_FRAME_FINISH,
   DEFAULT_FRAMED_MOUNT,
+  DEFAULT_PRINT_PAPER,
   DEFAULT_PRINT_SIZE,
   firstOfferedSize,
   offeredFormats,
@@ -56,6 +58,7 @@ export function selectionFromParams(
       size: DEFAULT_PRINT_SIZE,
       frame: DEFAULT_FRAME_FINISH,
       mount: DEFAULT_FRAMED_MOUNT,
+      paper: DEFAULT_PRINT_PAPER,
     };
   }
 
@@ -80,7 +83,14 @@ export function selectionFromParams(
       ? selectionMount(params.get("mount")) ?? opening.mount
       : opening.mount;
 
-  return { format, size, frame, mount };
+  // The paper is giclée-only, and falls back to the opening paper (the default)
+  // for an absent or unknown value, exactly as mount does.
+  const paper =
+    format === "giclee"
+      ? selectionPaper(params.get("paper")) ?? opening.paper
+      : opening.paper;
+
+  return { format, size, frame, mount, paper };
 }
 
 /**
@@ -96,6 +106,7 @@ export function selectionToParams(selection: PrintSelection): URLSearchParams {
     params.set("frame", selection.frame);
     params.set("mount", selection.mount);
   }
+  if (selection.format === "giclee") params.set("paper", selection.paper);
   return params;
 }
 
@@ -129,5 +140,11 @@ function selectionFrame(value: string | null): PrintSelection["frame"] | null {
 /** A known framed mount, or null when the param is absent or unknown. */
 function selectionMount(value: string | null): PrintSelection["mount"] | null {
   if (value === null || !isFramedMountValue(value)) return null;
+  return value;
+}
+
+/** A known giclée paper, or null when the param is absent or unknown. */
+function selectionPaper(value: string | null): PrintSelection["paper"] | null {
+  if (value === null || !isPrintPaperValue(value)) return null;
   return value;
 }

@@ -5,6 +5,7 @@ import type { PrintOffer } from "../src/domain/catalog/print-offer.ts";
 import {
   DEFAULT_FRAME_FINISH,
   DEFAULT_FRAMED_MOUNT,
+  DEFAULT_PRINT_PAPER,
   DEFAULT_PRINT_SIZE,
 } from "../src/domain/ordering/print-copy.ts";
 import type { PrintSelection } from "../src/domain/ordering/print-selection.ts";
@@ -12,7 +13,11 @@ import {
   selectionFromParams,
   selectionToParams,
 } from "../src/domain/ordering/print-selection-url.ts";
-import { FRAMED_MOUNTS, SELLABLE_FORMATS } from "../src/domain/pricing/sku-map.ts";
+import {
+  FRAMED_MOUNTS,
+  PRINT_PAPERS,
+  SELLABLE_FORMATS,
+} from "../src/domain/pricing/sku-map.ts";
 
 const OFFER: PrintOffer = {
   giclee: ["30x40", "50x70"],
@@ -22,7 +27,18 @@ const OFFER: PrintOffer = {
 
 /** A framed expected selection, mount defaulting to the mounted product. */
 function framed(size: string, frame = DEFAULT_FRAME_FINISH, mount = DEFAULT_FRAMED_MOUNT) {
-  return { format: "framed", size, frame, mount };
+  return { format: "framed", size, frame, mount, paper: DEFAULT_PRINT_PAPER };
+}
+
+/** A giclée expected selection, paper defaulting to Matte Art. */
+function giclee(size: string, paper = DEFAULT_PRINT_PAPER) {
+  return {
+    format: "giclee",
+    size,
+    frame: DEFAULT_FRAME_FINISH,
+    mount: DEFAULT_FRAMED_MOUNT,
+    paper,
+  };
 }
 
 function parse(query: string, offer: PrintOffer = OFFER): PrintSelection {
@@ -32,30 +48,15 @@ function parse(query: string, offer: PrintOffer = OFFER): PrintSelection {
 test("a valid query reproduces that exact variation", () => {
   assert.deepEqual(parse("format=framed&size=50x70&frame=white"), framed("50x70", "white"));
   assert.deepEqual(parse("format=framed&size=50x70&frame=white&mount=none"), framed("50x70", "white", "none"));
-  assert.deepEqual(parse("format=giclee&size=50x70"), {
-    format: "giclee",
-    size: "50x70",
-    frame: DEFAULT_FRAME_FINISH,
-    mount: DEFAULT_FRAMED_MOUNT,
-  });
+  assert.deepEqual(parse("format=giclee&size=50x70"), giclee("50x70"));
 });
 
 test("absent params fall back to the photo's opening selection", () => {
-  assert.deepEqual(parse(""), {
-    format: "giclee",
-    size: "30x40",
-    frame: DEFAULT_FRAME_FINISH,
-    mount: DEFAULT_FRAMED_MOUNT,
-  });
+  assert.deepEqual(parse(""), giclee("30x40"));
 });
 
 test("an unknown format falls back to the opening format", () => {
-  assert.deepEqual(parse("format=poster"), {
-    format: "giclee",
-    size: "30x40",
-    frame: DEFAULT_FRAME_FINISH,
-    mount: DEFAULT_FRAMED_MOUNT,
-  });
+  assert.deepEqual(parse("format=poster"), giclee("30x40"));
 });
 
 test("a format the photo does not offer is not accepted, even if sellable", () => {
@@ -63,24 +64,14 @@ test("a format the photo does not offer is not accepted, even if sellable", () =
   // param is ignored rather than opening a format with no size to show.
   assert.equal(parse("format=canvas").format, "giclee");
   // And a size that belongs to another format is not accepted for this one.
-  assert.deepEqual(parse("format=giclee&size=999x999"), {
-    format: "giclee",
-    size: "30x40",
-    frame: DEFAULT_FRAME_FINISH,
-    mount: DEFAULT_FRAMED_MOUNT,
-  });
+  assert.deepEqual(parse("format=giclee&size=999x999"), giclee("30x40"));
 });
 
 test("a size not offered by the chosen format falls back to its first size", () => {
   // 50x70 is a real size but not offered for a photo whose giclée offer is
   // only [30x40]; the format is honoured and the size defaults within it.
   const narrow: PrintOffer = { giclee: ["30x40"], framed: [], canvas: [] };
-  assert.deepEqual(parse("format=giclee&size=50x70", narrow), {
-    format: "giclee",
-    size: "30x40",
-    frame: DEFAULT_FRAME_FINISH,
-    mount: DEFAULT_FRAMED_MOUNT,
-  });
+  assert.deepEqual(parse("format=giclee&size=50x70", narrow), giclee("30x40"));
 });
 
 test("the size fallback follows the queried format, not the opening one", () => {
@@ -94,12 +85,7 @@ test("the size fallback follows the queried format, not the opening one", () => 
 });
 
 test("a size is honoured for the opening format when format is absent", () => {
-  assert.deepEqual(parse("size=50x70"), {
-    format: "giclee",
-    size: "50x70",
-    frame: DEFAULT_FRAME_FINISH,
-    mount: DEFAULT_FRAMED_MOUNT,
-  });
+  assert.deepEqual(parse("size=50x70"), giclee("50x70"));
 });
 
 test("frame and mount are only read for a framed selection", () => {
@@ -113,12 +99,22 @@ test("frame and mount are only read for a framed selection", () => {
   assert.equal(parse("format=framed&mount=sandwich").mount, DEFAULT_FRAMED_MOUNT);
 });
 
-test("digital ignores size, frame and mount params", () => {
-  assert.deepEqual(parse("format=digital&size=50x70&frame=white&mount=none"), {
+test("paper is only read for a giclée selection", () => {
+  assert.equal(parse("format=giclee&paper=hpr").paper, "hpr");
+  // An unknown paper falls back to the default.
+  assert.equal(parse("format=giclee&paper=vellum").paper, DEFAULT_PRINT_PAPER);
+  // A paper on a non-giclée format is ignored, not rejected.
+  assert.equal(parse("format=framed&paper=hpr").paper, DEFAULT_PRINT_PAPER);
+  assert.equal(parse("format=digital&paper=hpr").paper, DEFAULT_PRINT_PAPER);
+});
+
+test("digital ignores size, frame, mount and paper params", () => {
+  assert.deepEqual(parse("format=digital&size=50x70&frame=white&mount=none&paper=hpr"), {
     format: "digital",
     size: DEFAULT_PRINT_SIZE,
     frame: DEFAULT_FRAME_FINISH,
     mount: DEFAULT_FRAMED_MOUNT,
+    paper: DEFAULT_PRINT_PAPER,
   });
 });
 
@@ -137,8 +133,9 @@ test("a selection serialises to only the params its format has", () => {
       size: "50x70",
       frame: "brown",
       mount: "none",
+      paper: "hpr",
     }).toString(),
-    "format=giclee&size=50x70",
+    "format=giclee&size=50x70&paper=hpr",
   );
   assert.equal(
     selectionToParams({
@@ -146,6 +143,7 @@ test("a selection serialises to only the params its format has", () => {
       size: "50x70",
       frame: "brown",
       mount: "none",
+      paper: "hpr",
     }).toString(),
     "format=digital",
   );
@@ -161,16 +159,20 @@ test("serialise then parse round-trips every offered physical variation", () => 
       : ([DEFAULT_FRAME_FINISH] as const);
   const mountsFor = (format: PrintSelection["format"]) =>
     format === "framed" ? FRAMED_MOUNTS : ([DEFAULT_FRAMED_MOUNT] as const);
+  const papersFor = (format: PrintSelection["format"]) =>
+    format === "giclee" ? PRINT_PAPERS : ([DEFAULT_PRINT_PAPER] as const);
 
   for (const format of physical) {
     for (const size of OFFER[format]) {
       for (const frame of framesFor(format)) {
         for (const mount of mountsFor(format)) {
-          const selection: PrintSelection = { format, size, frame, mount };
-          assert.deepEqual(
-            parse(selectionToParams(selection).toString()),
-            selection,
-          );
+          for (const paper of papersFor(format)) {
+            const selection: PrintSelection = { format, size, frame, mount, paper };
+            assert.deepEqual(
+              parse(selectionToParams(selection).toString()),
+              selection,
+            );
+          }
         }
       }
     }
@@ -183,6 +185,7 @@ test("digital round-trips to its own default size and mount", () => {
     size: DEFAULT_PRINT_SIZE,
     frame: DEFAULT_FRAME_FINISH,
     mount: DEFAULT_FRAMED_MOUNT,
+    paper: DEFAULT_PRINT_PAPER,
   };
   assert.deepEqual(parse(selectionToParams(selection).toString()), selection);
 });

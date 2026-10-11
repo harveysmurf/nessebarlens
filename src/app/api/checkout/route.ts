@@ -18,7 +18,7 @@ import {
   type FrameFinish,
   type PrintSize,
 } from "@/domain/pricing/pricing";
-import type { FramedMount } from "@/domain/pricing/sku-map";
+import type { FramedMount, PrintPaper } from "@/domain/pricing/sku-map";
 import { webDerivativeUrls } from "@/infrastructure/media/derivatives";
 import { prodigiFailureFrom } from "@/infrastructure/prodigi/prodigi-config";
 import { canSignMasterAsset } from "@/application/fulfillment/print-asset";
@@ -62,6 +62,7 @@ export async function POST(request: Request) {
           parsed.size,
           parsed.frame ?? null,
           parsed.mount,
+          parsed.paper,
         );
   if (!offers(photo.printOffer, spec)) {
     return NextResponse.json(
@@ -75,7 +76,7 @@ export async function POST(request: Request) {
   // and not unmounted (bigger print area, different aspect). Enforced here as
   // well as in the configurator, because the body is unauthenticated input.
   if (parsed.format === "framed" && parsed.mount === "none") {
-    const product = findProduct("framed", parsed.size, "none");
+    const product = findProduct("framed", parsed.size, "none", null);
     if (!product || !assess(photo.master, product).verdict.eligible) {
       return NextResponse.json(
         { error: "This print option is not available for this photo" },
@@ -94,6 +95,7 @@ export async function POST(request: Request) {
   let size = "";
   let frame = "";
   let mount = "";
+  let paper = "";
   let destinationCountryCode: ShipToCountryCode | null = null;
   // The typed spec for the payment intent, set only in the physical arm (the
   // union narrows there without a cast; the metadata strings above stay the
@@ -101,6 +103,7 @@ export async function POST(request: Request) {
   let intentSize: PrintSize | null = null;
   let intentFrame: FrameFinish | null = null;
   let intentMount: FramedMount | null = null;
+  let intentPaper: PrintPaper | null = null;
 
   if (parsed.format !== "digital") {
     // `parsed` is now the physical arm: size/frame/destinationCountryCode are
@@ -113,6 +116,7 @@ export async function POST(request: Request) {
       size: parsed.size,
       frame: parsed.frame,
       mount: parsed.mount,
+      paper: parsed.paper,
       destinationCountryCode,
     });
     if (!result.ok) {
@@ -131,9 +135,11 @@ export async function POST(request: Request) {
     size = parsed.size;
     frame = parsed.frame ?? "";
     mount = parsed.mount ?? "";
+    paper = parsed.paper ?? "";
     intentSize = parsed.size;
     intentFrame = parsed.frame ?? null;
     intentMount = parsed.mount;
+    intentPaper = parsed.paper;
 
     // Fail closed before taking the money. A physical order is fulfilled from
     // an HMAC-signed /api/print-asset URL; without a usable
@@ -164,6 +170,7 @@ export async function POST(request: Request) {
     size,
     frame,
     mount,
+    paper,
     quoteEur: String(quoteEur),
   };
   // No merchandiseEur here. quoteEur is written unconditionally above and
@@ -186,6 +193,7 @@ export async function POST(request: Request) {
     size: intentSize,
     frame: intentFrame,
     mount: intentMount,
+    paper: intentPaper,
     previewImage: previewImage ?? null,
     quoteEur,
     shippingEur,

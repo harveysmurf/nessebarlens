@@ -122,6 +122,30 @@ test("every table print area matches the capture, or its safe colour bound", () 
   }
 });
 
+test("both giclée papers share a print area at every size (#337)", () => {
+  // Offer eligibility is computed from the default (EMA) product only
+  // (print-offer.ts), and a framed no-mount size gets its own per-variant
+  // check in the checkout route — but the HPR paper does not. So the feature
+  // rests on the captured fact that a size's Photo Rag print area equals its
+  // Matte Art one. Encode it here: if a future capture ever showed HPR
+  // narrower, this fails and the offer maths must be revisited rather than
+  // selling an HPR size whose master lacks the resolution.
+  const giclee = PRINT_PRODUCTS.filter((p) => p.format === "giclee");
+  const sizes = [...new Set(giclee.map((p) => p.size))];
+  for (const size of sizes) {
+    const ema = giclee.find((p) => p.size === size && p.paper === "ema");
+    const hpr = giclee.find((p) => p.size === size && p.paper === "hpr");
+    assert.ok(ema, `no Matte Art product for giclée ${size}`);
+    assert.ok(hpr, `no Photo Rag product for giclée ${size}`);
+    assert.deepEqual(
+      hpr.printAreaPx,
+      ema.printAreaPx,
+      `Photo Rag ${size} print area differs from Matte Art`,
+    );
+    assert.equal(hpr.printAreaDpi, ema.printAreaDpi, `Photo Rag ${size} DPI`);
+  }
+});
+
 test("every pinned print area is portrait (#307)", () => {
   // The print asset is rotated to the print area's orientation; if a pinned
   // product were ever landscape the rotation decision would be wrong, so the
@@ -163,6 +187,7 @@ test("the attributes we send match the captured variant's selector", () => {
       product.size,
       product.format === "framed" ? "black" : null,
       product.format === "framed" ? product.mount : null,
+      product.format === "giclee" ? product.paper : null,
     );
     assert.deepEqual(
       entry.attributes,
@@ -223,6 +248,7 @@ async function quoteItems(product: PrintProductEntry) {
       size: product.size,
       frame: product.format === "framed" ? "black" : null,
       mount: product.format === "framed" ? product.mount : null,
+      paper: product.format === "giclee" ? product.paper : null,
     });
     assert.equal(result.ok, true, `${product.sku} quote failed`);
     return seen.items?.[0];
@@ -259,6 +285,7 @@ test("every product orders with the table's SKU and attributes", () => {
       size: product.size,
       frame: product.format === "framed" ? "black" : null,
       mount: product.format === "framed" ? product.mount : null,
+      paper: product.format === "giclee" ? product.paper : null,
       recipient: RECIPIENT,
       assetUrl: ASSET_URL,
       assetMd5: ASSET_MD5,
@@ -279,13 +306,14 @@ test("every product orders with the table's SKU and attributes", () => {
 
 test("findProduct is the pair lookup, and null for a pair the table lacks", () => {
   const first = PRINT_PRODUCTS[0]!;
-  assert.equal(findProduct(first.format, first.size, null)?.sku, first.sku);
+  assert.equal(findProduct(first.format, first.size, null, null)?.sku, first.sku);
   assert.equal(
-    findProduct("giclee", "70x100", null, [
+    findProduct("giclee", "70x100", null, null, [
       {
         format: "giclee",
         size: "30x40",
         sizeIn: "12x16",
+        paper: "ema",
         sku: "GLOBAL-FAP-12X16",
         printAreaPx: { short: 3600, long: 4800 },
         printAreaDpi: 300,

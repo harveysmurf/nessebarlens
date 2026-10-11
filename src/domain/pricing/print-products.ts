@@ -34,6 +34,23 @@ export const FRAMED_MOUNTS: readonly FramedMount[] = ["white", "none"];
 /** The mount the configurator opens on and old orders without one read as. */
 export const DEFAULT_FRAMED_MOUNT: FramedMount = "white";
 
+/**
+ * The paper a giclée product is printed on (#337). Like the mount, it is part
+ * of the product key, not a request attribute: Prodigi sells the two papers as
+ * separate SKUs (GLOBAL-FAP-* vs GLOBAL-HPR-*), at different prices, so adding
+ * one is a compile error here until its SKUs are in the table.
+ *
+ * `ema` is Prodigi's Enhanced Matte Art 200gsm (what every giclée shipped
+ * before #337); `hpr` is Hahnemühle Photo Rag 308gsm. Only giclée carries it.
+ */
+export type PrintPaper = "ema" | "hpr";
+
+/** The papers we offer, in the order the configurator shows them. */
+export const PRINT_PAPERS: readonly PrintPaper[] = ["ema", "hpr"];
+
+/** The paper the configurator opens on and old orders without one read as. */
+export const DEFAULT_PRINT_PAPER: PrintPaper = "ema";
+
 type PrintProductBase = {
   /** Centimetres, e.g. "30x40". */
   size: string;
@@ -51,22 +68,44 @@ export type FramedProductEntry = PrintProductBase & {
   mount: FramedMount;
 };
 
+/** A giclée product carries its paper, which the other formats have not got. */
+export type GicleeProductEntry = PrintProductBase & {
+  format: "giclee";
+  paper: PrintPaper;
+};
+
 export type PrintProductEntry =
   | FramedProductEntry
-  | (PrintProductBase & { format: Exclude<PhysicalFormat, "framed"> });
+  | GicleeProductEntry
+  | (PrintProductBase & { format: Exclude<PhysicalFormat, "framed" | "giclee"> });
 
 export const PRINT_PRODUCTS = [
   // 2:3 sizes (#303) sit alongside the 3:4 and 5:7 ones, ordered small to large
   // by area within each format. The 2:3 SKUs are the cm-nominal IDs: 20x30 =
   // 8x12", 30x45 = 12x18", 40x60 = 16x24", 50x75 = 20x30", 60x90 = 24x36".
-  { format: "giclee", size: "20x30", sizeIn: "8x12", sku: "GLOBAL-FAP-8X12", printAreaPx: { short: 2400, long: 3600 }, printAreaDpi: 300 },
-  { format: "giclee", size: "30x40", sizeIn: "12x16", sku: "GLOBAL-FAP-12X16", printAreaPx: { short: 3600, long: 4800 }, printAreaDpi: 300 },
-  { format: "giclee", size: "30x45", sizeIn: "12x18", sku: "GLOBAL-FAP-12X18", printAreaPx: { short: 3600, long: 5400 }, printAreaDpi: 300 },
-  { format: "giclee", size: "40x60", sizeIn: "16x24", sku: "GLOBAL-FAP-16X24", printAreaPx: { short: 4800, long: 7200 }, printAreaDpi: 300 },
-  { format: "giclee", size: "50x70", sizeIn: "20x28", sku: "GLOBAL-FAP-20X28", printAreaPx: { short: 6000, long: 8400 }, printAreaDpi: 300 },
-  { format: "giclee", size: "50x75", sizeIn: "20x30", sku: "GLOBAL-FAP-20X30", printAreaPx: { short: 6000, long: 9000 }, printAreaDpi: 300 },
-  { format: "giclee", size: "60x90", sizeIn: "24x36", sku: "GLOBAL-FAP-24X36", printAreaPx: { short: 7200, long: 10800 }, printAreaDpi: 300 },
-  { format: "giclee", size: "70x100", sizeIn: "28x40", sku: "GLOBAL-FAP-28X40", printAreaPx: { short: 8400, long: 12000 }, printAreaDpi: 300 },
+  { format: "giclee", size: "20x30", sizeIn: "8x12", paper: "ema", sku: "GLOBAL-FAP-8X12", printAreaPx: { short: 2400, long: 3600 }, printAreaDpi: 300 },
+  { format: "giclee", size: "30x40", sizeIn: "12x16", paper: "ema", sku: "GLOBAL-FAP-12X16", printAreaPx: { short: 3600, long: 4800 }, printAreaDpi: 300 },
+  { format: "giclee", size: "30x45", sizeIn: "12x18", paper: "ema", sku: "GLOBAL-FAP-12X18", printAreaPx: { short: 3600, long: 5400 }, printAreaDpi: 300 },
+  { format: "giclee", size: "40x60", sizeIn: "16x24", paper: "ema", sku: "GLOBAL-FAP-16X24", printAreaPx: { short: 4800, long: 7200 }, printAreaDpi: 300 },
+  { format: "giclee", size: "50x70", sizeIn: "20x28", paper: "ema", sku: "GLOBAL-FAP-20X28", printAreaPx: { short: 6000, long: 8400 }, printAreaDpi: 300 },
+  { format: "giclee", size: "50x75", sizeIn: "20x30", paper: "ema", sku: "GLOBAL-FAP-20X30", printAreaPx: { short: 6000, long: 9000 }, printAreaDpi: 300 },
+  { format: "giclee", size: "60x90", sizeIn: "24x36", paper: "ema", sku: "GLOBAL-FAP-24X36", printAreaPx: { short: 7200, long: 10800 }, printAreaDpi: 300 },
+  { format: "giclee", size: "70x100", sizeIn: "28x40", paper: "ema", sku: "GLOBAL-FAP-28X40", printAreaPx: { short: 8400, long: 12000 }, printAreaDpi: 300 },
+  // Hahnemühle Photo Rag 308gsm (#337), same eight sizes. Prodigi's captured
+  // print areas are identical to the FAP ones at every size (verified
+  // 2026-10-10, and the fixture test proves it), so PPI eligibility and the
+  // preview geometry do not change — only the SKU, the price and the copy do.
+  // Listed after the Matte Art block, size by size, so `findProduct` with no
+  // paper returns the default and `isOfferedProduct` keeps the offer to one
+  // line per size.
+  { format: "giclee", size: "20x30", sizeIn: "8x12", paper: "hpr", sku: "GLOBAL-HPR-8X12", printAreaPx: { short: 2400, long: 3600 }, printAreaDpi: 300 },
+  { format: "giclee", size: "30x40", sizeIn: "12x16", paper: "hpr", sku: "GLOBAL-HPR-12X16", printAreaPx: { short: 3600, long: 4800 }, printAreaDpi: 300 },
+  { format: "giclee", size: "30x45", sizeIn: "12x18", paper: "hpr", sku: "GLOBAL-HPR-12X18", printAreaPx: { short: 3600, long: 5400 }, printAreaDpi: 300 },
+  { format: "giclee", size: "40x60", sizeIn: "16x24", paper: "hpr", sku: "GLOBAL-HPR-16X24", printAreaPx: { short: 4800, long: 7200 }, printAreaDpi: 300 },
+  { format: "giclee", size: "50x70", sizeIn: "20x28", paper: "hpr", sku: "GLOBAL-HPR-20X28", printAreaPx: { short: 6000, long: 8400 }, printAreaDpi: 300 },
+  { format: "giclee", size: "50x75", sizeIn: "20x30", paper: "hpr", sku: "GLOBAL-HPR-20X30", printAreaPx: { short: 6000, long: 9000 }, printAreaDpi: 300 },
+  { format: "giclee", size: "60x90", sizeIn: "24x36", paper: "hpr", sku: "GLOBAL-HPR-24X36", printAreaPx: { short: 7200, long: 10800 }, printAreaDpi: 300 },
+  { format: "giclee", size: "70x100", sizeIn: "28x40", paper: "hpr", sku: "GLOBAL-HPR-28X40", printAreaPx: { short: 8400, long: 12000 }, printAreaDpi: 300 },
   // Framed prints come in two mounts (#335): CFPM ships with a snow-white
   // mount, CFP is unmounted and the photo fills the whole glaze. The mount is
   // part of the key, so both run through the same table. Listed mounted first,
@@ -121,18 +160,20 @@ export function printAreaIn(product: PrintProductEntry): {
 }
 
 /**
- * The product for a `(format, size, mount)` key, or null. The key is the
+ * The product for a `(format, size, mount, paper)` key, or null. The key is the
  * identity: there is no assumption that every size exists in every format, so
  * callers that accept a raw size must handle a miss. The mount only narrows a
- * framed lookup; for the other formats it is ignored, and a null mount means
- * the default (the mounted frame), so a caller that predates #335 reads the
- * same product it always did.
+ * framed lookup and the paper only a giclée one; for the other formats each is
+ * ignored, and a null means the default (the mounted frame, the Matte Art
+ * paper), so a caller that predates #335/#337 reads the same product it always
+ * did.
  *
- * `mount` is required (#335): a caller that does not care passes `null`
- * explicitly. Leaving it defaulted let /api/quote omit it and still compile,
- * which is the exact shape of the bug where an unmounted selection was priced
- * as the mounted CFPM SKU — the mount is part of the key, and an omitted one
- * must be a decision the caller writes down, not a default.
+ * `mount` is required (#335) and `paper` is required (#337): a caller that does
+ * not care passes `null` explicitly. Leaving them defaulted let /api/quote omit
+ * one and still compile, which is the exact shape of the bug where an unmounted
+ * selection was priced as the mounted CFPM SKU — the variant is part of the
+ * key, and an omitted one must be a decision the caller writes down, not a
+ * default.
  *
  * `products` defaults to the pinned table and is injectable so a missing key
  * can be exercised before the catalogue has one.
@@ -141,6 +182,7 @@ export function findProduct(
   format: PhysicalFormat,
   size: string,
   mount: FramedMount | null,
+  paper: PrintPaper | null,
   products: readonly PrintProductEntry[] = PRINT_PRODUCTS,
 ): PrintProductEntry | null {
   return (
@@ -149,7 +191,9 @@ export function findProduct(
         p.format === format &&
         p.size === size &&
         (p.format !== "framed" ||
-          p.mount === (mount ?? DEFAULT_FRAMED_MOUNT)),
+          p.mount === (mount ?? DEFAULT_FRAMED_MOUNT)) &&
+        (p.format !== "giclee" ||
+          p.paper === (paper ?? DEFAULT_PRINT_PAPER)),
     ) ?? null
   );
 }

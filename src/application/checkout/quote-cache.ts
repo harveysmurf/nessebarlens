@@ -28,7 +28,11 @@
  * https URL rather than by the POST body.
  */
 
-import type { FramedMount, PhysicalFormat } from "../../domain/pricing/sku-map";
+import type {
+  FramedMount,
+  PhysicalFormat,
+  PrintPaper,
+} from "../../domain/pricing/sku-map";
 import { resolveSku } from "../../domain/pricing/sku-map";
 import type { FrameFinish, PrintSize } from "../../domain/pricing/pricing";
 
@@ -64,25 +68,29 @@ export function defaultQuoteCache(): QuoteCache | null {
  * and two that differ in any attribute Prodigi prices do not. Attributes are
  * sorted so key order can never split one entry into two.
  *
- * `mount` is required (#335): it is part of the SKU, so an omitted one would
- * silently key an unmounted selection as the mounted product. That omission
- * was the original bug on this path — the field was optional and /api/quote
- * left it out. Callers that do not care pass `null` explicitly.
+ * `mount` (#335) and `paper` (#337) are required: each is part of the SKU, so
+ * an omitted one would silently key a different selection as the default
+ * product. That omission was the original bug on this path — the mount field
+ * was optional and /api/quote left it out. Callers that do not care pass `null`
+ * explicitly.
  */
 export function quoteCacheKey(input: {
   format: PhysicalFormat;
   size: PrintSize;
   frame?: FrameFinish | null;
   mount: FramedMount | null;
+  paper: PrintPaper | null;
   destinationCountryCode: string;
 }): string {
-  // The mount is in the key because it is in the SKU (#335): CFPM and CFP are
-  // different products at different prices, so they must not share an entry.
+  // The mount (#335) and the paper (#337) are in the key because they are in
+  // the SKU: CFPM/CFP and FAP/HPR are different products at different prices,
+  // so they must not share an entry.
   const entry = resolveSku(
     input.format,
     input.size,
     input.frame ?? null,
     input.mount ?? null,
+    input.paper ?? null,
   );
   const attributes = Object.keys(entry.attributes)
     .sort()
