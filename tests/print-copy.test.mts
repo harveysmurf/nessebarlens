@@ -32,6 +32,14 @@ const FULL_OFFER = {
   canvas: ["20x30", "30x40", "30x45", "40x60", "50x70", "50x75", "60x90", "70x100"],
 } as const;
 
+/**
+ * True once a Hahnemühle (Prodigi `GLOBAL-HPR`) SKU is in the table (#337).
+ * Until then the site sells no Hahnemühle, so naming it anywhere is the #336
+ * bug; both paper guards below key off this, so an HPR launch — not a literal —
+ * is what re-allows the name.
+ */
+const HPR_OFFERED = PRINT_PRODUCTS.some((product) => product.sku.includes("HPR"));
+
 test("the configurator offers exactly what the catalog can sell", () => {
   // The component used to declare its own arrays. A format added to the
   // catalog — which is what pinning a new Prodigi SKU does — produced a
@@ -557,14 +565,13 @@ test("the giclée copy names the paper we ship, and nothing claims Hahnemühle (
   // EMA, 200gsm), never Hahnemühle. The guard is derived from the table, not a
   // literal: once an HPR SKU lands, the paper name becomes a real option and
   // this stops being a bug.
-  const hprOffered = PRINT_PRODUCTS.some((product) => product.sku.includes("HPR"));
   const giclee = CONFIGURATOR_FORMATS.find((format) => format.id === "giclee");
   assert.match(giclee?.sub ?? "", /200gsm/);
 
   const formatCopy = CONFIGURATOR_FORMATS.map(
     (format) => `${format.title} ${format.sub}`,
   ).join(" ");
-  if (!hprOffered) {
+  if (!HPR_OFFERED) {
     assert.doesNotMatch(formatCopy, /hahnem|museum rag|308gsm/i);
   }
 });
@@ -572,11 +579,15 @@ test("the giclée copy names the paper we ship, and nothing claims Hahnemühle (
 test("the fine-art gallery blurb makes no paper material claim (#336)", () => {
   // Component copy is not importable from node --test, so it is read from the
   // source: it used to promise "Hahnemühle Museum Rag", a paper we do not sell.
+  // Gated on the same HPR flag as the format copy above, so a legitimate
+  // Hahnemühle reintroduction after #337 is allowed here too.
   const source = fs.readFileSync(
     new URL("../src/components/GalleryPage.tsx", import.meta.url),
     "utf8",
   );
-  assert.doesNotMatch(source, /hahnem|museum rag|308gsm/i);
+  if (!HPR_OFFERED) {
+    assert.doesNotMatch(source, /hahnem|museum rag|308gsm/i);
+  }
 });
 
 test("the no-mount helper states the full-glaze size, not the window (#335)", () => {
