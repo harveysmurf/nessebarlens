@@ -59,10 +59,20 @@ import { fileURLToPath } from "node:url";
 // different set of keys than the migrator would either refuse forever or, worse,
 // wave through an order the migrator would have carried over.
 import { isDownloadToken } from "../src/domain/ordering/download-token";
-import { classifyKvKey, looksLikeOrderRecord } from "./migrate-orders-kv-to-d1.mjs";
+import {
+  classifyKvKey,
+  looksLikeOrderRecord,
+  DATABASE_NAME,
+  KV_BINDING,
+} from "./migrate-orders-kv-to-d1.mjs";
 
-export const DATABASE_NAME = "nessebar-lens-orders";
-export const KV_BINDING = "ORDERS";
+// The database name and the KV binding are the migrator's to name: this gate
+// exists to clear up after that migration, and it deletes exactly what the
+// migration wrote. Declaring them a second time here is a second place the
+// pair can drift, and a gate pointed at a different database or binding than
+// the one it is meant to close out would report success having removed nothing.
+export { KV_BINDING };
+
 const WRANGLER_TOML = "wrangler.toml";
 
 export function parseArgs(argv) {
