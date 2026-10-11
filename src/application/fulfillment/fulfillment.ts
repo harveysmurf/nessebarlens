@@ -47,8 +47,10 @@ import type { FrameFinish } from "../../domain/pricing/pricing";
 import {
   isFrameFinishValue,
   isFramedMountValue,
+  isPrintPaperValue,
   isPrintSize,
   type FramedMount,
+  type PrintPaper,
 } from "../../domain/pricing/sku-map";
 import { getPhoto } from "../../domain/catalog/photos";
 import type { OrdersStore } from "../../domain/ordering/orders-store";
@@ -335,7 +337,8 @@ export async function fulfillCheckoutSession(
       !isPrintSize(record.size) ||
       record.recipient === null ||
       (record.frame !== "" && !isFrameFinishValue(record.frame)) ||
-      (record.mount !== "" && !isFramedMountValue(record.mount))
+      (record.mount !== "" && !isFramedMountValue(record.mount)) ||
+      (record.paper !== "" && !isPrintPaperValue(record.paper))
     ) {
       // A record in the retryable state that is not a complete physical order
       // cannot be a normal write: buildRecord only writes awaiting-prodigi and
@@ -369,6 +372,14 @@ export async function fulfillCheckoutSession(
           ? null
           : isFramedMountValue(record.mount)
             ? record.mount
+            : null;
+      // "" is a pre-paper (or non-giclée) record: the provider defaults it to
+      // the Matte Art paper, which is what those orders shipped as (#337).
+      const paper: PrintPaper | null =
+        record.paper === ""
+          ? null
+          : isPrintPaperValue(record.paper)
+            ? record.paper
             : null;
       // Sign the asset URL before calling the provider — createProdigiOrder
       // requires it (no placeholder fallback since #245). The MD5 comes from
@@ -408,6 +419,7 @@ export async function fulfillCheckoutSession(
         size: record.size,
         frame,
         mount,
+        paper,
         recipient: record.recipient,
         assetUrl,
         assetMd5,

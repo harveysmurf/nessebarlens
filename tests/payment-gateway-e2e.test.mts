@@ -219,6 +219,7 @@ test("every physical product reaches the print provider with its table SKU", asy
         size: product.size,
         frame: frame ?? "",
         mount: product.format === "framed" ? product.mount : "",
+        paper: product.format === "giclee" ? product.paper : "",
         quoteEur: "15",
         shippingEur: "4.99",
         sku: product.sku,
@@ -262,11 +263,18 @@ test("every physical product reaches the print provider with its table SKU", asy
       product.sku,
     );
 
+    assert.equal(
+      seen[0]!.paper,
+      product.format === "giclee" ? product.paper : null,
+      product.sku,
+    );
+
     const entry = resolveSku(
       product.format,
       product.size,
       frame,
       product.format === "framed" ? product.mount : null,
+      product.format === "giclee" ? product.paper : null,
     );
     assert.equal(entry.sku, product.sku);
     assert.deepEqual(entry.attributes, EXPECTED_ATTRIBUTES[product.format]);

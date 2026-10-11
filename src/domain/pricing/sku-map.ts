@@ -10,17 +10,20 @@
 import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";
 import {
   DEFAULT_FRAMED_MOUNT,
+  DEFAULT_PRINT_PAPER,
   findProduct,
   FRAMED_MOUNTS,
+  PRINT_PAPERS,
   PRINT_PRODUCTS,
   type FramedMount,
+  type PrintPaper,
   type ProdigiSizeIn,
 } from "./print-products";
 
 export type PhysicalFormat = Exclude<PrintFormat, "digital">;
 
-export type { FramedMount, ProdigiSizeIn };
-export { FRAMED_MOUNTS };
+export type { FramedMount, PrintPaper, ProdigiSizeIn };
+export { FRAMED_MOUNTS, PRINT_PAPERS };
 
 export type SkuEntry = {
   sku: string;
@@ -116,27 +119,36 @@ export function isFramedMountValue(value: unknown): value is FramedMount {
   );
 }
 
+/** Membership test for the giclée-paper allow-list, owned with the list. */
+export function isPrintPaperValue(value: unknown): value is PrintPaper {
+  return typeof value === "string" && PRINT_PAPERS.includes(value as PrintPaper);
+}
+
 /**
- * The pinned SKU for a `(format, size, frame, mount)` selection.
+ * The pinned SKU for a `(format, size, frame, mount, paper)` selection.
  *
- * `mount` is required (#335) and must be threaded from the one identity that
- * owns it: an omitted mount is what let /api/quote silently price the mounted
- * product for an unmounted selection. Callers that do not care pass `null`
- * explicitly. `frame` keeps its null default because a non-framed selection
- * genuinely has none and the framed arm throws below.
+ * `mount` (#335) and `paper` (#337) are required and must be threaded from the
+ * one identity that owns them: an omitted variant is what let /api/quote
+ * silently price the default product for a different selection. Callers that do
+ * not care pass `null` explicitly. `frame` keeps its null default because a
+ * non-framed selection genuinely has none and the framed arm throws below.
  */
 export function resolveSku(
   format: PhysicalFormat,
   size: PrintSize,
   frame: FrameFinish | null = null,
   mount: FramedMount | null,
+  paper: PrintPaper | null,
 ): SkuEntry {
-  // A null mount means the default (mounted); only framed products carry one.
-  const product = findProduct(format, size, mount);
+  // A null mount means the default (mounted) and a null paper the default
+  // (Matte Art); only framed products carry a mount and only giclée a paper.
+  const product = findProduct(format, size, mount, paper);
   if (!product) {
     // The typed callers only pass keys from PRINT_SIZES, which the table
     // defines, so this is a programming error rather than a customer path.
-    throw new Error(`no print product for ${format}/${size}/${mount ?? DEFAULT_FRAMED_MOUNT}`);
+    throw new Error(
+      `no print product for ${format}/${size}/${mount ?? DEFAULT_FRAMED_MOUNT}/${paper ?? DEFAULT_PRINT_PAPER}`,
+    );
   }
   // The table's own type is the entry shape (sizeIn: string); the derived
   // ProdigiSizeIn union is a projection of the same table, so the literal is
@@ -159,9 +171,10 @@ export function resolveSku(
 }
 
 /**
- * Every physical SKU (format × size, and mount for framed): 32 today. Frame
- * defaults to black, mount to the default (mounted), so the list is complete
- * without a hand-typed pair.
+ * Every physical SKU (format × size, times each variant a format carries):
+ * 40 today. Frame defaults to black, mount to the default (mounted) and paper
+ * to the default (Matte Art), so the list is complete without hand-typed
+ * pairs.
  */
 export function allPhysicalSkus(): SkuEntry[] {
   const out: SkuEntry[] = [];
@@ -169,10 +182,14 @@ export function allPhysicalSkus(): SkuEntry[] {
     for (const size of PRINT_SIZES) {
       if (format === "framed") {
         for (const mount of FRAMED_MOUNTS) {
-          out.push(resolveSku(format, size, "black", mount));
+          out.push(resolveSku(format, size, "black", mount, null));
+        }
+      } else if (format === "giclee") {
+        for (const paper of PRINT_PAPERS) {
+          out.push(resolveSku(format, size, null, null, paper));
         }
       } else {
-        out.push(resolveSku(format, size, null, null));
+        out.push(resolveSku(format, size, null, null, null));
       }
     }
   }

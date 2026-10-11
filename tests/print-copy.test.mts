@@ -5,6 +5,7 @@ import test from "node:test";
 import {
   CONFIGURATOR_FORMATS,
   CONFIGURATOR_FRAMES,
+  CONFIGURATOR_PAPERS,
   DEFAULT_FRAME_FINISH,
   DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
@@ -13,6 +14,7 @@ import {
   imageSizeLabel,
   masterResolutionLabel,
   offeredFormats,
+  paperNote,
   previewCaption,
   previewLabel,
   previewNote,
@@ -23,7 +25,12 @@ import type { PrintSelection } from "../src/domain/ordering/print-selection.ts";
 import type { MasterFacts } from "../src/domain/catalog/master-facts.ts";
 import { sizeLabel } from "../src/domain/pricing/pricing.ts";
 import { PRINT_PRODUCTS } from "../src/domain/pricing/print-products.ts";
-import { FRAME_FINISHES, PRINT_SIZES, SELLABLE_FORMATS } from "../src/domain/pricing/sku-map.ts";
+import {
+  FRAME_FINISHES,
+  PRINT_PAPERS,
+  PRINT_SIZES,
+  SELLABLE_FORMATS,
+} from "../src/domain/pricing/sku-map.ts";
 
 /** Every size on every format — the offer of a very high-resolution master. */
 const FULL_OFFER = {
@@ -231,6 +238,7 @@ test("every select is named by a label, and every label names a select", () => {
 
   assert.deepEqual(labelled, [
     "print-size",
+    "print-paper",
     "frame-finish",
     "frame-mount",
     "shipping-country",
@@ -326,8 +334,9 @@ function sel(
   size: PrintSelection["size"] = "30x40",
   frame: PrintSelection["frame"] = "black",
   mount: PrintSelection["mount"] = "white",
+  paper: PrintSelection["paper"] = "ema",
 ): PrintSelection {
-  return { format, size, frame, mount };
+  return { format, size, frame, mount, paper };
 }
 
 test("previewLabel names the format, size and, for framed, the finish (#326)", () => {
@@ -560,19 +569,35 @@ test("no framed copy anywhere promises glass or Hahnemühle paper (#334)", () =>
   assert.doesNotMatch(framedCopy, /glass|hahnem/i);
 });
 
-test("the giclée copy names the paper we ship, and nothing claims Hahnemühle (#336)", () => {
-  // Every giclée SKU is GLOBAL-FAP-* — Prodigi's Enhanced Matte Art (paperType
-  // EMA, 200gsm), never Hahnemühle. The guard is derived from the table, not a
-  // literal: once an HPR SKU lands, the paper name becomes a real option and
-  // this stops being a bug.
+test("the giclée format copy names a paper we actually sell (#336/#337)", () => {
+  // Before #337 every giclée SKU was GLOBAL-FAP-* — Enhanced Matte Art 200gsm —
+  // so naming Hahnemühle was the #336 bug. #337 lands the HPR SKUs, so the
+  // paper is a real option and the format subtitle may name either paper.
   const giclee = CONFIGURATOR_FORMATS.find((format) => format.id === "giclee");
-  assert.match(giclee?.sub ?? "", /200gsm/);
+  assert.match(giclee?.sub ?? "", /matte art|hahnem/i);
 
   const formatCopy = CONFIGURATOR_FORMATS.map(
     (format) => `${format.title} ${format.sub}`,
   ).join(" ");
   if (!HPR_OFFERED) {
     assert.doesNotMatch(formatCopy, /hahnem|museum rag|308gsm/i);
+  }
+});
+
+test("the paper control copy names both papers and their real weights (#337)", () => {
+  assert.deepEqual(
+    CONFIGURATOR_PAPERS.map((p) => p.id),
+    PRINT_PAPERS,
+  );
+  const labels = CONFIGURATOR_PAPERS.map((p) => p.label).join(" | ");
+  assert.match(labels, /Matte Art · 200gsm/);
+  assert.match(labels, /Hahnemühle Photo Rag · 308gsm/);
+  // The helper lines state the real material — and never claim acid-free, which
+  // Prodigi does not state for Photo Rag.
+  assert.match(paperNote("ema"), /matte/i);
+  assert.match(paperNote("hpr"), /cotton rag/i);
+  for (const paper of PRINT_PAPERS) {
+    assert.doesNotMatch(paperNote(paper), /acid-free/i, paper);
   }
 });
 

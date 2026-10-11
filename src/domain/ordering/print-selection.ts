@@ -14,7 +14,9 @@ import type { PrintOffer } from "../catalog/print-offer";
 import type { FrameFinish, PrintFormat, PrintSize } from "../pricing/pricing";
 import {
   DEFAULT_FRAMED_MOUNT,
+  DEFAULT_PRINT_PAPER,
   type FramedMount,
+  type PrintPaper,
 } from "../pricing/print-products";
 import {
   DEFAULT_FRAME_FINISH,
@@ -29,6 +31,8 @@ export type PrintSelection = {
   frame: FrameFinish;
   /** The framed mount (#335); ignored by every non-framed format. */
   mount: FramedMount;
+  /** The giclée paper (#337); ignored by every non-giclée format. */
+  paper: PrintPaper;
 };
 
 /**
@@ -45,6 +49,7 @@ export function openingSelection(offer: PrintOffer): PrintSelection {
     size,
     frame: DEFAULT_FRAME_FINISH,
     mount: DEFAULT_FRAMED_MOUNT,
+    paper: DEFAULT_PRINT_PAPER,
   };
 }
 
@@ -88,4 +93,17 @@ export function withMount(
   mount: FramedMount,
 ): PrintSelection {
   return { ...selection, mount };
+}
+
+/**
+ * Change the giclée paper (#337). Like `withMount`, this only writes the
+ * field; the configurator decides whether the choice is offered at the current
+ * size (both papers are sold for every giclée size) and never silently swaps
+ * the product.
+ */
+export function withPaper(
+  selection: PrintSelection,
+  paper: PrintPaper,
+): PrintSelection {
+  return { ...selection, paper };
 }

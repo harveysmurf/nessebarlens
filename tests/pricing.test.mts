@@ -37,6 +37,16 @@ test("every sellable format has a buyer-facing label", () => {
   // framed SKU is a "with mount" CFPM.
   assert.equal(formatLabel("framed"), "Framed Fine Art (White Mount)");
   assert.match(formatLabel("giclee"), /Gicl/);
+  // #337: the giclée order line names the paper actually bought, defaulting to
+  // Matte Art and switching to Photo Rag for HPR.
+  assert.equal(
+    formatLabel("giclee", "white", "ema"),
+    "Giclée Fine Art Print (Matte Art 200gsm)",
+  );
+  assert.equal(
+    formatLabel("giclee", "white", "hpr"),
+    "Giclée Fine Art Print (Hahnemühle Photo Rag 308gsm)",
+  );
   // #334: nothing on the framed path may promise glazing or paper we do not
   // ship — a CFPM is acrylic over EMA 200gsm, never glass, never Hahnemühle.
   for (const label of [formatLabel("framed"), formatLabel("giclee"), formatLabel("canvas")]) {

@@ -163,6 +163,7 @@ test("the attributes we send match the captured variant's selector", () => {
       product.size,
       product.format === "framed" ? "black" : null,
       product.format === "framed" ? product.mount : null,
+      product.format === "giclee" ? product.paper : null,
     );
     assert.deepEqual(
       entry.attributes,
@@ -223,6 +224,7 @@ async function quoteItems(product: PrintProductEntry) {
       size: product.size,
       frame: product.format === "framed" ? "black" : null,
       mount: product.format === "framed" ? product.mount : null,
+      paper: product.format === "giclee" ? product.paper : null,
     });
     assert.equal(result.ok, true, `${product.sku} quote failed`);
     return seen.items?.[0];
@@ -259,6 +261,7 @@ test("every product orders with the table's SKU and attributes", () => {
       size: product.size,
       frame: product.format === "framed" ? "black" : null,
       mount: product.format === "framed" ? product.mount : null,
+      paper: product.format === "giclee" ? product.paper : null,
       recipient: RECIPIENT,
       assetUrl: ASSET_URL,
       assetMd5: ASSET_MD5,
@@ -279,13 +282,14 @@ test("every product orders with the table's SKU and attributes", () => {
 
 test("findProduct is the pair lookup, and null for a pair the table lacks", () => {
   const first = PRINT_PRODUCTS[0]!;
-  assert.equal(findProduct(first.format, first.size, null)?.sku, first.sku);
+  assert.equal(findProduct(first.format, first.size, null, null)?.sku, first.sku);
   assert.equal(
-    findProduct("giclee", "70x100", null, [
+    findProduct("giclee", "70x100", null, null, [
       {
         format: "giclee",
         size: "30x40",
         sizeIn: "12x16",
+        paper: "ema",
         sku: "GLOBAL-FAP-12X16",
         printAreaPx: { short: 3600, long: 4800 },
         printAreaDpi: 300,

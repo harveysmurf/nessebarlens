@@ -167,6 +167,7 @@ test("Prodigi body accepts HMAC print-asset URL without master leak", async () =
     size: "50x70",
     frame: null,
     mount: null,
+    paper: null,
     recipient: RECIPIENT,
     assetUrl,
     assetMd5: "c".repeat(32),

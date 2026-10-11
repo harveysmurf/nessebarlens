@@ -22,10 +22,12 @@ export async function POST(request: Request) {
     format: parsed.format,
     size: parsed.size,
     frame: parsed.frame,
-    // The mount is part of the product key (#335): CFPM and CFP are different
-    // SKUs at different prices, so the cache must not share their entries and
-    // the Prodigi quote has to carry the mount to resolve the right one.
+    // The mount (#335) and the paper (#337) are part of the product key:
+    // CFPM/CFP and FAP/HPR are different SKUs at different prices, so the cache
+    // must not share their entries and the Prodigi quote has to carry both to
+    // resolve the right one.
     mount: parsed.mount,
+    paper: parsed.paper,
     destinationCountryCode:
       parsed.destinationCountryCode ?? DEFAULT_SHIPPING_COUNTRY,
   };

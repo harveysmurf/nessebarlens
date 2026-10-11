@@ -351,6 +351,7 @@ test("order creation body includes same-origin callbackUrl", () => {
     size: "50x70",
     frame: null,
     mount: null,
+    paper: null,
     recipient: RECIPIENT,
     assetUrl: `https://nessebarlens.com/api/print-asset?slug=${SAMPLE_SLUG}&exp=1799999999&sig=${"a".repeat(64)}`,
     assetMd5: "c".repeat(32),

@@ -1,6 +1,10 @@
 import type { FrameFinish, PrintFormat, PrintSize } from "../pricing/pricing";
 import { physicalSpecification } from "./print-spec";
-import type { FramedMount, PhysicalFormat } from "../pricing/sku-map";
+import type {
+  FramedMount,
+  PhysicalFormat,
+  PrintPaper,
+} from "../pricing/sku-map";
 import type { ShipToCountryCode } from "../pricing/ship-to-countries";
 
 /**
@@ -20,6 +24,7 @@ export type QuoteRequest = {
   size: PrintSize;
   frame: FrameFinish | null;
   mount: FramedMount | null;
+  paper: PrintPaper | null;
   destinationCountryCode: ShipToCountryCode;
 };
 
@@ -29,6 +34,7 @@ export type CheckoutRequest = {
   size: PrintSize | null;
   frame: FrameFinish | null;
   mount: FramedMount | null;
+  paper: PrintPaper | null;
   destinationCountryCode: ShipToCountryCode | null;
 };
 
@@ -39,13 +45,15 @@ export function quoteRequest(
   frame: FrameFinish,
   destinationCountryCode: ShipToCountryCode,
   mount: FramedMount,
+  paper: PrintPaper,
 ): QuoteRequest {
-  const spec = physicalSpecification(format, size, frame, mount);
+  const spec = physicalSpecification(format, size, frame, mount, paper);
   return {
     format: spec.format,
     size: spec.size,
     frame: spec.frame,
     mount: spec.mount,
+    paper: spec.paper,
     destinationCountryCode,
   };
 }
@@ -64,6 +72,7 @@ export function checkoutRequest(
   frame: FrameFinish,
   destinationCountryCode: ShipToCountryCode,
   mount: FramedMount,
+  paper: PrintPaper,
 ): CheckoutRequest {
   if (format === "digital") {
     return {
@@ -72,16 +81,18 @@ export function checkoutRequest(
       size: null,
       frame: null,
       mount: null,
+      paper: null,
       destinationCountryCode: null,
     };
   }
-  const spec = physicalSpecification(format, size, frame, mount);
+  const spec = physicalSpecification(format, size, frame, mount, paper);
   return {
     photoSlug,
     format: spec.format,
     size: spec.size,
     frame: spec.frame,
     mount: spec.mount,
+    paper: spec.paper,
     destinationCountryCode,
   };
 }

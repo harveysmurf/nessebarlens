@@ -2,8 +2,10 @@ import type { Orientation } from "../catalog/master-facts";
 import { Eur, eurToCents } from "./money";
 import {
   DEFAULT_FRAMED_MOUNT,
+  DEFAULT_PRINT_PAPER,
   PRINT_PRODUCTS,
   type FramedMount,
+  type PrintPaper,
   type PrintSize,
 } from "./print-products";
 
@@ -59,6 +61,13 @@ const MOUNT_LABELS: Record<FramedMount, string> = {
   none: "No Mount",
 };
 
+/** The paper's parenthetical on a giclée order line (#337), keyed so a new
+ *  paper is a compile error until it has words. */
+const PAPER_LABELS: Record<PrintPaper, string> = {
+  ema: "Matte Art 200gsm",
+  hpr: "Hahnemühle Photo Rag 308gsm",
+};
+
 /** "30x40" → "30 × 40"; used for both the cm and the inch half. */
 function sizeWords(size: string): string {
   const [a, b] = size.split("x");
@@ -83,9 +92,13 @@ const SIZE_WORDS: Record<PrintSize, { cm: string; inches: string }> =
 export function formatLabel(
   format: PrintFormat,
   mount: FramedMount = DEFAULT_FRAMED_MOUNT,
+  paper: PrintPaper = DEFAULT_PRINT_PAPER,
 ): string {
   if (format === "framed") {
     return `${FORMAT_LABELS.framed} (${MOUNT_LABELS[mount]})`;
+  }
+  if (format === "giclee") {
+    return `${FORMAT_LABELS.giclee} (${PAPER_LABELS[paper]})`;
   }
   return FORMAT_LABELS[format];
 }

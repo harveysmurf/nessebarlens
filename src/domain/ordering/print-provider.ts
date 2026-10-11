@@ -8,22 +8,27 @@
  */
 
 import type { PrintSize, FrameFinish } from "../pricing/pricing";
-import type { FramedMount, PhysicalFormat } from "../pricing/sku-map";
+import type {
+  FramedMount,
+  PhysicalFormat,
+  PrintPaper,
+} from "../pricing/sku-map";
 import type { ProdigiResult } from "./prodigi-result";
 import type { OrderRecipient } from "./order-recipient";
 
 /**
  * Price a physical print for a destination.
  *
- * `mount` is required (#335): it selects the SKU, so a caller that leaves it
- * off silently quotes the mounted product. Callers that do not care pass
- * `null` explicitly; that explicitness is the point.
+ * `mount` (#335) and `paper` (#337) are required: each selects the SKU, so a
+ * caller that leaves one off silently quotes the default product. Callers that
+ * do not care pass `null` explicitly; that explicitness is the point.
  */
 export type QuotePhysical = (opts: {
   format: PhysicalFormat;
   size: PrintSize;
   frame?: FrameFinish | null;
   mount: FramedMount | null;
+  paper: PrintPaper | null;
   destinationCountryCode?: string;
 }) => Promise<ProdigiResult<PhysicalQuote>>;
 
@@ -59,6 +64,8 @@ export type CreateProdigiOrder = (input: {
   frame: FrameFinish | null;
   /** Framed only (#335); null means the default (mounted). */
   mount: FramedMount | null;
+  /** Giclée only (#337); null means the default (Matte Art). */
+  paper: PrintPaper | null;
   recipient: OrderRecipient;
   /**
    * The HMAC /api/print-asset URL Prodigi fetches. Required: the caller

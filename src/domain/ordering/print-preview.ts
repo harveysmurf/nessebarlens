@@ -115,12 +115,14 @@ export function previewGeometry(
   const { format, size } = selection;
   if (format === "digital") return { kind: "digital" };
 
-  // The mount is part of the product key for framed (#335), so the lookup has
-  // to carry it; for the other formats it is ignored.
+  // The mount (#335) and the paper (#337) are part of the product key, so the
+  // lookup has to carry them; for the other formats each is ignored. The two
+  // papers share a print area, so the geometry is the same either way.
   const product = findProduct(
     format,
     size,
     format === "framed" ? selection.mount : null,
+    format === "giclee" ? selection.paper : null,
   );
   if (!product) return { kind: "digital" };
 

@@ -11,9 +11,11 @@ import {
 import {
   type FramedMount,
   type PhysicalFormat,
+  type PrintPaper,
   FRAME_FINISHES,
   FRAMED_MOUNTS,
   PHYSICAL_FORMATS,
+  PRINT_PAPERS,
   PRINT_SIZES,
   SELLABLE_FORMATS,
   formatListLabel,
@@ -39,6 +41,7 @@ export type PhysicalCheckout = {
   size: PrintSize;
   frame: FrameFinish | null;
   mount: FramedMount | null;
+  paper: PrintPaper | null;
   destinationCountryCode: ShipToCountryCode | null;
 };
 
@@ -52,6 +55,8 @@ const FRAME_LABEL = formatListLabel(FRAME_FINISHES);
 // Referenced by the mount-not-allowed wording below; kept beside the others so
 // the allow-list label and the list itself cannot drift.
 const MOUNT_LABEL = formatListLabel(FRAMED_MOUNTS);
+// Same for the giclée paper (#337).
+const PAPER_LABEL = formatListLabel(PRINT_PAPERS);
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -67,6 +72,7 @@ const DIGITAL_SPEC_ERRORS = {
   "digital-rejects-size": "digital rejects size",
   "digital-rejects-frame": "digital rejects frame",
   "digital-rejects-mount": "digital rejects mount",
+  "digital-rejects-paper": "digital rejects paper",
 };
 
 const FRAME_SPEC_ERRORS = {
@@ -76,9 +82,17 @@ const FRAME_SPEC_ERRORS = {
   "mount-not-allowed": `mount only allowed when format is framed (${MOUNT_LABEL})`,
 };
 
+// The giclée-paper pair (#337), shared verbatim by both parsers for the same
+// reason the frame pair is: one rule, one wording.
+const PAPER_SPEC_ERRORS = {
+  "paper-invalid": `paper must be ${PAPER_LABEL}`,
+  "paper-not-allowed": `paper only allowed when format is giclee (${PAPER_LABEL})`,
+};
+
 const CHECKOUT_SPEC_ERRORS: Record<PrintSpecificationReason, string> = {
   ...DIGITAL_SPEC_ERRORS,
   ...FRAME_SPEC_ERRORS,
+  ...PAPER_SPEC_ERRORS,
   "size-required": `size required for physical formats (${SIZE_LABEL})`,
   "size-not-offered-for-format": `size not offered for this format (${SIZE_LABEL})`,
 };
@@ -88,6 +102,7 @@ const QUOTE_SPEC_ERRORS: Record<PrintSpecificationReason, string> = {
   // digital entries exist for exhaustiveness and not for a buyer to read.
   ...DIGITAL_SPEC_ERRORS,
   ...FRAME_SPEC_ERRORS,
+  ...PAPER_SPEC_ERRORS,
   "size-required": `size required (${SIZE_LABEL})`,
   "size-not-offered-for-format": `size not offered (${SIZE_LABEL})`,
 };
@@ -146,6 +161,7 @@ export function parseCheckoutBody(
   const size = body.size ?? null;
   const frame = body.frame ?? null;
   const mount = body.mount ?? null;
+  const paper = body.paper ?? null;
   const destination = parseDestinationCountry(body.destinationCountryCode);
   if (!destination.ok) return { error: destination.error };
   const destinationCountryCode = destination.value;
@@ -157,7 +173,7 @@ export function parseCheckoutBody(
     return { error: `format must be ${FORMAT_LABEL}` };
   }
 
-  const spec = parsePrintSpecification(format, size, frame, mount);
+  const spec = parsePrintSpecification(format, size, frame, mount, paper);
   if (!spec.ok) return { error: CHECKOUT_SPEC_ERRORS[spec.reason] };
   if (spec.value.kind === "digital") {
     return {
@@ -173,6 +189,7 @@ export function parseCheckoutBody(
     size: spec.value.size,
     frame: spec.value.frame,
     mount: spec.value.mount,
+    paper: spec.value.paper,
     destinationCountryCode,
   };
 }
@@ -187,6 +204,7 @@ export type QuoteBody = {
   size: PrintSize;
   frame: FrameFinish | null;
   mount: FramedMount | null;
+  paper: PrintPaper | null;
   destinationCountryCode: ShipToCountryCode | null;
 };
 
@@ -198,6 +216,7 @@ export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {
   const size = body.size ?? null;
   const frame = body.frame ?? null;
   const mount = body.mount ?? null;
+  const paper = body.paper ?? null;
   const destination = parseDestinationCountry(body.destinationCountryCode);
   if (!destination.ok) return { error: destination.error };
   const destinationCountryCode = destination.value;
@@ -209,7 +228,7 @@ export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {
     return { error: `format must be ${formatListLabel(PHYSICAL_FORMATS)}` };
   }
 
-  const spec = parsePrintSpecification(format, size, frame, mount);
+  const spec = parsePrintSpecification(format, size, frame, mount, paper);
   if (!spec.ok) return { error: QUOTE_SPEC_ERRORS[spec.reason] };
 
   return {
@@ -217,6 +236,7 @@ export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {
     size: spec.value.size,
     frame: spec.value.frame,
     mount: spec.value.mount,
+    paper: spec.value.paper,
     destinationCountryCode,
   };
 }

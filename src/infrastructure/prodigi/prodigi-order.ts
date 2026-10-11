@@ -30,6 +30,7 @@ import {
   resolveSku,
   type FramedMount,
   type PhysicalFormat,
+  type PrintPaper,
 } from "../../domain/pricing/sku-map";
 import { siteUrl } from "../config/config";
 import { HTTPS_URL_PATTERN } from "../../domain/pricing/url-patterns";
@@ -127,6 +128,12 @@ export function buildProdigiOrderBody(input: {
    * cannot silently price the default mounted SKU for a framed order.
    */
   mount: FramedMount | null;
+  /**
+   * Giclée only (#337). Required, like the port: the legacy default resolves
+   * upstream at the order-record read boundary, so a caller that omits paper
+   * cannot silently print the default Matte Art SKU for a Hahnemühle order.
+   */
+  paper: PrintPaper | null;
   recipient: OrderRecipient;
   /** The HMAC /api/print-asset URL Prodigi fetches. Required: there is no
    * public-placeholder fallback anymore (#245). */
@@ -142,6 +149,7 @@ export function buildProdigiOrderBody(input: {
     input.size,
     input.frame,
     input.mount,
+    input.paper,
   );
   const assetUrl = input.assetUrl;
   const assetMd5 = input.assetMd5;
