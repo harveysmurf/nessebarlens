@@ -15,7 +15,7 @@ import {
 import { checkoutRequest, quoteRequest } from "@/domain/ordering/request-bodies";
 import {
   CONFIGURATOR_FRAMES,
-  FRAMED_MOUNT_NOTE,
+  framedMountNote,
   masterResolutionLabel,
   offeredFormats,
   sizeOptions,
@@ -348,7 +348,7 @@ export function PrintConfigurator({
                 beside the finish the mount is fixed to, is the last point
                 before checkout where it can still change the buyer's mind. */}
             <p className="text-[10px] text-stone-500 mt-1.5">
-              {FRAMED_MOUNT_NOTE}
+              {framedMountNote(size, orientation)}
             </p>
           </div>
         )}
