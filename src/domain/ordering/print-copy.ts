@@ -62,18 +62,6 @@ const FRAME_COPY: Record<FrameFinish, string> = {
   brown: "Brown Wood",
 };
 
-/**
- * The helper line under the Frame Finish select (#334).
- *
- * Deliberately says acrylic and never glass, and never names a paper: a CFPM
- * is EMA 200gsm, and the Hahnemühle copy elsewhere on the site belongs to the
- * giclée format, which is a separate problem (#334's Notes).
- */
-export const FRAMED_MOUNT_NOTE =
-  `Snow-white acid-free mount, acrylic glazing, ready to hang. ` +
-  `Size is inside the frame; the frame adds about ` +
-  `${Math.round(CLASSIC_FRAME_MOULDING_MM / 10)} cm on each side.`;
-
 const CM_PER_INCH = 2.54;
 
 /** A framed product's mount window in whole cm, short edge first. */
@@ -119,6 +107,30 @@ export function imageSizeLabel(
   return orientation === "landscape"
     ? `${area.long} × ${area.short} cm`
     : `${area.short} × ${area.long} cm`;
+}
+
+/**
+ * The helper line under the Frame Finish select (#334).
+ *
+ * A function, not a constant, because the one fact that matters here — how big
+ * the photo actually is — depends on the size the buyer just chose. This is
+ * also why the visible size is not on the size option: the select has to stay
+ * short enough to fit at 320px (#331), and this line wraps and has room.
+ *
+ * Deliberately says acrylic and never glass, and never names a paper: a CFPM
+ * is EMA 200gsm, and the Hahnemühle copy elsewhere on the site belongs to the
+ * giclée format, which is a separate problem (#334's Notes).
+ */
+export function framedMountNote(
+  size: PrintSize,
+  orientation: Orientation,
+): string {
+  return (
+    `Snow-white acid-free mount, acrylic glazing, ready to hang. ` +
+    `Your photo shows at ${imageSizeLabel(size, orientation)} behind the mount; ` +
+    `the frame adds about ${Math.round(CLASSIC_FRAME_MOULDING_MM / 10)} cm ` +
+    `on each side.`
+  );
 }
 
 /** One entry per sellable format, in catalog order. */

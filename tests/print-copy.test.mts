@@ -8,7 +8,7 @@ import {
   DEFAULT_FRAME_FINISH,
   DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
-  FRAMED_MOUNT_NOTE,
+  framedMountNote,
   firstOfferedSize,
   imageSizeLabel,
   masterResolutionLabel,
@@ -452,14 +452,39 @@ test("the framed format button names the mount (#334)", () => {
 test("the mount helper states only what a CFPM actually ships (#334)", () => {
   // Snow-white mount, acrylic (never glass — it is Perspex), ready to hang,
   // and the size is the window with ~2 cm of moulding each side.
-  assert.match(FRAMED_MOUNT_NOTE, /snow-white/i);
-  assert.match(FRAMED_MOUNT_NOTE, /acrylic/i);
-  assert.doesNotMatch(FRAMED_MOUNT_NOTE, /glass/i);
+  const note = framedMountNote("30x40", "portrait");
+  assert.match(note, /snow-white/i);
+  assert.match(note, /acrylic/i);
+  assert.doesNotMatch(note, /glass/i);
   // #334 §5: a CFPM is EMA 200gsm. Never claim Hahnemühle here, and never
   // promise a finish we do not laminate ("solid oak"/"stained").
-  assert.doesNotMatch(FRAMED_MOUNT_NOTE, /hahnem/i);
-  assert.doesNotMatch(FRAMED_MOUNT_NOTE, /stained|solid oak/i);
-  assert.match(FRAMED_MOUNT_NOTE, /\b2 cm on each side\b/);
+  assert.doesNotMatch(note, /hahnem/i);
+  assert.doesNotMatch(note, /stained|solid oak/i);
+  assert.match(note, /\b2 cm on each side\b/);
+});
+
+test("the mount helper names the photo's visible size for the chosen size (#334)", () => {
+  // The visible size is the thing #334 exists to disclose, and it is
+  // orientation-dependent because a landscape photo hangs long edge first.
+  // It tracks the selection rather than being one constant: switching size in
+  // the configurator must change this line.
+  const portrait = framedMountNote("30x40", "portrait");
+  const landscape = framedMountNote("30x40", "landscape");
+  // Read from MOUNT_WINDOW_CM rather than guessed, so this test and the
+  // catalogue table cannot drift apart.
+  const bigger = framedMountNote("50x70", "portrait");
+
+  assert.match(portrait, /20 × 30 cm/);
+  assert.match(landscape, /30 × 20 cm/);
+  // Read from MOUNT_WINDOW_CM rather than guessed, so this test and the
+  // catalogue table cannot drift apart.
+  assert.match(bigger, new RegExp(MOUNT_WINDOW_CM["50x70"]));
+
+  assert.notEqual(portrait, landscape);
+  assert.notEqual(portrait, bigger);
+  // The outer size stays on the option itself, so the helper has to make the
+  // difference legible rather than just repeating the frame size.
+  assert.doesNotMatch(portrait, /30 × 40/);
 });
 
 test("no framed copy anywhere promises glass or Hahnemühle paper (#334)", () => {
@@ -467,7 +492,8 @@ test("no framed copy anywhere promises glass or Hahnemühle paper (#334)", () =>
   // either promise in any framed-facing string, this fails.
   const framedCopy = [
     CONFIGURATOR_FORMATS.find((format) => format.id === "framed")?.sub ?? "",
-    FRAMED_MOUNT_NOTE,
+    ...PRINT_SIZES.map((size) => framedMountNote(size, "portrait")),
+    ...PRINT_SIZES.map((size) => framedMountNote(size, "landscape")),
     ...CONFIGURATOR_FRAMES.map((frame) => frame.label),
   ].join(" ");
   assert.doesNotMatch(framedCopy, /glass|hahnem/i);
@@ -481,7 +507,7 @@ test("the configurator renders the mount helper beside the frame finish (#334)",
     new URL("../src/components/PrintConfigurator.tsx", import.meta.url),
     "utf8",
   );
-  assert.ok(source.includes("FRAMED_MOUNT_NOTE"));
+  assert.ok(source.includes("framedMountNote(size, orientation)"));
   assert.ok(
     source.includes("text-[10px] text-stone-500"),
     "the helper line lost its style",
