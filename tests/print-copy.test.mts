@@ -552,6 +552,33 @@ test("no framed copy anywhere promises glass or Hahnemühle paper (#334)", () =>
   assert.doesNotMatch(framedCopy, /glass|hahnem/i);
 });
 
+test("the giclée copy names the paper we ship, and nothing claims Hahnemühle (#336)", () => {
+  // Every giclée SKU is GLOBAL-FAP-* — Prodigi's Enhanced Matte Art (paperType
+  // EMA, 200gsm), never Hahnemühle. The guard is derived from the table, not a
+  // literal: once an HPR SKU lands, the paper name becomes a real option and
+  // this stops being a bug.
+  const hprOffered = PRINT_PRODUCTS.some((product) => product.sku.includes("HPR"));
+  const giclee = CONFIGURATOR_FORMATS.find((format) => format.id === "giclee");
+  assert.match(giclee?.sub ?? "", /200gsm/);
+
+  const formatCopy = CONFIGURATOR_FORMATS.map(
+    (format) => `${format.title} ${format.sub}`,
+  ).join(" ");
+  if (!hprOffered) {
+    assert.doesNotMatch(formatCopy, /hahnem|museum rag|308gsm/i);
+  }
+});
+
+test("the fine-art gallery blurb makes no paper material claim (#336)", () => {
+  // Component copy is not importable from node --test, so it is read from the
+  // source: it used to promise "Hahnemühle Museum Rag", a paper we do not sell.
+  const source = fs.readFileSync(
+    new URL("../src/components/GalleryPage.tsx", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(source, /hahnem|museum rag|308gsm/i);
+});
+
 test("the no-mount helper states the full-glaze size, not the window (#335)", () => {
   const none = framedMountNote("30x40", "portrait", "none");
   assert.match(none, /no mount/i);

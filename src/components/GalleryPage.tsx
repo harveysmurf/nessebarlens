@@ -11,7 +11,7 @@ const META: Record<
     badge: "Curated Portfolio",
     badgeClass: "text-amber-800 bg-amber-100/60",
     title: "Fine Art Photography",
-    blurb: "My flagship gallery captures • Printed on Hahnemühle Museum Rag via Prodigi",
+    blurb: "My flagship gallery captures • Museum-quality giclée prints via Prodigi",
   },
   archive: {
     badge: "Photojournalism",
