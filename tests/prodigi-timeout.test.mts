@@ -58,6 +58,39 @@ function hangingFetch(): typeof fetch {
   }) as unknown as typeof fetch;
 }
 
+/**
+ * Stand in for `AbortSignal.timeout` with a near-zero deadline, and report every
+ * budget the code under test asked for.
+ *
+ * The three hung-call tests below would otherwise wait out the real 8s and 15s
+ * budgets to reach a verdict that is decided in microseconds — 38s of the suite
+ * asleep. Faking the signal keeps the production constants the source of truth:
+ * every value the code passes is recorded, and each test asserts its own constant
+ * is among them, so the wiring is still proved without the wait. This is the
+ * seam the callback, contact, email and operator-alert tests already use.
+ *
+ * The abort is deferred to a 5ms timer rather than done synchronously:
+ * `hangingFetch` only attaches an `abort` listener and never re-checks
+ * `signal.aborted`, so a signal that arrives already aborted would never settle
+ * it and the test would hang instead of failing.
+ */
+function stubProdigiTimeout(): { restore: () => void; asked: number[] } {
+  const original = AbortSignal.timeout;
+  const asked: number[] = [];
+  AbortSignal.timeout = ((ms: number) => {
+    asked.push(ms);
+    const ctrl = new AbortController();
+    setTimeout(() => ctrl.abort(), 5);
+    return ctrl.signal;
+  }) as typeof AbortSignal.timeout;
+  return {
+    restore: () => {
+      AbortSignal.timeout = original;
+    },
+    asked,
+  };
+}
+
 test("a timeout budget exists for each Prodigi call", () => {
   // Two numbers because two deadlines apply, and the order one has to be the
   // longer: it runs inside the Stripe webhook, where the answer still has to
@@ -75,9 +108,11 @@ test("a hung quote fails with a timeout rather than hanging", async () => {
   process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   globalThis.fetch = hangingFetch();
+  const timeout = stubProdigiTimeout();
   try {
     // A short budget so the test proves the bound is real rather than waiting
-    // out the production one: the production value is asserted above.
+    // out the production one: the production value is asserted above, and
+    // asserted again here as the budget the quote path actually asks for.
     const started = Date.now();
     const result = await quotePhysical({
       format: "giclee",
@@ -90,11 +125,13 @@ test("a hung quote fails with a timeout rather than hanging", async () => {
     assert.equal(result.ok, false);
     assert.equal(result.ok === false && result.kind, "timeout");
     assert.match(result.ok === false ? result.message : "", /timed out/);
+    assert.deepEqual(timeout.asked, [PRODIGI_QUOTE_TIMEOUT_MS]);
     assert.ok(
       Date.now() - started < PRODIGI_QUOTE_TIMEOUT_MS + 2_000,
       "the quote gave up on its own deadline rather than hanging",
     );
   } finally {
+    timeout.restore();
     globalThis.fetch = originalFetch;
     for (const key of ENV_KEYS) {
       if (saved[key] === undefined) delete process.env[key];
@@ -111,6 +148,7 @@ test("a hung order is a retryable timeout, not a dead end", async () => {
   process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
   process.env.PRINT_ASSET_HMAC_SECRET = "prodigi-timeout-hmac-secret-32ch!";
   globalThis.fetch = hangingFetch();
+  const timeout = stubProdigiTimeout();
   try {
     const result = await createProdigiOrder({
       sessionId: "cs_test_abcdefgh",
@@ -131,7 +169,9 @@ test("a hung order is a retryable timeout, not a dead end", async () => {
     assert.equal(result.reason, "prodigi-timeout");
     assert.equal(result.status, null, "no HTTP status was ever received");
     assert.match(result.message, /timed out/);
+    assert.deepEqual(timeout.asked, [PRODIGI_ORDER_TIMEOUT_MS]);
   } finally {
+    timeout.restore();
     globalThis.fetch = originalFetch;
     for (const key of ENV_KEYS) {
       if (saved[key] === undefined) delete process.env[key];
@@ -243,6 +283,7 @@ test("a timeout on the order path is stored non-terminal and answered 5xx", asyn
   process.env.PRINT_ASSET_HMAC_SECRET = "prodigi-timeout-hmac-secret-32ch!";
   globalThis.fetch = hangingFetch();
   const store = memoryOrdersStore();
+  const timeout = stubProdigiTimeout();
   try {
     const result = await fulfillCheckoutSession({
       sessionId: "cs_test_abcdefgh",
@@ -289,7 +330,9 @@ test("a timeout on the order path is stored non-terminal and answered 5xx", asyn
     assert.equal(stored!.terminal, false, "a redelivery must still be allowed");
     assert.equal(stored!.masterKey, null);
     assert.equal(stored!.prodigiOrderId, null);
+    assert.deepEqual(timeout.asked, [PRODIGI_ORDER_TIMEOUT_MS]);
   } finally {
+    timeout.restore();
     globalThis.fetch = originalFetch;
     for (const key of ENV_KEYS) {
       if (saved[key] === undefined) delete process.env[key];

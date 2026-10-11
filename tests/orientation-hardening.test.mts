@@ -28,6 +28,30 @@ import { orientationOf, parseMasterFacts } from "../src/domain/catalog/master-fa
 import { printAssetRotation } from "../src/domain/catalog/print-asset.ts";
 
 /**
+ * Master sizes, kept deliberately small.
+ *
+ * Every decision under test here is a ratio (`orientationOf` compares
+ * `long / short` against SQUARE_TOLERANCE = 1.01) or a 90° turn, and nothing in
+ * this file calls `assess`, so no pixel count feeds a PPI floor. So the
+ * canvases are sized to keep the *ratios* exact while cutting the encode cost:
+ * at full 3600×2400 / 10100×10000 these six encodes alone were ~25s of a
+ * ~210s suite, and the near-square pair was 101 megapixels each for a 1% edge.
+ *
+ * LANDSCAPE_W/H is the 3:2 of a real master (3600×2400) at 1/4 scale; the
+ * near-square pair is the exact 1.01 boundary (1010×1000) and one part past it
+ * (1011×1000), which is the same boundary the unscaled numbers 10100×10000 and
+ * 10101×10000 describe. Sizes stay well clear of the 100px corner offsets and
+ * of the 400px red marker.
+ */
+const LANDSCAPE_W = 900;
+const LANDSCAPE_H = 600;
+const SQUARE = 900;
+const NEAR_SQUARE_W = 1010; // 1.01 exactly — `long / short <= 1.01` is square
+const NEAR_SQUARE_H = 1000;
+const PAST_TOLERANCE_W = 1011; // 1.011 — the first ratio that turns
+const MARKER = 400;
+
+/**
  * A master with a red square top-left on a blue field, so a rotation is read
  * from the pixels rather than assumed from the dimensions. `orientation` writes
  * an EXIF tag (stored pixels unchanged); `masterDimensions` applies it.
@@ -37,7 +61,7 @@ async function writeCornerMaster(
   { width, height, orientation }: { width: number; height: number; orientation?: number },
 ): Promise<void> {
   const red = await sharp({
-    create: { width: 400, height: 400, channels: 3, background: { r: 255, g: 0, b: 0 } },
+    create: { width: MARKER, height: MARKER, channels: 3, background: { r: 255, g: 0, b: 0 } },
   })
     .png()
     .toBuffer();
@@ -76,59 +100,59 @@ test("#311 print asset is upright for landscape, portrait, EXIF-6, square and ne
     // (a) Landscape: turned 90° clockwise, so the red corner lands top-right
     //     and the asset is portrait — the shape Prodigi's print area expects.
     const landscape = path.join(dir, "landscape.jpg");
-    await writeCornerMaster(landscape, { width: 3600, height: 2400 });
+    await writeCornerMaster(landscape, { width: LANDSCAPE_W, height: LANDSCAPE_H });
     const landscapeFacts = await measure(landscape);
     assert.equal(landscapeFacts.orientation, "landscape");
     const turned = await readPixels(landscape, landscapeFacts.orientation);
-    assert.equal(turned.width, 2400);
-    assert.equal(turned.height, 3600);
+    assert.equal(turned.width, LANDSCAPE_H);
+    assert.equal(turned.height, LANDSCAPE_W);
     assert.ok(isRed(turned.at(turned.width - 100, 100)), "landscape red corner is top-right");
 
     // (b) Portrait: not turned.
     const portrait = path.join(dir, "portrait.jpg");
-    await writeCornerMaster(portrait, { width: 2400, height: 3600 });
+    await writeCornerMaster(portrait, { width: LANDSCAPE_H, height: LANDSCAPE_W });
     const portraitFacts = await measure(portrait);
     assert.equal(portraitFacts.orientation, "portrait");
     const upright = await readPixels(portrait, portraitFacts.orientation);
-    assert.equal(upright.width, 2400);
-    assert.equal(upright.height, 3600);
+    assert.equal(upright.width, LANDSCAPE_H);
+    assert.equal(upright.height, LANDSCAPE_W);
     assert.ok(isRed(upright.at(100, 100)), "portrait keeps the red corner top-left");
 
-    // (c) EXIF orientation 6: stored landscape, seen as 2400×3600 portrait.
-    //     `masterDimensions` swaps the axes, so the facts say portrait, and
-    //     `autoOrient` applies the tag — no extra #307 turn is added.
+    // (c) EXIF orientation 6: stored landscape, seen as portrait. `masterDimensions`
+    //     swaps the axes, so the facts say portrait, and `autoOrient` applies the
+    //     tag — no extra #307 turn is added.
     const tagged = path.join(dir, "tagged.jpg");
-    await writeCornerMaster(tagged, { width: 3600, height: 2400, orientation: 6 });
+    await writeCornerMaster(tagged, { width: LANDSCAPE_W, height: LANDSCAPE_H, orientation: 6 });
     const taggedFacts = await measure(tagged);
-    assert.equal(taggedFacts.width, 2400);
-    assert.equal(taggedFacts.height, 3600);
+    assert.equal(taggedFacts.width, LANDSCAPE_H);
+    assert.equal(taggedFacts.height, LANDSCAPE_W);
     assert.equal(taggedFacts.orientation, "portrait");
     const taggedOut = await readPixels(tagged, taggedFacts.orientation);
-    assert.equal(taggedOut.width, 2400);
-    assert.equal(taggedOut.height, 3600);
+    assert.equal(taggedOut.width, LANDSCAPE_H);
+    assert.equal(taggedOut.height, LANDSCAPE_W);
     // Orientation 6 is "rotate 90° CW": the stored top-left red reads top-right.
     assert.ok(isRed(taggedOut.at(taggedOut.width - 100, 100)), "EXIF-6 red corner reads top-right");
 
     // (d) Exact square: not turned. Rotating a square would be a no-op anyway.
     const square = path.join(dir, "square.jpg");
-    await writeCornerMaster(square, { width: 3000, height: 3000 });
+    await writeCornerMaster(square, { width: SQUARE, height: SQUARE });
     const squareFacts = await measure(square);
     assert.equal(squareFacts.orientation, "square");
     const squareOut = await readPixels(square, squareFacts.orientation);
-    assert.equal(squareOut.width, 3000);
-    assert.equal(squareOut.height, 3000);
+    assert.equal(squareOut.width, SQUARE);
+    assert.equal(squareOut.height, SQUARE);
     assert.ok(isRed(squareOut.at(100, 100)), "square keeps the red corner top-left");
 
     // (e) Near-square, at the 1.01 boundary: still square, so not turned. The
     //     ±1% error either way is far below what the fill crop discards, so no
     //     rotation is the safe call (see print-asset.ts).
     const nearSquare = path.join(dir, "near-square.jpg");
-    await writeCornerMaster(nearSquare, { width: 10100, height: 10000 });
+    await writeCornerMaster(nearSquare, { width: NEAR_SQUARE_W, height: NEAR_SQUARE_H });
     const nearFacts = await measure(nearSquare);
-    assert.equal(nearFacts.orientation, "square", "10100×10000 is within the 1.01 square tolerance");
+    assert.equal(nearFacts.orientation, "square", "the boundary ratio is within the 1.01 square tolerance");
     const nearOut = await readPixels(nearSquare, nearFacts.orientation);
-    assert.equal(nearOut.width, 10100);
-    assert.equal(nearOut.height, 10000);
+    assert.equal(nearOut.width, NEAR_SQUARE_W);
+    assert.equal(nearOut.height, NEAR_SQUARE_H);
     assert.ok(isRed(nearOut.at(100, 100)), "near-square is not turned");
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -139,12 +163,12 @@ test("#311 one pixel past the square tolerance is landscape and turns", async ()
   const dir = mkdtempSync(path.join(tmpdir(), "orientation-edge-"));
   try {
     const file = path.join(dir, "edge.jpg");
-    await writeCornerMaster(file, { width: 10101, height: 10000 });
+    await writeCornerMaster(file, { width: PAST_TOLERANCE_W, height: NEAR_SQUARE_H });
     const { width, height } = await masterDimensions(readFileSync(file));
     assert.equal(orientationOf(width, height), "landscape");
     const turned = await readPixels(file, "landscape");
-    assert.equal(turned.width, 10000);
-    assert.equal(turned.height, 10101);
+    assert.equal(turned.width, NEAR_SQUARE_H);
+    assert.equal(turned.height, PAST_TOLERANCE_W);
     assert.ok(isRed(turned.at(turned.width - 100, 100)), "the just-over boundary turns");
   } finally {
     rmSync(dir, { recursive: true, force: true });
