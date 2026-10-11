@@ -319,8 +319,3 @@ export const CONFIGURATOR_MOUNTS = FRAMED_MOUNTS.map((id) => ({
   id,
   label: MOUNT_COPY[id],
 }));
-
-/** The copy for one mount, for the configurator's control label. */
-export function mountLabel(mount: FramedMount): string {
-  return MOUNT_COPY[mount];
-}
