@@ -12,6 +12,7 @@
  */
 
 import type { FrameFinish, PrintFormat, PrintSize } from "../../domain/pricing/pricing";
+import type { FramedMount } from "../../domain/pricing/sku-map";
 import type { ShipToCountryCode } from "../../domain/pricing/ship-to-countries";
 import type { StripeShippingDetails } from "../../domain/ordering/order-decision";
 
@@ -27,6 +28,8 @@ export type CheckoutIntent = {
   /** Physical orders only; null for digital. */
   size: PrintSize | null;
   frame: FrameFinish | null;
+  /** Framed only (#335); null for digital and non-framed physical. */
+  mount: FramedMount | null;
   /** The public web derivative the provider shows, or null when unconfigured. */
   previewImage: string | null;
   quoteEur: number;

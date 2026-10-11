@@ -99,6 +99,7 @@ test("quotePhysical margins unitCost and passes shipping through", async () => {
     const result = await quotePhysical({
       format: "giclee",
       size: "30x40",
+      mount: null,
     });
     assert.equal(result.ok, true);
     if (!result.ok) return;
@@ -154,6 +155,7 @@ test("quotePhysical framed includes color attribute and destination override", a
       format: "framed",
       size: "50x70",
       frame: "brown",
+      mount: null,
       destinationCountryCode: "BG",
     });
     assert.equal(result.ok, true);
@@ -198,7 +200,7 @@ test("quotePhysical uses live host when PRODIGI_API_BASE is live", async () => {
   delete process.env.PRODIGI_SANDBOX_API_KEY;
 
   try {
-    const result = await quotePhysical({ format: "canvas", size: "30x40" });
+    const result = await quotePhysical({ format: "canvas", size: "30x40", mount: null });
     assert.equal(result.ok, true);
     assert.equal(seenUrl, "https://api.prodigi.com/v4.0/quotes");
   } finally {
@@ -216,7 +218,7 @@ test("quotePhysical returns a failure on non-OK HTTP and missing quote fields", 
   try {
     globalThis.fetch = (async () =>
       new Response("nope", { status: 500 })) as typeof fetch;
-    let result = await quotePhysical({ format: "canvas", size: "70x100" });
+    let result = await quotePhysical({ format: "canvas", size: "70x100", mount: null });
     assert.equal(result.ok, false);
     assert.equal(result.ok || result.message, "Prodigi quote HTTP 500");
     assert.equal(result.ok || result.kind, "server");
@@ -229,7 +231,7 @@ test("quotePhysical returns a failure on non-OK HTTP and missing quote fields", 
         status: 200,
         headers: { "content-type": "text/html" },
       })) as typeof fetch;
-    result = await quotePhysical({ format: "canvas", size: "70x100" });
+    result = await quotePhysical({ format: "canvas", size: "70x100", mount: null });
     assert.equal(result.ok, false);
     assert.equal(result.ok || result.message, "Prodigi quote returned invalid JSON");
 
@@ -237,7 +239,7 @@ test("quotePhysical returns a failure on non-OK HTTP and missing quote fields", 
       new Response(JSON.stringify({ quotes: [] }), {
         status: 200,
       })) as typeof fetch;
-    result = await quotePhysical({ format: "canvas", size: "70x100" });
+    result = await quotePhysical({ format: "canvas", size: "70x100", mount: null });
     assert.equal(result.ok, false);
     assert.equal(result.ok || result.message, "Prodigi quote missing quotes[0]");
 
@@ -248,7 +250,7 @@ test("quotePhysical returns a failure on non-OK HTTP and missing quote fields", 
         }),
         { status: 200 },
       )) as typeof fetch;
-    result = await quotePhysical({ format: "canvas", size: "70x100" });
+    result = await quotePhysical({ format: "canvas", size: "70x100", mount: null });
     assert.equal(result.ok, false);
     assert.equal(result.ok || result.message, "Prodigi quote missing unitCost");
 
@@ -260,7 +262,7 @@ test("quotePhysical returns a failure on non-OK HTTP and missing quote fields", 
         }),
         { status: 200 },
       )) as typeof fetch;
-    result = await quotePhysical({ format: "canvas", size: "70x100" });
+    result = await quotePhysical({ format: "canvas", size: "70x100", mount: null });
     assert.equal(result.ok, false);
     assert.equal(result.ok || result.message, "Prodigi quote missing shipping");
 
@@ -278,7 +280,7 @@ test("quotePhysical returns a failure on non-OK HTTP and missing quote fields", 
         }),
         { status: 200 },
       )) as typeof fetch;
-    result = await quotePhysical({ format: "canvas", size: "70x100" });
+    result = await quotePhysical({ format: "canvas", size: "70x100", mount: null });
     assert.equal(result.ok, false);
     assert.equal(result.ok || result.message, "Prodigi quote missing unitCost");
   } finally {
@@ -301,14 +303,14 @@ test("an Error thrown by fetch keeps its message; a non-Error gets a fixed label
     globalThis.fetch = (async () => {
       throw new TypeError("fetch failed");
     }) as typeof fetch;
-    const failed = await quotePhysical({ format: "canvas", size: "70x100" });
+    const failed = await quotePhysical({ format: "canvas", size: "70x100", mount: null });
     assert.equal(failed.ok === false && failed.reason, "prodigi-unavailable");
     assert.equal(failed.ok === false && failed.message, "fetch failed");
 
     globalThis.fetch = (async () => {
       throw "socket exploded";
     }) as typeof fetch;
-    const odd = await quotePhysical({ format: "canvas", size: "70x100" });
+    const odd = await quotePhysical({ format: "canvas", size: "70x100", mount: null });
     assert.equal(odd.ok === false && odd.message, "network-error");
   } finally {
     globalThis.fetch = originalFetch;
@@ -330,7 +332,7 @@ test("a bad Prodigi host reads as unconfigured, not as a bad gateway", async () 
   try {
     process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
     process.env.PRODIGI_API_BASE = "https://evil.example";
-    const result = await quotePhysical({ format: "canvas", size: "70x100" });
+    const result = await quotePhysical({ format: "canvas", size: "70x100", mount: null });
     assert.equal(result.ok, false);
     assert.equal(result.ok === false && result.kind, "unconfigured");
     assert.equal(result.ok === false && result.reason, "prodigi-unconfigured");
@@ -412,7 +414,7 @@ async function quoteFailureFrom(status: number, raw: string) {
   process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
   process.env.PRODIGI_SANDBOX_API_KEY = "sandbox";
   try {
-    const result = await quotePhysical({ format: "canvas", size: "30x40" });
+    const result = await quotePhysical({ format: "canvas", size: "30x40", mount: null });
     assert.equal(result.ok, false, `expected a failure for HTTP ${status}`);
     return result.ok ? "" : result.message;
   } finally {
@@ -500,7 +502,7 @@ test("an upstream detail echoing a config message is classified by status, not t
     process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
     process.env.PRODIGI_SANDBOX_API_KEY = "sandbox";
     try {
-      return await quotePhysical({ format: "canvas", size: "30x40" });
+      return await quotePhysical({ format: "canvas", size: "30x40", mount: null });
     } finally {
       globalThis.fetch = originalFetch;
       delete process.env.PRODIGI_SANDBOX_API_KEY;

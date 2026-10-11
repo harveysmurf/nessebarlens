@@ -1,6 +1,6 @@
 import type { FrameFinish, PrintFormat, PrintSize } from "../pricing/pricing";
 import { physicalSpecification } from "./print-spec";
-import type { PhysicalFormat } from "../pricing/sku-map";
+import type { FramedMount, PhysicalFormat } from "../pricing/sku-map";
 import type { ShipToCountryCode } from "../pricing/ship-to-countries";
 
 /**
@@ -19,6 +19,7 @@ export type QuoteRequest = {
   format: PhysicalFormat;
   size: PrintSize;
   frame: FrameFinish | null;
+  mount: FramedMount | null;
   destinationCountryCode: ShipToCountryCode;
 };
 
@@ -27,6 +28,7 @@ export type CheckoutRequest = {
   format: PrintFormat;
   size: PrintSize | null;
   frame: FrameFinish | null;
+  mount: FramedMount | null;
   destinationCountryCode: ShipToCountryCode | null;
 };
 
@@ -36,12 +38,14 @@ export function quoteRequest(
   size: PrintSize,
   frame: FrameFinish,
   destinationCountryCode: ShipToCountryCode,
+  mount: FramedMount,
 ): QuoteRequest {
-  const spec = physicalSpecification(format, size, frame);
+  const spec = physicalSpecification(format, size, frame, mount);
   return {
     format: spec.format,
     size: spec.size,
     frame: spec.frame,
+    mount: spec.mount,
     destinationCountryCode,
   };
 }
@@ -59,6 +63,7 @@ export function checkoutRequest(
   size: PrintSize,
   frame: FrameFinish,
   destinationCountryCode: ShipToCountryCode,
+  mount: FramedMount,
 ): CheckoutRequest {
   if (format === "digital") {
     return {
@@ -66,15 +71,17 @@ export function checkoutRequest(
       format,
       size: null,
       frame: null,
+      mount: null,
       destinationCountryCode: null,
     };
   }
-  const spec = physicalSpecification(format, size, frame);
+  const spec = physicalSpecification(format, size, frame, mount);
   return {
     photoSlug,
     format: spec.format,
     size: spec.size,
     frame: spec.frame,
+    mount: spec.mount,
     destinationCountryCode,
   };
 }

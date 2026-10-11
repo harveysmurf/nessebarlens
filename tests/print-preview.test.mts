@@ -24,8 +24,9 @@ function selection(
   format: PrintSelection["format"],
   size: PrintSelection["size"],
   frame: PrintSelection["frame"] = "black",
+  mount: PrintSelection["mount"] = "white",
 ): PrintSelection {
-  return { format, size, frame };
+  return { format, size, frame, mount };
 }
 
 const TOL = 0.01;
@@ -168,7 +169,12 @@ test("cropFraction equals assess() for every pinned product", () => {
   ]) {
     for (const product of PRINT_PRODUCTS) {
       const geometry = previewGeometry(
-        selection(product.format, product.size),
+        selection(
+          product.format,
+          product.size,
+          "black",
+          product.format === "framed" ? product.mount : "white",
+        ),
         master,
       );
       assert.notEqual(geometry.kind, "digital", `${product.sku}`);
@@ -179,13 +185,17 @@ test("cropFraction equals assess() for every pinned product", () => {
   }
 });
 
-test("framed window ⊂ mount ⊂ outer for every pinned framed product", () => {
+test("framed window ⊂ mount ⊂ outer for every pinned mounted product", () => {
   for (const product of PRINT_PRODUCTS) {
     if (product.format !== "framed") continue;
+    // A no-mount product has no mount rect; the window is the glaze (#335).
+    if (product.mount !== "white") continue;
     const geometry = previewGeometry(selection("framed", product.size), LANDSCAPE);
     assert.equal(geometry.kind, "framed", product.sku);
     if (geometry.kind !== "framed") continue;
     const { mount, window: win, outer } = geometry;
+    assert.ok(mount, product.sku);
+    if (!mount) continue;
     assert.ok(win.x >= mount.x - TOL, product.sku);
     assert.ok(win.y >= mount.y - TOL, product.sku);
     assert.ok(win.x + win.width <= mount.x + mount.width + TOL, product.sku);
@@ -193,6 +203,27 @@ test("framed window ⊂ mount ⊂ outer for every pinned framed product", () => 
     assert.ok(mount.x >= -TOL && mount.y >= -TOL, product.sku);
     assert.ok(mount.x + mount.width <= outer.width + TOL, product.sku);
     assert.ok(mount.y + mount.height <= outer.height + TOL, product.sku);
+  }
+});
+
+test("a no-mount framed product has no mount rect and fills the glaze (#335)", () => {
+  for (const product of PRINT_PRODUCTS) {
+    if (product.format !== "framed" || product.mount !== "none") continue;
+    const geometry = previewGeometry(
+      selection("framed", product.size, "black", "none"),
+      LANDSCAPE,
+    );
+    assert.equal(geometry.kind, "framed", product.sku);
+    if (geometry.kind !== "framed") continue;
+    // No mount layer to draw, and the window is the whole glaze (inside the
+    // moulding), so the photo runs edge to edge within the frame.
+    assert.equal(geometry.mount, null, product.sku);
+    near(geometry.window.x, CLASSIC_FRAME_MOULDING_MM);
+    near(geometry.window.y, CLASSIC_FRAME_MOULDING_MM);
+    near(geometry.window.width, geometry.outer.width - 2 * CLASSIC_FRAME_MOULDING_MM);
+    near(geometry.window.height, geometry.outer.height - 2 * CLASSIC_FRAME_MOULDING_MM);
+    // The image covers the CFP print area (assess agrees on the crop).
+    near(geometry.cropFraction, assess(LANDSCAPE, product).cropFraction);
   }
 });
 

@@ -1,6 +1,11 @@
 import type { Orientation } from "../catalog/master-facts";
 import { Eur, eurToCents } from "./money";
-import { PRINT_PRODUCTS, type PrintSize } from "./print-products";
+import {
+  DEFAULT_FRAMED_MOUNT,
+  PRINT_PRODUCTS,
+  type FramedMount,
+  type PrintSize,
+} from "./print-products";
 
 /**
  * The EUR grammar and the cents conversion are money.ts's; these two names
@@ -38,13 +43,20 @@ export function merchandiseFromUnitCost(unitCostEur: number): number {
 // PrintFormat/PrintSize then fails to compile here instead of silently
 // returning undefined at runtime.
 //
-// Framed names the mount (#334): every framed SKU is a CFPM, and the receipt
-// has to match the framed print that arrives.
+// Framed names the mount (#334, #335): the receipt has to match the print that
+// arrives, and mounted and unmounted are different products.
 const FORMAT_LABELS: Record<PrintFormat, string> = {
   giclee: "Giclée Fine Art Print",
-  framed: "Framed Fine Art (White Mount)",
+  framed: "Framed Fine Art",
   canvas: "Stretched Canvas",
   digital: "High-Res Digital Download",
+};
+
+/** The mount's parenthetical on a framed order line, keyed so a new mount is a
+ *  compile error until it has words. */
+const MOUNT_LABELS: Record<FramedMount, string> = {
+  white: "White Mount",
+  none: "No Mount",
 };
 
 /** "30x40" → "30 × 40"; used for both the cm and the inch half. */
@@ -68,7 +80,13 @@ const SIZE_WORDS: Record<PrintSize, { cm: string; inches: string }> =
     ]),
   ) as Record<PrintSize, { cm: string; inches: string }>;
 
-export function formatLabel(format: PrintFormat): string {
+export function formatLabel(
+  format: PrintFormat,
+  mount: FramedMount = DEFAULT_FRAMED_MOUNT,
+): string {
+  if (format === "framed") {
+    return `${FORMAT_LABELS.framed} (${MOUNT_LABELS[mount]})`;
+  }
   return FORMAT_LABELS[format];
 }
 

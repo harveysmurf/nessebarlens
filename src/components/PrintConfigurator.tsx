@@ -15,6 +15,7 @@ import {
 import { checkoutRequest, quoteRequest } from "@/domain/ordering/request-bodies";
 import {
   CONFIGURATOR_FRAMES,
+  CONFIGURATOR_MOUNTS,
   framedMountNote,
   masterResolutionLabel,
   offeredFormats,
@@ -23,10 +24,13 @@ import {
 import {
   withFormat,
   withFrame,
+  withMount,
   withSize,
   type PrintSelection,
 } from "@/domain/ordering/print-selection";
 import type { MasterFacts } from "@/domain/catalog/master-facts";
+import { assess } from "@/domain/catalog/print-eligibility";
+import { findProduct } from "@/domain/pricing/print-products";
 import type { PrintOffer } from "@/domain/catalog/print-offer";
 import {
   checkoutUrl,
@@ -35,7 +39,11 @@ import {
   requestErrorMessage,
   type LiveQuote,
 } from "@/application/checkout/api-payloads";
-import { isFrameFinishValue, isPrintSize } from "@/domain/pricing/sku-map";
+import {
+  isFrameFinishValue,
+  isFramedMountValue,
+  isPrintSize,
+} from "@/domain/pricing/sku-map";
 
 export function PrintConfigurator({
   photoSlug,
@@ -62,7 +70,7 @@ export function PrintConfigurator({
   const formats = offeredFormats(offer);
   // #326: the selection is owned by the parent (PrintDetail), so the preview
   // and the configurator read the same value. These are views of it.
-  const { format, size, frame } = selection;
+  const { format, size, frame, mount } = selection;
   const [destinationCountry, setDestinationCountry] =
     useState<ShipToCountryCode>(DEFAULT_SHIPPING_COUNTRY);
   const [busy, setBusy] = useState(false);
@@ -77,6 +85,21 @@ export function PrintConfigurator({
   // orientation. The component no longer names the size list itself.
   const sizes = sizeOptions(offer, format, orientation);
 
+  // #335: the unmounted product is assessed against this master at the selected
+  // size, so the configurator can offer No Mount exactly where it can be printed
+  // and say why not otherwise. The offer stays mounted-based; this is the one
+  // place the second mount is judged, and it never swaps the product silently.
+  const noMountVerdict = isFramed
+    ? assess(master, findProduct("framed", size, "none")!)
+    : null;
+  const noMountEligible = noMountVerdict?.verdict.eligible ?? false;
+  const noMountReason =
+    noMountVerdict && !noMountVerdict.verdict.eligible
+      ? noMountVerdict.verdict.reason === "shape-mismatch"
+        ? "This photo's shape doesn't fit this frame without a mount."
+        : "This photo's resolution is too low for an unmounted print at this size."
+      : null;
+
   useEffect(() => {
     if (isDigital) return;
 
@@ -85,10 +108,7 @@ export function PrintConfigurator({
       setQuoteLoading(true);
       setQuoteError(null);
       try {
-        const body = quoteRequest(format, size,
-          frame,
-          destinationCountry,
-        );
+        const body = quoteRequest(format, size, frame, destinationCountry, mount);
         const res = await fetch("/api/quote", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
@@ -126,7 +146,7 @@ export function PrintConfigurator({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [format, size, frame, destinationCountry, isDigital]);
+  }, [format, size, frame, mount, destinationCountry, isDigital]);
 
   // The three selects validate with `isPrintSize` / `isFrameFinish` /
   // `isShipToCountryCode` rather than narrowing with `as`. A cast asserts; it
@@ -153,6 +173,14 @@ export function PrintConfigurator({
     if (isFrameFinishValue(value)) onSelectionChange(withFrame(selection, value));
   }
 
+  function selectMount(value: string) {
+    // A disabled option cannot be chosen through the select, and the guard keeps
+    // a value the selector could not produce from ever becoming the selection.
+    if (isFramedMountValue(value) && (value === "white" || noMountEligible)) {
+      onSelectionChange(withMount(selection, value));
+    }
+  }
+
   function selectDestination(value: string) {
     if (isShipToCountryCode(value)) setDestinationCountry(value);
   }
@@ -167,6 +195,7 @@ export function PrintConfigurator({
         size,
         frame,
         destinationCountry,
+        mount,
       );
 
       const res = await fetch("/api/checkout", {
@@ -351,7 +380,46 @@ export function PrintConfigurator({
                 beside the finish the mount is fixed to, is the last point
                 before checkout where it can still change the buyer's mind. */}
             <p id="frame-mount-note" className="text-[10px] text-stone-500 mt-1.5">
-              {framedMountNote(size, orientation)}
+              {framedMountNote(size, orientation, mount)}
+            </p>
+          </div>
+        )}
+
+        {isFramed && (
+          <div>
+            <label
+              htmlFor="frame-mount"
+              className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-1"
+            >
+              Mount
+            </label>
+            <select
+              id="frame-mount"
+              value={mount}
+              onChange={(e) => selectMount(e.target.value)}
+              aria-describedby="frame-mount-help"
+              data-mount-select
+              className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900"
+            >
+              {CONFIGURATOR_MOUNTS.map((m) => (
+                <option
+                  key={m.id}
+                  value={m.id}
+                  disabled={m.id === "none" && !noMountEligible}
+                >
+                  {m.label}
+                </option>
+              ))}
+            </select>
+            {/* #335: unmounted prints are a different product, so the reason a
+                size cannot go without a mount belongs beside the control that
+                offers it — never a silent swap back to the mounted version. */}
+            <p id="frame-mount-help" className="text-[10px] text-stone-500 mt-1.5">
+              {mount === "none"
+                ? noMountReason ??
+                  "Your photo fills the frame edge to edge, with no mount."
+                : noMountReason ??
+                  "The photo sits behind a snow-white mount."}
             </p>
           </div>
         )}
@@ -382,7 +450,13 @@ export function PrintConfigurator({
         <div className="pt-4">
           <button
             type="button"
-            disabled={busy || (!isDigital && (!quote || quoteLoading))}
+            disabled={
+              busy ||
+              (!isDigital &&
+                (!quote ||
+                  quoteLoading ||
+                  (isFramed && mount === "none" && !noMountEligible)))
+            }
             onClick={checkout}
             className="w-full bg-stone-900 hover:bg-stone-800 disabled:opacity-60 text-white font-medium py-3.5 px-4 rounded text-xs uppercase tracking-widest transition-all shadow-sm"
           >
@@ -399,7 +473,7 @@ export function PrintConfigurator({
             </p>
           )}
           <p className="sr-only">
-            {title} — {formatLabel(format)}
+            {title} — {formatLabel(format, mount)}
           </p>
         </div>
       </div>

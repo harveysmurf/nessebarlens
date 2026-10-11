@@ -17,12 +17,14 @@
 import type { PrintOffer } from "../catalog/print-offer";
 import {
   isFrameFinishValue,
+  isFramedMountValue,
   isPrintSize,
   isSellableFormat,
   type PhysicalFormat,
 } from "../pricing/sku-map";
 import {
   DEFAULT_FRAME_FINISH,
+  DEFAULT_FRAMED_MOUNT,
   DEFAULT_PRINT_SIZE,
   firstOfferedSize,
   offeredFormats,
@@ -53,6 +55,7 @@ export function selectionFromParams(
       format,
       size: DEFAULT_PRINT_SIZE,
       frame: DEFAULT_FRAME_FINISH,
+      mount: DEFAULT_FRAMED_MOUNT,
     };
   }
 
@@ -70,7 +73,14 @@ export function selectionFromParams(
       ? selectionFrame(params.get("frame")) ?? opening.frame
       : opening.frame;
 
-  return { format, size, frame };
+  // The mount is framed-only, and falls back to the opening mount (the default)
+  // for an absent or unknown value, exactly as frame does.
+  const mount =
+    format === "framed"
+      ? selectionMount(params.get("mount")) ?? opening.mount
+      : opening.mount;
+
+  return { format, size, frame, mount };
 }
 
 /**
@@ -82,7 +92,10 @@ export function selectionToParams(selection: PrintSelection): URLSearchParams {
   const params = new URLSearchParams();
   params.set("format", selection.format);
   if (selection.format !== "digital") params.set("size", selection.size);
-  if (selection.format === "framed") params.set("frame", selection.frame);
+  if (selection.format === "framed") {
+    params.set("frame", selection.frame);
+    params.set("mount", selection.mount);
+  }
   return params;
 }
 
@@ -110,5 +123,11 @@ function selectionSize(
 /** A known frame finish, or null when the param is absent or unknown. */
 function selectionFrame(value: string | null): PrintSelection["frame"] | null {
   if (value === null || !isFrameFinishValue(value)) return null;
+  return value;
+}
+
+/** A known framed mount, or null when the param is absent or unknown. */
+function selectionMount(value: string | null): PrintSelection["mount"] | null {
+  if (value === null || !isFramedMountValue(value)) return null;
   return value;
 }

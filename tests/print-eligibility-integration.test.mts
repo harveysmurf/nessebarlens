@@ -37,11 +37,19 @@ function masterOf(slug: string): MasterFacts {
   return photo.master;
 }
 
-/** `format/size` for every eligible product, in table order. */
+/**
+ * `format/size` for every entry the offer lists, in table order. The offer is
+ * the mounted (default) view (#335), so this is one line per framed size, not
+ * one per mount — the no-mount variant is a configurator option, not a second
+ * offer line.
+ */
 function eligibleKeys(master: MasterFacts): string[] {
-  return assessAll(master)
-    .filter((a) => a.verdict.eligible)
-    .map((a) => `${a.product.format}/${a.product.size}`);
+  const offer = eligibleOffer(master);
+  const keys: string[] = [];
+  for (const format of ["giclee", "framed", "canvas"] as const) {
+    for (const size of offer[format]) keys.push(`${format}/${size}`);
+  }
+  return keys;
 }
 
 /** The effective PPI for a `(format, size)` pair, or undefined if absent. */

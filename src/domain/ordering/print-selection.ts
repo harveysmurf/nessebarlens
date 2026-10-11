@@ -13,6 +13,10 @@
 import type { PrintOffer } from "../catalog/print-offer";
 import type { FrameFinish, PrintFormat, PrintSize } from "../pricing/pricing";
 import {
+  DEFAULT_FRAMED_MOUNT,
+  type FramedMount,
+} from "../pricing/print-products";
+import {
   DEFAULT_FRAME_FINISH,
   DEFAULT_PRINT_SIZE,
   firstOfferedSize,
@@ -23,6 +27,8 @@ export type PrintSelection = {
   format: PrintFormat;
   size: PrintSize;
   frame: FrameFinish;
+  /** The framed mount (#335); ignored by every non-framed format. */
+  mount: FramedMount;
 };
 
 /**
@@ -34,7 +40,12 @@ export type PrintSelection = {
 export function openingSelection(offer: PrintOffer): PrintSelection {
   const format = offeredFormats(offer)[0]!.id;
   const size = firstOfferedSize(offer, format) ?? DEFAULT_PRINT_SIZE;
-  return { format, size, frame: DEFAULT_FRAME_FINISH };
+  return {
+    format,
+    size,
+    frame: DEFAULT_FRAME_FINISH,
+    mount: DEFAULT_FRAMED_MOUNT,
+  };
 }
 
 /**
@@ -65,4 +76,16 @@ export function withFrame(
   frame: FrameFinish,
 ): PrintSelection {
   return { ...selection, frame };
+}
+
+/**
+ * Change the framed mount (#335). Like `withFrame`, this only writes the
+ * field; the configurator decides whether the choice is offered at the current
+ * size and never silently swaps the product.
+ */
+export function withMount(
+  selection: PrintSelection,
+  mount: FramedMount,
+): PrintSelection {
+  return { ...selection, mount };
 }

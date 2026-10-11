@@ -28,7 +28,7 @@
  * https URL rather than by the POST body.
  */
 
-import type { PhysicalFormat } from "../../domain/pricing/sku-map";
+import type { FramedMount, PhysicalFormat } from "../../domain/pricing/sku-map";
 import { resolveSku } from "../../domain/pricing/sku-map";
 import type { FrameFinish, PrintSize } from "../../domain/pricing/pricing";
 
@@ -63,14 +63,27 @@ export function defaultQuoteCache(): QuoteCache | null {
  * so two configurations that resolve to the same Prodigi product share an entry
  * and two that differ in any attribute Prodigi prices do not. Attributes are
  * sorted so key order can never split one entry into two.
+ *
+ * `mount` is required (#335): it is part of the SKU, so an omitted one would
+ * silently key an unmounted selection as the mounted product. That omission
+ * was the original bug on this path — the field was optional and /api/quote
+ * left it out. Callers that do not care pass `null` explicitly.
  */
 export function quoteCacheKey(input: {
   format: PhysicalFormat;
   size: PrintSize;
   frame?: FrameFinish | null;
+  mount: FramedMount | null;
   destinationCountryCode: string;
 }): string {
-  const entry = resolveSku(input.format, input.size, input.frame ?? null);
+  // The mount is in the key because it is in the SKU (#335): CFPM and CFP are
+  // different products at different prices, so they must not share an entry.
+  const entry = resolveSku(
+    input.format,
+    input.size,
+    input.frame ?? null,
+    input.mount ?? null,
+  );
   const attributes = Object.keys(entry.attributes)
     .sort()
     .map((name) => `${name}=${entry.attributes[name]}`)

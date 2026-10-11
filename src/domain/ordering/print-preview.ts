@@ -39,7 +39,12 @@ export type PreviewGeometry =
       frame: FrameFinish;
       outer: Extent;
       mouldingMm: Mm;
-      mount: Rect;
+      /**
+       * The mount rect, or null for an unmounted print (#335). The window is
+       * the same rectangle as the mount when mounted; unmounted, the window is
+       * the full glaze and there is no mount layer to draw.
+       */
+      mount: Rect | null;
       window: Rect;
       image: Rect;
       cropFraction: number;
@@ -110,7 +115,13 @@ export function previewGeometry(
   const { format, size } = selection;
   if (format === "digital") return { kind: "digital" };
 
-  const product = findProduct(format, size);
+  // The mount is part of the product key for framed (#335), so the lookup has
+  // to carry it; for the other formats it is ignored.
+  const product = findProduct(
+    format,
+    size,
+    format === "framed" ? selection.mount : null,
+  );
   if (!product) return { kind: "digital" };
 
   const area = orientedArea(product, master.orientation);
@@ -121,26 +132,33 @@ export function previewGeometry(
   }
 
   if (format === "framed") {
-    // `area` is the mount window; the glaze is the nominal sizeIn. The
-    // moulding sits outside the glaze, and the window is centred in it.
+    // `area` is the mount window for a mounted print, or the full glaze for an
+    // unmounted one. The glaze is the nominal sizeIn either way; the moulding
+    // sits outside it. Unmounted, the photo covers the whole glaze and there is
+    // no mount layer (mount = null), so the window is the glaze itself.
     const glaze = orientedSizeIn(product, master.orientation);
     const mouldingMm = CLASSIC_FRAME_MOULDING_MM;
     const outer: Extent = {
       width: glaze.width + 2 * mouldingMm,
       height: glaze.height + 2 * mouldingMm,
     };
-    const mount: Rect = {
-      x: mouldingMm,
-      y: mouldingMm,
-      width: glaze.width,
-      height: glaze.height,
-    };
-    const window: Rect = {
-      x: mouldingMm + (glaze.width - area.width) / 2,
-      y: mouldingMm + (glaze.height - area.height) / 2,
-      width: area.width,
-      height: area.height,
-    };
+    const unmounted = selection.mount === "none";
+    const mount: Rect | null = unmounted
+      ? null
+      : {
+          x: mouldingMm,
+          y: mouldingMm,
+          width: glaze.width,
+          height: glaze.height,
+        };
+    const window: Rect = unmounted
+      ? { x: mouldingMm, y: mouldingMm, width: glaze.width, height: glaze.height }
+      : {
+          x: mouldingMm + (glaze.width - area.width) / 2,
+          y: mouldingMm + (glaze.height - area.height) / 2,
+          width: area.width,
+          height: area.height,
+        };
     const { image, cropFraction } = coverCrop(area, master);
     return { kind: "framed", frame: selection.frame, outer, mouldingMm, mount, window, image, cropFraction };
   }

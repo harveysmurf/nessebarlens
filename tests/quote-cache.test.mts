@@ -14,6 +14,7 @@ const BASE = {
   format: "giclee" as const,
   size: "30x40" as const,
   frame: null,
+  mount: null,
   destinationCountryCode: "BG",
 };
 
@@ -85,6 +86,28 @@ test("the cache key separates country, size and frame", () => {
     quoteCacheKey({ ...BASE, format: "framed", frame: "white" }),
   );
   assert.equal(key, quoteCacheKey({ ...BASE }));
+});
+
+test("the cache key separates the framed mounts (#335)", () => {
+  const mounted = quoteCacheKey({
+    ...BASE,
+    format: "framed",
+    frame: "black",
+    mount: "white",
+  });
+  const unmounted = quoteCacheKey({
+    ...BASE,
+    format: "framed",
+    frame: "black",
+    mount: "none",
+  });
+  assert.notEqual(mounted, unmounted);
+  // An absent mount is the default (mounted), so it keys the same as white —
+  // a pre-#335 caller and the mounted buyer share one entry, as they should.
+  assert.equal(
+    mounted,
+    quoteCacheKey({ ...BASE, format: "framed", frame: "black" }),
+  );
 });
 
 test("the cache key is stable regardless of attribute order", () => {

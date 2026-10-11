@@ -26,7 +26,11 @@ import {
 } from "../../domain/ordering/print-provider";
 import type { OrderRecipient } from "../../domain/ordering/order-recipient";
 import { prodigiConfig, prodigiWebhookToken } from "../config/config";
-import { resolveSku, type PhysicalFormat } from "../../domain/pricing/sku-map";
+import {
+  resolveSku,
+  type FramedMount,
+  type PhysicalFormat,
+} from "../../domain/pricing/sku-map";
 import { siteUrl } from "../config/config";
 import { HTTPS_URL_PATTERN } from "../../domain/pricing/url-patterns";
 import { HEX_32_PATTERN } from "../../domain/pricing/crypto-hex";
@@ -117,6 +121,12 @@ export function buildProdigiOrderBody(input: {
   format: PhysicalFormat;
   size: PrintSize;
   frame: FrameFinish | null;
+  /**
+   * Framed only (#335). Required, like the port: the legacy default resolves
+   * upstream at the order-record read boundary, so a caller that omits mount
+   * cannot silently price the default mounted SKU for a framed order.
+   */
+  mount: FramedMount | null;
   recipient: OrderRecipient;
   /** The HMAC /api/print-asset URL Prodigi fetches. Required: there is no
    * public-placeholder fallback anymore (#245). */
@@ -127,7 +137,12 @@ export function buildProdigiOrderBody(input: {
   /** PRODIGI_WEBHOOK_TOKEN. Unset or blank ⇒ the body carries no callbackUrl. */
   webhookToken?: string;
 }): ProdigiOrderRequest {
-  const entry = resolveSku(input.format, input.size, input.frame);
+  const entry = resolveSku(
+    input.format,
+    input.size,
+    input.frame,
+    input.mount,
+  );
   const assetUrl = input.assetUrl;
   const assetMd5 = input.assetMd5;
   if (!HTTPS_URL_PATTERN.test(assetUrl)) {

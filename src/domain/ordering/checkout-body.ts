@@ -9,8 +9,10 @@ import {
   type PrintSpecificationReason,
 } from "./print-spec";
 import {
+  type FramedMount,
   type PhysicalFormat,
   FRAME_FINISHES,
+  FRAMED_MOUNTS,
   PHYSICAL_FORMATS,
   PRINT_SIZES,
   SELLABLE_FORMATS,
@@ -36,6 +38,7 @@ export type PhysicalCheckout = {
   format: PhysicalFormat;
   size: PrintSize;
   frame: FrameFinish | null;
+  mount: FramedMount | null;
   destinationCountryCode: ShipToCountryCode | null;
 };
 
@@ -46,6 +49,9 @@ export type CheckoutBody = DigitalCheckout | PhysicalCheckout;
 const FORMAT_LABEL = formatListLabel(SELLABLE_FORMATS);
 const SIZE_LABEL = formatListLabel(PRINT_SIZES);
 const FRAME_LABEL = formatListLabel(FRAME_FINISHES);
+// Referenced by the mount-not-allowed wording below; kept beside the others so
+// the allow-list label and the list itself cannot drift.
+const MOUNT_LABEL = formatListLabel(FRAMED_MOUNTS);
 
 type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 
@@ -60,11 +66,14 @@ type Parsed<T> = { ok: true; value: T } | { ok: false; error: string };
 const DIGITAL_SPEC_ERRORS = {
   "digital-rejects-size": "digital rejects size",
   "digital-rejects-frame": "digital rejects frame",
+  "digital-rejects-mount": "digital rejects mount",
 };
 
 const FRAME_SPEC_ERRORS = {
   "frame-required": `frame required for framed (${FRAME_LABEL})`,
   "frame-not-allowed": "frame only allowed when format is framed",
+  "mount-invalid": `mount must be ${MOUNT_LABEL}`,
+  "mount-not-allowed": `mount only allowed when format is framed (${MOUNT_LABEL})`,
 };
 
 const CHECKOUT_SPEC_ERRORS: Record<PrintSpecificationReason, string> = {
@@ -136,6 +145,7 @@ export function parseCheckoutBody(
   const format = body.format;
   const size = body.size ?? null;
   const frame = body.frame ?? null;
+  const mount = body.mount ?? null;
   const destination = parseDestinationCountry(body.destinationCountryCode);
   if (!destination.ok) return { error: destination.error };
   const destinationCountryCode = destination.value;
@@ -147,7 +157,7 @@ export function parseCheckoutBody(
     return { error: `format must be ${FORMAT_LABEL}` };
   }
 
-  const spec = parsePrintSpecification(format, size, frame);
+  const spec = parsePrintSpecification(format, size, frame, mount);
   if (!spec.ok) return { error: CHECKOUT_SPEC_ERRORS[spec.reason] };
   if (spec.value.kind === "digital") {
     return {
@@ -162,6 +172,7 @@ export function parseCheckoutBody(
     format: spec.value.format,
     size: spec.value.size,
     frame: spec.value.frame,
+    mount: spec.value.mount,
     destinationCountryCode,
   };
 }
@@ -175,6 +186,7 @@ export type QuoteBody = {
   format: PhysicalFormat;
   size: PrintSize;
   frame: FrameFinish | null;
+  mount: FramedMount | null;
   destinationCountryCode: ShipToCountryCode | null;
 };
 
@@ -185,6 +197,7 @@ export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {
   const format = body.format;
   const size = body.size ?? null;
   const frame = body.frame ?? null;
+  const mount = body.mount ?? null;
   const destination = parseDestinationCountry(body.destinationCountryCode);
   if (!destination.ok) return { error: destination.error };
   const destinationCountryCode = destination.value;
@@ -196,13 +209,14 @@ export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {
     return { error: `format must be ${formatListLabel(PHYSICAL_FORMATS)}` };
   }
 
-  const spec = parsePrintSpecification(format, size, frame);
+  const spec = parsePrintSpecification(format, size, frame, mount);
   if (!spec.ok) return { error: QUOTE_SPEC_ERRORS[spec.reason] };
 
   return {
     format: spec.value.format,
     size: spec.value.size,
     frame: spec.value.frame,
+    mount: spec.value.mount,
     destinationCountryCode,
   };
 }

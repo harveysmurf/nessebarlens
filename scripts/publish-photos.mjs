@@ -78,7 +78,11 @@ import {
 import { orientationOf, parseMasterFacts } from "../src/domain/catalog/master-facts";
 import { validatePhotoFile } from "../src/domain/catalog/photo-schema";
 import { assessAll, MIN_PRINT_PPI } from "../src/domain/catalog/print-eligibility";
-import { eligibleOffer, narrowOffer } from "../src/domain/catalog/print-offer";
+import {
+  eligibleOffer,
+  isOfferedProduct,
+  narrowOffer,
+} from "../src/domain/catalog/print-offer";
 import { printAreaIn, PRINT_PRODUCTS } from "../src/domain/pricing/print-products";
 import {
   isPrintSize,
@@ -344,19 +348,24 @@ export function offerStatus(assessment) {
 }
 
 /**
- * One report line per pinned product, in table order (#300), so a dry run and a
- * real run show the owner exactly which sizes the current master is sold at:
+ * One report line per *offered* product, in table order (#300), so a dry run and
+ * a real run show the owner exactly which sizes the current master is sold at:
  *
  *   harbour  giclee  30x40   279 PPI  crop 9%   eligible
  *   harbour  giclee  50x70   168 PPI  crop 4%   unavailable: below 220 PPI
+ *
+ * #335: the no-mount framed variants are not offered lines — the offer is the
+ * mounted view — so they are filtered out rather than shown twice.
  */
 export function printOfferReport(slug, master) {
-  return assessAll(master).map((assessment) => {
-    const ppi = `${assessment.effectivePpi} PPI`;
-    const crop = `crop ${Math.round(assessment.cropFraction * 100)}%`;
-    const { format, size } = assessment.product;
-    return `${slug}  ${format}  ${size}  ${ppi}  ${crop}  ${offerStatus(assessment)}`;
-  });
+  return assessAll(master, PRINT_PRODUCTS.filter(isOfferedProduct)).map(
+    (assessment) => {
+      const ppi = `${assessment.effectivePpi} PPI`;
+      const crop = `crop ${Math.round(assessment.cropFraction * 100)}%`;
+      const { format, size } = assessment.product;
+      return `${slug}  ${format}  ${size}  ${ppi}  ${crop}  ${offerStatus(assessment)}`;
+    },
+  );
 }
 
 /**
@@ -391,6 +400,7 @@ function withAdded(offer, assessments) {
   );
   const next = emptyOffer();
   for (const product of PRINT_PRODUCTS) {
+    if (!isOfferedProduct(product)) continue;
     const included =
       offer[product.format].includes(product.size) ||
       add.has(`${product.format}/${product.size}`);
@@ -1385,6 +1395,7 @@ export async function runPublish(options, deps = {}) {
   const renderPreview = deps.renderPreview ?? renderCropPreview;
   for (const plan of plans) {
     for (const product of PRINT_PRODUCTS) {
+      if (!isOfferedProduct(product)) continue;
       const previewBytes = await renderPreview(
         plan.bytes,
         printAreaIn(product),
