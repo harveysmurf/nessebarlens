@@ -46,7 +46,7 @@ export const STAGING_MASTERS_BUCKET_NAME = "nessebar-lens-masters-staging";
 const MASTER_KEY_PREFIX = "prints/";
 
 /** Shape of a private MASTERS object key. The catalog itself is photos.ts imageKey. */
-export const MASTER_KEY_PATTERN = new RegExp(
+const MASTER_KEY_PATTERN = new RegExp(
   `^${MASTER_KEY_PREFIX}${SLUG_BODY}\\.jpg$`,
 );
 
@@ -59,7 +59,7 @@ export const MASTER_KEY_PATTERN = new RegExp(
 const PRINT_ASSET_KEY_PREFIX = "print-assets/";
 
 /** Shape of a private MASTERS print-asset key. */
-export const PRINT_ASSET_KEY_PATTERN = new RegExp(
+const PRINT_ASSET_KEY_PATTERN = new RegExp(
   `^${PRINT_ASSET_KEY_PREFIX}${SLUG_BODY}\\.jpg$`,
 );
 

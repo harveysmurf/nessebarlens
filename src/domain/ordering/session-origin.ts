@@ -19,7 +19,7 @@
  *
  * Subdomains such as `staging.` are deliberately NOT folded.
  */
-export function canonicalOrigin(value: string): string {
+function canonicalOrigin(value: string): string {
   const url = new URL(value);
   const host = url.host.replace(/^www\./, "");
   return `${url.protocol}//${host}`;
