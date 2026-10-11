@@ -56,8 +56,8 @@ function preview(page: Page) {
  * a smooth fill or a linear gradient (black/white mouldings) has a Laplacian of
  * ~0, while high-frequency noise (the brown feTurbulence grain) is strictly
  * positive. Sampled from a screenshot decoded in the browser, so no PNG
- * dependency is added. Pixels outside the clipped piece (alpha < 250) are
- * skipped, and a one-pixel margin drops the antialiased clip edges.
+ * dependency is added. Only fully opaque pixels (alpha 255) are sampled, and a
+ * proportional margin drops the antialiased clip edges.
  */
 async function roughness(page: Page, selector: string): Promise<number> {
   const shot = (await page.locator(selector).screenshot()).toString("base64");
