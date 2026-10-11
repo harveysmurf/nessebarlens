@@ -421,6 +421,16 @@ test("the visible image size is derived from every framed SKU, both orientations
   const framed = PRINT_PRODUCTS.filter((product) => product.format === "framed");
   // The table is checked in full so a size cannot be added without a row here.
   assert.equal(framed.length, Object.keys(MOUNT_WINDOW_CM).length);
+  // And the other way round: `IMAGE_SIZE_CM` is built by casting the framed
+  // products to `Record<PrintSize, …>`, so a size with no framed SKU would be a
+  // missing key the cast hides — `imageSizeLabel` would throw on it in the
+  // configurator, for every size, the moment someone picks framed.
+  const framedSizes = new Set(framed.map((product) => product.size));
+  assert.deepEqual(
+    PRINT_SIZES.filter((size) => !framedSizes.has(size)),
+    [],
+    "a size is offered that no framed SKU backs",
+  );
 
   for (const product of framed) {
     const expected = MOUNT_WINDOW_CM[product.size];
