@@ -58,11 +58,12 @@ export function selectionFromParams(
 
   // The size fallback is the *queried* format's first offered size, not the
   // opening format's: `?format=framed` on a photo whose framed sizes differ must
-  // never point the select at a size framed does not sell.
+  // never point the select at a size framed does not sell. `format` here is a
+  // physical format this offer actually sells (see `selectionFormat`), and an
+  // offered physical format always has at least one size, so this is non-null.
   const size =
     selectionSize(params.get("size"), offer, format) ??
-    firstOfferedSize(offer, format) ??
-    opening.size;
+    firstOfferedSize(offer, format)!;
 
   const frame =
     format === "framed"
