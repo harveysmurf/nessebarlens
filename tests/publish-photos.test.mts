@@ -11,6 +11,11 @@ import test from "node:test";
 import sharp from "sharp";
 import { parse as parseYaml } from "yaml";
 
+// The render memo (#361). Importing it patches sharp's prototype for this
+// process, so it must come before anything that renders — which is why it sits
+// above the scripts/derivative-image import below rather than with the helpers.
+import { renderCacheStats } from "./sharp-render-cache.mts";
+
 import { buildCatalog } from "../scripts/build-catalog.mjs";
 import { renderPrintAsset } from "../scripts/derivative-image.mjs";
 import {
@@ -1512,4 +1517,37 @@ test("#300 build-catalog fails on a hand-added ineligible option", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("the sharp render memo hands back a fresh buffer and keeps distinct renders distinct (#361)", async () => {
+  const before = { ...renderCacheStats };
+  const master = await sharp({
+    create: { width: 1200, height: 800, channels: 3, background: { r: 12, g: 34, b: 56 } },
+  })
+    .jpeg()
+    .toBuffer();
+
+  const first = await renderPrintAsset(master, "landscape");
+  const second = await renderPrintAsset(master, "landscape");
+  assert.deepEqual(second, first, "a memoised render is byte-identical to the real one");
+  assert.notEqual(second, first, "the cache must not hand out the same object twice");
+
+  // Guard 2 only holds if callers cannot reach the cached buffer: scribble on
+  // the copy and prove the next read is unaffected.
+  second.fill(0);
+  const third = await renderPrintAsset(master, "landscape");
+  assert.deepEqual(third, first, "a mutated result cannot poison the next reader");
+
+  // The key must separate renders that genuinely differ, or the memo is not
+  // memoising anything — same input, different rotation.
+  const turned = await renderPrintAsset(master, "portrait");
+  assert.notDeepEqual(turned, first, "a different orientation must not reuse another render");
+
+  const { data } = await sharp(master).jpeg().toBuffer({ resolveWithObject: true });
+  assert.ok(Buffer.isBuffer(data), "resolveWithObject results survive the memo as buffers");
+
+  assert.ok(
+    renderCacheStats.repeats > before.repeats,
+    "the repeated renders above were served from the memo, not re-rendered",
+  );
 });
