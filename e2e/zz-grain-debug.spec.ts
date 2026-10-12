@@ -69,25 +69,33 @@ test.beforeEach(async ({ page }) => {
   });
 });
 
-test("grain debug", async ({ page }, testInfo) => {
-  await page.goto(`/prints/${HARBOUR}`);
-  await page.getByText(/framed print/i).click();
+// Replicate the real spec's cold-start sequence, from a fresh load each time:
+// the flake appears on the first measurement after page start, so a loop of
+// settled measurements never sees it. Attach any raw frame over the threshold.
+test("grain debug - cold starts", async ({ page }, testInfo) => {
+  test.setTimeout(300_000);
   const spikes: string[] = [];
-  for (let round = 0; round < 6; round++) {
+  for (let trial = 0; trial < 10; trial++) {
+    await page.goto(`/prints/${HARBOUR}`);
+    await page.getByText(/framed print/i).click();
+    const readings: Record<string, number> = {};
     for (const finish of ["black", "white", "brown"] as const) {
       await page.locator("#frame-finish").selectOption(finish);
       await preview(page).getAttribute("data-frame");
       const { png, stats } = await probe(page, `[data-frame="${finish}"] [data-moulding="top"]`);
+      readings[finish] = stats.mean;
       console.log(
-        `GRAIN round=${round} finish=${finish} w=${stats.width} h=${stats.height} m=${stats.margin} n=${stats.n} mean=${stats.mean.toFixed(6)} rowSums=[${stats.rowSums.map((v) => v.toFixed(2)).join(",")}]`,
+        `GRAIN trial=${trial} finish=${finish} w=${stats.width} h=${stats.height} m=${stats.margin} n=${stats.n} mean=${stats.mean.toFixed(6)} rowSums=[${stats.rowSums.map((v) => v.toFixed(2)).join(",")}]`,
       );
       if (stats.mean > 5 && finish !== "brown") {
-        spikes.push(`${finish}@r${round}=${stats.mean.toFixed(3)}`);
-        await testInfo.attach(`SPIKE-${round}-${finish}`, { body: png, contentType: "image/png" });
+        spikes.push(`t${trial}-${finish}=${stats.mean.toFixed(3)}`);
+        await testInfo.attach(`SPIKE-t${trial}-${finish}`, { body: png, contentType: "image/png" });
       }
-      if (round < 2) {
-        await testInfo.attach(`raw-${round}-${finish}`, { body: png, contentType: "image/png" });
-      }
+      await testInfo.attach(`raw-t${trial}-${finish}`, { body: png, contentType: "image/png" });
+    }
+    if (readings.black !== undefined && readings.brown !== undefined) {
+      const ratio = (readings.brown ?? 0) / (readings.black || 1);
+      console.log(`GRAIN trial=${trial} brown=${readings.brown!.toFixed(3)} black=${readings.black!.toFixed(3)} white=${readings.white!.toFixed(3)} ratio=${ratio.toFixed(2)}`);
     }
   }
   if (spikes.length > 0) throw new Error(`grain spikes: ${spikes.join(", ")}`);
