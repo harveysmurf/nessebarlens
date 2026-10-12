@@ -1180,8 +1180,29 @@ tags.
   Without the exclusions the catch-all wins and the grouping silently stops
   happening.
 
-Security updates are on by default in v2 and are not disabled anywhere. Do not
-trade them for a tidier cadence.
+#### Security updates are a repository setting, not the YAML (#359)
+
+`dependabot.yml` only turns on *version* updates. Dependabot **alerts** and
+**security updates** are repository settings in Settings → Code security and
+analysis, and a disabled setting wins over anything the file says — the audit on
+2026-10-11 found both off while this section still claimed security updates were
+on by default. `tests/dependabot-config.test.mts` reads the YAML, so it cannot
+see a setting that lives in the API.
+
+`scripts/dependabot-settings.mjs` is the bridge, and it follows the split in
+§Required status checks for the same platform reason: reading
+`security_and_analysis` needs administration access a job's `GITHUB_TOKEN`
+cannot be granted, so it is run **by hand**, not from `ci.yml`.
+
+```sh
+GITHUB_TOKEN=$(gh auth token) node scripts/dependabot-settings.mjs
+```
+
+It exits non-zero unless security updates **and** alerts are `enabled`, and
+prints the two `gh api` calls that turn them on. `tests/dependabot-settings.test.mts`
+asserts it is red against a disabled repository and green against an enabled one,
+and that it never gets wired into `ci.yml`. Do not trade either setting for a
+tidier cadence.
 
 **One exception, and it is a manual bump: `setup-node` in
 `.github/actions/setup/action.yml`.** Dependabot's `github-actions` ecosystem
