@@ -50,17 +50,37 @@ function preview(page: Page) {
 }
 
 /**
- * Mean absolute Laplacian of an element's pixels: for each interior pixel, how
- * far its luminance sits from the average of its two neighbours, averaged over
- * both axes. This separates texture from shading without any baseline image:
- * a smooth fill or a linear gradient (black/white mouldings) has a Laplacian of
- * ~0, while high-frequency noise (the brown feTurbulence grain) is strictly
- * positive. Sampled from a screenshot decoded in the browser, so no PNG
- * dependency is added. Only fully opaque pixels (alpha 255) are sampled, and a
- * proportional margin drops the antialiased clip edges.
+ * Median absolute Laplacian of an element's pixels: for each interior pixel, how
+ * far its luminance sits from the average of its two neighbours, taken over
+ * both axes, averaged along each row, and then reduced across rows by median.
+ * This separates texture from shading without any baseline image: a smooth fill
+ * or a linear gradient (black/white mouldings) has a Laplacian of ~0, while
+ * high-frequency noise (the brown feTurbulence grain) is strictly positive.
+ *
+ * The row-median (not mean) is load-bearing on the CI runner (#347). The grain
+ * is a full-layer background, so real texture raises every row's energy: the
+ * median and the mean agree. `locator.screenshot()` occasionally returns a torn
+ * frame on a loaded runner — a band of rows carrying spurious high-frequency
+ * energy (or a band where the smooth gradient never painted), a capture race,
+ * not a rendering change. That band is a minority of rows, so it moves the mean
+ * but not the median. Measured on the failing CI frames: the mean ratio
+ * `brown/black` collapsed to 1.6–2.3 while the median held at 12.9, and the
+ * guard's true gap is slightly wider under the median (10.2 vs 9.6) because it
+ * drops the tail. The row-median therefore keeps the strict factor below
+ * without weakening what the guard catches.
+ *
+ * Sampled from a screenshot decoded in the browser, so no PNG dependency is
+ * added. Only fully opaque pixels (alpha 255) are sampled, and a proportional
+ * margin drops the antialiased clip edges.
  */
 async function roughness(page: Page, selector: string): Promise<number> {
-  const shot = (await page.locator(selector).screenshot()).toString("base64");
+  // `animations: "disabled"` freezes every CSS transition during capture. The
+  // preview carries `motion-safe:transition-[width,aspect-ratio]` (200ms),
+  // which switching to a framed format starts; capturing mid-transition is the
+  // most likely source of the torn frame above.
+  const shot = (
+    await page.locator(selector).screenshot({ animations: "disabled" })
+  ).toString("base64");
   return page.evaluate(async (b64) => {
     const img = new Image();
     img.src = `data:image/png;base64,${b64}`;
@@ -80,9 +100,10 @@ async function roughness(page: Page, selector: string): Promise<number> {
     // A proportional margin keeps the diagonally clipped corners (whose
     // antialiased edge is high-frequency by nature) out of the sample.
     const margin = Math.max(2, Math.floor(Math.min(width, height) * 0.1));
-    let sum = 0;
-    let n = 0;
+    const rowMeans: number[] = [];
     for (let y = margin; y < height - margin; y++) {
+      let sum = 0;
+      let n = 0;
       for (let x = margin; x < width - margin; x++) {
         if (!opaque(x, y) || !opaque(x - 1, y) || !opaque(x + 1, y) ||
             !opaque(x, y - 1) || !opaque(x, y + 1)) continue;
@@ -92,8 +113,14 @@ async function roughness(page: Page, selector: string): Promise<number> {
         sum += Math.max(lapX, lapY);
         n++;
       }
+      if (n > 0) rowMeans.push(sum / n);
     }
-    return n === 0 ? 0 : sum / n;
+    if (rowMeans.length === 0) return 0;
+    rowMeans.sort((a, b) => a - b);
+    const mid = rowMeans.length >> 1;
+    return rowMeans.length % 2 === 1
+      ? rowMeans[mid]!
+      : (rowMeans[mid - 1]! + rowMeans[mid]!) / 2;
   }, shot);
 }
 
