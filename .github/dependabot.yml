@@ -88,6 +88,10 @@ updates:
       - dependency-name: "@types/node"
         versions: [">=25"]
 
-# Security updates are on by default in v2 and are not turned off anywhere here
-# -- they are the half of this file that must not be traded away for a tidier
-# weekly cadence. tests/dependabot-config.test.mts pins the shape above.
+# Security updates are NOT controlled here. Dependabot alerts and security
+# updates are repository settings (Settings -> Code security and analysis), and a
+# disabled setting overrides anything this file says -- the 2026-10-11 audit
+# found both off while this comment claimed they were on (#359). They must not be
+# traded away for a tidier weekly cadence. tests/dependabot-config.test.mts pins
+# the shape above; scripts/dependabot-settings.mjs checks the live settings by
+# hand, because reading them needs admin access no CI job token can hold.
