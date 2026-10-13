@@ -26,6 +26,40 @@ async function chooseFramed(page: Page) {
   await expect(preview(page)).toHaveAttribute("data-preview-kind", "framed");
 }
 
+/**
+ * The RGB of the pixel just outside the window's left edge, sampled from a
+ * screenshot of the preview (device pixel ratio 1, so screenshot coordinates
+ * are CSS pixels). Unmounted, the window abuts the black moulding, so this is
+ * the frame. The snow-white mount bevel that used to ring the window showed
+ * here as the ~3px white gap between photo and frame (#335 regression).
+ */
+async function leftOfWindowRgb(
+  page: Page,
+  offsetPx: number,
+): Promise<[number, number, number]> {
+  const previewBox = (await preview(page).boundingBox())!;
+  const windowBox = (await preview(page).locator("[data-window]").boundingBox())!;
+  const x = Math.floor(windowBox.x - previewBox.x) - offsetPx;
+  const y = Math.round(windowBox.y - previewBox.y + windowBox.height / 2);
+  const shot = (await preview(page).screenshot()).toString("base64");
+  return page.evaluate(
+    async ({ b64, x, y }) => {
+      const img = new Image();
+      img.src = `data:image/png;base64,${b64}`;
+      await img.decode();
+      const canvas = document.createElement("canvas");
+      canvas.width = img.naturalWidth;
+      canvas.height = img.naturalHeight;
+      const ctx = canvas.getContext("2d");
+      if (ctx === null) throw new Error("no 2d context");
+      ctx.drawImage(img, 0, 0);
+      const d = ctx.getImageData(x, y, 1, 1).data;
+      return [d[0], d[1], d[2]] as [number, number, number];
+    },
+    { b64: shot, x, y },
+  );
+}
+
 test.describe("framed mount choice (#335)", () => {
   test("No Mount drops the mount layer and fills the glaze", async ({ page }) => {
     await chooseFramed(page);
@@ -54,6 +88,22 @@ test.describe("framed mount choice (#335)", () => {
     // Switching back restores the mount layer.
     await page.locator("#frame-mount").selectOption("white");
     await expect(preview(page).locator("[data-mount]")).toHaveCount(1);
+  });
+
+  test("No Mount leaves no white gap between the photo and the frame", async ({
+    page,
+  }) => {
+    await chooseFramed(page);
+    await page.locator("#print-size").selectOption("30x40");
+    await page.locator("#frame-mount").selectOption("none");
+    await expect(preview(page).locator("[data-mount]")).toHaveCount(0);
+
+    // Just left of the window is the black moulding, not the snow-white bevel
+    // (#fbfaf6) that used to ring the window on every framed print.
+    for (const offset of [1, 2]) {
+      const [r, g, b] = await leftOfWindowRgb(page, offset);
+      expect(Math.max(r, g, b)).toBeLessThan(120);
+    }
   });
 
   test("No Mount is disabled, with a reason, where the print is too small", async ({
