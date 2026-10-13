@@ -124,10 +124,11 @@ test("previewGeometry matches the issue's reference table (±0.01 mm)", () => {
       near(geometry.outer.width, row.outer.width);
       near(geometry.outer.height, row.outer.height);
       assert.ok(row.mount && row.window);
-      near(geometry.mount!.x, row.mount.x);
-      near(geometry.mount!.y, row.mount.y);
-      near(geometry.mount!.width, row.mount.width);
-      near(geometry.mount!.height, row.mount.height);
+      assert.ok(geometry.mount, "a mounted selection must produce a mount rect");
+      near(geometry.mount.x, row.mount.x);
+      near(geometry.mount.y, row.mount.y);
+      near(geometry.mount.width, row.mount.width);
+      near(geometry.mount.height, row.mount.height);
       near(geometry.window.x, row.window.x);
       near(geometry.window.y, row.window.y);
       near(geometry.window.width, row.window.width);

@@ -34,7 +34,7 @@ function fakeS3(objects: Record<string, { sha256: string; contentLength: number 
   const calls: [string, string][] = [];
   return {
     calls,
-    async head(bucket, key) {
+    async head(bucket: string, key: string) {
       calls.push([bucket, key]);
       const object = objects[key];
       if (!object) return null;
@@ -43,7 +43,7 @@ function fakeS3(objects: Record<string, { sha256: string; contentLength: number 
   };
 }
 
-const PHOTO = (overrides) => ({
+const PHOTO = (overrides: Record<string, unknown> = {}) => ({
   slug: "dawn",
   published: true,
   masterSha256: SHA_A,
@@ -122,7 +122,7 @@ test("a hash mismatch, an empty object and a head failure are each reported", as
     "prints/dusk.jpg": { sha256: SHA_A, contentLength: 0 },
   });
   const failing = {
-    head: async (_bucket, key) => {
+    head: async (_bucket: string, key: string) => {
       if (key === "prints/noon.jpg") throw new Error("boom");
       return s3.head(_bucket, key);
     },

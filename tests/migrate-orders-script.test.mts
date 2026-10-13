@@ -79,8 +79,8 @@ test("a valid order is queued for insert", () => {
  * no---remote form listed zero keys and the script would have exited 0 having
  * moved nothing.
  */
-function recordingSpawn(calls) {
-  return (_cmd, args) => {
+function recordingSpawn(calls: string[][]) {
+  return (_cmd: string, args: string[]) => {
     calls.push(args);
     return { status: 1, stdout: "", stderr: "stop-before-network" };
   };
@@ -107,7 +107,7 @@ test("the KV read passes --remote so it cannot resolve to local storage", () => 
 test("an empty KV read fails instead of reporting a successful zero-row migration", () => {
   const calls: string[][] = [];
   const result = runMigrate([], {
-    spawnSync: (_cmd, args) => {
+    spawnSync: (_cmd: string, args: string[]) => {
       calls.push(args);
       // Only the key list is answered; a get must never be reached.
       if (args.includes("list")) return { status: 0, stdout: "[]", stderr: "" };

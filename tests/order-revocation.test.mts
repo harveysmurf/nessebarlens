@@ -134,7 +134,6 @@ const cancelMustNotRun: CancelProdigiOrder = async () => {
   throw new Error("cancel must not run for a digital, corrupt, or absent order");
 };
 
-
 test("a full refund revokes the download", async () => {
   const store = memoryKv({ [SESSION]: digitalPaidRecord() });
   const result = await revokeOrderByPaymentIntent({

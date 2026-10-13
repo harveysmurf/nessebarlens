@@ -39,7 +39,7 @@ const probe = path.join(
  * value it is trying to prove absent — the classic way an "unset" assertion
  * passes on a developer's machine and lies in CI.
  */
-function evaluateConfig(overrides) {
+function evaluateConfig(overrides: Record<string, string | undefined>) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "next-config-probe-"));
   const record = path.join(dir, "init.ndjson");
   try {

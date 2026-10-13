@@ -21,7 +21,7 @@ import test from "node:test";
 const { classify } = await import("../scripts/zizmor-gate.mjs");
 
 /** A finding in zizmor 1.30.1's `--format json` shape. */
-function finding(ident, confidence, severity = "Informational") {
+function finding(ident: string, confidence: string, severity = "Informational") {
   return {
     ident,
     desc: "",
