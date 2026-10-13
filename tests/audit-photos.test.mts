@@ -179,7 +179,7 @@ test("formatReport groups by category with a total size, and says so when clean"
   assert.match(report, /Missing objects: 10/);
 
   const clean = formatReport(
-    auditFindings({ catalog: [DAWN], webObjects: webObjects("dawn", NEW), stagingObjects: [{ key: "prints/dawn.jpg" }], mastersObjects: [{ key: "prints/dawn.jpg" }] }),
+    auditFindings({ catalog: [DAWN], webObjects: webObjects("dawn", NEW), stagingObjects: [{ key: "prints/dawn.jpg", size: 1 }], mastersObjects: [{ key: "prints/dawn.jpg", size: 1 }] }),
   );
   assert.match(clean, /No findings/);
 });
@@ -197,6 +197,7 @@ test("auditJson carries count, totalBytes and items for every category", () => {
     AUDIT_CATEGORIES.map((category) => category.key),
   );
   const orphaned = json.categories.find((category) => category.key === "orphanedWeb");
+  assert.ok(orphaned, "the orphanedWeb category is always reported");
   assert.equal(orphaned.count, 8);
   assert.equal(orphaned.totalBytes, 800);
   assert.equal(orphaned.items.length, 8);

@@ -214,6 +214,11 @@ export function assertSandboxBase(value) {
   return base;
 }
 
+/**
+ * @param {string[]} argv
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {{ base: string, key: string, skus: string[], check: boolean }}
+ */
 export function parseArgs(argv, env = process.env) {
   const check = argv.includes("--check");
   const named = argv.filter((arg) => !arg.startsWith("--"));
@@ -224,6 +229,11 @@ export function parseArgs(argv, env = process.env) {
   return { base, key, skus, check };
 }
 
+/**
+ * @param {string[]} [argv]
+ * @param {Record<string, string | undefined>} [env]
+ * @returns {Promise<number>}
+ */
 export async function main(argv = process.argv.slice(2), env = process.env) {
   let args;
   try {
