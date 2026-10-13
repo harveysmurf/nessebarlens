@@ -227,7 +227,6 @@ test("a physical order with no shippingEur stops as bad-metadata", () => {
     },
     shippingDetails: {
       name: "Test Buyer",
-      phone: null,
       address: {
         line1: "1 Harbor St",
         line2: null,

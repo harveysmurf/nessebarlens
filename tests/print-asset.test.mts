@@ -344,7 +344,7 @@ test("resolvePrintAssetStream separates missing binding, bucket error and missin
   const found = await resolvePrintAssetStream(SAMPLE_SLUG, {
     get: async (key: string) => {
       keys.push(key);
-      return { body: bytes(), size: 3 };
+      return { body: bytes(), size: 3, httpMetadata: {} };
     },
   });
   assert.deepEqual(keys, [SAMPLE_PRINT_ASSET_KEY]);
@@ -362,7 +362,7 @@ test("the stream's only gate: grammar is a 400, a non-catalog slug a retryable 5
   const bucket = {
     async get() {
       called++;
-      return { body: new ReadableStream(), size: 1 };
+      return { body: new ReadableStream(), size: 1, httpMetadata: {} };
     },
   };
   for (const slug of ["", "Dawn", "dawn.jpg", "../prints/dawn.jpg", "prints/dawn.jpg", "co%2Fb"]) {

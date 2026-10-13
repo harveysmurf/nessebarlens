@@ -22,7 +22,6 @@ process.env.NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com";
 
 const SHIPPING: StripeShippingDetails = {
   name: "Test Buyer",
-  phone: null,
   address: {
     line1: "1 Harbor St",
     line2: null,

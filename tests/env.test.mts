@@ -4,6 +4,17 @@ import { envFlag, envIntInRange, envString, envStringStrippedSlash } from "../sr
 import { stripTrailingSlashes } from "../src/domain/pricing/url-patterns.ts";
 import { readProdigiConfig } from "../src/infrastructure/prodigi/prodigi-config.ts";
 
+/**
+ * The paired key for a config the test expects to be configured. `key` lives
+ * only on the success arm of `ProdigiConfigResult`, so read it through the
+ * narrowing `assert.ok` rather than off the union.
+ */
+function prodigiKey(env: Record<string, unknown>): string {
+  const config = readProdigiConfig(env);
+  assert.ok(config.ok, "expected a configured prodigi result");
+  return config.key;
+}
+
 function withEnv<T>(name: string, value: string | undefined, fn: () => T): T {
   const saved = process.env[name];
   try {
@@ -57,9 +68,9 @@ test("readProdigiConfig pairs the sandbox host with the sandbox key only", () =>
   withEnv("PRODIGI_SANDBOX_API_KEY", "sbx", () =>
     withEnv("PRODIGI_API_KEY", "live", () => {
       const sandbox = { PRODIGI_API_BASE: "https://api.sandbox.prodigi.com" };
-      assert.equal(readProdigiConfig(sandbox).key, "sbx");
+      assert.equal(prodigiKey(sandbox), "sbx");
       assert.equal(
-        readProdigiConfig({ ...sandbox, PRODIGI_SANDBOX_API_KEY: "" }).key,
+        prodigiKey({ ...sandbox, PRODIGI_SANDBOX_API_KEY: "" }),
         "sbx",
       );
       // Sandbox host with only the live key must not silently use it.
@@ -71,8 +82,7 @@ test("readProdigiConfig pairs the sandbox host with the sandbox key only", () =>
         );
         // Live host, live key.
         assert.equal(
-          readProdigiConfig({ PRODIGI_API_BASE: "https://api.prodigi.com" })
-            .key,
+          prodigiKey({ PRODIGI_API_BASE: "https://api.prodigi.com" }),
           "live",
         );
       });

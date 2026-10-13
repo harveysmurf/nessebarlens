@@ -171,6 +171,11 @@ type PublishDeps = {
   env: typeof ENV;
   now: () => Date;
   log: (line: string) => void;
+  // Both are injection seams the script reads with `deps.x ?? default`, so a
+  // test sets them after `deps()` to stand in for a real measurement or a
+  // second bucket reader.
+  measure?: () => Promise<{ width: number; height: number; orientation: string }>;
+  readS3?: ReturnType<typeof fakeSyncS3>;
 };
 
 function deps(overrides: {
@@ -1299,7 +1304,7 @@ test("renderPrintAsset turns a landscape master 90° clockwise and leaves portra
 // Print offer (#300): report, recalculation, rollout, idempotency
 // ---------------------------------------------------------------------------
 
-const HARBOUR_FACTS300 = { width: 4901, height: 3351, orientation: "landscape" };
+const HARBOUR_FACTS300 = { width: 4901, height: 3351, orientation: "landscape" } as const;
 
 /** A published harbour YAML with facts and print assets but no offer. */
 const HARBOUR_YAML300 =

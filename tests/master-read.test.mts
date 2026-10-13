@@ -25,6 +25,7 @@ function object(size = 7): MasterObject {
       },
     }),
     size,
+    httpMetadata: undefined,
   };
 }
 
