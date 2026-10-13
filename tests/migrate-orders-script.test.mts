@@ -130,8 +130,11 @@ test("a successful run still exits 0 and reports its tally", () => {
     executeD1: () => ({ ok: true, changes: 1 }),
   });
   assert.equal(result.exitCode, 0);
-  assert.equal(result.tally.inserted, 1);
-  assert.equal(result.tally.corrupt, 0);
+  // `tally` rides on the exitCode-0 arm and tsc cannot discriminate the arms
+  // because the literal widens to number. `?.` keeps the assertion exactly as
+  // strict — a missing tally reads undefined, which is not 1.
+  assert.equal(result.tally?.inserted, 1);
+  assert.equal(result.tally?.corrupt, 0);
 });
 
 test("the documented invocation runs on a clean checkout (#177)", () => {
