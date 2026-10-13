@@ -107,8 +107,8 @@ test("removing the block takes its comment and leaves everything else byte-ident
 });
 
 test("an order in KV with no D1 row refuses, names it, and deletes nothing", () => {
-  const deletes = [];
-  const writes = [];
+  const deletes: string[] = [];
+  const writes: [string, string][] = [];
   const result = runRemove([], {
     readFileSync: () => TOML,
     writeFileSync: (p, data) => writes.push([p, data]),
@@ -127,8 +127,8 @@ test("pre-payment placeholders and download tokens are not unmigrated orders", (
   // The bug that made the old count-parity gate unsatisfiable: cs_ keys exist
   // for checkouts that never completed, so comparing key counts against D1 rows
   // compared two sets that differ by construction.
-  const fetched = [];
-  const deletes = [];
+  const fetched: [string, string][] = [];
+  const deletes: string[] = [];
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
     writeFileSync: () => {},
@@ -155,8 +155,8 @@ test("a download token with no D1 row refuses: the delete takes the whole namesp
   // The gate guards orders, but the deletion drops every key in the namespace.
   // A dl: grant that never reached download_tokens would be lost silently —
   // the same hole as the order check, one table over.
-  const deletes = [];
-  const writes = [];
+  const deletes: string[] = [];
+  const writes: [string, string][] = [];
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
     writeFileSync: (p, data) => writes.push([p, data]),
@@ -172,7 +172,7 @@ test("a download token with no D1 row refuses: the delete takes the whole namesp
 });
 
 test("an unreadable download_tokens result is a failed gate, not an empty set", () => {
-  const deletes = [];
+  const deletes: string[] = [];
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
     writeFileSync: () => assert.fail("must not rewrite the config"),
@@ -201,7 +201,7 @@ test("findUnmigratedTokens watches dl: grants and ignores everything else", () =
 test("an order in the preview namespace alone still refuses", () => {
   // A gate that only reads production is a gate with a hole: the preview
   // namespace is written by the same worker path.
-  const deletes = [];
+  const deletes: string[] = [];
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
     writeFileSync: () => assert.fail("must not rewrite the config"),
@@ -221,8 +221,8 @@ test("a written-off order proceeds, and the disposition is printed, not silent",
   // The live case: a Stripe test-mode paid record in the ephemeral preview
   // namespace that should never reach production D1. Dropping it is a decision,
   // so it needs a stated reason and it must survive in the run output.
-  const deletes = [];
-  const writes = [];
+  const deletes: string[] = [];
+  const writes: [string, string][] = [];
   const result = runRemove(["--yes", "--write-off", "cs_test_stagingrec", "test-mode staging record"], {
     readFileSync: () => TOML,
     writeFileSync: (p, data) => writes.push([p, data]),
@@ -260,7 +260,7 @@ test("--write-off needs a reason, and one the gate asked for", () => {
 });
 
 test("a write-off does not wave through the other orders", () => {
-  const deletes = [];
+  const deletes: string[] = [];
   const result = runRemove(["--yes", "--write-off", "cs_test_stagingrec", "test-mode staging record"], {
     readFileSync: () => TOML,
     writeFileSync: () => assert.fail("must not rewrite the config"),
@@ -280,7 +280,7 @@ test("a write-off does not wave through the other orders", () => {
 test("an id present in both namespaces is written off once, not twice", () => {
   // Both namespaces are checked against the same D1 set, so a shared key would
   // otherwise be reported — and waived — twice, printing a duplicate disposition.
-  const deletes = [];
+  const deletes: string[] = [];
   const result = runRemove(["--yes", "--write-off", "cs_test_stagingrec", "test-mode staging record"], {
     readFileSync: () => TOML,
     // Reaches the delete and the rewrite by design; the assertion that matters
@@ -302,8 +302,8 @@ test("an id present in both namespaces is written off once, not twice", () => {
 });
 
 test("a clean check without --yes refuses and deletes nothing", () => {
-  const deletes = [];
-  const writes = [];
+  const deletes: string[] = [];
+  const writes: [string, string][] = [];
   const result = runRemove([], {
     readFileSync: () => TOML,
     writeFileSync: (p, data) => writes.push([p, data]),
@@ -318,8 +318,8 @@ test("a clean check without --yes refuses and deletes nothing", () => {
 });
 
 test("a clean check with --yes deletes both namespaces then rewrites wrangler.toml", () => {
-  const deletes = [];
-  const writes = [];
+  const deletes: string[] = [];
+  const writes: [string, string][] = [];
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
     writeFileSync: (p, data) => writes.push([p, data]),
@@ -336,7 +336,7 @@ test("a clean check with --yes deletes both namespaces then rewrites wrangler.to
 });
 
 test("an unreadable D1 result is a failed gate, not an empty set", () => {
-  const deletes = [];
+  const deletes: string[] = [];
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
     writeFileSync: () => assert.fail("must not rewrite the config"),
@@ -366,7 +366,7 @@ test("D1 sessions are read from wrangler's result shape and never guessed", () =
 });
 
 test("findUnmigratedOrderKeys reuses the migrator's own grammar", () => {
-  const fetched = [];
+  const fetched: string[] = [];
   const unmigrated = findUnmigratedOrderKeys({
     keys: [...sessions(2), "dl:token", "dls:index", "some-other-key", TOKEN_KEY],
     readValue: (key) => {
@@ -380,7 +380,7 @@ test("findUnmigratedOrderKeys reuses the migrator's own grammar", () => {
 });
 
 test("a failed namespace delete leaves wrangler.toml alone", () => {
-  const writes = [];
+  const writes: [string, string][] = [];
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
     writeFileSync: (p, data) => writes.push([p, data]),
@@ -399,8 +399,8 @@ test("delete succeeded but the rewrite died: a re-run finishes the rewrite", () 
   // The inverse of the delete-fails case, and the one Architect gated on: the
   // namespaces are gone, so a re-run must reach the rewrite instead of dying on
   // a gate it can never satisfy.
-  const writes = [];
-  const deletes = [];
+  const writes: [string, string][] = [];
+  const deletes: string[] = [];
   // The rewrite failure surfaces as a throw; the CLI's entrypoint turns that
   // into exit 1. What matters here is the state it leaves behind.
   assert.throws(
@@ -440,7 +440,7 @@ test("delete succeeded but the rewrite died: a re-run finishes the rewrite", () 
 test("one namespace gone and one present is refused as half-removed", () => {
   // Deleting the survivor on a gate that can only see the survivor is the one
   // shape that loses data silently, so the half state names itself instead.
-  const deletes = [];
+  const deletes: string[] = [];
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
     writeFileSync: () => assert.fail("must not rewrite the config"),
@@ -455,7 +455,7 @@ test("one namespace gone and one present is refused as half-removed", () => {
 });
 
 test("an absent binding is refused instead of reported as already done", () => {
-  const deletes = [];
+  const deletes: string[] = [];
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML.replace('binding = "ORDERS"', 'binding = "OTHER"'),
     writeFileSync: () => assert.fail("must not rewrite the config"),
@@ -469,7 +469,7 @@ test("an absent binding is refused instead of reported as already done", () => {
 });
 
 test("the KV read passes --remote so the gate cannot measure local storage", () => {
-  const calls = [];
+  const calls: string[][] = [];
   try {
     runRemove(["--yes"], {
       readFileSync: () => TOML,
@@ -507,7 +507,7 @@ test("the existence probe calls the real wrangler subcommand shape", () => {
   // wrangler 4.141 rejects `--json` on `kv namespace list` ("Unknown
   // argument"), so the probe must pass no flags and read the JSON array the
   // command always logs.
-  const calls = [];
+  const calls: string[][] = [];
   const ids = defaultListNamespaceIds((cmd, args) => {
     calls.push([cmd, ...args]);
     return { status: 0, stdout: JSON.stringify([{ id: PROD_ID }, { id: PREVIEW_ID }]), stderr: "" };

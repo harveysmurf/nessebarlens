@@ -97,8 +97,10 @@ async function writeCornerMaster(file, { width = 3600, height = 2400, orientatio
   await pipeline.jpeg({ quality: 90 }).toFile(file);
 }
 
+type S3Put = { bucket: string; key: string; body: Buffer; contentType: string; cacheControl: string };
+
 function fakeS3() {
-  const puts = [];
+  const puts: S3Put[] = [];
   return {
     puts,
     async exists() {
@@ -113,7 +115,17 @@ function fakeS3() {
 // The #297 read-only masters client. By default every master is absent, so the
 // automatic sync warns "unpromoted" and continues; a test that needs a decision
 // (measure / mismatch / in-sync) passes its own head/getObject.
-function fakeSyncS3({ head = null, getObject } = {}) {
+type SyncHead = { metadata: { sha256: string }; contentLength: number };
+
+function fakeSyncS3(
+  {
+    head = null,
+    getObject,
+  }: {
+    head?: SyncHead | null | (() => Promise<SyncHead | null>);
+    getObject?: (bucket: string, key: string) => Promise<Buffer>;
+  } = {},
+) {
   return {
     head: typeof head === "function" ? head : async () => head,
     getObject:
@@ -124,8 +136,11 @@ function fakeSyncS3({ head = null, getObject } = {}) {
   };
 }
 
-function fakeExec({ dirty = [], prUrl = "https://github.com/harveysmurf/nessebarlens/pull/999" } = {}) {
-  const calls = [];
+function fakeExec({
+  dirty = [],
+  prUrl = "https://github.com/harveysmurf/nessebarlens/pull/999",
+}: { dirty?: string[]; prUrl?: string } = {}) {
+  const calls: string[][] = [];
   const exec = async (command, args) => {
     calls.push([command, ...args]);
     if (command === "git" && args[0] === "status") {
@@ -142,8 +157,25 @@ function fakeExec({ dirty = [], prUrl = "https://github.com/harveysmurf/nessebar
   return exec;
 }
 
-function deps(overrides = {}) {
-  const logs = [];
+// `syncS3` is optional because the script reads `deps.syncS3 ?? createReadMastersS3(env)`:
+// the "refuses without the read-only creds" test deletes it to stand in for a
+// deployment with no masters bucket configured.
+type PublishDeps = {
+  logs: string[];
+  s3: ReturnType<typeof fakeS3>;
+  syncS3?: ReturnType<typeof fakeSyncS3>;
+  exec: ReturnType<typeof fakeExec>;
+  env: typeof ENV;
+  now: () => Date;
+  log: (line: string) => void;
+};
+
+function deps(overrides: {
+  s3?: ReturnType<typeof fakeS3>;
+  syncS3?: ReturnType<typeof fakeSyncS3>;
+  exec?: ReturnType<typeof fakeExec>;
+} = {}): PublishDeps {
+  const logs: string[] = [];
   return {
     logs,
     s3: overrides.s3 ?? fakeS3(),
@@ -957,7 +989,7 @@ test("syncCatalogFacts warns on unpromoted masters and continues", async () => {
        "master_sha256: " + SHA_A, "image_hash: aaaaaaaa"].join("\n") + "\n",
     );
 
-    const logLines = [];
+    const logLines: string[] = [];
     const s3 = {
       async head() {
         return null; // master not yet promoted

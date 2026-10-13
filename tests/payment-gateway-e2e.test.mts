@@ -42,7 +42,7 @@ const okSigner: AssetUrlSigner = {
 };
 
 test("a fake gateway + fake print provider drive a physical order end to end", async () => {
-  let createdIntent: CheckoutIntent | null = null;
+  let createdIntent = null as CheckoutIntent | null;
   const gateway: PaymentGateway = {
     async createCheckout(intent) {
       createdIntent = intent;

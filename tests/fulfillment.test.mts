@@ -51,7 +51,7 @@ const SHIPPING: StripeShippingDetails = {
 };
 
 function memoryKv(initial?: Record<string, string>) {
-  return memoryOrdersStore({ store: initial });
+  return memoryOrdersStore({ kv: initial });
 }
 
 const SITE_URL = "https://nessebarlens.com";

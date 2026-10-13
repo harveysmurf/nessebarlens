@@ -5,8 +5,8 @@ import assert from "node:assert/strict";
 
 const SRC = path.join(import.meta.dirname, "..", "src");
 
-async function sourceFiles(dir) {
-  const out = [];
+async function sourceFiles(dir): Promise<string[]> {
+  const out: string[] = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);
     if (entry.isDirectory()) out.push(...(await sourceFiles(full)));
@@ -62,12 +62,12 @@ test("every src file is erasable-syntax only, so node can strip it itself", asyn
   // enums, namespaces and constructor parameter properties, which node's type stripping refuses
   // at runtime.) Nothing in the suite imports from app/ or components/ yet, so tsc is not a
   // guarantee for those files — this is.
-  const banned = [
+  const banned: [RegExp, string][] = [
     [/^\s*export\s+(const\s+)?enum\s/m, "enum"],
     [/^\s*(export\s+)?namespace\s/m, "namespace"],
     [/^\s*declare\s+module\s/m, "declare module"],
   ];
-  const offenders = [];
+  const offenders: string[] = [];
   for (const file of await sourceFiles(SRC)) {
     const text = await readFile(file, "utf8");
     for (const [pattern, label] of banned) {

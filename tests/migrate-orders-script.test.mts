@@ -87,7 +87,7 @@ function recordingSpawn(calls) {
 }
 
 test("the KV read passes --remote so it cannot resolve to local storage", () => {
-  const calls = [];
+  const calls: string[][] = [];
   // listKv throws on a non-zero status, so runMigrate unwinds at the first
   // call; the args recorded up to that point are the assertion.
   try {
@@ -105,7 +105,7 @@ test("the KV read passes --remote so it cannot resolve to local storage", () => 
 });
 
 test("an empty KV read fails instead of reporting a successful zero-row migration", () => {
-  const calls = [];
+  const calls: string[][] = [];
   const result = runMigrate([], {
     spawnSync: (_cmd, args) => {
       calls.push(args);

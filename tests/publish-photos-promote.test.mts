@@ -110,7 +110,17 @@ function staticYaml(slug, masterSha256) {
   ].join("\n");
 }
 
-function pull(overrides = {}) {
+type PullRequest = {
+  number: number;
+  state: string;
+  baseRefName: string;
+  headRefName: string;
+  author: { login: string };
+  url: string;
+  files: { path: string; changeType: string }[];
+};
+
+function pull(overrides: Partial<PullRequest> = {}) {
   const number = overrides.number ?? 255;
   return {
     number,
@@ -125,7 +135,7 @@ function pull(overrides = {}) {
 }
 
 async function manifest(dir, slugs) {
-  const hashes = {};
+  const hashes: Record<string, string> = {};
   for (const slug of slugs) {
     const bytes = readFileSync(path.join(dir, `ingest/${slug}.jpg`));
     hashes[slug] = await sha256Hex(bytes);
@@ -134,10 +144,20 @@ async function manifest(dir, slugs) {
 }
 
 /** An in-memory production-masters bucket seeded with {key: {metadata, contentLength}}. */
-function fakePromoteS3(seed = {}, timeline = []) {
-  const objects = new Map(Object.entries(seed));
-  const calls = [];
-  const puts = [];
+type StoredObject = {
+  metadata: { sha256: string };
+  contentLength: number;
+  contentType: string;
+  cacheControl: string;
+};
+
+function fakePromoteS3(
+  seed: Record<string, Partial<StoredObject>> = {},
+  timeline: string[] = [],
+) {
+  const objects = new Map<string, StoredObject>(Object.entries(seed) as [string, StoredObject][]);
+  const calls: string[][] = [];
+  const puts: StoredObject[] = [];
   return {
     objects,
     calls,
@@ -165,10 +185,17 @@ function fakeGh(
     yamlByPath = {},
     baseYamlByPath = {},
     mergeStatus = 0,
+  }: {
+    pull?: ReturnType<typeof pull>;
+    user?: string;
+    userStatus?: number;
+    yamlByPath?: Record<string, string>;
+    baseYamlByPath?: Record<string, string>;
+    mergeStatus?: number;
   } = {},
-  timeline = [],
+  timeline: string[] = [],
 ) {
-  const calls = [];
+  const calls: string[][] = [];
   const exec = async (command, args) => {
     calls.push([command, ...args]);
     if (command !== "gh") return { status: 1, stdout: "", stderr: "not gh" };
@@ -206,8 +233,31 @@ function fakeGh(
   return exec;
 }
 
-function deps(overrides = {}) {
-  const logs = [];
+// The promote seam both fakes satisfy: the read-back map, the recorded calls,
+// and the two methods `runPromote` calls. `fakePromoteS3` additionally records
+// `puts`; the read-back-mismatch fake does not need it, so it is not required here.
+type PromoteS3 = {
+  objects: Map<string, { metadata: Record<string, string>; contentLength: number }>;
+  calls: unknown[][];
+  head: (bucket: string, key: string) => Promise<unknown>;
+  // The exact `{bucket, key, body, contentType, cacheControl, metadata}` argument
+  // `createPromoteS3` takes; `put` is contravariant in it, so widening this to
+  // `unknown` would reject both fakes rather than accept them.
+  put: (input: {
+    bucket: string;
+    key: string;
+    body: Buffer;
+    contentType: string;
+    cacheControl: string;
+    metadata: Record<string, string>;
+  }) => Promise<void>;
+};
+
+function deps(overrides: {
+  s3?: PromoteS3;
+  exec?: ReturnType<typeof fakeGh>;
+} = {}) {
+  const logs: string[] = [];
   return {
     logs,
     s3: overrides.s3 ?? fakePromoteS3(),
@@ -359,7 +409,7 @@ test("a happy promote puts the master with sha256 metadata, reads it back, then 
     await writeMaster(path.join(dir, "ingest/dawn.jpg"));
     const bytes = readFileSync(path.join(dir, "ingest/dawn.jpg"));
     const sha = await sha256Hex(bytes);
-    const timeline = [];
+    const timeline: string[] = [];
     const s3 = fakePromoteS3({}, timeline);
     const exec = fakeGh(
       { pull: pull(), yamlByPath: { "content/photos/dawn.yaml": await headYaml(dir, "dawn", sha) } },

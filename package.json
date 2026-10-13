@@ -14,6 +14,7 @@
     "lint": "eslint",
     "pretypecheck": "npm run build:catalog",
     "typecheck": "tsc --noEmit",
+    "typecheck:tests": "tsc -p tsconfig.tests-check.json --noEmit",
     "pretest": "npm run build:catalog",
     "test": "node --import ./tests/register.mjs --test tests/*.test.mts",
     "test:e2e": "playwright test",
