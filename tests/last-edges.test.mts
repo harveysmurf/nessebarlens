@@ -79,10 +79,11 @@ test("an address with no country is not a recipient", () => {
   const parsed = parseRecipient(
     { name: "Test Buyer", address: { ...SHIPPING.address, country: undefined } },
     null,
+    null,
   );
   assert.equal(parsed, null);
   // Present and valid, so the check is the country and not the address.
-  assert.ok(parseRecipient(SHIPPING, null));
+  assert.ok(parseRecipient(SHIPPING, null, null));
 });
 
 test("a framed physical order keeps the frame finish all the way to Prodigi", async () => {

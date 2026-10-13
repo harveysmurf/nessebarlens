@@ -378,6 +378,7 @@ test("planPromoteAction uploads, skips, replaces or refuses", () => {
     isReplace: false,
   });
   assert.equal(refused.action, "refuse");
+  assert.ok(refused.reason, "a refusal carries its reason");
   assert.match(refused.reason, /--replace-image/);
   assert.deepEqual(
     planPromoteAction({
@@ -419,6 +420,7 @@ test("planPrintAssetAction uploads, skips, replaces or refuses (#307)", () => {
     isReplace: false,
   });
   assert.equal(refused.action, "refuse");
+  assert.ok(refused.reason, "a refusal carries its reason");
   assert.match(refused.reason, /print asset/);
   assert.match(refused.reason, /--replace-image/);
   assert.deepEqual(

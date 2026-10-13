@@ -17,6 +17,7 @@ import {
   isStripeNotFound,
 } from "../src/infrastructure/stripe/stripe-ids.ts";
 import type { StripeSessionLookup } from "../src/domain/ordering/stripe-session-lookup.ts";
+import type { CancelProdigiOrder } from "../src/domain/ordering/print-provider.ts";
 import { readStripeEvent, type StripeCheckoutSession } from "../src/infrastructure/stripe/stripe-event.ts";
 import { STRIPE_API_VERSION } from "../src/infrastructure/stripe/stripe.ts";
 import {
@@ -66,6 +67,11 @@ type Fake = {
 
 const globals = globalThis as { __buzzBindings?: Fake };
 globals.__buzzBindings = { prodigiKeyConfigured: false };
+
+/** Revoking a digital/disputed fixture never reaches Prodigi; fail loud if it does. */
+const cancelMustNotRun: CancelProdigiOrder = async () => {
+  throw new Error("cancel must not run for this revoke case");
+};
 
 // Same seam as routes.test.mts: the Worker bindings module is the only thing
 // substituted; the route and everything under it is the real source.
@@ -358,6 +364,7 @@ test("charge.refunded: a full refund revokes the order the payment intent maps t
     paymentIntent: charge.payment_intent as string,
     now: "2026-10-06T01:00:00.000Z",
     stripe: lookup,
+    cancel: cancelMustNotRun,
   });
   assert.equal(outcome.httpStatus, 200);
   assert.equal(parseOrderRecord(store.orders.get(sessionId)!)?.status, "refunded");
@@ -378,7 +385,10 @@ test("charge.dispute.created: the charge resolves to the payment intent, then re
     sessionId,
     dispute.charge as string,
   );
-  const paymentIntent = await paymentIntentForDispute(dispute, lookup);
+  const paymentIntent = await paymentIntentForDispute(
+    { charge: dispute.charge as string | null },
+    lookup,
+  );
   assert.equal(paymentIntent, disputePi);
   assert.deepEqual(calls, [`charge:${dispute.charge}`]);
 
@@ -388,6 +398,7 @@ test("charge.dispute.created: the charge resolves to the payment intent, then re
     paymentIntent,
     now: "2026-10-06T02:00:00.000Z",
     stripe: lookup,
+    cancel: cancelMustNotRun,
   });
   assert.equal(outcome.httpStatus, 200);
   assert.equal(parseOrderRecord(store.orders.get(sessionId)!)?.status, "disputed");

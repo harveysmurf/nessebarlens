@@ -46,6 +46,11 @@ const SHIPPING: StripeShippingDetails = {
   },
 };
 
+/** The print path must not run for a pre-Prodigi stop; fail loud if it does. */
+const mustNotCreate: CreateProdigiOrder = async () => {
+  throw new Error("createOrder must not run for a pre-Prodigi stop");
+};
+
 function paidInput(overrides: Record<string, unknown> = {}) {
   return {
     sessionId: SESSION,
@@ -71,6 +76,7 @@ function paidInput(overrides: Record<string, unknown> = {}) {
     // below. A get/put-shaped fake would fail the bindings shape guard and be
     // dropped, so the alert these tests read would never be produced.
     store: memoryOrdersStore(),
+    createOrder: mustNotCreate,
     ...overrides,
   };
 }
@@ -120,7 +126,7 @@ async function captureUnfulfilled(
 
 test("every terminal pre-Prodigi stop logs one structured alert", async () => {
   // Each case is a paid order we keep the money for and ship nothing for.
-  const cases: Array<{ reason: string; input: Record<string, unknown> }> = [
+  const cases: Array<{ reason: string; input: ReturnType<typeof paidInput> }> = [
     {
       reason: "bad-metadata",
       input: paidInput({ metadata: { photoSlug: SAMPLE_SLUG, format: "nope" } }),
@@ -289,6 +295,8 @@ test("the internal awaiting-prodigi marker is not an alert", () => {
     format: "giclee",
     size: "30x40",
     frame: "",
+    mount: "",
+    paper: "",
     quoteEur: 15,
     amountTotal: 1999,
     currency: "eur",

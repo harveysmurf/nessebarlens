@@ -88,6 +88,8 @@ test("a fake gateway + fake print provider drive a physical order end to end", a
     format: "giclee",
     size: "30x40",
     frame: null,
+    mount: null,
+    paper: null,
     previewImage: null,
     quoteEur: 15,
     shippingEur: 4.99,

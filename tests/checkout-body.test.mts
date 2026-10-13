@@ -269,10 +269,9 @@ test("checkout and quote apply the same frame rule, case for case", () => {
     } else if (!("error" in checkout) && !("error" in quote)) {
       // CheckoutBody is discriminated by `format`, not by `error`: a digital
       // order carries no frame at all. Every case above is a physical format,
-      // so both parsers accepted a physical selection and the frame is the
-      // thing under comparison.
+      // so the checkout narrows off `digital` here; `QuoteBody` has no digital
+      // arm at all, so only the checkout needs the guard before `.frame`.
       assert.ok(checkout.format !== "digital", `case must be physical: ${describe_}`);
-      assert.ok(quote.format !== "digital", `case must be physical: ${describe_}`);
       assert.equal(
         checkout.frame,
         quote.frame,
