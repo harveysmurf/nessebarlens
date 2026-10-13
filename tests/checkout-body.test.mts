@@ -110,11 +110,11 @@ test("rejection messages list the allow-lists, not a hand-written copy", () => {
     format: "giclee",
     size: "40x30",
   });
-  assert.equal("error" in badSize, true);
+  assert.ok("error" in badSize);
   assert.ok(badSize.error.includes(PRINT_SIZES.join("|")), badSize.error);
 
   const badFormat = parseCheckoutBody({ photoSlug: "dawn", format: "poster" });
-  assert.equal("error" in badFormat, true);
+  assert.ok("error" in badFormat);
   assert.ok(badFormat.error.includes(SELLABLE_FORMATS.join("|")), badFormat.error);
 
   const badFrame = parseCheckoutBody({
@@ -123,11 +123,11 @@ test("rejection messages list the allow-lists, not a hand-written copy", () => {
     size: PRINT_SIZES[0],
     frame: "gold",
   });
-  assert.equal("error" in badFrame, true);
+  assert.ok("error" in badFrame);
   assert.ok(badFrame.error.includes(FRAME_FINISHES.join("|")), badFrame.error);
 
   const badQuoteFormat = parseQuoteBody({ format: "poster", size: PRINT_SIZES[0] });
-  assert.equal("error" in badQuoteFormat, true);
+  assert.ok("error" in badQuoteFormat);
   assert.ok(
     badQuoteFormat.error.includes(PHYSICAL_FORMATS.join("|")),
     badQuoteFormat.error,
@@ -260,10 +260,19 @@ test("checkout and quote apply the same frame rule, case for case", () => {
     const checkout = parseCheckoutBody({ ...SLUG, ...c });
     const quote = parseQuoteBody(c);
     const describe_ = JSON.stringify(c);
-    assert.equal("error" in checkout, "error" in quote, `acceptance differs for ${describe_}`);
+    assert.ok(
+      !("error" in checkout) === !("error" in quote),
+      `acceptance differs for ${describe_}`,
+    );
     if ("error" in checkout && "error" in quote) {
       assert.equal(checkout.error, quote.error, `error text differs for ${describe_}`);
     } else if (!("error" in checkout) && !("error" in quote)) {
+      // CheckoutBody is discriminated by `format`, not by `error`: a digital
+      // order carries no frame at all. Every case above is a physical format,
+      // so both parsers accepted a physical selection and the frame is the
+      // thing under comparison.
+      assert.ok(checkout.format !== "digital", `case must be physical: ${describe_}`);
+      assert.ok(quote.format !== "digital", `case must be physical: ${describe_}`);
       assert.equal(
         checkout.frame,
         quote.frame,

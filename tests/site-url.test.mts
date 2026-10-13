@@ -9,6 +9,15 @@ import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 const SIGNER = new ConfiguredAssetUrlSigner();
 
 /**
+ * `NODE_ENV` is typed readonly on `process.env`, because Next.js assigns it at
+ * build time. These tests have to set and clear it — that is the whole subject
+ * of this file — so they go through an indexed view, which is the same escape
+ * `tests/config.test.mts` uses in `withEnv`. The runtime object is ordinary
+ * and mutable; only the named-property type is read-only.
+ */
+const env = process.env as Record<string, string | undefined>;
+
+/**
  * Sets NEXT_PUBLIC_SITE_URL for the body, with NODE_ENV cleared.
  *
  * siteUrl() throws when NODE_ENV says production, so this has to own both keys:
@@ -21,17 +30,17 @@ async function withSiteUrl<T>(
   fn: () => T | Promise<T>,
 ): Promise<T> {
   const saved = process.env.NEXT_PUBLIC_SITE_URL;
-  const savedNodeEnv = process.env.NODE_ENV;
+  const savedNodeEnv = env.NODE_ENV;
   try {
-    if (value === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
-    else process.env.NEXT_PUBLIC_SITE_URL = value;
-    delete process.env.NODE_ENV;
+    if (value === undefined) delete env.NEXT_PUBLIC_SITE_URL;
+    else env.NEXT_PUBLIC_SITE_URL = value;
+    delete env.NODE_ENV;
     return await fn();
   } finally {
-    if (savedNodeEnv === undefined) delete process.env.NODE_ENV;
-    else process.env.NODE_ENV = savedNodeEnv;
-    if (saved === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
-    else process.env.NEXT_PUBLIC_SITE_URL = saved;
+    if (savedNodeEnv === undefined) delete env.NODE_ENV;
+    else env.NODE_ENV = savedNodeEnv;
+    if (saved === undefined) delete env.NEXT_PUBLIC_SITE_URL;
+    else env.NEXT_PUBLIC_SITE_URL = saved;
   }
 }
 
@@ -60,38 +69,38 @@ test("siteUrl falls back to localhost when unset or blank", async () => {
 test("siteUrl throws in production instead of returning localhost", async () => {
   for (const raw of [undefined, "", "   "]) {
     await withSiteUrl(raw, () => {
-      const savedEnv = process.env.NODE_ENV;
+      const savedEnv = env.NODE_ENV;
       try {
-        process.env.NODE_ENV = "production";
+        env.NODE_ENV = "production";
         assert.throws(() => siteUrl(), /NEXT_PUBLIC_SITE_URL is not set/);
         // Never a localhost URL, whatever the caller does with the throw.
         assert.equal(isConfiguredSiteUrl(), false);
       } finally {
-        if (savedEnv === undefined) delete process.env.NODE_ENV;
-        else process.env.NODE_ENV = savedEnv;
+        if (savedEnv === undefined) delete env.NODE_ENV;
+        else env.NODE_ENV = savedEnv;
       }
     });
   }
 });
 
 test("isConfiguredSiteUrl follows the stripped value, in any environment", async () => {
-  const savedEnv = process.env.NODE_ENV;
+  const savedEnv = env.NODE_ENV;
   try {
     for (const raw of ["https://nessebarlens.com", "https://nessebarlens.com/"]) {
-      process.env.NODE_ENV = "production";
+      env.NODE_ENV = "production";
       await withSiteUrl(raw, () => {
         assert.equal(isConfiguredSiteUrl(), true, raw);
         assert.equal(siteUrl(), "https://nessebarlens.com", raw);
       });
     }
-    process.env.NODE_ENV = "development";
+    env.NODE_ENV = "development";
     await withSiteUrl(undefined, () => {
       assert.equal(isConfiguredSiteUrl(), false);
       assert.equal(siteUrl(), "http://localhost:3000");
     });
   } finally {
-    if (savedEnv === undefined) delete process.env.NODE_ENV;
-    else process.env.NODE_ENV = savedEnv;
+    if (savedEnv === undefined) delete env.NODE_ENV;
+    else env.NODE_ENV = savedEnv;
   }
 });
 

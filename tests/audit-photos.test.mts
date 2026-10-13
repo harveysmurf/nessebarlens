@@ -34,7 +34,7 @@ const OLD = "bbbbbbbb";
 const SHA = "c".repeat(64);
 
 /** The eight `{slug}/{hash}/…` objects one master publishes. */
-function webObjects(slug, hash, size = 100) {
+function webObjects(slug: string, hash: string, size = 100) {
   const objects: { key: string; size: number }[] = [];
   for (const width of WEB_DERIVATIVE_WIDTHS) {
     for (const format of WEB_DERIVATIVE_FORMATS) {
@@ -205,7 +205,7 @@ test("auditJson carries count, totalBytes and items for every category", () => {
 test("readCatalogEntries reads published and unpublished files and rejects a bad one", () => {
   const dir = mkdtempSync(path.join(os.tmpdir(), "audit-catalog-"));
   mkdirSync(dir, { recursive: true });
-  const body = (extra) =>
+  const body = (extra: string) =>
     ["title: Dawn", "caption: c", "description: d", "alt: a", "category: fine-art", extra].join(
       "\n",
     );
@@ -241,7 +241,7 @@ test("the audit client has only list and head, and refuses any other bucket", as
 test("runAudit lists all three buckets and prints the chosen format", async () => {
   const lists: string[] = [];
   const s3 = {
-    async list(bucket) {
+    async list(bucket: string) {
       lists.push(bucket);
       if (bucket === WEB_BUCKET_NAME) return webObjects("dawn", OLD, 10);
       if (bucket === MASTERS_BUCKET_NAME) return [{ key: "prints/dawn.jpg", size: 5 }];
@@ -253,7 +253,7 @@ test("runAudit lists all three buckets and prints the chosen format", async () =
   const textLogs: string[] = [];
   const text = await runAudit(
     {},
-    { s3, catalog, log: (line) => textLogs.push(line) },
+    { s3, catalog, log: (line: string) => textLogs.push(line) },
   );
   assert.equal(text.status, 0);
   assert.deepEqual(lists, [WEB_BUCKET_NAME, STAGING_MASTERS_BUCKET_NAME, MASTERS_BUCKET_NAME]);
@@ -262,7 +262,7 @@ test("runAudit lists all three buckets and prints the chosen format", async () =
   const jsonLogs: string[] = [];
   const json = await runAudit(
     { json: true },
-    { s3, catalog, log: (line) => jsonLogs.push(line) },
+    { s3, catalog, log: (line: string) => jsonLogs.push(line) },
   );
   assert.equal(json.status, 0);
   assert.equal(JSON.parse(jsonLogs.join("\n")).categories[0].count, 8);

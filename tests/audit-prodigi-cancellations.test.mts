@@ -26,7 +26,7 @@ import {
 const SESSION = "cs_test_abcdefgh";
 const PRODIGI_ID = "ord_abc123xyz";
 
-function physicalRecord(overrides = {}) {
+function physicalRecord(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
     v: 1,
     sessionId: SESSION,
@@ -66,7 +66,7 @@ function physicalRecord(overrides = {}) {
   });
 }
 
-function d1Row(record) {
+function d1Row(record: string): Record<string, unknown> {
   let parsed;
   try {
     parsed = JSON.parse(record);
@@ -409,7 +409,7 @@ test("runAudit lists refunded/disputed rows, filters physical+prodigiOrderId, an
   ]);
 
   let fetchCount = 0;
-  const fetchImpl = async (url) => {
+  const fetchImpl = async (url: unknown) => {
     fetchCount++;
     const id = new URL(String(url)).pathname.split("/").pop();
     if (id === PRODIGI_ID) {
@@ -465,7 +465,7 @@ test("runAudit --cancel cancels only cancellable orders, re-reads, and reports",
   process.env.PRODIGI_API_KEY = "live-key";
 
   let cancelCount = 0;
-  const fetchImpl = async (url) => {
+  const fetchImpl = async (url: unknown) => {
     const id = new URL(String(url)).pathname.split("/").pop();
     // First GET (read): InProduction (cancellable)
     // Second GET after cancel: Cancelled
@@ -490,7 +490,7 @@ test("runAudit --cancel cancels only cancellable orders, re-reads, and reports",
     );
   };
 
-  const cancelImpl = async ({ prodigiOrderId }) => {
+  const cancelImpl = async ({ prodigiOrderId }: { prodigiOrderId: string }) => {
     cancelCount++;
     assert.equal(prodigiOrderId, PRODIGI_ID, "should only cancel the cancellable order");
     return { ok: true, status: 200 };

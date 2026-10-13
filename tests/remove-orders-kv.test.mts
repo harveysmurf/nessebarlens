@@ -33,9 +33,9 @@ const TOML = [
   "",
 ].join("\n");
 
-const sessions = (n) => Array.from({ length: n }, (_, i) => `cs_test_${String(i).padStart(8, "0")}`);
+const sessions = (n: number) => Array.from({ length: n }, (_, i) => `cs_test_${String(i).padStart(8, "0")}`);
 // A value the migrator accepts as a completed order.
-const orderValue = (sessionId) =>
+const orderValue = (sessionId: string) =>
   JSON.stringify({
     v: 1,
     sessionId,
@@ -47,7 +47,7 @@ const orderValue = (sessionId) =>
 // before payment, but not order records. The gate must not treat these as
 // unmigrated orders, and must not need to fetch them to know that.
 const placeholders = [sessions(5)[0], sessions(5)[1]];
-const placeholderValue = (sessionId) => JSON.stringify({ sessionId, status: "open" });
+const placeholderValue = (sessionId: string) => JSON.stringify({ sessionId, status: "open" });
 const TOKEN_KEY = `dl:${"a".repeat(32)}`;
 
 /**
@@ -57,9 +57,9 @@ const TOKEN_KEY = `dl:${"a".repeat(32)}`;
  * has to say which sessions and tokens D1 has.
  */
 const TOKEN = "a".repeat(32);
-const gate = (n, { prod = sessions(n), d1Tokens = [TOKEN] } = {}) => ({
-  listKvKeys: (_spawn, id) => (id === PROD_ID ? [...prod, TOKEN_KEY] : [...placeholders]),
-  getKvValue: (_spawn, _id, key) =>
+const gate = (n: number, { prod = sessions(n), d1Tokens = [TOKEN] }: { prod?: string[]; d1Tokens?: string[] } = {}) => ({
+  listKvKeys: (_spawn: unknown, id: string) => (id === PROD_ID ? [...prod, TOKEN_KEY] : [...placeholders]),
+  getKvValue: (_spawn: unknown, _id: string, key: string) =>
     placeholders.includes(key) ? placeholderValue(key) : orderValue(key),
   listD1Sessions: () => sessions(n),
   listD1Tokens: () => d1Tokens,
@@ -111,10 +111,10 @@ test("an order in KV with no D1 row refuses, names it, and deletes nothing", () 
   const writes: [string, string][] = [];
   const result = runRemove([], {
     readFileSync: () => TOML,
-    writeFileSync: (p, data) => writes.push([p, data]),
+    writeFileSync: (p: string, data: string) => writes.push([p, data]),
     listNamespaceIds: () => ALL_IDS,
     ...gate(4, { prod: sessions(5) }),
-    deleteNamespace: (_spawn, id) => deletes.push(id),
+    deleteNamespace: (_spawn: unknown, id: string) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /gate failed: 1 KV key\(s\) hold a completed order with no row in D1/);
@@ -133,14 +133,14 @@ test("pre-payment placeholders and download tokens are not unmigrated orders", (
     readFileSync: () => TOML,
     writeFileSync: () => {},
     listNamespaceIds: () => ALL_IDS,
-    listKvKeys: (_spawn, id) => (id === PROD_ID ? [...placeholders, TOKEN_KEY] : [...placeholders]),
-    getKvValue: (_spawn, id, key) => {
+    listKvKeys: (_spawn: unknown, id: string) => (id === PROD_ID ? [...placeholders, TOKEN_KEY] : [...placeholders]),
+    getKvValue: (_spawn: unknown, id: string, key: string) => {
       fetched.push([id, key]);
       return placeholderValue(key);
     },
     listD1Sessions: () => [],
     listD1Tokens: () => [TOKEN],
-    deleteNamespace: (_spawn, id) => deletes.push(id),
+    deleteNamespace: (_spawn: unknown, id: string) => deletes.push(id),
   });
   assert.equal(result.exitCode, 0);
   assert.deepEqual(deletes, ALL_IDS);
@@ -159,10 +159,10 @@ test("a download token with no D1 row refuses: the delete takes the whole namesp
   const writes: [string, string][] = [];
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
-    writeFileSync: (p, data) => writes.push([p, data]),
+    writeFileSync: (p: string, data: string) => writes.push([p, data]),
     listNamespaceIds: () => ALL_IDS,
     ...gate(5, { d1Tokens: [] }),
-    deleteNamespace: (_spawn, id) => deletes.push(id),
+    deleteNamespace: (_spawn: unknown, id: string) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /1 KV download token\(s\) have no row in D1 download_tokens/);
@@ -181,7 +181,7 @@ test("an unreadable download_tokens result is a failed gate, not an empty set", 
     getKvValue: () => assert.fail("must not fetch values once the token side is unknown"),
     listD1Sessions: () => [],
     listD1Tokens: () => null,
-    deleteNamespace: (_spawn, id) => deletes.push(id),
+    deleteNamespace: (_spawn: unknown, id: string) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /unknown set of tokens/);
@@ -206,11 +206,11 @@ test("an order in the preview namespace alone still refuses", () => {
     readFileSync: () => TOML,
     writeFileSync: () => assert.fail("must not rewrite the config"),
     listNamespaceIds: () => ALL_IDS,
-    listKvKeys: (_spawn, id) => (id === PROD_ID ? [] : ["cs_test_ghostsession"]),
+    listKvKeys: (_spawn: unknown, id: string) => (id === PROD_ID ? [] : ["cs_test_ghostsession"]),
     getKvValue: () => orderValue("cs_test_ghostsession"),
     listD1Sessions: () => [],
     listD1Tokens: () => [],
-    deleteNamespace: (_spawn, id) => deletes.push(id),
+    deleteNamespace: (_spawn: unknown, id: string) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /cs_test_ghostsession/);
@@ -225,13 +225,13 @@ test("a written-off order proceeds, and the disposition is printed, not silent",
   const writes: [string, string][] = [];
   const result = runRemove(["--yes", "--write-off", "cs_test_stagingrec", "test-mode staging record"], {
     readFileSync: () => TOML,
-    writeFileSync: (p, data) => writes.push([p, data]),
+    writeFileSync: (p: string, data: string) => writes.push([p, data]),
     listNamespaceIds: () => ALL_IDS,
-    listKvKeys: (_spawn, id) => (id === PROD_ID ? [] : ["cs_test_stagingrec"]),
+    listKvKeys: (_spawn: unknown, id: string) => (id === PROD_ID ? [] : ["cs_test_stagingrec"]),
     getKvValue: () => orderValue("cs_test_stagingrec"),
     listD1Sessions: () => [],
     listD1Tokens: () => [],
-    deleteNamespace: (_spawn, id) => deletes.push(id),
+    deleteNamespace: (_spawn: unknown, id: string) => deletes.push(id),
   });
   assert.equal(result.exitCode, 0);
   assert.deepEqual(deletes, [PROD_ID, PREVIEW_ID]);
@@ -266,10 +266,10 @@ test("a write-off does not wave through the other orders", () => {
     writeFileSync: () => assert.fail("must not rewrite the config"),
     listNamespaceIds: () => ALL_IDS,
     listKvKeys: () => ["cs_test_stagingrec", "cs_test_realorder"],
-    getKvValue: (_spawn, _id, key) => orderValue(key),
+    getKvValue: (_spawn: unknown, _id: string, key: string) => orderValue(key),
     listD1Sessions: () => [],
     listD1Tokens: () => [],
-    deleteNamespace: (_spawn, id) => deletes.push(id),
+    deleteNamespace: (_spawn: unknown, id: string) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /cs_test_realorder/);
@@ -291,7 +291,7 @@ test("an id present in both namespaces is written off once, not twice", () => {
     getKvValue: () => orderValue("cs_test_stagingrec"),
     listD1Sessions: () => [],
     listD1Tokens: () => [],
-    deleteNamespace: (_spawn, id) => deletes.push(id),
+    deleteNamespace: (_spawn: unknown, id: string) => deletes.push(id),
   });
   assert.equal(result.exitCode, 0);
   const disposition = result.stdout.split("cs_test_stagingrec: test-mode staging record").length - 1;
@@ -306,10 +306,10 @@ test("a clean check without --yes refuses and deletes nothing", () => {
   const writes: [string, string][] = [];
   const result = runRemove([], {
     readFileSync: () => TOML,
-    writeFileSync: (p, data) => writes.push([p, data]),
+    writeFileSync: (p: string, data: string) => writes.push([p, data]),
     listNamespaceIds: () => ALL_IDS,
     ...gate(5),
-    deleteNamespace: (_spawn, id) => deletes.push(id),
+    deleteNamespace: (_spawn: unknown, id: string) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /--yes was not passed/);
@@ -322,17 +322,17 @@ test("a clean check with --yes deletes both namespaces then rewrites wrangler.to
   const writes: [string, string][] = [];
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
-    writeFileSync: (p, data) => writes.push([p, data]),
+    writeFileSync: (p: string, data: string) => writes.push([p, data]),
     listNamespaceIds: () => ALL_IDS,
     ...gate(5),
-    deleteNamespace: (_spawn, id) => deletes.push(id),
+    deleteNamespace: (_spawn: unknown, id: string) => deletes.push(id),
   });
   assert.equal(result.exitCode, 0);
   assert.deepEqual(deletes, [PROD_ID, PREVIEW_ID]);
   assert.equal(writes.length, 1);
   assert.equal(writes[0][0], "wrangler.toml");
   assert.equal(parseOrdersKvBinding(writes[0][1]), null);
-  assert.equal(result.bindingRemoved, true);
+  assert.equal("bindingRemoved" in result && result.bindingRemoved, true);
 });
 
 test("an unreadable D1 result is a failed gate, not an empty set", () => {
@@ -345,7 +345,7 @@ test("an unreadable D1 result is a failed gate, not an empty set", () => {
     getKvValue: () => assert.fail("must not fetch values once the D1 side is unknown"),
     listD1Sessions: () => null,
     listD1Tokens: () => [],
-    deleteNamespace: (_spawn, id) => deletes.push(id),
+    deleteNamespace: (_spawn: unknown, id: string) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /unknown set of sessions/);
@@ -369,7 +369,7 @@ test("findUnmigratedOrderKeys reuses the migrator's own grammar", () => {
   const fetched: string[] = [];
   const unmigrated = findUnmigratedOrderKeys({
     keys: [...sessions(2), "dl:token", "dls:index", "some-other-key", TOKEN_KEY],
-    readValue: (key) => {
+    readValue: (key: string) => {
       fetched.push(key);
       return orderValue(key);
     },
@@ -383,10 +383,10 @@ test("a failed namespace delete leaves wrangler.toml alone", () => {
   const writes: [string, string][] = [];
   const result = runRemove(["--yes"], {
     readFileSync: () => TOML,
-    writeFileSync: (p, data) => writes.push([p, data]),
+    writeFileSync: (p: string, data: string) => writes.push([p, data]),
     listNamespaceIds: () => ALL_IDS,
     ...gate(5),
-    deleteNamespace: (_spawn, id) => {
+    deleteNamespace: (_spawn: unknown, id: string) => {
       if (id.startsWith("849")) throw new Error("delete failed for " + id);
     },
   });
@@ -412,7 +412,7 @@ test("delete succeeded but the rewrite died: a re-run finishes the rewrite", () 
         },
         listNamespaceIds: () => ALL_IDS,
         ...gate(5),
-        deleteNamespace: (_spawn, id) => deletes.push(id),
+        deleteNamespace: (_spawn: unknown, id: string) => deletes.push(id),
       }),
     /disk full/,
   );
@@ -420,7 +420,7 @@ test("delete succeeded but the rewrite died: a re-run finishes the rewrite", () 
 
   const result = runRemove([], {
     readFileSync: () => TOML,
-    writeFileSync: (p, data) => writes.push([p, data]),
+    writeFileSync: (p: string, data: string) => writes.push([p, data]),
     // Both namespaces are gone now, so a KV read would throw — exactly the
     // state that used to strand the operator.
     listNamespaceIds: () => [],
@@ -428,7 +428,7 @@ test("delete succeeded but the rewrite died: a re-run finishes the rewrite", () 
     getKvValue: () => assert.fail("must not fetch a value on a restart"),
     listD1Sessions: () => assert.fail("must not read D1 on a restart"),
     listD1Tokens: () => assert.fail("must not read D1 on a restart"),
-    deleteNamespace: (_spawn, id) => assert.fail("must not delete again: " + id),
+    deleteNamespace: (_spawn: unknown, id: string) => assert.fail("must not delete again: " + id),
   });
   assert.equal(result.exitCode, 0);
   assert.match(result.stdout, /already deleted/);
@@ -446,7 +446,7 @@ test("one namespace gone and one present is refused as half-removed", () => {
     writeFileSync: () => assert.fail("must not rewrite the config"),
     listNamespaceIds: () => [PROD_ID],
     ...gate(5),
-    deleteNamespace: (_spawn, id) => deletes.push(id),
+    deleteNamespace: (_spawn: unknown, id: string) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /half-removed/);
@@ -461,7 +461,7 @@ test("an absent binding is refused instead of reported as already done", () => {
     writeFileSync: () => assert.fail("must not rewrite the config"),
     listNamespaceIds: () => ALL_IDS,
     ...gate(5),
-    deleteNamespace: (_spawn, id) => deletes.push(id),
+    deleteNamespace: (_spawn: unknown, id: string) => deletes.push(id),
   });
   assert.equal(result.exitCode, 1);
   assert.match(result.stderr, /nothing for this script to remove/);
@@ -474,7 +474,7 @@ test("the KV read passes --remote so the gate cannot measure local storage", () 
     runRemove(["--yes"], {
       readFileSync: () => TOML,
       writeFileSync: () => {},
-      spawnSync: (_cmd, args) => {
+      spawnSync: (_cmd: string, args: string[]) => {
         calls.push(args);
         return { status: 1, stdout: "", stderr: "stop-before-network" };
       },
@@ -508,7 +508,7 @@ test("the existence probe calls the real wrangler subcommand shape", () => {
   // argument"), so the probe must pass no flags and read the JSON array the
   // command always logs.
   const calls: string[][] = [];
-  const ids = defaultListNamespaceIds((cmd, args) => {
+  const ids = defaultListNamespaceIds((cmd: string, args: string[]) => {
     calls.push([cmd, ...args]);
     return { status: 0, stdout: JSON.stringify([{ id: PROD_ID }, { id: PREVIEW_ID }]), stderr: "" };
   });

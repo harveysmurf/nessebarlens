@@ -324,7 +324,7 @@ test("the E2E flow is its own job in ci.yml, not a step in lint-and-test", () =>
 });
 
 test("the E2E job is pull_request-only, so a production merge does not re-run a browser", () => {
-  const ci = workflows.find((w) => w.name === "ci.yml");
+  const ci = workflows.find((w) => w.name === "ci.yml")!;
   for (const id of ["e2e-smoke", "e2e-hosted-checkout"]) {
     const job = ci.text.match(
       new RegExp(`^ {2}${id}:\\n((?:(?: {4}|\\t).*\\n|\\n)*)`, "m"),
@@ -353,7 +353,7 @@ test("no workflow other than ci.yml runs Playwright", () => {
 });
 
 test("the hosted E2E job refuses to run without a Stripe TEST key", () => {
-  const ci = workflows.find((w) => w.name === "ci.yml");
+  const ci = workflows.find((w) => w.name === "ci.yml")!;
   const job = ci.text.match(/^ {2}e2e-hosted-checkout:\n((?:(?: {4}|\t).*\n|\n)*)/m);
   assert.ok(job);
   const body = job[1];
@@ -378,7 +378,7 @@ test("the hosted E2E job refuses to run without a Prodigi sandbox key", () => {
   // The same partial-green trap as the Stripe guard, one spec down: the
   // physical-print spec test.skips() without this key, so a job missing the
   // secret would pass having never quoted Prodigi at all (#143 review).
-  const ci = workflows.find((w) => w.name === "ci.yml");
+  const ci = workflows.find((w) => w.name === "ci.yml")!;
   const job = ci.text.match(/^ {2}e2e-hosted-checkout:\n((?:(?: {4}|\t).*\n|\n)*)/m);
   assert.ok(job);
   const body = job[1];

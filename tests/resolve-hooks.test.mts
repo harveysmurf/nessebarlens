@@ -5,7 +5,7 @@ import assert from "node:assert/strict";
 
 const SRC = path.join(import.meta.dirname, "..", "src");
 
-async function sourceFiles(dir): Promise<string[]> {
+async function sourceFiles(dir: string): Promise<string[]> {
   const out: string[] = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const full = path.join(dir, entry.name);

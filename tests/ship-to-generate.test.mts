@@ -38,7 +38,7 @@ test("computeCountries intersects, filters and orders by display name", () => {
     BG: "Bulgaria",
     DE: "Germany",
   };
-  assert.deepEqual(computeCountries(products, allowed, (c) => names[c]!), [
+  assert.deepEqual(computeCountries(products, allowed, (c: string) => names[c]!), [
     { code: "BG", name: "Bulgaria" },
     { code: "DE", name: "Germany" },
     { code: "US", name: "United States" },

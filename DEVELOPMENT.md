@@ -1724,6 +1724,48 @@ the guard to keep the honest copy honest.
 
 ---
 
+### Read the body before you annotate the signature
+
+When `tsc` asks for a type on a function parameter, the annotation has to come
+from what the function *does*, not from what its call sites pass. The
+`tests/` typecheck gate (added in #375) makes this easy to get wrong, because
+the fix is always a one-line annotation and the compiler stops complaining the
+moment the annotation is wrong rather than right.
+
+`d1Row(record: Record<string, unknown>)` annotated a function whose body is
+`JSON.parse(record)`. It typechecked, it silenced twelve errors, and it would
+have accepted a call site passing an object into a parse that throws. A wrong
+annotation is worse than an untyped one: the untyped version still reports the
+next error, the wrong one launders a real defect into a green gate.
+
+The same applies to `assert.equal(x in y, true)`. It asserts the narrowing but
+does not perform it, so the line after it is still reading a property off a
+union. `assert.ok(x in y)` narrows and asserts the same thing — as does
+`assert.ok(y.tag === "...")` and not `assert.notEqual(y.tag, "...")`.
+
+The narrowing rule cuts the other way too. Where an assertion already narrows,
+a `!` beside it is redundant and quietly contradicts the rule above — it silences
+the very check the assert performs. `const ci = workflows.find(...)` followed by
+`assert.ok(ci, "ci.yml is gone")` narrows on its own; the `!` in that pair is
+noise. Keep the `!` only where nothing else narrows.
+
+The convention the team agreed: **do not annotate a parameter you have not
+read the body of.** When in doubt, delete the annotation and re-read.
+
+It has a corollary for the counts, because it is how a wrong number gets
+published: a bulk edit that reports "7 sites fixed" has counted the lines it
+*changed*, not the lines that *exist*. The seventh was the eighth, already
+annotated before the edit ran. Check the total against the file, not against
+what your own script says it touched — the same way the compiler agreeing with
+a wrong annotation proves nothing.
+
+Two numbers from this work were wrong in exactly this way and had to be
+retracted: an error count measured with a flag the committed config does not
+set, and a site count taken from a script's own report. Both read as
+confident and both were checkable in one command.
+
+---
+
 ## 9. Release checklist
 
 1. Branch off `main`.

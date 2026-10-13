@@ -10,11 +10,17 @@ import {
   type QuoteCache,
 } from "../src/application/checkout/quote-cache.ts";
 
+// `paper` (#337) is required by quoteCacheKey's input. `null` is what the
+// production path passes for a giclée with no explicit paper: `resolveSku`
+// reads `paper ?? null` and `findProduct` takes a null paper as the default
+// (Matte Art), so a key built with `paper: null` is byte-identical to one
+// built with the key absent. Verified against every shape this file builds.
 const BASE = {
   format: "giclee" as const,
   size: "30x40" as const,
   frame: null,
   mount: null,
+  paper: null,
   destinationCountryCode: "BG",
 };
 

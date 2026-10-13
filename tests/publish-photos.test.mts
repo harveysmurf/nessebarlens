@@ -69,8 +69,8 @@ function makeProject() {
 }
 
 async function writeMaster(
-  file,
-  { width = 3600, height = 2400, exif = false, orientation } = {},
+  file: string,
+  { width = 3600, height = 2400, exif = false, orientation }: { width?: number; height?: number; exif?: boolean; orientation?: string } = {},
 ) {
   let pipeline = sharp({
     create: { width, height, channels: 3, background: { r: 128, g: 64, b: 32 } },
@@ -84,7 +84,10 @@ async function writeMaster(
  * A master with a red square in the top-left on a blue field, so a rotation can
  * be read from the pixels rather than inferred from the dimensions (#307).
  */
-async function writeCornerMaster(file, { width = 3600, height = 2400, orientation } = {}) {
+async function writeCornerMaster(
+  file: string,
+  { width = 3600, height = 2400, orientation }: { width?: number; height?: number; orientation?: string } = {},
+) {
   const red = await sharp({
     create: { width: 400, height: 400, channels: 3, background: { r: 255, g: 0, b: 0 } },
   })
@@ -106,7 +109,7 @@ function fakeS3() {
     async exists() {
       return false;
     },
-    async put(object) {
+    async put(object: S3Put) {
       puts.push(object);
     },
   };
@@ -141,7 +144,7 @@ function fakeExec({
   prUrl = "https://github.com/harveysmurf/nessebarlens/pull/999",
 }: { dirty?: string[]; prUrl?: string } = {}) {
   const calls: string[][] = [];
-  const exec = async (command, args) => {
+  const exec = async (command: string, args: string[]) => {
     calls.push([command, ...args]);
     if (command === "git" && args[0] === "status") {
       return {
@@ -952,7 +955,7 @@ test("syncCatalogFacts refuses before writing when a later photo mismatches (#29
     let written = false;
     let downloaded = false;
     const s3 = {
-      async head(_bucket, key) {
+      async head(_bucket: string, key: string) {
         // dawn's master exists with matching sha; dusk's has a different sha.
         return { metadata: { sha256: key.endsWith("dusk.jpg") ? SHA_B : SHA_A }, contentLength: 100 };
       },
@@ -1001,7 +1004,7 @@ test("syncCatalogFacts warns on unpromoted masters and continues", async () => {
     const measures = await syncCatalogFacts(
       { cwd: dir },
       {
-        log: (line) => logLines.push(line),
+        log: (line: string) => logLines.push(line),
         env: {},
         s3,
         measure: async () => FACTS,
@@ -1045,7 +1048,7 @@ test("syncCatalogFacts integration: real sharp JPEG measured from a fake getObje
         log: () => {},
         env: {},
         s3,
-        writeYaml: async (_path, text) => { writtenText = text; },
+        writeYaml: async (_path: string, text: string) => { writtenText = text; },
       },
     );
     assert.equal(measures.status, 0);
@@ -1236,13 +1239,13 @@ test("--backfill-print-assets renders from ingest and writes the two keys (#307)
 test("renderPrintAsset turns a landscape master 90° clockwise and leaves portrait/square (#307)", async () => {
   const dir = makeProject();
   try {
-    const readPixel = async (file, orientation) => {
+    const readPixel = async (file: string, orientation: string) => {
       const out = await renderPrintAsset(readFileSync(file), orientation);
       const { data, info } = await sharp(out)
         .raw()
         .toBuffer({ resolveWithObject: true });
       const { width, height, channels } = info;
-      const at = (x, y) => {
+      const at = (x: number, y: number) => {
         const i = (y * width + x) * channels;
         return { r: data[i]!, g: data[i + 1]!, b: data[i + 2]! };
       };

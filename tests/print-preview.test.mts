@@ -20,13 +20,17 @@ const LANDSCAPE: MasterFacts = { width: 3000, height: 2000, orientation: "landsc
 /** The same framing in portrait: x/y and width/height swap. */
 const PORTRAIT: MasterFacts = { width: 2000, height: 3000, orientation: "portrait" };
 
+// `paper` (#337) is part of PrintSelection. It defaults to the Matte Art the
+// configurator opens on, and `previewGeometry` reads it only for giclée,
+// where the two papers share a print area — so the geometry is unchanged.
 function selection(
   format: PrintSelection["format"],
   size: PrintSelection["size"],
   frame: PrintSelection["frame"] = "black",
   mount: PrintSelection["mount"] = "white",
+  paper: PrintSelection["paper"] = "ema",
 ): PrintSelection {
-  return { format, size, frame, mount };
+  return { format, size, frame, mount, paper };
 }
 
 const TOL = 0.01;
@@ -120,6 +124,7 @@ test("previewGeometry matches the issue's reference table (±0.01 mm)", () => {
       near(geometry.outer.width, row.outer.width);
       near(geometry.outer.height, row.outer.height);
       assert.ok(row.mount && row.window);
+      assert.ok(geometry.mount, "a mounted selection must produce a mount rect");
       near(geometry.mount.x, row.mount.x);
       near(geometry.mount.y, row.mount.y);
       near(geometry.mount.width, row.mount.width);
@@ -303,7 +308,7 @@ test("digital, and an unknown product, return { kind: 'digital' }", () => {
   // A pair absent from the pinned table cannot happen for an offered
   // selection, but it must not throw.
   const miss: PreviewGeometry = previewGeometry(
-    { format: "giclee", size: "1x1" as PrintSelection["size"], frame: "black" },
+    selection("giclee", "1x1" as PrintSelection["size"]),
     LANDSCAPE,
   );
   assert.deepEqual(miss, { kind: "digital" });

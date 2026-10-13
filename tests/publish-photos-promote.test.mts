@@ -44,7 +44,10 @@ function makeProject() {
   return dir;
 }
 
-async function writeMaster(file, { width = 3600, height = 2400, exif = true } = {}) {
+async function writeMaster(
+  file: string,
+  { width = 3600, height = 2400, exif = true }: { width?: number; height?: number; exif?: boolean } = {},
+) {
   let pipeline = sharp({
     create: { width, height, channels: 3, background: { r: 10, g: 80, b: 160 } },
   });
@@ -58,7 +61,7 @@ async function writeMaster(file, { width = 3600, height = 2400, exif = true } = 
  * bytes #307 promote re-renders. `masterSha256` is overridable so a test can
  * make the catalog disagree with the local file.
  */
-async function headYaml(dir, slug, masterSha256) {
+async function headYaml(dir: string, slug: string, masterSha256: string) {
   const bytes = readFileSync(path.join(dir, `ingest/${slug}.jpg`));
   const asset = await renderPrintAsset(bytes, "landscape");
   return [
@@ -81,7 +84,7 @@ async function headYaml(dir, slug, masterSha256) {
 }
 
 /** The base branch's YAML; only its master_sha256 is read, for isReplacement. */
-function baseYaml(slug, masterSha256) {
+function baseYaml(slug: string, masterSha256: string) {
   return [
     "title: Dawn",
     "category: fine-art",
@@ -95,7 +98,7 @@ function baseYaml(slug, masterSha256) {
  * A head YAML with the required facts and a valid (but not recomputed) print
  * asset, for tests that must not read a local master.
  */
-function staticYaml(slug, masterSha256) {
+function staticYaml(slug: string, masterSha256: string) {
   return [
     "title: Dawn",
     "category: fine-art",
@@ -134,7 +137,7 @@ function pull(overrides: Partial<PullRequest> = {}) {
   };
 }
 
-async function manifest(dir, slugs) {
+async function manifest(dir: string, slugs: string[]) {
   const hashes: Record<string, string> = {};
   for (const slug of slugs) {
     const bytes = readFileSync(path.join(dir, `ingest/${slug}.jpg`));
@@ -144,30 +147,62 @@ async function manifest(dir, slugs) {
 }
 
 /** An in-memory production-masters bucket seeded with {key: {metadata, contentLength}}. */
+/**
+ * What the promote seam's `head` returns and `put` stores: a metadata bag plus
+ * the byte count and the two headers. `metadata` is a bag rather than a
+ * `{sha256}` shape because that is what `createPromoteS3` reads back from S3
+ * (`object.Metadata`), and the tests narrow it to `sha256` where they check it.
+ */
 type StoredObject = {
-  metadata: { sha256: string };
+  metadata: Record<string, string>;
   contentLength: number;
   contentType: string;
   cacheControl: string;
 };
 
+/**
+ * A seeded record carries only what the read-back under test needs — a `put`
+ * fills in the rest. Kept separate from StoredObject so the read-back type
+ * stays total: making every field optional would let a missing `contentType`
+ * typecheck and quietly weaken the assertions that read it.
+ */
+type SeededObject = Partial<StoredObject>;
+
 function fakePromoteS3(
-  seed: Record<string, Partial<StoredObject>> = {},
+  seed: Record<string, SeededObject> = {},
   timeline: string[] = [],
 ) {
-  const objects = new Map<string, StoredObject>(Object.entries(seed) as [string, StoredObject][]);
+  // A seed only has to satisfy the read-back that uses it; a put stores the
+  // full record. That is the one place the partial is laundered.
+  const objects = new Map<string, StoredObject>(
+    Object.entries(seed) as [string, StoredObject][],
+  );
   const calls: string[][] = [];
   const puts: StoredObject[] = [];
   return {
     objects,
     calls,
     puts,
-    async head(bucket, key) {
+    async head(bucket: string, key: string) {
       calls.push(["head", bucket, key]);
       timeline.push(`head ${key}`);
       return objects.get(key) ?? null;
     },
-    async put({ bucket, key, body, metadata, contentType, cacheControl }) {
+    async put({
+      bucket,
+      key,
+      body,
+      metadata,
+      contentType,
+      cacheControl,
+    }: {
+      bucket: string;
+      key: string;
+      body: Buffer;
+      metadata: Record<string, string>;
+      contentType: string;
+      cacheControl: string;
+    }) {
       calls.push(["put", bucket, key]);
       timeline.push(`put ${key}`);
       const record = { metadata, contentLength: body.length, contentType, cacheControl };
@@ -196,7 +231,7 @@ function fakeGh(
   timeline: string[] = [],
 ) {
   const calls: string[][] = [];
-  const exec = async (command, args) => {
+  const exec = async (command: string, args: string[]) => {
     calls.push([command, ...args]);
     if (command !== "gh") return { status: 1, stdout: "", stderr: "not gh" };
     if (args[0] === "pr" && args[1] === "view") {
@@ -237,7 +272,10 @@ function fakeGh(
 // and the two methods `runPromote` calls. `fakePromoteS3` additionally records
 // `puts`; the read-back-mismatch fake does not need it, so it is not required here.
 type PromoteS3 = {
-  objects: Map<string, { metadata: Record<string, string>; contentLength: number }>;
+  // `StoredObject`, or the narrower record a deliberately-minimal fake stores.
+  // Kept as a union so StoredObject stays total: the read-back assertions that
+  // read `contentType` still fail to compile if the map stops carrying it.
+  objects: Map<string, StoredObject | { metadata: Record<string, string>; contentLength: number }>;
   calls: unknown[][];
   head: (bucket: string, key: string) => Promise<unknown>;
   // The exact `{bucket, key, body, contentType, cacheControl, metadata}` argument
@@ -263,7 +301,7 @@ function deps(overrides: {
     s3: overrides.s3 ?? fakePromoteS3(),
     exec: overrides.exec ?? fakeGh(),
     env: ENV,
-    log: (line) => logs.push(line),
+    log: (line: string) => logs.push(line),
   };
 }
 

@@ -116,11 +116,17 @@ test("shipmentsFromProdigiOrder caps the list and every field", () => {
   }));
   const out = shipmentsFromProdigiOrder({ shipments: many });
   assert.ok(out.length <= 20, `expected the cap to hold, got ${out.length}`);
-  for (const field of ["carrier", "trackingUrl", "trackingNumber", "status"]) {
-    assert.ok(
-      out[0]![field].length <= 300,
-      `${field} must be clipped, was ${out[0]![field].length}`,
-    );
+  // The four fields the clip covers. Naming them as keys of the shipment
+  // rather than indexing by a loop variable is what lets the length check
+  // stay typed — a bare `field` string cannot index OrderShipment.
+  const first = out[0]!;
+  for (const [field, value] of [
+    ["carrier", first.carrier],
+    ["trackingUrl", first.trackingUrl],
+    ["trackingNumber", first.trackingNumber],
+    ["status", first.status],
+  ] as const) {
+    assert.ok(value.length <= 300, `${field} must be clipped, was ${value.length}`);
   }
 });
 
