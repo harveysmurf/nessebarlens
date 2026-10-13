@@ -61,7 +61,6 @@ test("all present and matching is a pass", async () => {
   const failures = await verifyMasters({
     photos: [PHOTO({ slug: "dawn" }), PHOTO({ slug: "dusk", masterSha256: SHA_B })],
     s3,
-    allowlist: new Set(),
   });
   assert.deepEqual(failures, []);
   assert.deepEqual(s3.calls, [
@@ -87,7 +86,6 @@ test("one missing is reported and the others are still checked", async () => {
       PHOTO({ slug: "noon" }),
     ],
     s3,
-    allowlist: new Set(),
   });
   assert.deepEqual(failures, [`dusk: missing from ${MASTERS_BUCKET_NAME}`]);
   // dawn and noon were checked too, not short-circuited by the failure.
@@ -99,7 +97,6 @@ test("an unpublished photo is not checked", async () => {
   const failures = await verifyMasters({
     photos: [PHOTO({ slug: "draft", published: false, masterSha256: undefined })],
     s3,
-    allowlist: new Set(),
   });
   assert.deepEqual(failures, []);
   assert.deepEqual(s3.calls, []);
@@ -110,7 +107,6 @@ test("a published photo without master_sha256 fails", async () => {
   const failures = await verifyMasters({
     photos: [PHOTO({ slug: "dawn", masterSha256: undefined })],
     s3,
-    allowlist: new Set(),
   });
   assert.deepEqual(failures, ["dawn: no master_sha256 in the catalog"]);
   assert.deepEqual(s3.calls, []);

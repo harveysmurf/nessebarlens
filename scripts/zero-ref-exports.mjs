@@ -305,6 +305,12 @@ export function formatReport(findings) {
   return lines.join("\n");
 }
 
+/**
+ * @param {string[]} [argv]
+ * @param {string} [base]
+ * @param {(text: string) => void} [write]
+ * @returns {number}
+ */
 export function main(
   argv = process.argv.slice(2),
   base = root,

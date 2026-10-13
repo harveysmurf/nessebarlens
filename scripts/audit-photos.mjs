@@ -136,9 +136,31 @@ export function readCatalogEntries(photosDir) {
 }
 
 /**
+ * A `{ key, size }` object from a bucket `list()`.
+ * @typedef {{ key: string, size: number }} BucketObject
+ */
+
+/**
+ * The catalog side of the comparison, as `readCatalogEntries` returns it.
+ * @typedef {{
+ *   slug: string,
+ *   published?: boolean,
+ *   imageHash?: string | null,
+ *   masterSha256?: string,
+ * }} CatalogEntry
+ */
+
+/**
  * Finds every divergence between the catalog and the bucket listings. Pure:
  * the three `*Objects` arguments are `{ key, size }` arrays from `list()`.
  * Findings are sorted so two runs print the same report.
+ *
+ * @param {{
+ *   catalog?: CatalogEntry[],
+ *   webObjects?: BucketObject[],
+ *   stagingObjects?: BucketObject[],
+ *   mastersObjects?: BucketObject[],
+ * }} [input]
  */
 export function auditFindings({
   catalog = [],

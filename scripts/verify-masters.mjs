@@ -46,7 +46,32 @@ import { PHOTOS } from "../src/generated/catalog";
 /** The S3 user-metadata key that carries the master's SHA-256. */
 const MASTER_METADATA_KEY = "sha256";
 
-/** Case-insensitive read of one S3 user-metadata value; HTTP lowercases keys. */
+/**
+ * The fields this gate reads off a photo — a structural subset of the compiled
+ * catalog's `PhotoFile`. Declared here so a test can drive the gate with only
+ * the handful of fields it actually checks.
+ * @typedef {{
+ *   slug: string,
+ *   published?: boolean,
+ *   masterSha256?: string,
+ *   printAsset?: { sha256: string, md5: string },
+ * }} MasterPhoto
+ */
+
+/**
+ * The read-only object reader the gate is given.
+ * @typedef {{
+ *   head: (bucket: string, key: string) =>
+ *     Promise<{ metadata?: Record<string, unknown>, contentLength?: number } | null>,
+ * }} MastersS3
+ */
+
+/**
+ * Case-insensitive read of one S3 user-metadata value; HTTP lowercases keys.
+ * @param {Record<string, unknown> | null | undefined} metadata
+ * @param {string} name
+ * @returns {string | undefined}
+ */
 export function metadataValue(metadata, name) {
   if (!metadata) return undefined;
   for (const [key, value] of Object.entries(metadata)) {
@@ -59,6 +84,9 @@ export function metadataValue(metadata, name) {
  * Checks every published photo against the production masters bucket. Returns
  * an array of human-readable failures (`{slug}: missing`) — empty means the
  * catalog may ship. Every photo is checked so one run reports all problems.
+ *
+ * @param {{ photos?: MasterPhoto[], s3: MastersS3 }} [input]
+ * @returns {Promise<string[]>}
  */
 export async function verifyMasters({
   photos = PHOTOS,
@@ -141,6 +169,8 @@ export async function verifyMasters({
 /**
  * A read-only S3 client whose one bucket is the production masters bucket. A
  * call for any other bucket throws before a request is made.
+ * @param {Record<string, string | undefined>} env
+ * @returns {MastersS3}
  */
 export function createMastersS3(env) {
   const client = new S3Client({
@@ -177,6 +207,10 @@ export function createMastersS3(env) {
   };
 }
 
+/**
+ * @param {string[]} names
+ * @param {Record<string, string | undefined>} env
+ */
 function requiredEnv(names, env) {
   const missing = names.filter((name) => !env[name]);
   if (missing.length > 0) {
@@ -187,11 +221,20 @@ function requiredEnv(names, env) {
   }
 }
 
-/** The published photos, every one of which now needs a master checked. */
+/**
+ * The published photos, every one of which now needs a master checked.
+ * @param {MasterPhoto[]} [photos]
+ * @returns {MasterPhoto[]}
+ */
 export function photosToVerify(photos = PHOTOS) {
   return photos.filter((photo) => photo.published !== false);
 }
 
+/**
+ * @param {Record<string, string | undefined>} [env]
+ * @param {MasterPhoto[]} [photos]
+ * @returns {Promise<number>}
+ */
 export async function main(env = process.env, photos = PHOTOS) {
   // An empty catalog (no published photos) has nothing to read, so the
   // read-only token is not required; the gate is a clean no-op rather than a
