@@ -830,8 +830,10 @@ test("download waits until ORDERS has a paid digital session, then streams MASTE
         body: new ReadableStream(),
         size: 12,
         // The #109 shape: R2 carries the type under `httpMetadata`, never at
-        // the top level. resolveDownload reads `object.httpMetadata?.contentType`.
-        httpMetadata: { contentType: "image/jpeg" },
+        // the top level. `image/png` is a sentinel: it differs from the read's
+        // `|| "image/jpeg"` fallback, so a regression to a top-level read would
+        // fail instead of agreeing with the default.
+        httpMetadata: { contentType: "image/png" },
       };
     },
   };
@@ -848,7 +850,7 @@ test("download waits until ORDERS has a paid digital session, then streams MASTE
   assert.equal(streamed.kind, "stream");
   if (streamed.kind === "stream") {
     assert.equal(streamed.filename, `${SAMPLE_SLUG}.jpg`);
-    assert.equal(streamed.contentType, "image/jpeg");
+    assert.equal(streamed.contentType, "image/png");
   }
   assert.deepEqual(calls, [SAMPLE_MASTER_KEY]);
 
