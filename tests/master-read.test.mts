@@ -72,7 +72,7 @@ test("MasterObject is derived from R2ObjectBody, not re-spelled by hand", () => 
   // have. This source check is what catches it: the shape is required to name
   // its fields off R2ObjectBody, and no reader is allowed to ask an R2 object
   // for a top-level `contentType` again. (tsconfig excludes tests/, so a
-  // @ts-expect-error here would never be checked — the source is the guard.)
+  // a ts-expect-error here would never be checked — the source is the guard.)
   const masterKey = fs.readFileSync(
     path.join(root, "src/domain/catalog/master-key.ts"),
     "utf8",
