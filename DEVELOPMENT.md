@@ -1752,6 +1752,18 @@ noise. Keep the `!` only where nothing else narrows.
 The convention the team agreed: **do not annotate a parameter you have not
 read the body of.** When in doubt, delete the annotation and re-read.
 
+It has a corollary for the counts, because it is how a wrong number gets
+published: a bulk edit that reports "7 sites fixed" has counted the lines it
+*changed*, not the lines that *exist*. The seventh was the eighth, already
+annotated before the edit ran. Check the total against the file, not against
+what your own script says it touched — the same way the compiler agreeing with
+a wrong annotation proves nothing.
+
+Two numbers from this work were wrong in exactly this way and had to be
+retracted: an error count measured with a flag the committed config does not
+set, and a site count taken from a script's own report. Both read as
+confident and both were checkable in one command.
+
 ---
 
 ## 9. Release checklist
