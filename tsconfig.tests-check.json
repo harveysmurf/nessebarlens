@@ -1,0 +1,32 @@
+{
+  // The `tsconfig.json` gate covers `src/`. This one covers the test suite, which
+  // node erases at runtime: `node --experimental-strip-types` removes annotations
+  // without checking them, so a wrong type in `tests/` is invisible until the day
+  // someone runs `tsc` — and nothing ran `tsc` over `tests/`.
+  //
+  // `include` is restated rather than inherited because `extends` replaces arrays
+  // outright. It must list `"**/*.mts"` explicitly: `"**/*.ts"` does not match
+  // `.mts`, so relying on the parent list compiles zero test files and the step
+  // goes green while checking nothing. `tests/tsconfig-gate.test.mts` is the
+  // negative control for exactly that.
+  //
+  // `allowImportingTsExtensions` is required for the same reason: every test
+  // imports production modules by explicit `.ts` specifier (`../src/.../sku-map.ts`),
+  // which node resolves and tsc rejects without it.
+  //
+  // `worker.ts` stays excluded, for the reason documented in `tsconfig.json`: its
+  // only import is `.open-next/worker.js`, a build artifact.
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "allowImportingTsExtensions": true
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    "**/*.mts",
+    ".next/types/**/*.ts",
+    ".next/dev/types/**/*.ts"
+  ],
+  "exclude": ["node_modules", "worker.ts"]
+}
