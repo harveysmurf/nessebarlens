@@ -829,7 +829,9 @@ test("download waits until ORDERS has a paid digital session, then streams MASTE
       return {
         body: new ReadableStream(),
         size: 12,
-        contentType: "image/jpeg",
+        // The #109 shape: R2 carries the type under `httpMetadata`, never at
+        // the top level. resolveDownload reads `object.httpMetadata?.contentType`.
+        httpMetadata: { contentType: "image/jpeg" },
       };
     },
   };

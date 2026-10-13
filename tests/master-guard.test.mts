@@ -153,7 +153,7 @@ test("the download filename is gated by the shared slug grammar, not a private c
   if (decided.action !== "write") return;
   const bytes = {
     async get() {
-      return { body: new ReadableStream(), size: 7 };
+      return { body: new ReadableStream(), size: 7, httpMetadata: {} };
     },
   };
   for (const slug of ["dawn", "harbor-mist", "Not A Slug", "dawn_1", "", "dawn.jpg"]) {

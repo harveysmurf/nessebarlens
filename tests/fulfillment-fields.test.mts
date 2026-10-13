@@ -60,7 +60,6 @@ function unfulfilled(overrides: Record<string, unknown> = {}) {
 
 const SHIPPING: StripeShippingDetails = {
   name: "Test Buyer",
-  phone: null,
   address: {
     line1: "1 Harbor St",
     line2: null,

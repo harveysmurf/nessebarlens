@@ -189,7 +189,9 @@ test("#311 the catalog schema rejects a malformed or mismatched orientation", ()
     ok: false,
     reason: "unknown-orientation",
   });
-  assert.deepEqual(parseMasterFacts({ width: 3600, height: 2400 }), {
+  // An absent orientation is the raw shape a YAML write can produce; the field
+  // is `unknown`, so `undefined` is the honest value, not a missing key.
+  assert.deepEqual(parseMasterFacts({ width: 3600, height: 2400, orientation: undefined }), {
     ok: false,
     reason: "unknown-orientation",
   });
