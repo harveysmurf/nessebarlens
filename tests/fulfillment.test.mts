@@ -1244,8 +1244,11 @@ test("resolveDownload is a gate, and every rejection path is distinguishable", a
     ).record;
     assert.equal(base.format, "digital");
     // A `Partial<OrderRecord>` spread widens the discriminated union, which TS
-    // cannot prove stays an OrderRecord even though each field is validated
-    // here; the merge is of two valid records, so the cast is exact.
+    // cannot prove stays an OrderRecord. The cast asserts the object's *shape*,
+    // not that the fields agree: callers pass `patch` both to build valid
+    // records and to build deliberately cross-field-invalid ones (case 1 below
+    // lays a physical format over the digital base), and `resolveDownload` is
+    // the thing that must refuse those.
     return { ...base, ...patch } as OrderRecord;
   };
   // httpMetadata is where R2 puts the content type (#109): a hand-written
