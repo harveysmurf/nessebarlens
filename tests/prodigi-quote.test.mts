@@ -10,7 +10,8 @@ import {
   PRODIGI_SANDBOX_API_BASE,
   readProdigiConfig,
 } from "../src/infrastructure/prodigi/prodigi-config.ts";
-import { quotePhysical, type PhysicalQuote } from "../src/infrastructure/prodigi/prodigi-quote.ts";
+import { quotePhysical } from "../src/infrastructure/prodigi/prodigi-quote.ts";
+import type { PhysicalQuote } from "../src/domain/ordering/print-provider.ts";
 
 test("merchandiseFromUnitCost applies PRODIGI_MARGIN and rounds to cents", () => {
   assert.equal(PRODIGI_MARGIN, 1.2);
@@ -23,8 +24,10 @@ test("readProdigiConfig requires an explicit allowed host", () => {
   const prev = process.env.PRODIGI_API_BASE;
   try {
     delete process.env.PRODIGI_API_BASE;
-    assert.equal(readProdigiConfig({}).ok, false);
-    assert.match(readProdigiConfig({}).message, /PRODIGI_API_BASE must be/);
+    const noBase = readProdigiConfig({});
+    assert.equal(noBase.ok, false);
+    assert.ok(!noBase.ok);
+    assert.match(noBase.message, /PRODIGI_API_BASE must be/);
     process.env.PRODIGI_API_BASE = "https://evil.example";
     assert.equal(readProdigiConfig({}).ok, false);
     process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
@@ -46,14 +49,22 @@ test("readProdigiConfig pairs to the explicit base (no key sniffing for host)", 
     process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
     process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
     process.env.PRODIGI_API_KEY = "live-key";
-    assert.equal(readProdigiConfig({}).key, "sandbox-key");
+    const sandbox = readProdigiConfig({});
+    assert.equal(sandbox.ok, true);
+    assert.ok(sandbox.ok);
+    assert.equal(sandbox.key, "sandbox-key");
 
     process.env.PRODIGI_API_BASE = PRODIGI_LIVE_API_BASE;
-    assert.equal(readProdigiConfig({}).key, "live-key");
+    const live = readProdigiConfig({});
+    assert.equal(live.ok, true);
+    assert.ok(live.ok);
+    assert.equal(live.key, "live-key");
 
     delete process.env.PRODIGI_API_KEY;
-    assert.equal(readProdigiConfig({}).ok, false);
-    assert.match(readProdigiConfig({}).message, /PRODIGI_API_KEY is not set/);
+    const noKey = readProdigiConfig({});
+    assert.equal(noKey.ok, false);
+    assert.ok(!noKey.ok);
+    assert.match(noKey.message, /PRODIGI_API_KEY is not set/);
   } finally {
     if (prevBase === undefined) delete process.env.PRODIGI_API_BASE;
     else process.env.PRODIGI_API_BASE = prevBase;
@@ -132,7 +143,7 @@ test("quotePhysical margins unitCost and passes shipping through", async () => {
 
 test("quotePhysical framed includes color attribute and destination override", async () => {
   const originalFetch = globalThis.fetch;
-  let seenBody: { destinationCountryCode?: string; items?: unknown[] };
+  let seenBody: { destinationCountryCode?: string; items?: unknown[] } = {};
 
   globalThis.fetch = (async (_input, init) => {
     seenBody = JSON.parse(String(init?.body));
@@ -157,6 +168,9 @@ test("quotePhysical framed includes color attribute and destination override", a
       size: "50x70",
       frame: "brown",
       mount: null,
+      // Framed carries no paper, and quotePhysical documents the field as
+      // "required and null for the formats without one" — so null, not absent.
+      paper: null,
       destinationCountryCode: "BG",
     });
     assert.equal(result.ok, true);

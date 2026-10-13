@@ -122,6 +122,19 @@ async function captureErrors(body: () => Promise<void>): Promise<string[]> {
   return lines;
 }
 
+/**
+ * The Prodigi cancel port, for the cases that must never reach it: a digital
+ * order, a corrupt record, or no order at all. `revokeOrderByPaymentIntent`
+ * only cancels a physical order that carries a Prodigi id, so none of these
+ * tests calls this. It throws rather than returning ok, because a quiet
+ * success would let a regression cancel Prodigi for a digital refund with no
+ * assertion noticing.
+ */
+const cancelMustNotRun: CancelProdigiOrder = async () => {
+  throw new Error("cancel must not run for a digital, corrupt, or absent order");
+};
+
+
 test("a full refund revokes the download", async () => {
   const store = memoryKv({ [SESSION]: digitalPaidRecord() });
   const result = await revokeOrderByPaymentIntent({
@@ -130,6 +143,7 @@ test("a full refund revokes the download", async () => {
     paymentIntent: INTENT,
     now: NOW,
     stripe: lookup(),
+    cancel: cancelMustNotRun,
   });
 
   assert.equal(result.httpStatus, 200);
@@ -149,6 +163,7 @@ test("revocation is terminal at the download route, not just in the record", asy
     paymentIntent: INTENT,
     now: NOW,
     stripe: lookup(),
+    cancel: cancelMustNotRun,
   });
   const order = parseOrderRecord((await store.getOrder(SESSION))!);
   assert.ok(order);
@@ -166,6 +181,7 @@ test("a dispute revokes the download", async () => {
     paymentIntent: INTENT,
     now: NOW,
     stripe: lookup(),
+    cancel: cancelMustNotRun,
   });
   assert.equal(result.httpStatus, 200);
   assert.equal(
@@ -186,6 +202,7 @@ test("a revoked record stays parseable and still refuses to download", async () 
     paymentIntent: INTENT,
     now: NOW,
     stripe: lookup(),
+    cancel: cancelMustNotRun,
   });
   const raw = (await store.getOrder(SESSION))!;
   assert.ok(parseOrderRecord(raw));
@@ -206,6 +223,7 @@ test("a lookup failure answers 5xx so Stripe redelivers, and writes nothing", as
           throw new Error("stripe 503");
         },
       }),
+      cancel: cancelMustNotRun,
     }).then(async (result) => {
       assert.equal(result.httpStatus, 500);
       // Nothing written: we could not identify the order, so writing would
@@ -225,6 +243,7 @@ test("an unknown payment intent and an unknown order are both 200 no-ops", async
     paymentIntent: INTENT,
     now: NOW,
     stripe: lookup({ findSessionIdByPaymentIntent: async () => null }),
+    cancel: cancelMustNotRun,
   });
   assert.equal(noSession.httpStatus, 200);
   assert.equal(noSession.body.ignored, "unknown-payment-intent");
@@ -235,6 +254,7 @@ test("an unknown payment intent and an unknown order are both 200 no-ops", async
     paymentIntent: INTENT,
     now: NOW,
     stripe: lookup(),
+    cancel: cancelMustNotRun,
   });
   assert.equal(noOrder.httpStatus, 200);
   assert.equal(noOrder.body.ignored, "unknown-order");
@@ -248,6 +268,7 @@ test("an event with no payment intent is ignored, not guessed at", async () => {
     paymentIntent: null,
     now: NOW,
     stripe: lookup(),
+    cancel: cancelMustNotRun,
   });
   assert.equal(result.httpStatus, 200);
   assert.equal(result.body.ignored, "no-payment-intent");
@@ -262,6 +283,7 @@ test("a second refund is a duplicate, not a second write", async () => {
     paymentIntent: INTENT,
     now: NOW,
     stripe: lookup(),
+    cancel: cancelMustNotRun,
   });
   const second = await revokeOrderByPaymentIntent({
     store,
@@ -269,6 +291,7 @@ test("a second refund is a duplicate, not a second write", async () => {
     paymentIntent: INTENT,
     now: NOW,
     stripe: lookup(),
+    cancel: cancelMustNotRun,
   });
   assert.equal(first.httpStatus, 200);
   assert.equal(second.httpStatus, 200);
@@ -286,6 +309,7 @@ test("a corrupt record is logged and left alone", async () => {
       paymentIntent: INTENT,
       now: NOW,
       stripe: lookup(),
+      cancel: cancelMustNotRun,
     }).then((result) => {
       assert.equal(result.body.ignored, "corrupt-order");
     }),
@@ -531,6 +555,7 @@ test("a lookup that throws something without a message still logs", async () => 
           throw "plain string failure";
         },
       }),
+      cancel: cancelMustNotRun,
     }).then((result) => {
       assert.equal(result.httpStatus, 500);
     }),
