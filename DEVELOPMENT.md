@@ -1715,6 +1715,30 @@ Owners: `master-key.ts` (slug, master key, MASTERS storage shape),
 AST — a regex in a string or a comment is not mistaken for a declaration. It
 fails on any regex literal or object shape that appears in two modules.
 
+### Read the body before you annotate the signature
+
+When `tsc` asks for a type on a function parameter, the annotation has to come
+from what the function *does*, not from what its call sites pass. The
+`tests/` typecheck gate (added in #375) makes this easy to get wrong, because
+the fix is always a one-line annotation and the compiler stops complaining the
+moment the annotation is wrong rather than right.
+
+`d1Row(record: Record<string, unknown>)` annotated a function whose body is
+`JSON.parse(record)`. It typechecked, it silenced twelve errors, and it would
+have accepted a call site passing an object into a parse that throws. A wrong
+annotation is worse than an untyped one: the untyped version still reports the
+next error, the wrong one launders a real defect into a green gate.
+
+The same applies to `assert.equal(x in y, true)`. It asserts the narrowing but
+does not perform it, so the line after it is still reading a property off a
+union. `assert.ok(x in y)` narrows and asserts the same thing — as does
+`assert.ok(y.tag === "...")` and not `assert.notEqual(y.tag, "...")`.
+
+The convention the team agreed: **do not annotate a parameter you have not
+read the body of.** When in doubt, delete the annotation and re-read.
+
+---
+
 The guard only sees **syntactic** duplicates. It cannot see two grammars that
 mean the same thing but are written differently — `/^https:\/\//i` next to
 `URL.canParse(x)` is one rule wearing two coats, and the guard stays green. That
