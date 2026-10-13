@@ -50,6 +50,8 @@ function paidPhysical(overrides: Partial<OrderRecord> = {}): OrderRecord {
     format: "giclee",
     size: "30x40",
     frame: "",
+    mount: "",
+    paper: "",
     quoteEur: 15,
     amountTotal: 1999,
     currency: "eur",
@@ -65,7 +67,7 @@ function paidPhysical(overrides: Partial<OrderRecord> = {}): OrderRecord {
     shipments: [],
     emailsSent: [],
     ...overrides,
-  };
+  } as OrderRecord;
 }
 
 function cloudEvent(overrides: Record<string, unknown> = {}): string {
@@ -236,8 +238,10 @@ test("stage + shipments persist from the fetch, not the hostile callback body", 
     ]),
   });
   const record = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  // Assert the hostile value is not stored before the equality narrows
+  // `prodigiStage` to "Complete"; otherwise the comparison has no overlap.
+  assert.notEqual(record.prodigiStage, "HostileStageFromCallback");
   assert.equal(record.prodigiStage, "Complete");
-  assert.equal(record.prodigiStage !== "HostileStageFromCallback", true);
   assert.equal(record.shipments[0]?.trackingNumber, "TRACK-FROM-FETCH");
 });
 

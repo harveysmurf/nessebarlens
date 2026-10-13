@@ -104,7 +104,7 @@ const DEFAULTS = {
  * them would read "unavailable" instead of the state under test.
  */
 function record(over: Record<string, unknown> = {}) {
-  const merged = { ...DEFAULTS, ...over };
+  const merged: Record<string, unknown> = { ...DEFAULTS, ...over };
   const physical = merged.format !== "digital";
   // Revoking is defined as dropping the file: a revoked record must name no
   // master key at all. Left to the defaults, a `status: "refunded"` override

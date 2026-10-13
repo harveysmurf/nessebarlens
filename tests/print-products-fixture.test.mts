@@ -19,7 +19,7 @@ import {
   printAreaIn,
   type PrintProductEntry,
 } from "../src/domain/pricing/print-products.ts";
-import { resolveSku, type PhysicalFormat } from "../src/domain/pricing/sku-map.ts";
+import { isPrintSize, resolveSku, type PhysicalFormat } from "../src/domain/pricing/sku-map.ts";
 import { SHIP_TO_COUNTRY_CODES } from "../src/domain/pricing/ship-to-countries.ts";
 import { PRODIGI_SANDBOX_API_BASE } from "../src/infrastructure/prodigi/prodigi-config.ts";
 import { quotePhysical } from "../src/infrastructure/prodigi/prodigi-quote.ts";
@@ -243,6 +243,7 @@ async function quoteItems(product: PrintProductEntry) {
     );
   }) as typeof fetch;
   try {
+    assert.ok(isPrintSize(product.size), `${product.sku} has a known size`);
     const result = await quotePhysical({
       format: product.format,
       size: product.size,

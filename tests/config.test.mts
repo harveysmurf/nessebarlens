@@ -281,10 +281,9 @@ test("usablePrintAssetSecret rejects whitespace and short keys, and trims", () =
   assert.equal(usablePrintAssetSecret("   "), null);
   assert.equal(usablePrintAssetSecret(null), null);
   assert.equal(usablePrintAssetSecret(undefined), null);
-  assert.equal(
-    usablePrintAssetSecret("x".repeat(PRINT_ASSET_SECRET_MIN_LENGTH)).length,
-    PRINT_ASSET_SECRET_MIN_LENGTH,
-  );
+  const atFloor = usablePrintAssetSecret("x".repeat(PRINT_ASSET_SECRET_MIN_LENGTH));
+  assert.ok(atFloor, "a secret at the length floor is usable");
+  assert.equal(atFloor.length, PRINT_ASSET_SECRET_MIN_LENGTH);
   assert.equal(
     printAssetSecret({ PRINT_ASSET_HMAC_SECRET: ` ${SECRET} ` }),
     SECRET,

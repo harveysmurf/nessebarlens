@@ -110,7 +110,14 @@ test("the gate does not relax the app's strictness", () => {
   // so asserting on the raw field would not notice an explicit relaxation.
   const { options } = gateProgram();
   assert.equal(options.strict, true);
-  assert.equal(ts.getStrictOptionValue(options, "noImplicitAny"), true);
+  // `getStrictOptionValue` is a real TypeScript helper but not in its public
+  // types, so name it through a narrow cast rather than reaching for `any`.
+  const getStrictOptionValue = (
+    ts as unknown as {
+      getStrictOptionValue(o: ts.CompilerOptions, n: "noImplicitAny"): boolean;
+    }
+  ).getStrictOptionValue;
+  assert.equal(getStrictOptionValue(options, "noImplicitAny"), true);
 });
 
 test("worker.ts stays excluded, and nothing else is", () => {

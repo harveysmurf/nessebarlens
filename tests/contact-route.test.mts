@@ -64,7 +64,7 @@ const VALID = {
   turnstileToken: "tok_123",
 };
 
-let snapshot: { bindings: unknown; fetch: typeof globalThis.fetch };
+let snapshot: { bindings: Fake | undefined; fetch: typeof globalThis.fetch };
 
 beforeEach(() => {
   snapshot = { bindings: globals.__buzzBindings, fetch: globalThis.fetch };

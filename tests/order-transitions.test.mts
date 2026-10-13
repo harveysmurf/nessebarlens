@@ -25,6 +25,8 @@ const PENDING: OrderRecord = {
   format: "giclee",
   size: "30x40",
   frame: "",
+  mount: "",
+  paper: "",
   recipient: {
     name: "Test Buyer",
     line1: "1 Harbor St",

@@ -82,7 +82,7 @@ process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
 process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key-for-the-route-test";
 
 let currentTest = "unknown";
-let snapshot: { bindings: unknown; fetch: typeof globalThis.fetch; env: NodeJS.ProcessEnv };
+let snapshot: { bindings: Fake | undefined; fetch: typeof globalThis.fetch; env: NodeJS.ProcessEnv };
 
 beforeEach((t) => {
   currentTest = t.name;

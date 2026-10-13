@@ -20,6 +20,11 @@ const okSigner: AssetUrlSigner = {
   verify: async () => ({ ok: true, slug: SAMPLE_SLUG }),
 };
 
+/** The print path must not run in a case that asserts it never fires. */
+const mustNotCreate: CreateProdigiOrder = async () => {
+  throw new Error("createOrder must not run in this case");
+};
+
 const NOW = Date.parse("2026-10-03T00:00:00.000Z");
 
 // The HMAC /api/print-asset shape a fulfilled physical order carries after
@@ -57,6 +62,8 @@ function retryable(sessionId: string, createdAt: string): OrderRecord {
     format: "giclee",
     size: "30x40",
     frame: "",
+    mount: "",
+    paper: "",
     quoteEur: 15,
     amountTotal: 1999,
     currency: "eur",
@@ -98,6 +105,7 @@ test("reconcile is a no-op on an empty store", async () => {
     stripe,
     prodigiKeyConfigured: true,
     assetUrlSigner: okSigner,
+    createOrder: mustNotCreate,
     siteUrl: SITE_URL,
     nowMs: NOW,
   });
@@ -237,7 +245,7 @@ test("a retry whose claim is lost is counted as claimedByOther, not as a retry",
     siteUrl: SITE_URL,
     createOrder: async () => {
       creates += 1;
-      return { ok: true, value: { orderId: "ord_x", stage: null, assetUrl: null } };
+      return { ok: true, value: { orderId: "ord_x", stage: null, assetUrl: ASSET_URL } };
     },
     nowMs: NOW,
   });
@@ -288,6 +296,7 @@ test("a run with no arguments uses the shipped defaults, not the caller's", asyn
       },
       prodigiKeyConfigured: false,
       assetUrlSigner: okSigner,
+      createOrder: mustNotCreate,
       siteUrl: SITE_URL,
     });
     assert.equal(summary.checked, 1);

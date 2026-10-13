@@ -318,12 +318,16 @@ const gicleeSmall: PrintSpecification = {
   format: "giclee",
   size: "30x40",
   frame: null,
+  mount: null,
+  paper: null,
 };
 const gicleeLarge: PrintSpecification = {
   kind: "physical",
   format: "giclee",
   size: "70x100",
   frame: null,
+  mount: null,
+  paper: null,
 };
 
 test("offers always includes digital", () => {

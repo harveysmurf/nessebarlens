@@ -43,7 +43,9 @@ function evaluateConfig(overrides: Record<string, string | undefined>) {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), "next-config-probe-"));
   const record = path.join(dir, "init.ndjson");
   try {
-    const env = {
+    // A child-process env is a string bag, not the narrowed Next type: NODE_ENV
+    // and CI are deleted below to prove the init runs without them.
+    const env: Record<string, string | undefined> = {
       ...process.env,
       // The production branch of next.config.ts throws without this, before it
       // ever reaches the init call, which would hide the behaviour under test.
@@ -57,7 +59,9 @@ function evaluateConfig(overrides: Record<string, string | undefined>) {
     const result = spawnSync(process.execPath, [probe], {
       cwd: root,
       encoding: "utf8",
-      env,
+      // A child env is a plain string bag; Next's narrowed ProcessEnv type
+      // (which requires NODE_ENV) is not what a spawned process gets.
+      env: env as NodeJS.ProcessEnv,
     });
     const calls = fs.existsSync(record)
       ? fs

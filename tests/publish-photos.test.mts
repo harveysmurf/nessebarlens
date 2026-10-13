@@ -70,7 +70,7 @@ function makeProject() {
 
 async function writeMaster(
   file: string,
-  { width = 3600, height = 2400, exif = false, orientation }: { width?: number; height?: number; exif?: boolean; orientation?: string } = {},
+  { width = 3600, height = 2400, exif = false, orientation }: { width?: number; height?: number; exif?: boolean; orientation?: number } = {},
 ) {
   let pipeline = sharp({
     create: { width, height, channels: 3, background: { r: 128, g: 64, b: 32 } },
@@ -86,7 +86,7 @@ async function writeMaster(
  */
 async function writeCornerMaster(
   file: string,
-  { width = 3600, height = 2400, orientation }: { width?: number; height?: number; orientation?: string } = {},
+  { width = 3600, height = 2400, orientation }: { width?: number; height?: number; orientation?: number } = {},
 ) {
   const red = await sharp({
     create: { width: 400, height: 400, channels: 3, background: { r: 255, g: 0, b: 0 } },
@@ -526,10 +526,14 @@ test("--apply uploads 8 web objects + a staging master + a print asset", async (
     assert.equal(existsSync(path.join(dir, "public/placeholders")), false);
 
     // Git: branch from origin/main, add content/photos, one commit.
-    assert.ok(d.exec.calls.some((c) => c[0] === "git" && c[1] === "checkout" && c.includes(result.branch)));
+    const branch = result.branch ?? "";
+    assert.ok(d.exec.calls.some((c) => c[0] === "git" && c[1] === "checkout" && c.includes(branch)));
     assert.ok(d.exec.calls.some((c) => c.join(" ") === "git add -- content/photos"));
     assert.ok(d.exec.calls.some((c) => c[0] === "gh" && c[1] === "pr"));
-    assert.equal(result.branch, "photos/2026-10-06-dawn");
+    assert.equal(branch, "photos/2026-10-06-dawn");
+    // `prUrl` lives only on the apply-success arm; the dry-run arm also has
+    // status 0, so `in` is what narrows the union.
+    assert.ok("prUrl" in result, "a successful apply returns the PR url");
     assert.equal(result.prUrl, "https://github.com/harveysmurf/nessebarlens/pull/999");
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -899,6 +903,7 @@ test("syncCatalogFacts leaves an in-sync photo untouched", async () => {
     });
     assert.equal(headCalls, 1);
     assert.equal(measures.status, 0);
+    assert.ok(measures.measured, "a successful sync reports its measured facts");
     assert.equal(measures.measured.length, 0);
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -934,6 +939,7 @@ test("syncCatalogFacts refuses on a sha mismatch and writes nothing", async () =
       },
     );
     assert.equal(measures.status, 1);
+    assert.ok(measures.fatals, "a refused sync reports its fatal");
     assert.match(measures.fatals[0], /dawn.*sha256/);
     assert.equal(written, false);
   } finally {
@@ -980,6 +986,7 @@ test("syncCatalogFacts refuses before writing when a later photo mismatches (#29
       },
     );
     assert.equal(measures.status, 1);
+    assert.ok(measures.fatals, "a refused sync reports its fatal");
     assert.match(measures.fatals[0], /dusk.*sha256/);
     assert.equal(written, false, "no YAML written when any photo mismatches");
     assert.equal(downloaded, false, "no master downloaded when a mismatch exists");
@@ -1017,6 +1024,7 @@ test("syncCatalogFacts warns on unpromoted masters and continues", async () => {
       },
     );
     assert.equal(measures.status, 0);
+    assert.ok(measures.measured, "a successful sync reports its measured facts");
     assert.equal(measures.measured.length, 0);
     assert.ok(logLines.some((l) => l.includes("dawn") && l.includes("not yet promoted")));
   } finally {
@@ -1046,7 +1054,7 @@ test("syncCatalogFacts integration: real sharp JPEG measured from a fake getObje
         return bytes;
       },
     };
-    let writtenText = null;
+    let writtenText: string | null = null;
     const measures = await syncCatalogFacts(
       { cwd: dir },
       {
@@ -1057,7 +1065,9 @@ test("syncCatalogFacts integration: real sharp JPEG measured from a fake getObje
       },
     );
     assert.equal(measures.status, 0);
+    assert.ok(measures.measured, "a successful sync reports its measured facts");
     assert.equal(measures.measured.length, 1);
+    assert.ok(writtenText, "a successful sync writes the YAML");
     assert.match(writtenText, /master_width: 3600/);
     assert.match(writtenText, /master_height: 2400/);
     assert.match(writtenText, /orientation: landscape/);

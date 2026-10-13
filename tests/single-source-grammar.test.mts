@@ -820,6 +820,8 @@ test("the pure half is importable with no bindings, KV or Prodigi available", as
           format: "giclee",
           size: "",
           frame: "",
+          mount: "",
+          paper: "",
           quoteEur: 15,
           amountTotal: 1500,
           currency: "eur",

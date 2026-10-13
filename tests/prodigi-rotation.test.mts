@@ -99,6 +99,8 @@ test(
       format: "giclee",
       size: "30x40",
       frame: null,
+      mount: null,
+      paper: null,
       recipient: RECIPIENT,
       assetUrl,
       assetMd5: "c".repeat(32),

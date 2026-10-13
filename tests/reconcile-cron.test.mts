@@ -102,12 +102,13 @@ test("a missing secret fails the tick instead of calling the route", async () =>
   // A call without the secret gets a 404 by design -- the route hides its own
   // existence from unauthenticated callers. In a log that is indistinguishable
   // from "nothing to reconcile", so the reconciler looks alive while it is dead.
-  for (const env of [
+  const missingSecretCases: Array<Record<string, string | undefined>> = [
     { ...tickEnv(), RECONCILE_SECRET: undefined },
     { ...tickEnv(), RECONCILE_SECRET: "" },
     { ...tickEnv(), RECONCILE_SECRET: "   " },
     { NEXT_PUBLIC_SITE_URL: "https://nessebarlens.com" },
-  ]) {
+  ];
+  for (const env of missingSecretCases) {
     const built = buildReconcileRequest(env);
     assert.equal(built.ok, false, `expected a refusal for ${JSON.stringify(env.RECONCILE_SECRET)}`);
     if (built.ok) continue;

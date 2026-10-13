@@ -63,6 +63,16 @@ const okSigner: AssetUrlSigner = {
   verify: async () => ({ ok: true, slug: SAMPLE_SLUG }),
 };
 
+/**
+ * The print path must never run for a digital/ignored order. `createOrder` is a
+ * required port (routes supply the adapter), so the shared digital fixture
+ * carries a throwing stub: a physical test passes its own, and any case that
+ * reaches Prodigi by mistake fails loudly rather than going quiet (#376).
+ */
+const mustNotCreate: CreateProdigiOrder = async () => {
+  throw new Error("createOrder must not run for a non-physical order");
+};
+
 function paidInput(overrides: Record<string, unknown> = {}) {
   return {
     sessionId: SESSION,
@@ -83,6 +93,7 @@ function paidInput(overrides: Record<string, unknown> = {}) {
     now: NOW,
     assetUrlSigner: okSigner,
     siteUrl: SITE_URL,
+    createOrder: mustNotCreate,
     ...overrides,
   };
 }
@@ -1232,7 +1243,10 @@ test("resolveDownload is a gate, and every rejection path is distinguishable", a
       decideFulfillment(paidInput()) as { action: "write"; record: OrderRecord }
     ).record;
     assert.equal(base.format, "digital");
-    return { ...base, ...patch };
+    // A `Partial<OrderRecord>` spread widens the discriminated union, which TS
+    // cannot prove stays an OrderRecord even though each field is validated
+    // here; the merge is of two valid records, so the cast is exact.
+    return { ...base, ...patch } as OrderRecord;
   };
   // httpMetadata is where R2 puts the content type (#109): a hand-written
   // `contentType` on the object is not a field R2 has, and reading one is a

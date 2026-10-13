@@ -26,12 +26,19 @@ const OFFER: PrintOffer = {
 };
 
 /** A framed expected selection, mount defaulting to the mounted product. */
-function framed(size: string, frame = DEFAULT_FRAME_FINISH, mount = DEFAULT_FRAMED_MOUNT) {
+function framed(
+  size: PrintSelection["size"],
+  frame = DEFAULT_FRAME_FINISH,
+  mount = DEFAULT_FRAMED_MOUNT,
+): PrintSelection {
   return { format: "framed", size, frame, mount, paper: DEFAULT_PRINT_PAPER };
 }
 
 /** A giclée expected selection, paper defaulting to Matte Art. */
-function giclee(size: string, paper = DEFAULT_PRINT_PAPER) {
+function giclee(
+  size: PrintSelection["size"],
+  paper = DEFAULT_PRINT_PAPER,
+): PrintSelection {
   return {
     format: "giclee",
     size,

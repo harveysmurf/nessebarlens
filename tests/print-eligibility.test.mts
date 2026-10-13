@@ -17,24 +17,30 @@ import {
   PRINT_PRODUCTS,
   type PrintProductEntry,
 } from "../src/domain/pricing/print-products.ts";
-import type { PhysicalFormat } from "../src/domain/pricing/sku-map.ts";
 import type { PrintSize } from "../src/domain/pricing/pricing.ts";
 
-/** A product with a chosen print area in inches, at the table's 300 dpi. */
+/**
+ * A product with a chosen print area in inches, at the table's 300 dpi.
+ * `PrintProductEntry` is discriminated on `format`, so the two kinds the tests
+ * use are returned with their required field: giclée carries `paper`, canvas
+ * carries none.
+ */
 function product(
-  format: PhysicalFormat,
+  format: "giclee" | "canvas",
   size: PrintSize,
   shortIn: number,
   longIn: number,
 ): PrintProductEntry {
-  return {
-    format,
+  const base = {
     size,
     sizeIn: "12x16",
     sku: `TEST-${format}-${size}`,
     printAreaPx: { short: shortIn * 300, long: longIn * 300 },
     printAreaDpi: 300,
   };
+  return format === "giclee"
+    ? { ...base, format: "giclee", paper: "ema" }
+    : { ...base, format: "canvas" };
 }
 
 const TWO_TO_ONE = product("giclee", "30x40", 1, 2);

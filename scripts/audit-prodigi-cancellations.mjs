@@ -215,6 +215,15 @@ export function extractProdigiOrder(raw) {
  * success, or { ok: false, message, status } on failure.
  *
  * Uses readProdigiConfig for the host/key pair — never hard-codes the host.
+ *
+ * @param {string} base
+ * @param {string} key
+ * @param {string} orderId
+ * @param {typeof fetch} [fetchImpl]
+ * @returns {Promise<
+ *   | { ok: true, stage: string | null, shipments: unknown[] }
+ *   | { ok: false, message: string, status: number | null }
+ * >}
  */
 export async function readProdigiOrder(base, key, orderId, fetchImpl) {
   const url = prodigiUrl(base, `v4.0/orders/${orderId}`);
