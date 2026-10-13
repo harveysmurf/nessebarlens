@@ -30,8 +30,8 @@ const SHA_B = "b".repeat(64);
 const PRINT = { sha256: SHA_B, md5: "c".repeat(32) };
 
 /** A fake masters bucket: `{ "prints/dawn.jpg": { sha256, contentLength } }`. */
-function fakeS3(objects = {}) {
-  const calls = [];
+function fakeS3(objects: Record<string, { sha256: string; contentLength: number }> = {}) {
+  const calls: [string, string][] = [];
   return {
     calls,
     async head(bucket, key) {

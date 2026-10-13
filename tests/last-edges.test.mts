@@ -86,7 +86,7 @@ test("an address with no country is not a recipient", () => {
 });
 
 test("a framed physical order keeps the frame finish all the way to Prodigi", async () => {
-  let seen: Record<string, unknown> | null = null;
+  let seen = null as Record<string, unknown> | null;
   const result = await fulfillCheckoutSession({
     ...physicalInput({ metadata: {
         photoSlug: SAMPLE_SLUG,

@@ -1332,9 +1332,9 @@ test("webhook: shipping comes from collected_information when Stripe sends both"
   const saved = { ...process.env };
   process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
   process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
-  let sent: {
+  let sent = null as {
     recipient: { address: { townOrCity: string; countryCode: string } };
-  } | null = null;
+  } | null;
   globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
     sent = JSON.parse(init!.body!) as typeof sent;
     return new Response(JSON.stringify({ order: { id: "ord_route_1" } }), {
@@ -2610,7 +2610,7 @@ test("webhook: the legacy shipping_details field is used when collected_informat
   const originalFetch = globalThis.fetch;
   process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
   process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
-  let recipient: { address: { townOrCity: string } } | null = null;
+  let recipient = null as { address: { townOrCity: string } } | null;
   globalThis.fetch = (async (_url: unknown, init?: { body?: string }) => {
     recipient = JSON.parse(init!.body!).recipient;
     return new Response(JSON.stringify({ order: { id: "ord_legacy_1" } }), {

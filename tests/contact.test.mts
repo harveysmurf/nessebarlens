@@ -358,7 +358,7 @@ const rejectedVerifier = { verify: async () => ({ ok: false as const, reason: "s
 const failingSender = { send: async () => ({ ok: false, message: "Resend HTTP 500" }) };
 
 test("submitContact returns ok and sends after verification", async () => {
-  let sent: { replyTo: string; subject: string } | null = null;
+  let sent = null as { replyTo: string; subject: string } | null;
   const outcome = await submitContact(
     VALID,
     { rateLimitKey: "ip", remoteIp: "ip" },

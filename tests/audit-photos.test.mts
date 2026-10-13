@@ -35,7 +35,7 @@ const SHA = "c".repeat(64);
 
 /** The eight `{slug}/{hash}/…` objects one master publishes. */
 function webObjects(slug, hash, size = 100) {
-  const objects = [];
+  const objects: { key: string; size: number }[] = [];
   for (const width of WEB_DERIVATIVE_WIDTHS) {
     for (const format of WEB_DERIVATIVE_FORMATS) {
       objects.push({ key: webDerivativeKey(slug, hash, width, format), size });
@@ -239,7 +239,7 @@ test("the audit client has only list and head, and refuses any other bucket", as
 });
 
 test("runAudit lists all three buckets and prints the chosen format", async () => {
-  const lists = [];
+  const lists: string[] = [];
   const s3 = {
     async list(bucket) {
       lists.push(bucket);
@@ -250,7 +250,7 @@ test("runAudit lists all three buckets and prints the chosen format", async () =
   };
   const catalog = [DAWN];
 
-  const textLogs = [];
+  const textLogs: string[] = [];
   const text = await runAudit(
     {},
     { s3, catalog, log: (line) => textLogs.push(line) },
@@ -259,7 +259,7 @@ test("runAudit lists all three buckets and prints the chosen format", async () =
   assert.deepEqual(lists, [WEB_BUCKET_NAME, STAGING_MASTERS_BUCKET_NAME, MASTERS_BUCKET_NAME]);
   assert.match(textLogs.join("\n"), /Orphaned web images: 8/);
 
-  const jsonLogs = [];
+  const jsonLogs: string[] = [];
   const json = await runAudit(
     { json: true },
     { s3, catalog, log: (line) => jsonLogs.push(line) },
