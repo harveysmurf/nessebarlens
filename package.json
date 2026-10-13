@@ -40,7 +40,7 @@
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1146.0",
     "@cloudflare/workers-types": "^5.20261003.1",
-    "@opennextjs/cloudflare": "^1.20.8",
+    "@opennextjs/cloudflare": "^1.20.9",
     "@playwright/test": "^1.63.0",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24.19.1",
