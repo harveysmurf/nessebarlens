@@ -76,6 +76,14 @@ updates:
     #     not supported by the Next 16 lint tree yet.
     #   * @types/node — the Worker runs Node 24 (`engines` in package.json), so
     #     the types must describe the 24.x API, not the Node 25/26 releases.
+    #   * next — Next 16.4.0 loads a new `.next/server/preview-props.json`
+    #     manifest unconditionally at server boot
+    #     (`NextNodeServer.getPreviewProps`), and @opennextjs/cloudflare inlines
+    #     `loadManifest` with a whitelist that omits it, so the Worker boots and
+    #     then 500s every request until OpenNext knows the manifest. Nothing
+    #     released does -- 1.20.9 and the latest 1.20.10 both still throw
+    #     `Unexpected loadManifest(...preview-props.json)`. Hold `next` at 16.3.x
+    #     (#367); 16.3.x security patches still land under this floor.
     #
     # These are version *floors*, not blanket ignores: `versions: [">=6"]` still
     # lets a 5.x security patch through, which is what keeps this from being the
@@ -87,7 +95,13 @@ updates:
         versions: [">=10"]
       - dependency-name: "@types/node"
         versions: [">=25"]
+      - dependency-name: "next"
+        versions: [">=16.4.0"]
 
-# Security updates are on by default in v2 and are not turned off anywhere here
-# -- they are the half of this file that must not be traded away for a tidier
-# weekly cadence. tests/dependabot-config.test.mts pins the shape above.
+# Security updates are NOT controlled here. Dependabot alerts and security
+# updates are repository settings (Settings -> Code security and analysis), and a
+# disabled setting overrides anything this file says -- the 2026-10-11 audit
+# found both off while this comment claimed they were on (#359). They must not be
+# traded away for a tidier weekly cadence. tests/dependabot-config.test.mts pins
+# the shape above; scripts/dependabot-settings.mjs checks the live settings by
+# hand, because reading them needs admin access no CI job token can hold.
