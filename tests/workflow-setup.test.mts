@@ -109,7 +109,7 @@ test("every workflow uses the shared setup composite action", () => {
 });
 
 test("ci.yml has no push trigger -- release.yml calls it and gates deploy on it", () => {
-  const ci = workflows.find((w) => w.name === "ci.yml")!;
+  const ci = workflows.find((w) => w.name === "ci.yml");
   assert.ok(ci, "ci.yml is gone");
 
   // Slice past the `on:` line itself, then stop at the next top-level key:
@@ -192,7 +192,7 @@ test("release.yml production deploy needs a job that calls ci.yml", () => {
      no secret. */
 
 test("lint-and-test runs the suite once, under coverage, not twice (#273)", () => {
-  const ci = workflows.find((w) => w.name === "ci.yml")!;
+  const ci = workflows.find((w) => w.name === "ci.yml");
   assert.ok(ci, "ci.yml is gone");
 
   const job = ci.text.match(/^ {2}lint-and-test:\n((?:(?: {4}|\t).*\n|\n)*)/m);
@@ -212,7 +212,7 @@ test("lint-and-test runs the suite once, under coverage, not twice (#273)", () =
 });
 
 test("lint-and-test builds the catalog once and skips the pre* hooks (#274)", () => {
-  const ci = workflows.find((w) => w.name === "ci.yml")!;
+  const ci = workflows.find((w) => w.name === "ci.yml");
   assert.ok(ci, "ci.yml is gone");
 
   const job = ci.text.match(/^ {2}lint-and-test:\n((?:(?: {4}|\t).*\n|\n)*)/m);
@@ -283,7 +283,7 @@ test("each browser job caches the Playwright download (#275)", () => {
 });
 
 test("the E2E flow is its own job in ci.yml, not a step in lint-and-test", () => {
-  const ci = workflows.find((w) => w.name === "ci.yml")!;
+  const ci = workflows.find((w) => w.name === "ci.yml");
   assert.ok(ci, "ci.yml is gone");
 
   const job = ci.text.match(

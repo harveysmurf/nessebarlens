@@ -1715,6 +1715,15 @@ Owners: `master-key.ts` (slug, master key, MASTERS storage shape),
 AST — a regex in a string or a comment is not mistaken for a declaration. It
 fails on any regex literal or object shape that appears in two modules.
 
+The guard only sees **syntactic** duplicates. It cannot see two grammars that
+mean the same thing but are written differently — `/^https:\/\//i` next to
+`URL.canParse(x)` is one rule wearing two coats, and the guard stays green. That
+is a naming and design problem, not a lint problem: treat "this belongs to an
+existing owner module" as intent you have to apply by reading the code, and use
+the guard to keep the honest copy honest.
+
+---
+
 ### Read the body before you annotate the signature
 
 When `tsc` asks for a type on a function parameter, the annotation has to come
@@ -1734,17 +1743,14 @@ does not perform it, so the line after it is still reading a property off a
 union. `assert.ok(x in y)` narrows and asserts the same thing — as does
 `assert.ok(y.tag === "...")` and not `assert.notEqual(y.tag, "...")`.
 
+The narrowing rule cuts the other way too. Where an assertion already narrows,
+a `!` beside it is redundant and quietly contradicts the rule above — it silences
+the very check the assert performs. `const ci = workflows.find(...)` followed by
+`assert.ok(ci, "ci.yml is gone")` narrows on its own; the `!` in that pair is
+noise. Keep the `!` only where nothing else narrows.
+
 The convention the team agreed: **do not annotate a parameter you have not
 read the body of.** When in doubt, delete the annotation and re-read.
-
----
-
-The guard only sees **syntactic** duplicates. It cannot see two grammars that
-mean the same thing but are written differently — `/^https:\/\//i` next to
-`URL.canParse(x)` is one rule wearing two coats, and the guard stays green. That
-is a naming and design problem, not a lint problem: treat "this belongs to an
-existing owner module" as intent you have to apply by reading the code, and use
-the guard to keep the honest copy honest.
 
 ---
 
