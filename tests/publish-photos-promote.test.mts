@@ -154,19 +154,26 @@ async function manifest(dir: string, slugs: string[]) {
  * (`object.Metadata`), and the tests narrow it to `sha256` where they check it.
  */
 type StoredObject = {
-  metadata?: Record<string, string>;
-  contentLength?: number;
-  contentType?: string;
-  cacheControl?: string;
+  metadata: Record<string, string>;
+  contentLength: number;
+  contentType: string;
+  cacheControl: string;
 };
 
-// A seeded record only carries what a read-back needs; a put fills in the rest.
-type SeededObject = StoredObject;
+/**
+ * A seeded record carries only what the read-back under test needs — a `put`
+ * fills in the rest. Kept separate from StoredObject so the read-back type
+ * stays total: making every field optional would let a missing `contentType`
+ * typecheck and quietly weaken the assertions that read it.
+ */
+type SeededObject = Partial<StoredObject>;
 
 function fakePromoteS3(
   seed: Record<string, SeededObject> = {},
   timeline: string[] = [],
 ) {
+  // A seed only has to satisfy the read-back that uses it; a put stores the
+  // full record. That is the one place the partial is laundered.
   const objects = new Map<string, StoredObject>(
     Object.entries(seed) as [string, StoredObject][],
   );
@@ -265,7 +272,10 @@ function fakeGh(
 // and the two methods `runPromote` calls. `fakePromoteS3` additionally records
 // `puts`; the read-back-mismatch fake does not need it, so it is not required here.
 type PromoteS3 = {
-  objects: Map<string, StoredObject>;
+  // `StoredObject`, or the narrower record a deliberately-minimal fake stores.
+  // Kept as a union so StoredObject stays total: the read-back assertions that
+  // read `contentType` still fail to compile if the map stops carrying it.
+  objects: Map<string, StoredObject | { metadata: Record<string, string>; contentLength: number }>;
   calls: unknown[][];
   head: (bucket: string, key: string) => Promise<unknown>;
   // The exact `{bucket, key, body, contentType, cacheControl, metadata}` argument

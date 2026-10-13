@@ -26,7 +26,7 @@ import {
 const SESSION = "cs_test_abcdefgh";
 const PRODIGI_ID = "ord_abc123xyz";
 
-function physicalRecord(overrides = {}) {
+function physicalRecord(overrides: Record<string, unknown> = {}): string {
   return JSON.stringify({
     v: 1,
     sessionId: SESSION,
@@ -66,7 +66,7 @@ function physicalRecord(overrides = {}) {
   });
 }
 
-function d1Row(record: Record<string, unknown>) {
+function d1Row(record: string): Record<string, unknown> {
   let parsed;
   try {
     parsed = JSON.parse(record);
