@@ -478,7 +478,14 @@ function FramedLayers({
         dataWindow
         containerStyle={{
           ...percentRect(geometry.window, outer),
-          boxShadow: "0 0 0 2px #fbfaf6, 0 0 0 3px rgba(0,0,0,.07)",
+          // The snow-white ring is the mount's inner bevel (#335): it only
+          // makes sense behind a mount, blending into the mount sheet.
+          // Unmounted the photo runs to the moulding, so the ring shows as a
+          // stray ~3px white line between the photo and the frame — draw only
+          // the hairline seam there.
+          boxShadow: geometry.mount
+            ? "0 0 0 2px #fbfaf6, 0 0 0 3px rgba(0,0,0,.07)"
+            : "0 0 0 1px rgba(0,0,0,.07)",
         }}
         boxExtent={{ width: geometry.window.width, height: geometry.window.height }}
         rect={geometry.image}
