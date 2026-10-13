@@ -62,6 +62,18 @@ jobs:
       - name: Typecheck
         run: npm run --ignore-scripts typecheck
 
+      # #4: the suite was never parsed by the compiler. `tsconfig.json` excludes
+      # `tests/`, so every type error there — a fixture built with the wrong
+      # shape, a stale `@ts-expect-error` on prose, a call site inheriting
+      # `never` from an un-inferable `.mjs` export — was invisible to `next
+      # build` and to the `Typecheck` step above. This is the ratchet that
+      # closed it: the `typecheck:tests` gate found 359, the cleanup took it to
+      # 0, and this step is what keeps a new one from landing. Run it with
+      # `--ignore-scripts` for the same reason as the others: `build:catalog`
+      # already ran above and its hooks would rebuild the catalog each time.
+      - name: Typecheck tests
+        run: npm run --ignore-scripts typecheck:tests
+
       # #273: one run of the suite, not two. `npm run coverage` drives the
       # whole test glob under node's V8 coverage and, before it checks any
       # floor, fails the job on a test failure (scripts/coverage.mjs ->
