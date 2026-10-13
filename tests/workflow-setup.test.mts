@@ -109,7 +109,7 @@ test("every workflow uses the shared setup composite action", () => {
 });
 
 test("ci.yml has no push trigger -- release.yml calls it and gates deploy on it", () => {
-  const ci = workflows.find((w) => w.name === "ci.yml");
+  const ci = workflows.find((w) => w.name === "ci.yml")!;
   assert.ok(ci, "ci.yml is gone");
 
   // Slice past the `on:` line itself, then stop at the next top-level key:
@@ -192,7 +192,7 @@ test("release.yml production deploy needs a job that calls ci.yml", () => {
      no secret. */
 
 test("lint-and-test runs the suite once, under coverage, not twice (#273)", () => {
-  const ci = workflows.find((w) => w.name === "ci.yml");
+  const ci = workflows.find((w) => w.name === "ci.yml")!;
   assert.ok(ci, "ci.yml is gone");
 
   const job = ci.text.match(/^ {2}lint-and-test:\n((?:(?: {4}|\t).*\n|\n)*)/m);
@@ -212,7 +212,7 @@ test("lint-and-test runs the suite once, under coverage, not twice (#273)", () =
 });
 
 test("lint-and-test builds the catalog once and skips the pre* hooks (#274)", () => {
-  const ci = workflows.find((w) => w.name === "ci.yml");
+  const ci = workflows.find((w) => w.name === "ci.yml")!;
   assert.ok(ci, "ci.yml is gone");
 
   const job = ci.text.match(/^ {2}lint-and-test:\n((?:(?: {4}|\t).*\n|\n)*)/m);
@@ -283,7 +283,7 @@ test("each browser job caches the Playwright download (#275)", () => {
 });
 
 test("the E2E flow is its own job in ci.yml, not a step in lint-and-test", () => {
-  const ci = workflows.find((w) => w.name === "ci.yml");
+  const ci = workflows.find((w) => w.name === "ci.yml")!;
   assert.ok(ci, "ci.yml is gone");
 
   const job = ci.text.match(
@@ -324,7 +324,7 @@ test("the E2E flow is its own job in ci.yml, not a step in lint-and-test", () =>
 });
 
 test("the E2E job is pull_request-only, so a production merge does not re-run a browser", () => {
-  const ci = workflows.find((w) => w.name === "ci.yml");
+  const ci = workflows.find((w) => w.name === "ci.yml")!;
   for (const id of ["e2e-smoke", "e2e-hosted-checkout"]) {
     const job = ci.text.match(
       new RegExp(`^ {2}${id}:\\n((?:(?: {4}|\\t).*\\n|\\n)*)`, "m"),
@@ -353,7 +353,7 @@ test("no workflow other than ci.yml runs Playwright", () => {
 });
 
 test("the hosted E2E job refuses to run without a Stripe TEST key", () => {
-  const ci = workflows.find((w) => w.name === "ci.yml");
+  const ci = workflows.find((w) => w.name === "ci.yml")!;
   const job = ci.text.match(/^ {2}e2e-hosted-checkout:\n((?:(?: {4}|\t).*\n|\n)*)/m);
   assert.ok(job);
   const body = job[1];
@@ -378,7 +378,7 @@ test("the hosted E2E job refuses to run without a Prodigi sandbox key", () => {
   // The same partial-green trap as the Stripe guard, one spec down: the
   // physical-print spec test.skips() without this key, so a job missing the
   // secret would pass having never quoted Prodigi at all (#143 review).
-  const ci = workflows.find((w) => w.name === "ci.yml");
+  const ci = workflows.find((w) => w.name === "ci.yml")!;
   const job = ci.text.match(/^ {2}e2e-hosted-checkout:\n((?:(?: {4}|\t).*\n|\n)*)/m);
   assert.ok(job);
   const body = job[1];
