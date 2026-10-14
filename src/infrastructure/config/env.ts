@@ -26,13 +26,13 @@ type StringEnv = Readonly<Record<string, unknown>>;
  * `wrangler.toml` are reached by name through the readers below, never by
  * property access.
  *
-  * The keys are written out rather than mapped from the generated `CloudflareEnv`
-  * because mapping is what couples this module to `@cloudflare/workers-types`,
-  * whose global `declare var process: any` and `declare var Buffer: any` make
-  * `process.env` and `Buffer` unchecked in any program that contains them
-  * (#401). Naming them here keeps the typo protection — `env.ORDERS_DBB` still
-  * does not compile — and drops the SDK types, so the Node-facing tsconfig can
-  * compile this file without the Workers globals in the program at all.
+ * The keys are written out rather than mapped from the generated `CloudflareEnv`
+ * because mapping is what couples this module to `@cloudflare/workers-types`,
+ * whose global `declare var process: any` and `declare var Buffer: any` make
+ * `process.env` and `Buffer` unchecked in any program that contains them
+ * (#401). Naming them here keeps the typo protection — `env.ORDERS_DBB` still
+ * does not compile — and drops the SDK types, so the Node-facing tsconfig can
+ * compile this file without the Workers globals in the program at all.
  *
  * `tests/env-shape.test.mts` is the gate: it reads the generated
  * `cloudflare-env.d.ts` and fails if these keys and its keys ever differ, so the
