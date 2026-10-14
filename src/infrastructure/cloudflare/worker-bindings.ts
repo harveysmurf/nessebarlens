@@ -59,15 +59,31 @@ export type { PartialCloudflareEnv };
  */
 export type EnvContextReader = () => Promise<EnvReader>;
 
+/**
+ * The slice of `@opennextjs/cloudflare` this module uses, narrowed to what the
+ * reader actually survives.
+ *
+ * `env` is `PartialCloudflareEnv` where the SDK says `CloudflareEnv` with every
+ * binding required: `readWorkerBindings` has to cope with an env that is empty,
+ * partial or absent, and its tests hand it a D1 stub with no `batch`. Declaring
+ * the looser shape here is the contract, not a workaround.
+ *
+ * Only the `{ async: true }` overload is modelled, and that is what makes the
+ * import below need no cast at all: the SDK's two overloads differ in `async`,
+ * and a single signature naming one of them is satisfied by that overload
+ * directly, where a signature spanning both (`async: boolean`) is satisfied by
+ * neither. `tests/worker-bindings.test.mts` pins the real module's shape so a
+ * change on either side of this is a test failure, not a runtime `undefined`.
+ */
 type CloudflareContextModule = {
-  getCloudflareContext: (options?: { async: boolean }) => Promise<{
+  getCloudflareContext: (options: { async: true }) => Promise<{
     env: PartialCloudflareEnv;
   }>;
 };
 
 /** The dynamic import is a parameter so a test can supply a context module. */
 const loadCloudflareModule = (): Promise<CloudflareContextModule> =>
-  import("@opennextjs/cloudflare") as unknown as Promise<CloudflareContextModule>;
+  import("@opennextjs/cloudflare");
 
 /**
  * Reads the real Worker env. Exported for the tests that need a context whose

@@ -99,10 +99,15 @@ export function webDerivativeKey(
  * scripts stay loadable under plain node.
  */
 export async function sha256Hex(bytes: Uint8Array): Promise<string> {
-  // The cast is the Uint8Array/BufferSource generic mismatch in TS 5.7's
-  // typed arrays, not a real widening: this is a view over binary bytes.
+  // `BufferSource` is `ArrayBufferView<ArrayBuffer> | ArrayBuffer`, and whether a
+  // `Uint8Array`'s buffer is `ArrayBuffer` or the wider `ArrayBufferLike` is a
+  // property of how the caller allocated it -- `Buffer` is the wider one -- so no
+  // signature here can be honest about it. Copying into a buffer this function
+  // owns is what makes the call checkable: no cast, and the digest cannot depend
+  // on a view the caller might detach. The copy is the same bytes `digest` was
+  // going to read anyway.
   const digest = new Uint8Array(
-    await crypto.subtle.digest("SHA-256", bytes as unknown as BufferSource),
+    await crypto.subtle.digest("SHA-256", new Uint8Array(bytes)),
   );
   let hex = "";
   for (const byte of digest) hex += byte.toString(16).padStart(2, "0");
