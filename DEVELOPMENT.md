@@ -1114,7 +1114,8 @@ npm run lint && node scripts/zizmor-gate.mjs
 ### Required status checks (#205 item 1)
 
 `main` requires exactly the contexts listed in `.github/required-checks.txt` —
-`Lint & test`, `Workflow audit`, `E2E smoke flow`, `E2E Worker runtime`.
+`Lint & test`, `Workflow audit`, `E2E smoke flow`, `E2E Worker runtime`, and
+`Photo master promotion`.
 Before #205, protection required only `Lint & test`, so the zizmor gate and the
 browser smoke flow could both be red and the merge button was still enabled.
 
@@ -1122,10 +1123,11 @@ A branch-protection rule is a repository setting, so nothing in the repo can
 force it to stay correct. Two things do, and the split between them is a hard
 platform limit rather than a preference:
 
-- `tests/branch-protection.test.mts` holds the committed list against `ci.yml`
-  in both directions — a new gating job missing from the list fails, a list
-  entry matching no job name fails, and a `continue-on-error` job listed as
-  required fails. This runs on **every test run**.
+- `tests/branch-protection.test.mts` holds the committed list against named
+  `ci.yml` jobs and trusted external contexts in both directions — a new gating
+  job missing from the list fails, an unknown status context fails, and a
+  `continue-on-error` job listed as required fails. This runs on **every test
+  run**.
 - `scripts/required-checks.mjs` holds the committed list against the **live**
   rule and prints the exact `gh api` call to reconcile. It is run **by hand**,
   not from CI.
@@ -1141,10 +1143,11 @@ Actions secrets, would park a repo-admin credential exactly where the
 job-scoped-permissions discipline in #209 keeps it out, which is a worse trade
 than rare, deliberate UI drift.
 
-Adding a gate to `ci.yml` therefore means three edits: the job, its line in
-`.github/required-checks.txt`, and the `gh api -X PATCH` that makes GitHub agree.
-Miss the second and the test fails on every run. Miss the third and only the
-manual comparison finds it.
+Adding a gate means updating its trusted producer, `.github/required-checks.txt`,
+the matching job or context declaration (`.github/external-required-checks.txt`
+for statuses posted outside `ci.yml`), and the `gh api -X PATCH` that makes
+GitHub agree. Miss a declaration and the test fails on every run. Miss the
+live update and only the manual comparison finds it.
 
 Run the live comparison locally with a token that can read protection:
 
@@ -1322,12 +1325,16 @@ URLs and has to be the same value everywhere: a signature made with one key and
 checked with another is the failure the indirection exists to avoid. The
 hosted-checkout job is the one place both scopes are read side by side.
 
-The three production `R2_*` rows are the release gate's read-only token (#243):
+The three production `R2_*` rows are the read-only token for the release gate
+(#243) and photo promotion attestation (#397):
 `R2_MASTERS_READ_ACCESS_KEY_ID` / `R2_MASTERS_READ_SECRET_ACCESS_KEY` are scoped
 to Object Read on `nessebar-lens-masters` only, and `R2_S3_ENDPOINT` is where
-they connect. They are in no other environment, and `release.yml` is push-only,
-so a `pull_request` job never holds them. `scripts/verify-masters.mjs` is the
-only reader.
+they connect. They are in no other environment. `release.yml` is push-only;
+`photo-master-attestation.yml` uses `pull_request_target` and explicitly checks
+out the base commit, reads changed PR YAML only through the GitHub API as data,
+and never executes PR code. Its read-only job waits for the guarded local
+`--promote` command to write matching production masters. Ordinary
+`pull_request` workflows never receive these secrets.
 
 The contact-form secrets (#293) live in both `staging` and `production`:
 `TURNSTILE_SECRET_KEY` (server-side Siteverify; use the test secret
@@ -1481,7 +1488,11 @@ from §7) into `ingest/` (repo root, gitignored), both named for the same slug:
   `master_sha256`, `image_hash` or the master objects.
 - The production masters bucket is **never** written by `--apply`. Its client
   only has the web and staging buckets, so a `--promote` object is unreachable
-  from this command.
+  from this command. A trusted `pull_request_target` workflow posts the required
+  `Photo master promotion` status for every PR. It succeeds immediately when no
+  published photo YAML changed; otherwise it reads the PR YAML as data and waits
+  until both production objects match. The protected branch cannot merge the
+  catalog entry before that status succeeds.
 
 ### After the preview: `--promote` (#242)
 
@@ -1515,8 +1526,11 @@ catalog entry (a `--replace-image`), which overwrites the fixed key and reminds
 you that past buyers' downloads now get the new file. It then `HeadObject`s each
 master **and print-asset** key and confirms the `sha256` metadata and byte
 length before running
-`gh pr merge <n> --auto --squash`. Merging deploys staging → smoke tests →
-master check (which now also verifies the print assets) → production.
+`gh pr merge <n> --auto --squash`. The required `Photo master promotion`
+status observes these verified objects and passes; branch protection then
+allows the auto-merge once the other required checks pass. Merging deploys
+staging → smoke tests → master check (which now also verifies the print assets)
+→ production.
 
 What to do if `--promote` refuses:
 
@@ -1529,6 +1543,12 @@ What to do if `--promote` refuses:
   re-run `--apply --replace-image x` so the PR modifies the entry, then promote.
 - **`changes files outside content/photos/`** — the PR is broader than a photo
   publish; promote does not merge it. Split the photo change into its own PR.
+- **`PR #n is not open` after a catalog entry was merged without promotion** —
+  the merge gate should prevent this for new PRs. For an older merged entry,
+  create a catalog-only recovery PR with a comment noting the original PR, then
+  run guarded `--promote --pr <recovery-pr>` while it is open. The promoter
+  checks the same `ingest/{slug}.jpg` hash, writes the missing objects, and
+  auto-merges the recovery PR after required checks pass.
 
 Nothing is uploaded and auto-merge is not enabled on any refusal, so fixing the
 input and re-running is always safe. The web keys from `--apply` are

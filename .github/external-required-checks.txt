@@ -1,0 +1,3 @@
+# Commit-status contexts posted by trusted workflows outside ci.yml.
+# Keep each context in .github/required-checks.txt as well, so GitHub requires it.
+Photo master promotion

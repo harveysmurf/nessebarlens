@@ -21,3 +21,4 @@ Lint & test
 Workflow audit
 E2E smoke flow
 E2E Worker runtime
+Photo master promotion

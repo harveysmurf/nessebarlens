@@ -865,26 +865,48 @@ test("release.yml's production leg verifies masters before any production change
   }
 });
 
-test("the masters read-only secrets live only in release.yml's production job (#243)", () => {
+test("the masters read-only secrets are limited to trusted production workflows (#243, #397)", () => {
+  const release = workflowText("release.yml");
+  const staging = jobBlock(release, "staging");
   for (const secret of MASTERS_READ_SECRETS) {
     const readers = workflows
       .filter(({ text }) => new RegExp(`secrets\\.${secret}\\b`).test(text))
       .map(({ name }) => name);
     assert.deepEqual(
       readers,
-      ["release.yml"],
-      `${secret} is read by ${readers.join(", ")}; it belongs only to release.yml`,
+      ["photo-master-attestation.yml", "release.yml"],
+      `${secret} is read by ${readers.join(", ")}; it belongs only to the trusted PR attestation and release gate`,
     );
-    // Exactly one occurrence in release.yml: the production job's verify step.
-    // A second would be a second reader this test does not account for.
-    const text = workflowText("release.yml");
-    assert.equal(
-      [...text.matchAll(new RegExp(`secrets\\.${secret}\\b`, "g"))].length,
-      1,
-      `${secret} appears more than once in release.yml`,
-    );
-    const staging = jobBlock(text, "staging");
+    for (const name of ["photo-master-attestation.yml", "release.yml"]) {
+      const text = workflowText(name);
+      assert.equal(
+        [...text.matchAll(new RegExp(`secrets\\.${secret}\\b`, "g"))].length,
+        1,
+        `${secret} appears more than once in ${name}`,
+      );
+    }
+    const attestation = workflowText("photo-master-attestation.yml");
+    assert.match(attestation, /^ {2}pull_request_target:/m);
+    assert.match(attestation, /ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
     assert.doesNotMatch(staging, new RegExp(`secrets\\.${secret}\\b`), `staging reads ${secret}`);
+  }
+});
+
+test("photo master attestation keeps secrets on trusted base code and scopes API writes", () => {
+  const text = workflowText("photo-master-attestation.yml");
+  assert.match(text, /^ {2}pull_request_target:/m);
+  assert.match(text, /ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
+  assert.match(text, /^ {10}persist-credentials: false$/m);
+  assert.match(text, /^ {4}environment: production$/m);
+  assert.match(text, /^ {6}statuses: write$/m);
+  assert.doesNotMatch(text, /pull_request:\n/);
+  const pending = text.match(/  pending:[\s\S]*?(?=\n  [a-z][\w-]*:|$)/)?.[0] ?? "";
+  const report = text.match(/  report:[\s\S]*?(?=\n  [a-z][\w-]*:|$)/)?.[0] ?? "";
+  assert.match(pending, /^      statuses: write$/m);
+  assert.match(report, /^      statuses: write$/m);
+  assert.doesNotMatch(text, /PutObjectCommand|PutObject/);
+  for (const body of runBodies(text)) {
+    assert.doesNotMatch(body, /\$\{\{/, `expression inside run:\n${body}`);
   }
 });
 
