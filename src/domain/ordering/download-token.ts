@@ -9,6 +9,7 @@
 
 import { HEX_32_PATTERN } from "../pricing/crypto-hex";
 import { isCheckoutSessionId } from "./order-decision";
+import { isRecord } from "../json/record";
 
 /** Default lifetime of a download token: 30 days from issuance. */
 export const DOWNLOAD_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60;
@@ -75,8 +76,8 @@ export function parseDownloadTokenRecord(raw: string): DownloadTokenRecord | nul
 }
 
 function parseDownloadTokenRecordValue(value: unknown): DownloadTokenRecord | null {
-  if (!value || typeof value !== "object") return null;
-  const row = value as Record<string, unknown>;
+  if (!isRecord(value)) return null;
+  const row = value;
   if (row.v !== 1) return null;
   if (typeof row.sessionId !== "string" || !isCheckoutSessionId(row.sessionId)) {
     return null;
