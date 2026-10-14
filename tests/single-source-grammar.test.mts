@@ -703,6 +703,44 @@ test("no comment narrates change history instead of an invariant", () => {
   );
 });
 
+test("src contains no `as unknown as` double cast", () => {
+  // A double cast ends type checking at the cast and reads as a value the
+  // compiler has agreed to believe; #388 removed the last four in src.
+  //
+  // Walked on the AST, for the reason the narration rule above gives: this
+  // repo's comments name these casts by name while explaining them, so a text
+  // scan would flag the documentation of the rule as a breach of it. The node
+  // shape is the definition rather than an approximation of it — `a as unknown
+  // as T` parses as one `AsExpression` whose expression is another — so a
+  // single `as unknown` in prose, or a string containing the words, cannot
+  // reach this.
+  const offenders: string[] = [];
+  for (const file of sourceFiles(path.join(root, "src"))) {
+    const source = ts.createSourceFile(
+      file,
+      fs.readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isAsExpression(node) &&
+        node.expression.kind === ts.SyntaxKind.AsExpression
+      ) {
+        const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+        offenders.push(`${relative(file)}:${line + 1}`);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  assert.deepEqual(
+    offenders,
+    [],
+    `src/ casts through unknown, which checks nothing on either side: ${offenders.join(", ")}`,
+  );
+});
+
 test("the pure half of fulfillment reaches no effect", () => {
   // #148 split src/application/fulfillment/fulfillment.ts on the pure-vs-effects seam: order-decision
   // answers what an order *means*, fulfillment reaches for KV and Prodigi. The

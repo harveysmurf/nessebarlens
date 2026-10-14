@@ -209,6 +209,25 @@ test("a Worker context with no env at all reads as empty, not as a crash", async
   assert.equal(bindings.MASTERS, undefined);
 });
 
+test("the real @opennextjs/cloudflare module has the shape worker-bindings narrows to", async () => {
+  // #388: `loadCloudflareModule` assigns `import("@opennextjs/cloudflare")` to
+  // `Promise<CloudflareContextModule>` with no assertion, so `npm run typecheck`
+  // already proves the *declared* types line up — and that is what let the
+  // `as unknown as` be deleted. This is the half no type check covers: a `.d.ts`
+  // can name an export the runtime does not have, and then the first Worker
+  // request throws on `undefined` instead of the build going red. The module is
+  // imported here for real, which plain node can do (its api entry pulls in no
+  // workerd globals).
+  const mod: unknown = await import("@opennextjs/cloudflare");
+  assert.ok(mod && typeof mod === "object", "the package's main entry is an object");
+  const shaped = mod as { getCloudflareContext?: unknown };
+  assert.equal(
+    typeof shaped.getCloudflareContext,
+    "function",
+    "the export worker-bindings calls is not a function at runtime",
+  );
+});
+
 test("isContactRateLimiter accepts only an object exposing limit", () => {
   assert.equal(isContactRateLimiter({ limit: async () => ({ success: true }) }), true);
   assert.equal(isContactRateLimiter({ limit: "yes" }), false);
