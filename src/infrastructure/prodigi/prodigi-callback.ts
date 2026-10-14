@@ -54,6 +54,7 @@ import {
   type OrderShipment,
 } from "../../domain/ordering/order-decision";
 import { readOrderRecord } from "../../domain/ordering/order-corrupt";
+import { isRecord } from "../../domain/json/record";
 import { isSafeProdigiOrderId } from "./prodigi-cancel";
 import {
   detailSuffix,
@@ -110,10 +111,10 @@ export function parseProdigiCloudEvent(
   } catch {
     return { ok: false, error: "invalid-json" };
   }
-  if (!value || typeof value !== "object") {
+  if (!isRecord(value)) {
     return { ok: false, error: "invalid-cloudevent" };
   }
-  const row = value as Record<string, unknown>;
+  const row = value;
   if (typeof row.specversion !== "string" || row.specversion.length === 0) {
     return { ok: false, error: "missing-specversion" };
   }
@@ -142,12 +143,9 @@ export function parseProdigiCloudEvent(
  * Returns null for anything else; the caller never uses the result for state.
  */
 function normalizeCallbackData(data: unknown): Record<string, unknown> | null {
-  if (!data || typeof data !== "object") return null;
-  const row = data as Record<string, unknown>;
-  if (row.order && typeof row.order === "object") {
-    return row.order as Record<string, unknown>;
-  }
-  return row;
+  if (!isRecord(data)) return null;
+  if (isRecord(data.order)) return data.order;
+  return data;
 }
 
 
@@ -156,27 +154,19 @@ function normalizeCallbackData(data: unknown): Record<string, unknown> | null {
  * tests that assert the fetch — not the callback body — wins.
  */
 export function shipmentsFromProdigiOrder(order: unknown): OrderShipment[] {
-  if (!order || typeof order !== "object") return [];
-  const row = order as Record<string, unknown>;
-  const raw = row.shipments;
+  if (!isRecord(order)) return [];
+  const raw = order.shipments;
   if (!Array.isArray(raw)) return [];
   const out: OrderShipment[] = [];
   for (const entry of raw) {
     if (out.length >= SHIPMENTS_MAX) break;
-    if (!entry || typeof entry !== "object") continue;
-    const s = entry as Record<string, unknown>;
-    const tracking =
-      s.tracking && typeof s.tracking === "object"
-        ? (s.tracking as Record<string, unknown>)
-        : {};
-    const carrier =
-      s.carrier && typeof s.carrier === "object"
-        ? (s.carrier as Record<string, unknown>)
-        : {};
+    if (!isRecord(entry)) continue;
+    const tracking = isRecord(entry.tracking) ? entry.tracking : {};
+    const carrier = isRecord(entry.carrier) ? entry.carrier : {};
     out.push({
-      status: clip(s.status, SHIPMENT_STATUS_MAX),
+      status: clip(entry.status, SHIPMENT_STATUS_MAX),
       carrier: clip(
-        typeof carrier.name === "string" ? carrier.name : s.carrier,
+        typeof carrier.name === "string" ? carrier.name : entry.carrier,
         SHIPMENT_CARRIER_MAX,
       ),
       trackingUrl: clip(tracking.url, SHIPMENT_TRACKING_URL_MAX),
@@ -192,16 +182,15 @@ function clip(value: unknown, max: number): string {
 }
 
 function stageFromProdigiOrder(order: unknown): string | null {
-  if (!order || typeof order !== "object") return null;
-  const status = (order as Record<string, unknown>).status;
-  if (!status || typeof status !== "object") return null;
-  const stage = (status as Record<string, unknown>).stage;
+  if (!isRecord(order)) return null;
+  if (!isRecord(order.status)) return null;
+  const stage = order.status.stage;
   return typeof stage === "string" && stage.length > 0 ? stage : null;
 }
 
 function merchantReferenceFromProdigiOrder(order: unknown): string | null {
-  if (!order || typeof order !== "object") return null;
-  const ref = (order as Record<string, unknown>).merchantReference;
+  if (!isRecord(order)) return null;
+  const ref = order.merchantReference;
   return typeof ref === "string" && ref.length > 0 ? ref : null;
 }
 
@@ -260,10 +249,10 @@ export const fetchProdigiOrder: FetchProdigiOrder = async (orderId) => {
   }
 
   const order = data.order;
-  if (!order || typeof order !== "object") {
+  if (!isRecord(order)) {
     return { ok: false, message: "Prodigi fetch missing order", status: res.status };
   }
-  const id = (order as Record<string, unknown>).id;
+  const id = order.id;
   if (typeof id !== "string" || !id) {
     return { ok: false, message: "Prodigi fetch missing order id", status: res.status };
   }
