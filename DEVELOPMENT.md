@@ -73,13 +73,17 @@ regenerates, compares, puts the committed copy back untouched, and fails if the
 two differ (CI runs it). Commit the regenerated file whenever you touch a
 binding in `wrangler.toml`.
 
-**Do not replace that gate with `wrangler types --check`.** It compares the
-`hash:` in the header comment and nothing else (checked on wrangler 4.149.0): it
-goes red when `wrangler.toml` changes and stays green when the committed *body*
-is wrong, including on a hand-edited `ORDERS_DB: D1Database` → `R2Bucket`. The
-committed file is normalized, so it can never be byte-identical to wrangler's
-output anyway; `normalize()` in that script has to own both sides of the
-comparison for the gate to mean anything.
+**Do not replace that gate with `wrangler types --check`.** It is unfit twice
+over (checked on wrangler 4.149.0). It compares the `hash:` in the header
+comment and never the body, so it stays green when the committed file is wrong —
+on a hand-edited `ORDERS_DB: D1Database` → `R2Bucket`, or with the reference
+line deleted. And that hash covers the *invocation* as well as the config, so a
+check spelled differently from the generation reds on a file that is exactly
+right: `wrangler types --check cloudflare-env.d.ts` omits `--env-interface`, so
+it expects `Env` where the file records `CloudflareEnv`, and exits 1. The
+committed file is normalized, so it is never byte-identical to wrangler's output
+either; `normalize()` in that script has to own both sides of the comparison for
+the gate to mean anything.
 
 **Always `nvm use` before anything else — it is not optional and it is not
 automatic.** A shell whose `node` predates the pin will run the wrong runtime and

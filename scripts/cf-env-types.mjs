@@ -11,15 +11,22 @@
  *
  * Usage: node scripts/cf-env-types.mjs [--check]
  *
- * Why this script and not `wrangler types --check`: that flag compares the
- * `hash:` in the header comment and nothing else, so it is a gate on
- * `wrangler.toml` but not on the committed file. Verified against wrangler
- * 4.149.0 — with the committed body hand-edited (`ORDERS_DB: D1Database` ->
- * `R2Bucket`, the exact typo this issue exists to catch) it still exits 0 and
- * prints "up to date"; only editing `wrangler.toml` turns it red. A normalized
- * file is by definition not byte-identical to wrangler's output, so --check can
- * be neither the gate nor a check on the file's body, and `normalize()` below
- * has to own both sides for the comparison to mean anything.
+ * Why this script and not `wrangler types --check` — that flag is unfit twice
+ * over, and only the first failure is obvious. Verified on wrangler 4.149.0:
+ *
+ * 1. It compares the `hash:` in the header comment and never the body. Hand-edit
+ *    the committed file -- `ORDERS_DB: D1Database` to `R2Bucket`, the exact typo
+ *    this issue exists to catch, or delete the reference line added below -- and
+ *    it still exits 0 and prints "up to date".
+ * 2. That hash covers the *invocation* as well as the config, so a check spelled
+ *    differently from the generation reds on a file that is exactly right:
+ *    `wrangler types --check cloudflare-env.d.ts` omits `--env-interface`, so it
+ *    expects an interface named `Env`, the file records `CloudflareEnv`, and it
+ *    exits 1. Not a second signal -- a false positive.
+ *
+ * A normalized file is by definition not byte-identical to wrangler's output, so
+ * --check can be neither the gate nor a check on the file's body either way, and
+ * `normalize()` below has to own both sides for the comparison to mean anything.
  */
 
 import { spawnSync } from "node:child_process";
