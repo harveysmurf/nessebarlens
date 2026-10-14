@@ -177,11 +177,15 @@ export function nominalSizeIn(product: PrintProductEntry): {
   long: number;
 } {
   const parts = product.sizeIn.split("x");
-  const [a, b] = parts.map(Number);
+  // `Number(undefined)` is `NaN`, so a missing half is rejected by the finite
+  // check below. Testing `parts[i] === undefined` first would be a branch that
+  // can never be taken — `split` returns at least one element, and any input
+  // short of two fails the length check — which is worse than no check: it
+  // reads like a guard and the coverage gate would keep reporting it untaken.
+  const a = Number(parts[0]);
+  const b = Number(parts[1]);
   if (
     parts.length !== 2 ||
-    a === undefined ||
-    b === undefined ||
     !Number.isFinite(a) ||
     !Number.isFinite(b) ||
     a <= 0 ||
