@@ -37,6 +37,21 @@ type TurnstileApi = {
 type ContactFieldName = "name" | "email" | "message" | "turnstileToken";
 type FieldErrors = Partial<Record<ContactFieldName, string>>;
 
+/**
+ * The widget API the Turnstile script puts on `window`, or undefined until the
+ * script has loaded.
+ *
+ * One reader rather than an assertion at each of the three use sites. The
+ * assertion is a narrowing onto an intersection, which needs no `unknown` step,
+ * so it checks: a `Window` cannot be a `Window & { turnstile }` by accident. It
+ * stays local to this component rather than augmenting the global `Window`
+ * interface, which would let any other module read `window.turnstile` believing
+ * the widget is there.
+ */
+function turnstileApi(): TurnstileApi | undefined {
+  return (window as Window & { turnstile?: TurnstileApi }).turnstile;
+}
+
 const INPUT_CLASS =
   "w-full border border-stone-300 rounded p-2.5 text-sm bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900";
 const LABEL_CLASS =
@@ -75,7 +90,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
   const token = useRef("");
 
   const renderWidget = useCallback(() => {
-    const turnstile = (window as unknown as { turnstile?: TurnstileApi }).turnstile;
+    const turnstile = turnstileApi();
     if (!siteKey || !turnstile || !widgetContainer.current || widgetId.current) return;
     widgetId.current = turnstile.render(widgetContainer.current, {
       sitekey: siteKey,
@@ -97,7 +112,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
 
   useEffect(() => {
     return () => {
-      const turnstile = (window as unknown as { turnstile?: TurnstileApi }).turnstile;
+      const turnstile = turnstileApi();
       if (widgetId.current && turnstile) {
         turnstile.remove(widgetId.current);
         widgetId.current = null;
@@ -107,7 +122,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
 
   function resetWidget() {
     token.current = "";
-    const turnstile = (window as unknown as { turnstile?: TurnstileApi }).turnstile;
+    const turnstile = turnstileApi();
     if (widgetId.current && turnstile) turnstile.reset(widgetId.current);
   }
 

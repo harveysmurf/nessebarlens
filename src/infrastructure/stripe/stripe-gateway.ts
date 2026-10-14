@@ -14,7 +14,7 @@
 
 import Stripe from "stripe";
 import { getStripe } from "./stripe";
-import { readStripeEvent } from "./stripe-event";
+import { readStripeEvent, type StripeCheckoutSession } from "./stripe-event";
 import { eurToCents, formatLabel } from "../../domain/pricing/pricing";
 import type { StripeShippingDetails } from "../../domain/ordering/order-decision";
 import type { ReconcileSession, ReconcileStripe } from "../../application/fulfillment/reconcile";
@@ -119,18 +119,31 @@ async function createCheckout(
 }
 
 /**
- * Stripe moved the shipping address between `shipping_details` and
- * `collected_information.shipping_details` across API versions, and the current
- * SDK types only name the latter. The handler has always read both (see
- * `StripeCheckoutSession` in stripe-event.ts), so this reads the same two slots
- * structurally.
+ * The two slots Stripe can put a Checkout Session's shipping address in.
+ *
+ * `collected_information` is named by the SDK. `shipping_details` is the
+ * pre-API-version slot on the session root that the SDK dropped from its types
+ * but older sessions still carry. Both are read here through
+ * `StripeCheckoutSession`, the structural type `stripe-event.ts` already keeps
+ * *assignable to* `Stripe.Checkout.Session` by a compile-time contract — so this
+ * is a widening, not an assertion, and no cast survives the boundary.
+ *
+ * Exported for `tests/stripe-gateway.test.mts`, which drives both slots; a
+ * reader whose whole job is two optional reads from a moved field is exactly the
+ * one that goes unexercised.
  */
-type SessionShipping = {
-  shipping_details?: StripeShippingDetails | null;
-  collected_information?: {
-    shipping_details?: StripeShippingDetails | null;
-  } | null;
-};
+export function readSessionShipping(session: Stripe.Checkout.Session): {
+  shippingDetails: StripeShippingDetails | null;
+  collectedShippingDetails: StripeShippingDetails | null;
+} {
+  const shaped: StripeCheckoutSession = session;
+  return {
+    shippingDetails: toShippingDetails(shaped.shipping_details),
+    collectedShippingDetails: toShippingDetails(
+      shaped.collected_information?.shipping_details,
+    ),
+  };
+}
 
 function toShippingDetails(
   value: StripeShippingDetails | null | undefined,
@@ -141,17 +154,15 @@ function toShippingDetails(
 function toPaymentSession(
   session: Stripe.Checkout.Session,
 ): PaymentCheckoutSession {
-  const shipping = session as unknown as SessionShipping;
+  const shipping = readSessionShipping(session);
   return {
     id: session.id ?? null,
     paymentStatus: session.payment_status ?? null,
     currency: session.currency ?? null,
     amountTotal: session.amount_total ?? null,
     metadata: session.metadata ?? null,
-    shippingDetails: toShippingDetails(shipping.shipping_details),
-    collectedShippingDetails: toShippingDetails(
-      shipping.collected_information?.shipping_details,
-    ),
+    shippingDetails: shipping.shippingDetails,
+    collectedShippingDetails: shipping.collectedShippingDetails,
     customerEmail: session.customer_details?.email ?? null,
     customerPhone: session.customer_details?.phone ?? null,
     successUrl: session.success_url ?? null,
