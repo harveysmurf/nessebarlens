@@ -34,6 +34,7 @@ import type {
   PrintPaper,
 } from "../../domain/pricing/sku-map";
 import { resolveSku } from "../../domain/pricing/sku-map";
+import { isRecord } from "../../domain/json/record";
 import type { FrameFinish, PrintSize } from "../../domain/pricing/pricing";
 
 /** 30 minutes. Long enough to absorb a burst, short enough that a real Prodigi
@@ -110,8 +111,8 @@ async function cachedQuoteFromResponse(
   if (!response) return null;
   try {
     const parsed: unknown = await response.json();
-    if (!parsed || typeof parsed !== "object") return null;
-    const { merchandiseEur, shippingEur } = parsed as Record<string, unknown>;
+    if (!isRecord(parsed)) return null;
+    const { merchandiseEur, shippingEur } = parsed;
     if (
       typeof merchandiseEur !== "number" ||
       typeof shippingEur !== "number" ||

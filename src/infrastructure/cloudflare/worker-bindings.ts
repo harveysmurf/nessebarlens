@@ -2,6 +2,7 @@ import type { MastersBucket } from "../../domain/catalog/master-key";
 import type { OrdersStore } from "../../domain/ordering/orders-store";
 import type { ContactRateLimiter } from "../../application/contact/submit-contact";
 import { envString } from "../config/env";
+import { isRecord } from "../../domain/json/record";
 import { printAssetSecret } from "../config/config";
 import { prodigiKeyConfigured } from "../prodigi/prodigi-config";
 import { devOrdersSeed } from "./orders-dev-seed";
@@ -139,9 +140,8 @@ function hasMethods(
   value: unknown,
   ...names: string[]
 ): value is Record<string, unknown> {
-  if (!value || typeof value !== "object") return false;
-  const candidate = value as Record<string, unknown>;
-  return names.every((name) => typeof candidate[name] === "function");
+  if (!isRecord(value)) return false;
+  return names.every((name) => typeof value[name] === "function");
 }
 
 /**

@@ -11,6 +11,7 @@
  */
 
 import type { PrintSize } from "../pricing/pricing";
+import { isRecord } from "../json/record";
 import {
   DEFAULT_FRAMED_MOUNT,
   DEFAULT_PRINT_PAPER,
@@ -116,11 +117,11 @@ export function parsePrintOffer(
   master: MasterFacts,
   products: readonly PrintProductEntry[] = PRINT_PRODUCTS,
 ): OfferResult {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+  if (!isRecord(raw)) {
     return { ok: false, problems: [{ format: ROOT, reason: "not-a-map" }] };
   }
 
-  const map = raw as Record<string, unknown>;
+  const map = raw;
   const problems: OfferProblem[] = [];
   const offer = emptyOffer();
 

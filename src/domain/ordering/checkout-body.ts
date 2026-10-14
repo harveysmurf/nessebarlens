@@ -4,6 +4,7 @@ import {
   type ShipToCountryCode,
 } from "../pricing/ship-to-countries";
 import type { FrameFinish, PrintSize } from "../pricing/pricing";
+import { isRecord } from "../json/record";
 import {
   parsePrintSpecification,
   type PrintSpecificationReason,
@@ -144,10 +145,10 @@ const INVALID_BODY_ERROR = "Invalid JSON body";
 
 /** The object prologue both parsers open with, rejection included. */
 function asBody(raw: unknown): Parsed<Record<string, unknown>> {
-  if (!raw || typeof raw !== "object") {
+  if (!isRecord(raw)) {
     return { ok: false, error: INVALID_BODY_ERROR };
   }
-  return { ok: true, value: raw as Record<string, unknown> };
+  return { ok: true, value: raw };
 }
 
 export function parseCheckoutBody(

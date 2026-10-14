@@ -27,6 +27,7 @@
 import { readFileSync } from "node:fs";
 import type { OrdersStore } from "../../domain/ordering/orders-store";
 import { envString } from "../config/env";
+import { isRecord } from "../../domain/json/record";
 import { isProduction, type ConfigEnv } from "../config/config";
 import {
   parseDownloadTokenRecord,
@@ -95,12 +96,12 @@ function loadSeedFile(path: string): {
       { cause },
     );
   }
-  if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+  if (!isRecord(parsed)) {
     throw new Error(
       `ORDERS_DEV_SEED: ${path} must be a JSON object of sessionId -> record`,
     );
   }
-  const entries = Object.entries(parsed as Record<string, unknown>);
+  const entries = Object.entries(parsed);
   const orders = new Map<string, string>();
   const tokens = new Map<string, string>();
   const indexes = new Map<string, string>();

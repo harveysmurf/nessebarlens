@@ -19,15 +19,12 @@
  * grammar.
  */
 import { HTTPS_URL_PATTERN } from "@/domain/pricing/url-patterns";
+import { isRecord } from "@/domain/json/record";
 
 export type LiveQuote = {
   merchandiseEur: number;
   shippingEur: number;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null;
-}
 
 /**
  * A quote is usable only when both amounts are finite numbers. `typeof` alone

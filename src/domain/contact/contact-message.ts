@@ -12,6 +12,8 @@
  * them short, plain and free of anything about our internals.
  */
 
+import { isRecord } from "../json/record";
+
 /** Bounds the form enforces. Policy, not credentials — safe to share. */
 export const CONTACT_NAME_MAX = 100;
 export const CONTACT_EMAIL_MAX = 254;
@@ -63,10 +65,7 @@ export function contactEmailError(email: string): string | null {
  * "missing" errors as an empty one.
  */
 export function parseContactMessage(raw: unknown): ContactParseResult {
-  const record =
-    raw !== null && typeof raw === "object" && !Array.isArray(raw)
-      ? (raw as Record<string, unknown>)
-      : {};
+  const record = isRecord(raw) ? raw : {};
 
   const name = trimmedString(record.name);
   const email = trimmedString(record.email);

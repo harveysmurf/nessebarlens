@@ -1718,7 +1718,8 @@ that agreed until it did not.
 
 Owners: `master-key.ts` (slug, master key, MASTERS storage shape),
 `master-guard.ts` (master marker), `crypto-hex.ts` (hex signature),
-`ship-to-countries.ts` (ISO alpha-2), `url-patterns.ts` (absolute https).
+`ship-to-countries.ts` (ISO alpha-2), `url-patterns.ts` (absolute https),
+`json/record.ts` (`unknown` narrowed to a readable object).
 
 `tests/single-source-grammar.test.mts` enforces this by walking the TypeScript
 AST — a regex in a string or a comment is not mistaken for a declaration. It
