@@ -30,10 +30,10 @@ export function WebPhoto({
   priority = false,
 }: {
   photo: Photo;
-  className?: string;
-  sizes?: string;
-  preferred?: WebDerivativeWidth;
-  priority?: boolean;
+  className?: string | undefined;
+  sizes?: string | undefined;
+  preferred?: WebDerivativeWidth | undefined;
+  priority?: boolean | undefined;
 }) {
   const image = galleryImage(photo, preferred);
   if (image === null) {

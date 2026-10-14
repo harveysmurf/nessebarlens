@@ -60,7 +60,7 @@ function fieldErrors(values: {
   return errors;
 }
 
-export function ContactForm({ siteKey }: { siteKey?: string }) {
+export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");

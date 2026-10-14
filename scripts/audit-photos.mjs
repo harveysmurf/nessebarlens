@@ -122,11 +122,19 @@ export function readCatalogEntries(photosDir) {
       for (const problem of result.problems) problems.push(`${name}: ${problem}`);
       continue;
     }
+    // Keys are spread rather than assigned: an absent hash must stay absent so
+    // `entry.imageHash !== undefined` means "the catalog has no hash", not "the
+    // key was written with undefined". `exactOptionalPropertyTypes` (#385) makes
+    // that distinction checkable, and this file is JS so nothing enforces it here.
     entries.push({
       slug: result.photo.slug,
       published: result.photo.published,
-      imageHash: result.photo.imageHash,
-      masterSha256: result.photo.masterSha256,
+      ...(result.photo.imageHash === undefined
+        ? {}
+        : { imageHash: result.photo.imageHash }),
+      ...(result.photo.masterSha256 === undefined
+        ? {}
+        : { masterSha256: result.photo.masterSha256 }),
     });
   }
   if (problems.length > 0) {
@@ -144,8 +152,8 @@ export function readCatalogEntries(photosDir) {
  * The catalog side of the comparison, as `readCatalogEntries` returns it.
  * @typedef {{
  *   slug: string,
- *   published?: boolean,
- *   imageHash?: string | null,
+ *   published: boolean,
+ *   imageHash?: string,
  *   masterSha256?: string,
  * }} CatalogEntry
  */

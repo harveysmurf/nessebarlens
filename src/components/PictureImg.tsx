@@ -24,13 +24,13 @@ export function PictureImg({
 }: {
   image: GalleryImage;
   alt: string;
-  className?: string;
-  sizes?: string;
-  priority?: boolean;
-  style?: CSSProperties;
+  className?: string | undefined;
+  sizes?: string | undefined;
+  priority?: boolean | undefined;
+  style?: CSSProperties | undefined;
   /** The inner `<img>`, so a caller can read the URL the browser picked (#327). */
-  imgRef?: Ref<HTMLImageElement | null>;
-  onLoad?: ReactEventHandler<HTMLImageElement>;
+  imgRef?: Ref<HTMLImageElement | null> | undefined;
+  onLoad?: ReactEventHandler<HTMLImageElement> | undefined;
 }) {
   return (
     <picture className="contents">

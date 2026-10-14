@@ -248,15 +248,15 @@ export type UnknownOrder = OrderRecordCommon & {
 export type OrderRecord = DigitalOrder | PhysicalOrder | UnknownOrder;
 
 export type StripeShippingDetails = {
-  name?: string | null;
+  name?: string | null | undefined;
   address?: {
-    line1?: string | null;
-    line2?: string | null;
-    city?: string | null;
-    state?: string | null;
-    postal_code?: string | null;
-    country?: string | null;
-  } | null;
+    line1?: string | null | undefined;
+    line2?: string | null | undefined;
+    city?: string | null | undefined;
+    state?: string | null | undefined;
+    postal_code?: string | null | undefined;
+    country?: string | null | undefined;
+  } | null | undefined;
 };
 
 export type FulfillmentInput = {

@@ -8,37 +8,37 @@ import { devOrdersSeed } from "./orders-dev-seed";
 import { d1OrdersStore } from "./orders-d1";
 
 export type WorkerBindings = {
-  ORDERS_DB?: OrdersStore;
-  MASTERS?: MastersBucket;
-  webhookSecret?: string;
-  printAssetSecret?: string;
-  reconcileSecret?: string;
+  ORDERS_DB: OrdersStore | undefined;
+  MASTERS: MastersBucket | undefined;
+  webhookSecret: string | undefined;
+  printAssetSecret: string | undefined;
+  reconcileSecret: string | undefined;
   /**
    * Bearer token Prodigi must send on `/api/webhooks/prodigi` (#117).
    * Absent ⇒ the route answers 503; mismatch ⇒ 401. Prodigi itself signs
    * nothing, so this is the only authentication the callback has.
    */
-  prodigiWebhookToken?: string;
+  prodigiWebhookToken: string | undefined;
   /**
    * Resend API key for customer email (#117). Absent ⇒ sends are skipped with
    * a structured log line, never a throw on a paid webhook path.
    */
-  resendApiKey?: string;
+  resendApiKey: string | undefined;
   /**
    * Turnstile secret for the contact form (#293). Absent ⇒ /api/contact answers
    * 503 rather than accepting a submission it cannot verify.
    */
-  turnstileSecret?: string;
+  turnstileSecret: string | undefined;
   /**
    * Recipient of contact-form messages (#293). Absent ⇒ /api/contact answers
    * 503 rather than accepting a message it cannot deliver.
    */
-  contactRecipient?: string;
+  contactRecipient: string | undefined;
   /**
    * Workers rate-limit binding for /api/contact (#293). Optional defence in
    * depth: absent skips the rate check, Turnstile still gates.
    */
-  contactRateLimiter?: ContactRateLimiter;
+  contactRateLimiter: ContactRateLimiter | undefined;
   prodigiKeyConfigured: boolean;
 };
 

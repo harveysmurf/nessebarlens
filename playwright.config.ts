@@ -90,55 +90,57 @@ export default defineConfig({
   // silently, but kept out of the selection. The local run above is where that
   // coverage lives and it stays required in CI, so nothing is lost.
   ...(REMOTE_BASE_URL ? { testIgnore: "**/success-states.spec.ts" } : {}),
-  webServer: REMOTE_BASE_URL
-    ? undefined
+  ...(REMOTE_BASE_URL
+    ? {}
     : {
-        command: "npm run dev",
-        url: baseURL,
-        reuseExistingServer: !process.env.CI,
-        timeout: 120_000,
-        env: {
-          PORT: String(DEV_PORT),
-          NEXT_PUBLIC_SITE_URL: baseURL,
-          // The derivative ladder base, so the gallery and the print preview
-          // render a real `<picture>`/`<img>` in the flow specs (#326) instead
-          // of the alt-text fallback. The host is deliberately unresolvable:
-          // print-preview.spec.ts fulfils its image requests with a small
-          // opaque pixel, so nothing here reaches a CDN. Server-side only — the
-          // client gets the resolved URLs as props.
-          NEXT_PUBLIC_WEB_IMAGES_BASE: "https://images.e2e.test",
-          // Any sk_test_ key is accepted; the flow is only ever run against
-          // Stripe's sandbox, where 4242… cannot move money. support/stripe.ts
-          // asserts that as a test rather than trusting this comment.
-          STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY ?? "sk_test_e2e_placeholder",
-          // Prodigi is explicit-host by design: prodigiApiBase() throws unless
-          // PRODIGI_API_BASE is set to an allowlisted host, so the server needs
-          // the sandbox base and its paired key or /api/quote answers 503 and the
-          // physical-print spec waits on a Checkout button that can never enable.
-          // The key only reaches the server when it is present, so a bare dev run
-          // without one still leaves that spec skipped rather than misconfigured.
-          PRODIGI_API_BASE: "https://api.sandbox.prodigi.com",
-          ...(process.env.PRODIGI_SANDBOX_API_KEY
-            ? { PRODIGI_SANDBOX_API_KEY: process.env.PRODIGI_SANDBOX_API_KEY }
-            : {}),
-          // A physical order cannot be charged without this one: /api/checkout
-          // fails closed (503 "Print fulfillment is not configured") when it cannot
-          // sign a master asset URL, so without it the physical-print spec waits on
-          // a Checkout button that can never enable. The value only has to sign —
-          // the flow asserts the redirect to Stripe, not a download.
-          ...(process.env.PRINT_ASSET_HMAC_SECRET
-            ? { PRINT_ASSET_HMAC_SECRET: process.env.PRINT_ASSET_HMAC_SECRET }
-            : {}),
-          // The three success-page states. Without this the page can only ever
-          // render "processing" on a dev server, because ORDERS is a Worker
-          // binding with no env fallback.
-          ORDERS_DEV_SEED: "e2e/fixtures/orders-seed.json",
-          // The contact page reads this at request time (it is force-dynamic) to
-          // render the Turnstile widget. Cloudflare's always-pass test site key
-          // lets the contact spec render a real widget without a secret or a
-          // live challenge.
-          NEXT_PUBLIC_TURNSTILE_SITE_KEY:
-            process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA",
+        webServer: {
+          command: "npm run dev",
+          url: baseURL,
+          reuseExistingServer: !process.env.CI,
+          timeout: 120_000,
+          env: {
+            PORT: String(DEV_PORT),
+            NEXT_PUBLIC_SITE_URL: baseURL,
+            // The derivative ladder base, so the gallery and the print preview
+            // render a real `<picture>`/`<img>` in the flow specs (#326) instead
+            // of the alt-text fallback. The host is deliberately unresolvable:
+            // print-preview.spec.ts fulfils its image requests with a small
+            // opaque pixel, so nothing here reaches a CDN. Server-side only — the
+            // client gets the resolved URLs as props.
+            NEXT_PUBLIC_WEB_IMAGES_BASE: "https://images.e2e.test",
+            // Any sk_test_ key is accepted; the flow is only ever run against
+            // Stripe's sandbox, where 4242… cannot move money. support/stripe.ts
+            // asserts that as a test rather than trusting this comment.
+            STRIPE_SECRET_KEY: process.env.STRIPE_SECRET_KEY ?? "sk_test_e2e_placeholder",
+            // Prodigi is explicit-host by design: prodigiApiBase() throws unless
+            // PRODIGI_API_BASE is set to an allowlisted host, so the server needs
+            // the sandbox base and its paired key or /api/quote answers 503 and the
+            // physical-print spec waits on a Checkout button that can never enable.
+            // The key only reaches the server when it is present, so a bare dev run
+            // without one still leaves that spec skipped rather than misconfigured.
+            PRODIGI_API_BASE: "https://api.sandbox.prodigi.com",
+            ...(process.env.PRODIGI_SANDBOX_API_KEY
+              ? { PRODIGI_SANDBOX_API_KEY: process.env.PRODIGI_SANDBOX_API_KEY }
+              : {}),
+            // A physical order cannot be charged without this one: /api/checkout
+            // fails closed (503 "Print fulfillment is not configured") when it cannot
+            // sign a master asset URL, so without it the physical-print spec waits on
+            // a Checkout button that can never enable. The value only has to sign —
+            // the flow asserts the redirect to Stripe, not a download.
+            ...(process.env.PRINT_ASSET_HMAC_SECRET
+              ? { PRINT_ASSET_HMAC_SECRET: process.env.PRINT_ASSET_HMAC_SECRET }
+              : {}),
+            // The three success-page states. Without this the page can only ever
+            // render "processing" on a dev server, because ORDERS is a Worker
+            // binding with no env fallback.
+            ORDERS_DEV_SEED: "e2e/fixtures/orders-seed.json",
+            // The contact page reads this at request time (it is force-dynamic) to
+            // render the Turnstile widget. Cloudflare's always-pass test site key
+            // lets the contact spec render a real widget without a secret or a
+            // live challenge.
+            NEXT_PUBLIC_TURNSTILE_SITE_KEY:
+              process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY ?? "1x00000000000000000000AA",
+          },
         },
-      },
+      }),
 });

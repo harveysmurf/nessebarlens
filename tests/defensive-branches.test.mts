@@ -62,9 +62,7 @@ test("a secret passed as null is the same as no secret at all", async () => {
     const saved = process.env.PRINT_ASSET_HMAC_SECRET;
     try {
       delete process.env.PRINT_ASSET_HMAC_SECRET;
-      const result = await verifyPrintAssetRequest(SAMPLE_SLUG, exp, sig, SIGNER, {
-        secret: undefined,
-      });
+      const result = await verifyPrintAssetRequest(SAMPLE_SLUG, exp, sig, SIGNER, {});
       assert.equal(result.ok, false);
       assert.equal(result.status, 503);
       assert.equal(result.error, "print-asset-unavailable");

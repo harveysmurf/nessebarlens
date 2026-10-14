@@ -21,7 +21,7 @@ const FAKE = "buzz-test:checkout-page-bindings";
 
 type Fake = { ORDERS_DB?: unknown; MASTERS?: unknown };
 
-const globals = globalThis as { __buzzBindings?: Fake };
+const globals = globalThis as { __buzzBindings?: Fake | undefined };
 
 registerHooks({
   resolve(specifier, context, nextResolve) {

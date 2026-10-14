@@ -18,5 +18,5 @@ export type TurnstileVerification =
   | { ok: false; reason: string };
 
 export interface TurnstileVerifier {
-  verify(input: { token: string; remoteIp?: string }): Promise<TurnstileVerification>;
+  verify(input: { token: string; remoteIp?: string | undefined }): Promise<TurnstileVerification>;
 }

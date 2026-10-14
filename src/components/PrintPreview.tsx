@@ -67,7 +67,7 @@ type PrintPreviewProps = {
   label: string;
   filmLookClassName: string;
   master: MasterFacts;
-  size?: PrintSize;
+  size?: PrintSize | undefined;
 };
 
 export function PrintPreview(props: PrintPreviewProps) {

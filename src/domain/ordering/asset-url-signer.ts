@@ -36,7 +36,7 @@ export type AssetSignerOptions = {
   secret?: string | null;
   nowMs?: number;
   ttlSeconds?: number;
-  baseUrl?: string;
+  baseUrl?: string | undefined;
 };
 
 export type AssetSignerVerifyOptions = {
