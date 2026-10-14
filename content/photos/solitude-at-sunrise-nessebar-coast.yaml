@@ -13,6 +13,7 @@ description: A solitary figure sits quietly on a stone-and-wood park bench,
 alt: A solitary figure sits on a bench facing the sunrise over the Black Sea,
   beneath autumn leaves in Nessebar.
 category: fine-art
+# Recovery PR: run guarded master promotion after PR #394 merged before promotion.
 # written by publish-photos
 master_sha256: 3781cf94dbc7fcfa6d7e5eded87bf8abd5f3cea6d41b3dbe3fb08d2dc426ac96
 image_hash: 3781cf94
