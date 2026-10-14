@@ -703,9 +703,15 @@ test("no comment narrates change history instead of an invariant", () => {
   );
 });
 
-test("src contains no `as unknown as` double cast", () => {
+test("src contains no double cast (`x as A as B`)", () => {
   // A double cast ends type checking at the cast and reads as a value the
   // compiler has agreed to believe; #388 removed the last four in src.
+  //
+  // Named for the shape it catches rather than for the `as unknown as` spelling
+  // that prompted it: the second assertion is unchecked whatever its type
+  // argument says, so `x as { a: 1 } as { b: 2 }` is the same defect wearing a
+  // different name, and a rule that only matched the spelling would let it back
+  // in.
   //
   // Walked on the AST, for the reason the narration rule above gives: this
   // repo's comments name these casts by name while explaining them, so a text
@@ -737,7 +743,7 @@ test("src contains no `as unknown as` double cast", () => {
   assert.deepEqual(
     offenders,
     [],
-    `src/ casts through unknown, which checks nothing on either side: ${offenders.join(", ")}`,
+    `src/ double-casts, which checks nothing on either side: ${offenders.join(", ")}`,
   );
 });
 
