@@ -1,0 +1,48 @@
+slug: solitude-at-sunrise-nessebar-coast
+title: Solitude at Sunrise, Nessebar Coast
+caption: A solitary figure watches the sunrise over the Black Sea from a
+  leaf-strewn bench in Nessebar.
+description: A solitary figure sits quietly on a stone-and-wood park bench,
+  gazing out toward a breathtaking sunrise over the calm Black Sea. Captured in
+  the historic coastal town of Nessebar, Bulgaria, this evocative fine art
+  photograph explores themes of introspection, solitude, and the gentle passage
+  of time. The warm golden hour light catches the autumn leaves scattered across
+  the cobblestone path, blending natural tranquility with a rich, emotional
+  narrative. Photographed by hand with authentic, true-to-life detail and zero
+  artificial intelligence generation.
+alt: A solitary figure sits on a bench facing the sunrise over the Black Sea,
+  beneath autumn leaves in Nessebar.
+category: fine-art
+# written by publish-photos
+master_sha256: 3781cf94dbc7fcfa6d7e5eded87bf8abd5f3cea6d41b3dbe3fb08d2dc426ac96
+image_hash: 3781cf94
+master_width: 7714
+master_height: 5146
+orientation: landscape
+print_asset_sha256: e613e380663bf96154b463bc3e4dd36ec7cf0afcc236d0362c2715317324cd3a
+print_asset_md5: 52c756b2b3c40dc02e4f8439dd902118
+print_options:
+  giclee:
+    - 20x30
+    - 30x40
+    - 30x45
+    - 40x60
+    - 50x70
+    - 50x75
+  framed:
+    - 20x30
+    - 30x40
+    - 30x45
+    - 40x60
+    - 50x70
+    - 50x75
+    - 60x90
+  canvas:
+    - 20x30
+    - 30x40
+    - 30x45
+    - 40x60
+    - 50x70
+    - 50x75
+    - 60x90
+    - 70x100
