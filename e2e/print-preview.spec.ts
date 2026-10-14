@@ -207,8 +207,13 @@ test.describe("product preview (#326)", () => {
     await page.goto(`/prints/${HARBOUR}`);
     await page.getByText(/framed print/i).click();
 
-    const readings: Record<string, number> = {};
-    for (const finish of ["black", "white", "brown"] as const) {
+    const FINISHES = ["black", "white", "brown"] as const;
+    // Partial because the loop below fills it one finish at a time; `reading`
+    // narrows once at the read, so a finish the loop skipped fails loudly here
+    // instead of comparing `brown > undefined * 5` (which is false, i.e. a
+    // misleading failure) or being papered over with a non-null assertion.
+    const readings: Partial<Record<(typeof FINISHES)[number], number>> = {};
+    for (const finish of FINISHES) {
       await page.locator("#frame-finish").selectOption(finish);
       await expect(preview(page)).toHaveAttribute("data-frame", finish);
       readings[finish] = await roughness(
@@ -216,6 +221,13 @@ test.describe("product preview (#326)", () => {
         `[data-frame="${finish}"] [data-moulding="top"]`,
       );
     }
+    const reading = (finish: (typeof FINISHES)[number]): number => {
+      const value = readings[finish];
+      if (value === undefined) {
+        throw new Error(`no roughness reading for ${finish}`);
+      }
+      return value;
+    };
     // The brown rail's feTurbulence grain is real texture: strictly positive
     // Laplacian energy. Black and white are a single smooth profile gradient
     // (Laplacian ~0). A regression that drops the grain layer — or repaints
@@ -223,9 +235,9 @@ test.describe("product preview (#326)", () => {
     // near-zero band and fails here. The gap, not an absolute pixel value, is
     // the guard, so a colour tweak does not red the build. Measured locally
     // (1280×720): black ≈ 1.4, white ≈ 1.3, brown ≈ 13.
-    expect(readings.brown).toBeGreaterThan(8);
-    expect(readings.brown).toBeGreaterThan(readings.black * 5);
-    expect(readings.brown).toBeGreaterThan(readings.white * 5);
+    expect(reading("brown")).toBeGreaterThan(8);
+    expect(reading("brown")).toBeGreaterThan(reading("black") * 5);
+    expect(reading("brown")).toBeGreaterThan(reading("white") * 5);
   });
 
   test("changing size updates the preview and keeps the window inside the mount", async ({

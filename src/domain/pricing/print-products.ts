@@ -160,6 +160,39 @@ export function printAreaIn(product: PrintProductEntry): {
 }
 
 /**
+ * The product's nominal size in inches, short/long — what the moulding is
+ * actually made to, as opposed to the smaller `printAreaIn` the photo fills.
+ * The preview maths needs both: the box is the nominal size, the crop is the
+ * print area (#326).
+ *
+ * `sizeIn` is `string` on the table's type, so `split("x")` can hand back
+ * anything — a missing half, a third component, or `Number("")` = `NaN` from a
+ * trailing `x`. All three reach the preview as silent `NaN` geometry, the same
+ * failure #118 was about, so the shape is checked here and a malformed
+ * constant throws rather than propagating. This is a programming error in the
+ * table, not a customer path: the values are literals in this file.
+ */
+export function nominalSizeIn(product: PrintProductEntry): {
+  short: number;
+  long: number;
+} {
+  const parts = product.sizeIn.split("x");
+  const [a, b] = parts.map(Number);
+  if (
+    parts.length !== 2 ||
+    a === undefined ||
+    b === undefined ||
+    !Number.isFinite(a) ||
+    !Number.isFinite(b) ||
+    a <= 0 ||
+    b <= 0
+  ) {
+    throw new Error(`malformed sizeIn ${JSON.stringify(product.sizeIn)} for ${product.sku}`);
+  }
+  return { short: Math.min(a, b), long: Math.max(a, b) };
+}
+
+/**
  * The product for a `(format, size, mount, paper)` key, or null. The key is the
  * identity: there is no assumption that every size exists in every format, so
  * callers that accept a raw size must handle a miss. The mount only narrows a

@@ -21,7 +21,7 @@
 
 import type { MasterFacts, Orientation } from "../catalog/master-facts";
 import type { FrameFinish } from "../pricing/pricing";
-import { findProduct, printAreaIn, type PrintProductEntry } from "../pricing/print-products";
+import { findProduct, nominalSizeIn, printAreaIn, type PrintProductEntry } from "../pricing/print-products";
 import type { PrintSelection } from "./print-selection";
 
 export type Mm = number;
@@ -77,9 +77,9 @@ function orientedArea(product: PrintProductEntry, orientation: Orientation): Ext
 
 /** The product's nominal size (glaze for framed, front for canvas), oriented. */
 function orientedSizeIn(product: PrintProductEntry, orientation: Orientation): Extent {
-  const [a, b] = product.sizeIn.split("x").map(Number);
-  const short = Math.min(a, b) * MM_PER_INCH;
-  const long = Math.max(a, b) * MM_PER_INCH;
+  const size = nominalSizeIn(product);
+  const short = size.short * MM_PER_INCH;
+  const long = size.long * MM_PER_INCH;
   return orientation === "landscape"
     ? { width: long, height: short }
     : { width: short, height: long };
