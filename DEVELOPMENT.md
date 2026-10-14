@@ -1752,12 +1752,17 @@ Three invariants: (1) `sku` and `unitCostEur` never enter the cached
   rule fires, narrow it — an inline `eslint-disable-next-line` is acceptable only
   with a reason on it, and there is exactly one today: `NODE_ENV` in
   `config/env.ts`. `@cloudflare/workers-types` declares a Workers `process` shim
-  as `var process: any`, and since #387 put that package in the program it wins
-  the merge against `@types/node`, so a bare `process.env` is `any` for every file
-  under `src/`. Redeclaring `process` does not fix it — a second `declare var` is
-  silently ignored in favour of the first, which reads like a fix and is not one.
+  as `var process: any`, and since #387 put that package in the **Worker**
+  program it wins the merge against `@types/node` there, so in that program a
+  bare `process.env` is `any` for every file under `src/`. Redeclaring `process`
+  does not fix it — a second `declare var` is silently ignored in favour of the
+  first, which reads like a fix and is not one.
   So the `any` is admitted once, where it enters, and every reader below it is
-  typed. `Buffer` was the same defect and is now typed in the Node program — see
+  typed. The Node program excludes the generated env type and with it the shim
+  (see the two-program split below), so it types `process.env` through
+  `@types/node` — and this alias is what its readers get, which is why it has to
+  be spelled out here rather than left to whichever global wins. `Buffer` was the
+  same defect and is now typed in the Node program — see
   the two-program split below.
 - **Two type programs, and why the split exists** (#401).
   `tsconfig.json` is the **Worker** program: `src/**`, `next.config.ts`,

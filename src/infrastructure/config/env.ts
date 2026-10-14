@@ -26,13 +26,13 @@ type StringEnv = Readonly<Record<string, unknown>>;
  * `wrangler.toml` are reached by name through the readers below, never by
  * property access.
  *
- * The keys are written out rather than mapped from the generated `CloudflareEnv`
- * because mapping is what couples this module to `@cloudflare/workers-types`,
- * whose global `declare var process: any` and `declare var Buffer: any` make
- * `process.env` unchecked for every file in `src/` (#401). Naming them here
- * keeps the typo protection — `env.ORDERS_DB` still does not compile — and drops
- * the SDK types, so the Node-facing tsconfig can compile this file without the
- * Workers globals in the program at all.
+  * The keys are written out rather than mapped from the generated `CloudflareEnv`
+  * because mapping is what couples this module to `@cloudflare/workers-types`,
+  * whose global `declare var process: any` and `declare var Buffer: any` make
+  * `process.env` and `Buffer` unchecked in any program that contains them
+  * (#401). Naming them here keeps the typo protection — `env.ORDERS_DBB` still
+  * does not compile — and drops the SDK types, so the Node-facing tsconfig can
+  * compile this file without the Workers globals in the program at all.
  *
  * `tests/env-shape.test.mts` is the gate: it reads the generated
  * `cloudflare-env.d.ts` and fails if these keys and its keys ever differ, so the
@@ -97,12 +97,19 @@ function trimmed(value: unknown): string | undefined {
  * The Node/local environment, typed.
  *
  * `@cloudflare/workers-types` declares a Workers `process` shim as `var process:
- * any`, and since #387 put that package in this program it wins the merge against
- * `@types/node` — so a bare `process.env` is `any` for every file under `src/`,
+ * any`, and since #387 put that package in the Worker program it wins the merge
+ * against `@types/node` there — so in that program a bare `process.env` is `any`,
  * and #389's `no-unsafe-*` rules flagged 35 of those reads here and in
  * `config.ts`. Declaring the Workers shim again does not help: a second
  * `declare var process` is silently ignored in favour of the first, which reads
  * like a fix and is not one.
+ *
+ * This is now the *only* place either program leaves `process.env` unchecked,
+ * and only the Worker program sees it. The Node program excludes the generated
+ * env type and with it the shim (#401), so this alias is what a reader in that
+ * program gets — which is also why it has to be typed here rather than left to
+ * `@types/node`: the two programs disagree about what `process.env` is, and this
+ * is the line where they agree.
  *
  * So the `any` is admitted here, once, at the single place it enters the code,
  * and given the shape it has at runtime: a mutable map of string to string. Every
