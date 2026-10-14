@@ -1,5 +1,6 @@
 import { envString, envStringStrippedSlash } from "../config/env";
 import type { ProdigiFailureBranch } from "../../domain/ordering/prodigi-result";
+import { isRecord } from "../../domain/json/record";
 import type { ProdigiFailureReason } from "../../domain/ordering/prodigi-policy";
 
 export const PRODIGI_SANDBOX_API_BASE = "https://api.sandbox.prodigi.com";
@@ -45,8 +46,8 @@ function prodigiDetail(raw: string): string | null {
     return null;
   }
   if (typeof parsed === "string") return truncateDetail(parsed);
-  if (typeof parsed !== "object" || parsed === null) return null;
-  const record = parsed as Record<string, unknown>;
+  if (!isRecord(parsed)) return null;
+  const record = parsed;
   for (const key of ["detail", "message", "error"]) {
     const value = record[key];
     if (typeof value === "string" && value !== "") return truncateDetail(value);
