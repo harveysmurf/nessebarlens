@@ -28,6 +28,7 @@ import {
   envIntInRange,
   envString,
   envStringStrippedSlash,
+  NODE_ENV,
   type EnvReader,
 } from "./env";
 import { stripTrailingSlashes } from "../../domain/pricing/url-patterns";
@@ -105,7 +106,7 @@ export type Config = {
  * finding it.
  */
 export function webImagesBase(
-  env: ConfigEnv = process.env,
+  env: ConfigEnv = NODE_ENV,
 ): string | undefined {
   const raw = envString("NEXT_PUBLIC_WEB_IMAGES_BASE", env);
   if (!raw) return undefined;
@@ -125,13 +126,13 @@ export function webImagesBase(
  * Whether NODE_ENV says production. Read through envString so a padded value
  * ("production ") counts, like every other reader.
  */
-export function isProduction(env: ConfigEnv = process.env): boolean {
+export function isProduction(env: ConfigEnv = NODE_ENV): boolean {
   return envString("NODE_ENV", env) === "production";
 }
 
 /** The configured site URL, or undefined — no fallback, no throw. */
 export function configuredSiteUrl(
-  env: ConfigEnv = process.env,
+  env: ConfigEnv = NODE_ENV,
 ): string | undefined {
   return envStringStrippedSlash("NEXT_PUBLIC_SITE_URL", env);
 }
@@ -151,7 +152,7 @@ export function configuredSiteUrl(
  * *and* delegates the async binding read, rather than pretending one pure
  * getConfig covers both.
  */
-export function siteUrl(env: ConfigEnv = process.env): string {
+export function siteUrl(env: ConfigEnv = NODE_ENV): string {
   const configured = configuredSiteUrl(env);
   if (configured) return configured;
   if (isProduction(env)) {
@@ -164,7 +165,7 @@ export function siteUrl(env: ConfigEnv = process.env): string {
  * isConfiguredSiteUrl, for callers that need to decide before they resolve the
  * URL: a route must return 503, not build a Stripe session it will discard.
  */
-export function isConfiguredSiteUrl(env: ConfigEnv = process.env): boolean {
+export function isConfiguredSiteUrl(env: ConfigEnv = NODE_ENV): boolean {
   return configuredSiteUrl(env) !== undefined;
 }
 
@@ -178,7 +179,7 @@ export function isConfiguredSiteUrl(env: ConfigEnv = process.env): boolean {
  * rule here would be a second answer.
  */
 export function printAssetSecret(
-  env: ConfigEnv = process.env,
+  env: ConfigEnv = NODE_ENV,
 ): string | null {
   return usablePrintAssetSecret(envString("PRINT_ASSET_HMAC_SECRET", env));
 }
@@ -190,7 +191,7 @@ export function printAssetSecret(
  * embeds it in the callback URL so the route's `?token=` check can pass.
  */
 export function prodigiWebhookToken(
-  env: ConfigEnv = process.env,
+  env: ConfigEnv = NODE_ENV,
 ): string | undefined {
   return envString("PRODIGI_WEBHOOK_TOKEN", env);
 }
@@ -202,7 +203,7 @@ export function prodigiWebhookToken(
  * `operator-alert.undelivered` instead of throwing on a webhook path. Read here,
  * not in container.ts, so the env reads stay in the one allowlisted module.
  */
-export function operatorAlertConfig(env: ConfigEnv = process.env): {
+export function operatorAlertConfig(env: ConfigEnv = NODE_ENV): {
   apiKey: string | undefined;
   to: string | undefined;
 } {
@@ -222,7 +223,7 @@ export function operatorAlertConfig(env: ConfigEnv = process.env): {
  * rendering a broken challenge. Unlike `siteUrl`, an absent key is not fatal:
  * the rest of the site works without a contact form.
  */
-export function turnstileSiteKey(env: ConfigEnv = process.env): string | undefined {
+export function turnstileSiteKey(env: ConfigEnv = NODE_ENV): string | undefined {
   return envString("NEXT_PUBLIC_TURNSTILE_SITE_KEY", env);
 }
 
@@ -238,17 +239,17 @@ export function turnstileSiteKey(env: ConfigEnv = process.env): string | undefin
  * result rather than throwing: the caller branches on `ok` and maps a failure
  * to a 503 through prodigiFailureFrom, never by matching the message text.
  */
-export function prodigiConfig(env: ConfigEnv = process.env): ProdigiConfigResult {
+export function prodigiConfig(env: ConfigEnv = NODE_ENV): ProdigiConfigResult {
   return readProdigiConfig(env);
 }
 
 /** The Stripe secret, or undefined. The Stripe client still throws; see getStripe. */
-export function stripeSecretKey(env: ConfigEnv = process.env): string | undefined {
+export function stripeSecretKey(env: ConfigEnv = NODE_ENV): string | undefined {
   return envString("STRIPE_SECRET_KEY", env);
 }
 
 /** Every configured value, resolved once. Never throws. */
-export function getConfig(env: ConfigEnv = process.env): Config {
+export function getConfig(env: ConfigEnv = NODE_ENV): Config {
   return {
     siteUrl: configuredSiteUrl(env),
     stripe: { secretKey: stripeSecretKey(env) },
@@ -289,7 +290,7 @@ export function getConfig(env: ConfigEnv = process.env): Config {
  * wire it up wherever a missing-config report is actually needed.
  */
 export function missingProductionConfig(
-  env: ConfigEnv = process.env,
+  env: ConfigEnv = NODE_ENV,
 ): string[] {
   const config = getConfig(env);
   const missing: string[] = [];

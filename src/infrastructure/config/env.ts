@@ -77,14 +77,41 @@ function trimmed(value: unknown): string | undefined {
   return out.length > 0 ? out : undefined;
 }
 
-// The ?? against process.env is intentional, not redundant: with the default
+/**
+ * The Node/local environment, typed.
+ *
+ * `@cloudflare/workers-types` declares a Workers `process` shim as `var process:
+ * any`, and since #387 put that package in this program it wins the merge against
+ * `@types/node` — so a bare `process.env` is `any` for every file under `src/`,
+ * and #389's `no-unsafe-*` rules flagged 35 of those reads here and in
+ * `config.ts`. Declaring the Workers shim again does not help: a second
+ * `declare var process` is silently ignored in favour of the first, which reads
+ * like a fix and is not one.
+ *
+ * So the `any` is admitted here, once, at the single place it enters the code,
+ * and given the shape it has at runtime: a mutable map of string to string. Every
+ * reader below and every `ConfigEnv = process.env` default in `config.ts` goes
+ * through this binding, which is what leaves the typed-lint rules free to be
+ * meaningful everywhere else. The object is `process.env` itself, not a copy, so
+ * a test or a runtime that assigns to `process.env` is still seen.
+ */
+export const NODE_ENV: Readonly<Record<string, string | undefined>> =
+  // The one place in src/ that reads the untyped global. Suppressed rather than
+  // narrowed because there is nothing left to narrow to: `process` is `any` at
+  // the declaration (see above), so `as` can only re-label the value, and the
+  // typed-lint rules are right that this read is unchecked. It is unchecked in
+  // one place, once, and every reader downstream is typed.
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+  process.env as Readonly<Record<string, string | undefined>>;
+
+// The ?? against NODE_ENV is intentional, not redundant: with the default
 // arg it reads the same source twice, which is harmless, and it keeps the
 // Worker-env-first precedence correct for callers that pass an env record.
 export function envString(
   name: string,
-  env: EnvReader = process.env,
+  env: EnvReader = NODE_ENV,
 ): string | undefined {
-  return trimmed(envValue(name, env)) ?? trimmed(process.env[name]);
+  return trimmed(envValue(name, env)) ?? trimmed(NODE_ENV[name]);
 }
 
 /**
@@ -98,7 +125,7 @@ export function envString(
  */
 export function envFlag(
   name: string,
-  env: EnvReader = process.env,
+  env: EnvReader = NODE_ENV,
 ): boolean {
   const value = envString(name, env);
   return value !== undefined && /^(?:true|1)$/i.test(value);
@@ -114,7 +141,7 @@ export function envFlag(
  */
 export function envIntInRange(
   name: string,
-  env: EnvReader = process.env,
+  env: EnvReader = NODE_ENV,
   fallback: number,
   min: number,
 ): number {
@@ -127,7 +154,7 @@ export function envIntInRange(
 
 export function envStringStrippedSlash(
   name: string,
-  env: EnvReader = process.env,
+  env: EnvReader = NODE_ENV,
 ): string | undefined {
   const value = envString(name, env);
   if (value === undefined) return undefined;

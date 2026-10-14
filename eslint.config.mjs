@@ -60,6 +60,38 @@ const eslintConfig = [
     },
   },
   {
+    // Typed linting (#389). The `no-unsafe-*` rules are the only ones that stop
+    // an `any` from *flowing* — `no-explicit-any` catches the ones we write and
+    // says nothing about the ones a dependency hands us. Enabling them needs
+    // type information, which means the parser has to be told about the project.
+    //
+    // Scoped to `src/**` on purpose. `projectService` resolves each file against
+    // the *nearest* tsconfig, and the nearest tsconfig for `tests/` is the root
+    // one — which excludes `tests`. Widening the scope to the test suite would
+    // either fail on "file not found in project" or quietly type-check the suite
+    // against a config it is not part of. `tests/tsconfig.tests-check.json` is
+    // the suite's own program; wiring it in is its own change.
+    //
+    // `scripts/**` is `.mjs` and deliberately not in any tsconfig, so typed
+    // linting cannot reach it without adding a config that does not exist for a
+    // reason.
+    files: ["src/**/*.ts", "src/**/*.tsx"],
+    ignores: ["src/generated/**"],
+    languageOptions: {
+      parserOptions: {
+        projectService: true,
+        tsconfigRootDir: import.meta.dirname,
+      },
+    },
+    rules: {
+      "@typescript-eslint/no-unsafe-assignment": "error",
+      "@typescript-eslint/no-unsafe-member-access": "error",
+      "@typescript-eslint/no-unsafe-return": "error",
+      "@typescript-eslint/no-unsafe-argument": "error",
+      "@typescript-eslint/no-unsafe-call": "error",
+    },
+  },
+  {
     ignores: [
       "node_modules/**",
       ".next/**",
