@@ -1757,7 +1757,38 @@ Three invariants: (1) `sku` and `unitCostEur` never enter the cached
   under `src/`. Redeclaring `process` does not fix it — a second `declare var` is
   silently ignored in favour of the first, which reads like a fix and is not one.
   So the `any` is admitted once, where it enters, and every reader below it is
-  typed.
+  typed. `Buffer` was the same defect and is now typed in the Node program — see
+  the two-program split below.
+- **Two type programs, and why the split exists** (#401).
+  `tsconfig.json` is the **Worker** program: `src/**`, `next.config.ts`,
+  `open-next.config.ts`, `cloudflare-env.d.ts` and therefore
+  `@cloudflare/workers-types`. `tsconfig.tests-check.json` is the **Node**
+  program: `tests/**`, `e2e/**` and the `src/` modules they import, and it
+  *excludes* `cloudflare-env.d.ts`.
+
+  The reason is that `@cloudflare/workers-types`'s `index.d.ts` is a **global
+  script** declaring `var process: any` and `var Buffer: any`. Any program that
+  includes it has every `process.env` and every `Buffer` unchecked, and the
+  `/// <reference types>` at the top of the generated file is the only thing that
+  forces it in. So the Worker env shape is described in `config/env.ts` as
+  `WorkerEnvShape` — six named keys, each `unknown` — rather than mapped from the
+  generated `CloudflareEnv`, and nothing in the Node program needs the Workers
+  globals to be present. Keys are still protected: `env.ORDERS_DB` compiles and
+  `env.ORDERS_DBB` does not, and `tests/env-shape.test.mts` fails if that list
+  and the generated one ever differ.
+
+  Two things to know before changing either config. The Node program still
+  reaches the package transitively (`worker-bindings.ts` → `@opennextjs/cloudflare`
+  → `wrangler` → `miniflare` → a bare `import '@cloudflare/workers-types'`) and
+  lands on the package's **`index.ts`**, a module, rather than its **`index.d.ts`**,
+  the global script that carries the shim. That is a resolution choice we do not
+  own; `tests/tsconfig-split.test.mts` is what notices if it flips. And
+  **`worker.ts` is in no program at all** — it belongs to the Worker program, but
+  its only import is the `.open-next/worker.js` build artifact, so compiling it
+  would mean generating that artifact inside the typecheck step. Its behaviour is
+  pinned by `tests/reconcile-cron.test.mts` instead, and the logic it delegates
+  to stays type-checked in `config/reconcile-cron.ts`. Widening that is a
+  separate piece of work, deliberately not smuggled in here.
 - TypeScript strict, plus `noUncheckedIndexedAccess` in `src/` and `e2e/`: an
   unchecked index there becomes a silent `NaN` in geometry or money maths. The
   suite opts out of it for now (167 errors behind one override in
