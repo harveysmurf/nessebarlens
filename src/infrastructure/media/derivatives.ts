@@ -27,7 +27,7 @@ import {
 import { webImagesBase } from "../config/config";
 
 /** The catalog fields the web ladder needs — a slug and, once published, its hash. */
-export type WebPhotoSource = { slug: string; imageHash?: string };
+export type WebPhotoSource = { slug: string; imageHash?: string | undefined };
 
 export type WebDerivativeUrls = {
   /** The JPEG URL for every rung, keyed by width. */

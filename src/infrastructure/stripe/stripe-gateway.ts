@@ -62,7 +62,7 @@ function buildSessionParams(
             description: isPhysical
               ? `${intent.size}${intent.frame ? ` · ${intent.frame} frame` : ""}`
               : "Digital high-resolution license",
-            images: intent.previewImage ? [intent.previewImage] : undefined,
+            ...(intent.previewImage ? { images: [intent.previewImage] } : {}),
           },
         },
       },

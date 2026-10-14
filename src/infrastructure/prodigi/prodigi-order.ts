@@ -142,7 +142,7 @@ export function buildProdigiOrderBody(input: {
    * the caller fails closed without one rather than sending an empty hash. */
   assetMd5: string;
   /** PRODIGI_WEBHOOK_TOKEN. Unset or blank ⇒ the body carries no callbackUrl. */
-  webhookToken?: string;
+  webhookToken?: string | undefined;
 }): ProdigiOrderRequest {
   const entry = resolveSku(
     input.format,

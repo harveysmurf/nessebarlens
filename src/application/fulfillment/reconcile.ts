@@ -93,7 +93,7 @@ export type ReconcileInput = {
   createOrder: CreateProdigiOrder;
   assetUrlSigner: AssetUrlSigner;
   nowMs?: number;
-  downloadLimits?: DownloadTokenLimits;
+  downloadLimits?: DownloadTokenLimits | undefined;
   batch?: number;
   lookbackHours?: number;
   stuckHours?: number;

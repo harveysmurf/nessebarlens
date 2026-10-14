@@ -175,7 +175,7 @@ type PublishDeps = {
   // test sets them after `deps()` to stand in for a real measurement or a
   // second bucket reader.
   measure?: () => Promise<{ width: number; height: number; orientation: string }>;
-  readS3?: ReturnType<typeof fakeSyncS3>;
+  readS3?: ReturnType<typeof fakeSyncS3> | undefined;
 };
 
 function deps(overrides: {

@@ -1700,7 +1700,12 @@ Three invariants: (1) `sku` and `unitCostEur` never enter the cached
   unchecked index there becomes a silent `NaN` in geometry or money maths. The
   suite opts out of it for now (167 errors behind one override in
   `tsconfig.tests-check.json`, tracked) — narrow a fixture lookup rather than
-  reaching for `!`. Run `npm run lint` before committing.
+  reaching for `!`. `exactOptionalPropertyTypes` is on repo-wide: a port's
+  optional prop that callers routinely forward `undefined` into is declared
+  `foo?: T | undefined`, while a value that is genuinely absent is omitted
+  rather than written as `undefined` — the two mean different things, so don't
+  quietly widen a prop to silence an error. Run `npm run lint` before
+  committing.
 - Fonts are vendored; never pull them from a CDN at build time.
 
 ### One source per grammar and per shape

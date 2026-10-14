@@ -237,9 +237,14 @@ test("the e2e-worker job points the harness at the local Worker the spec accepts
 });
 
 test("a remote run starts no dev server, and the seeded states stay off it", () => {
+  // The key is spread in rather than assigned `undefined`: a plain
+  // `webServer: cond ? undefined : {...}` is exactly what
+  // `exactOptionalPropertyTypes` rejects (#385), and Playwright's own types are
+  // not written for it. Same behaviour either way — absent means no server —
+  // so this still fails if the condition is ever dropped.
   assert.match(
     config,
-    /webServer:\s*REMOTE_BASE_URL\s*\?\s*undefined\s*:/,
+    /\.\.\.\(REMOTE_BASE_URL\s*\?\s*\{\}\s*:\s*\{\s*webServer:/,
     "the dev server must be conditional, or a remote run also boots a local one and the two disagree",
   );
   assert.match(

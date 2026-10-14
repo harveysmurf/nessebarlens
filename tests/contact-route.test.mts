@@ -23,7 +23,7 @@ type Fake = {
   prodigiKeyConfigured: boolean;
 };
 
-const globals = globalThis as { __buzzBindings?: Fake };
+const globals = globalThis as { __buzzBindings?: Fake | undefined };
 const initial: Fake = { prodigiKeyConfigured: false };
 globals.__buzzBindings = initial;
 

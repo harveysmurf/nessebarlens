@@ -303,11 +303,11 @@ export async function handleProdigiCallback(input: {
    * Optional like fulfillment's sendEmail. Unset means RESEND_API_KEY is
    * missing — log a skip and do not claim `print-shipped` on the record.
    */
-  sendEmail?: SendEmail;
-  fetchOrder?: FetchProdigiOrder;
+  sendEmail?: SendEmail | undefined;
+  fetchOrder?: FetchProdigiOrder | undefined;
   now: string;
   /** Override site origin for email copy (tests). */
-  siteUrl?: string;
+  siteUrl?: string | undefined;
 }): Promise<ProdigiCallbackResult> {
   const parsed = parseProdigiCloudEvent(input.rawBody);
   if (!parsed.ok) {

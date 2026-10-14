@@ -39,28 +39,28 @@ export type PhotoFile = {
   description: string;
   alt: string;
   category: PhotoCategory;
-  filmLook?: FilmLook;
-  order?: number;
-  featured?: boolean;
-  heroCaption?: string;
+  filmLook?: FilmLook | undefined;
+  order?: number | undefined;
+  featured?: boolean | undefined;
+  heroCaption?: string | undefined;
   published: boolean;
-  masterSha256?: string;
-  imageHash?: string;
+  masterSha256?: string | undefined;
+  imageHash?: string | undefined;
   /** Oriented pixel size and orientation, measured from the master file (#295/#297). */
-  master?: MasterFacts;
+  master?: MasterFacts | undefined;
   /**
    * The pre-rotated file Prodigi receives (#307): its SHA-256 and the MD5 sent
    * as `assets[0].md5Hash`. Generated together by `publish-photos`; a file
    * carries both keys or neither.
    */
-  printAsset?: { sha256: string; md5: string };
+  printAsset?: { sha256: string; md5: string } | undefined;
   /**
    * The print offer (#300): which sizes are sold per physical format. Derived
    * from the master by `publish-photos` and validated here against the same
    * facts. Required on a published photo; the owner narrows it by deleting
    * entries in the publish PR, which `publish-photos` then preserves.
    */
-  printOffer?: PrintOffer;
+  printOffer?: PrintOffer | undefined;
 };
 
 export type PhotoValidation =

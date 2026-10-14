@@ -64,7 +64,7 @@ export type RevokeInput = {
    * RESEND_API_KEY is missing — `raiseOperatorAlert` logs
    * `operator-alert.undelivered` rather than throwing on a webhook path.
    */
-  alerts?: OperatorAlerts;
+  alerts?: OperatorAlerts | undefined;
 };
 
 /**

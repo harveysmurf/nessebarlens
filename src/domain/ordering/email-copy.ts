@@ -22,11 +22,11 @@ export type EmailCopyInput = {
   /** Absolute origin, no trailing slash — same contract as siteUrl(). */
   siteUrl: string;
   /** Tracking number for print-shipped; ignored by other kinds. */
-  trackingNumber?: string;
+  trackingNumber?: string | undefined;
   /** Carrier name for print-shipped; ignored by other kinds. */
-  carrier?: string;
+  carrier?: string | undefined;
   /** Tracking URL for print-shipped; ignored by other kinds. */
-  trackingUrl?: string;
+  trackingUrl?: string | undefined;
 };
 
 export type EmailCopy = {

@@ -105,7 +105,7 @@ test("a missing web rung, staging master and production master are each reported
 test("a photo published with no image_hash is not reported as missing", () => {
   // The placeholder phase: a published photo with no ladder must stay quiet.
   const findings = auditFindings({
-    catalog: [{ slug: "dawn", published: true, imageHash: undefined }],
+    catalog: [{ slug: "dawn", published: true }],
     webObjects: [],
     stagingObjects: [],
     mastersObjects: [],
@@ -219,6 +219,14 @@ test("readCatalogEntries reads published and unpublished files and rejects a bad
       ["dawn", true, NEW],
       ["draft", false, undefined],
     ],
+  );
+  // A photo with no `image_hash` yields an *absent* key, not a key written as
+  // `undefined`. Both read back as `undefined`, so the assertion above cannot
+  // tell them apart — `in` is what pins the contract `readCatalogEntries` now
+  // keeps honest by spreading the key in only when the catalog sets it (#385).
+  assert.deepEqual(
+    entries.map((entry) => "imageHash" in entry),
+    [true, false],
   );
 
   writeFileSync(path.join(dir, "broken.yaml"), "title: no\n");

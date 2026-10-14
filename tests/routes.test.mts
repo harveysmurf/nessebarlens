@@ -26,7 +26,7 @@ type Fake = {
   prodigiKeyConfigured: boolean;
 };
 
-const globals = globalThis as { __buzzBindings?: Fake };
+const globals = globalThis as { __buzzBindings?: Fake | undefined };
 const bindings: Fake = { prodigiKeyConfigured: false };
 globals.__buzzBindings = bindings;
 
@@ -1040,7 +1040,7 @@ test("prodigi webhook: the ?token= query param authenticates, header still works
   });
   const call = (url: string, headers?: Record<string, string>) =>
     prodigiWebhook.POST(
-      new Request(url, { method: "POST", headers, body: event }),
+      new Request(url, { method: "POST", ...(headers ? { headers } : {}), body: event }),
     );
   try {
     // Correct token in the query param: passes auth and reaches the binding

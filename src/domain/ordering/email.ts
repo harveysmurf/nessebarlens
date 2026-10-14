@@ -77,8 +77,8 @@ export const RESEND_FROM_ADDRESS = "Nessebar Lens <orders@nessebarlens.com>";
  */
 export function createResendSender(options: {
   apiKey: string;
-  fetchImpl?: typeof fetch;
-  from?: string;
+  fetchImpl?: typeof fetch | undefined;
+  from?: string | undefined;
 }): SendEmail {
   const fetchImpl = options.fetchImpl ?? fetch;
   const from = options.from ?? RESEND_FROM_ADDRESS;
@@ -140,7 +140,7 @@ export function createResendSender(options: {
  */
 export function sendEmailFromApiKey(
   apiKey: string | undefined,
-  fetchImpl?: typeof fetch,
+  fetchImpl?: typeof fetch | undefined,
 ): SendEmail | undefined {
   if (!apiKey) return undefined;
   return createResendSender({ apiKey, fetchImpl });

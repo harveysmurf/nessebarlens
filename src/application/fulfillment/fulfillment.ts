@@ -241,14 +241,14 @@ export async function fulfillCheckoutSession(
      * this module is otherwise pure of configuration, and config.ts is the only
      * place that reads it. Defaults keep every existing caller and test working.
      */
-    downloadLimits?: DownloadTokenLimits;
+    downloadLimits?: DownloadTokenLimits | undefined;
     /**
      * Customer email (#117). Optional like `createOrder`: unset means the
      * caller (or the route) has already decided not to send — typically
      * because RESEND_API_KEY is missing. A failure inside sendEmail never
      * changes the HTTP status or the stored order.
      */
-    sendEmail?: SendEmail;
+    sendEmail?: SendEmail | undefined;
   },
 ): Promise<{ httpStatus: 200 | 500; body: Record<string, unknown> }> {
   const decision = decideFulfillment(input);

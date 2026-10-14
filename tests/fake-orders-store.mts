@@ -45,7 +45,7 @@ export function memoryOrdersStore(seed?: {
   orders?: Record<string, string>;
   tokens?: Record<string, { record: DownloadTokenRecord; index: DownloadTokenIndex }>;
   /** Legacy KV-shaped seed: sessionId -> order JSON, plus dl:/dls: keys. */
-  kv?: Record<string, string>;
+  kv?: Record<string, string> | undefined;
 }): MemoryOrdersStore {
   const orders = new Map<string, string>();
   const tokens = new Map<string, string>();

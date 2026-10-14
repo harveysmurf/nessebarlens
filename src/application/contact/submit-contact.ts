@@ -40,11 +40,11 @@ export type ContactOutcome =
 export type ContactDeps = {
   verifyTurnstile: TurnstileVerifier;
   sendEmail: ContactEmailSender;
-  rateLimit?: ContactRateLimiter;
+  rateLimit?: ContactRateLimiter | undefined;
 };
 
 export type ContactRequestContext = {
-  remoteIp?: string;
+  remoteIp?: string | undefined;
   /** Rate-limit bucket key; the caller's IP, or a stable fallback. */
   rateLimitKey: string;
 };

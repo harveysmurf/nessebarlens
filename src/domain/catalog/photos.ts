@@ -12,19 +12,19 @@ export type Photo = {
   description: string;
   alt: string;
   /** Homepage hero caption. Set on the featured photo only; copy lives here, not in the page. */
-  heroCaption?: string;
+  heroCaption?: string | undefined;
   /** Private master object key in MASTERS — never used in gallery UI. */
   imageKey: string;
   /** Film gallery uses dark matte + filter. */
-  filmLook?: FilmLook;
+  filmLook?: FilmLook | undefined;
   /** Set on at most one published photo; drives the homepage hero. */
-  featured?: boolean;
+  featured?: boolean | undefined;
   /** Master content hash; when present the web derivative ladder is keyed by it. */
-  imageHash?: string;
+  imageHash?: string | undefined;
   /** Oriented pixel size and orientation; drives print eligibility (#295/#297). */
   master: MasterFacts;
   /** The pre-rotated file Prodigi receives (#307); absent until it is backfilled. */
-  printAsset?: { sha256: string; md5: string };
+  printAsset?: { sha256: string; md5: string } | undefined;
   /**
    * The print offer (#300): which sizes are sold per physical format. The
    * generated catalog only contains published photos, which build-catalog
