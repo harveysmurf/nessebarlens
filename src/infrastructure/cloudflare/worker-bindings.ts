@@ -1,7 +1,11 @@
 import type { MastersBucket } from "../../domain/catalog/master-key";
 import type { OrdersStore } from "../../domain/ordering/orders-store";
 import type { ContactRateLimiter } from "../../application/contact/submit-contact";
-import { envString } from "../config/env";
+import {
+  envString,
+  type EnvReader,
+  type PartialCloudflareEnv,
+} from "../config/env";
 import { isRecord } from "../../domain/json/record";
 import { printAssetSecret } from "../config/config";
 import { prodigiKeyConfigured } from "../prodigi/prodigi-config";
@@ -43,15 +47,21 @@ export type WorkerBindings = {
   prodigiKeyConfigured: boolean;
 };
 
-/** The Cloudflare env object, as getCloudflareContext returns it. */
-export type CloudflareEnv = Record<string, unknown>;
+export type { PartialCloudflareEnv };
 
-/** Reads the Worker env. Injectable so tests can drive the real binding path. */
-export type EnvContextReader = () => Promise<CloudflareEnv>;
+/**
+ * Reads the Worker env. Injectable so tests can drive the real binding path.
+ *
+ * `EnvReader` and not the generated `PartialCloudflareEnv`: a caller's env here
+ * is usually one that should be *refused* -- a D1 stub with no `batch`, a rate
+ * limiter with no `limit` -- which is precisely what the guards below are for.
+ * The real context is typed, via `readCloudflareEnv`.
+ */
+export type EnvContextReader = () => Promise<EnvReader>;
 
 type CloudflareContextModule = {
   getCloudflareContext: (options?: { async: boolean }) => Promise<{
-    env: CloudflareEnv;
+    env: PartialCloudflareEnv;
   }>;
 };
 
@@ -65,7 +75,7 @@ const loadCloudflareModule = (): Promise<CloudflareContextModule> =>
  */
 export async function readCloudflareEnv(
   load: () => Promise<CloudflareContextModule> = loadCloudflareModule,
-): Promise<CloudflareEnv> {
+): Promise<PartialCloudflareEnv> {
   const mod = await load();
   const ctx = await mod.getCloudflareContext({ async: true });
   return ctx.env ?? {};
@@ -82,7 +92,7 @@ export async function readCloudflareEnv(
 export async function readWorkerBindings(
   options: { readEnv?: EnvContextReader } = {},
 ): Promise<WorkerBindings> {
-  let env: CloudflareEnv = {};
+  let env: EnvReader = {};
   try {
     env = await (options.readEnv ?? readCloudflareEnv)();
   } catch {

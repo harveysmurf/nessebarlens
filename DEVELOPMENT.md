@@ -65,6 +65,22 @@ npm test             # node --test (see §4)
 npm run cf-typegen   # regenerate cloudflare-env.d.ts from wrangler.toml
 ```
 
+`cloudflare-env.d.ts` is the Worker env type and is **committed**, because
+`npm run typecheck` on a fresh clone has to see the same bindings CI does
+(#387). So it needs a drift gate, which is what `scripts/cf-env-types.mjs` is:
+`npm run cf-typegen` regenerates and normalizes it, `npm run cf-typegen:check`
+regenerates, compares, puts the committed copy back untouched, and fails if the
+two differ (CI runs it). Commit the regenerated file whenever you touch a
+binding in `wrangler.toml`.
+
+**Do not replace that gate with `wrangler types --check`.** It compares the
+`hash:` in the header comment and nothing else (checked on wrangler 4.149.0): it
+goes red when `wrangler.toml` changes and stays green when the committed *body*
+is wrong, including on a hand-edited `ORDERS_DB: D1Database` → `R2Bucket`. The
+committed file is normalized, so it can never be byte-identical to wrangler's
+output anyway; `normalize()` in that script has to own both sides of the
+comparison for the gate to mean anything.
+
 **Always `nvm use` before anything else — it is not optional and it is not
 automatic.** A shell whose `node` predates the pin will run the wrong runtime and
 report failures that are not the code's fault: on Node 20 the suite fails every

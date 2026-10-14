@@ -74,6 +74,20 @@ jobs:
       - name: Typecheck tests
         run: npm run --ignore-scripts typecheck:tests
 
+      # #387: `cloudflare-env.d.ts` is the Worker env type and is committed, so
+      # `typecheck` above reads whatever the last person committed. Nothing else
+      # in this job asks whether it still matches `wrangler.toml` -- a binding
+      # added to the config compiles fine against a stale generated file, which
+      # is the exact "declared but not bound" gap the type was meant to close.
+      # The step regenerates and restores, so it is safe on a dirty tree.
+      #
+      # It runs wrangler, so it needs no login: `wrangler types` reads the local
+      # config and never calls the API (verified byte-identical with
+      # HTTP(S)_PROXY pointed at a dead port). `scripts/cf-env-types.mjs` is what
+      # owns the normalization both sides agree on.
+      - name: Worker env types match wrangler.toml
+        run: npm run --ignore-scripts cf-typegen:check
+
       # #273: one run of the suite, not two. `npm run coverage` drives the
       # whole test glob under node's V8 coverage and, before it checks any
       # floor, fails the job on a test failure (scripts/coverage.mjs ->
