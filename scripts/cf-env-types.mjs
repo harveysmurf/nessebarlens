@@ -11,22 +11,26 @@
  *
  * Usage: node scripts/cf-env-types.mjs [--check]
  *
- * Why this script and not `wrangler types --check` — that flag is unfit twice
- * over, and only the first failure is obvious. Verified on wrangler 4.149.0:
+ * Why this script and not `wrangler types --check` — that flag is not a gate on
+ * the committed file. Verified on wrangler 4.149.0:
  *
- * 1. It compares the `hash:` in the header comment and never the body. Hand-edit
- *    the committed file -- `ORDERS_DB: D1Database` to `R2Bucket`, the exact typo
- *    this issue exists to catch, or delete the reference line added below -- and
- *    it still exits 0 and prints "up to date".
- * 2. That hash covers the *invocation* as well as the config, so a check spelled
- *    differently from the generation reds on a file that is exactly right:
+ * 1. It compares the `hash:` in the header comment and never the body, at every
+ *    spelling. Hand-edit the committed file -- `ORDERS_DB: D1Database` to
+ *    `R2Bucket`, the exact typo this issue exists to catch, or delete the
+ *    reference line added below -- and it still exits 0 and prints "up to date".
+ * 2. That hash digests the *invocation* as well as the config, so a check is
+ *    meaningful only spelled exactly like the generation it checks.
  *    `wrangler types --check cloudflare-env.d.ts` omits `--env-interface`, so it
- *    expects an interface named `Env`, the file records `CloudflareEnv`, and it
- *    exits 1. Not a second signal -- a false positive.
+ *    expects an interface named `Env` where the file records `CloudflareEnv`, and
+ *    exits 1 on a file that is exactly right. (`--include-runtime=false` does not
+ *    enter the hash; `--env-interface` does.)
+ *
+ * Item 1 is the disqualifying one; item 2 is why the spelling has to be kept in
+ * step by hand if anyone ever does reach for the built-in.
  *
  * A normalized file is by definition not byte-identical to wrangler's output, so
- * --check can be neither the gate nor a check on the file's body either way, and
- * `normalize()` below has to own both sides for the comparison to mean anything.
+ * --check can be neither the gate nor a check on the body, and `normalize()`
+ * below has to own both sides for the comparison to mean anything.
  */
 
 import { spawnSync } from "node:child_process";
