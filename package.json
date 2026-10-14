@@ -30,7 +30,8 @@
     "verify:masters": "node --import ./scripts/register.mjs scripts/verify-masters.mjs",
     "migrate:orders": "node --import ./scripts/register.mjs scripts/migrate-orders-kv-to-d1.mjs",
     "orders:kv:remove": "node --import ./scripts/register.mjs scripts/remove-orders-kv.mjs",
-    "cf-typegen": "wrangler types --env-interface CloudflareEnv cloudflare-env.d.ts"
+    "cf-typegen": "node scripts/cf-env-types.mjs",
+    "cf-typegen:check": "node scripts/cf-env-types.mjs --check"
   },
   "dependencies": {
     "next": "16.3.8",

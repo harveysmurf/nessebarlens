@@ -28,6 +28,7 @@ import {
   envIntInRange,
   envString,
   envStringStrippedSlash,
+  type EnvReader,
 } from "./env";
 import { stripTrailingSlashes } from "../../domain/pricing/url-patterns";
 import {
@@ -42,7 +43,11 @@ import {
   type ProdigiConfigResult,
 } from "../prodigi/prodigi-config";
 
-export type ConfigEnv = Record<string, unknown>;
+/**
+ * The env these config readers take. One name for the port, so a signature here
+ * cannot drift from the readers underneath it (#387).
+ */
+export type ConfigEnv = EnvReader;
 
 /**
  * What this deployment is configured to do. Every field is resolved through

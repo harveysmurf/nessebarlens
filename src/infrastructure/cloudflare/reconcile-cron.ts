@@ -38,12 +38,25 @@ export const RECONCILE_SECRET_HEADER = "x-reconcile-secret";
 export const FALLBACK_ORIGIN = "https://reconcile-cron.invalid";
 
 import { stripTrailingSlashes } from "../../domain/pricing/url-patterns";
+import { envString, envValue, type EnvReader } from "../config/env";
 
-/** What a cron tick needs from the Worker env. */
-export type ReconcileCronEnv = {
-  NEXT_PUBLIC_SITE_URL?: unknown;
-  RECONCILE_SECRET?: unknown;
-};
+/**
+ * What a cron tick needs from the Worker env.
+ *
+ * Was a hand-rolled `{ NEXT_PUBLIC_SITE_URL?: unknown; RECONCILE_SECRET?: unknown }`,
+ * and is now the same port every other reader takes (#387) -- a hand-rolled
+ * type here is the thing the issue was filed about.
+ *
+ * `EnvReader` rather than the generated interface, because neither key it reads
+ * can be typed by it. `RECONCILE_SECRET` is a secret set with `wrangler secret
+ * put`, and `wrangler types` does not emit secrets, because a secret's presence
+ * in `wrangler.toml` would be the whole secret. `NEXT_PUBLIC_SITE_URL` is
+ * emitted, as a literal union of the two hosts in `[vars]`, but the value
+ * arriving from `getCloudflareContext` is whatever the platform handed over --
+ * which is why this module still tolerates `"  "`, a number and a trailing-slash
+ * host rather than asserting them.
+ */
+export type ReconcileCronEnv = EnvReader;
 
 /** `scheduled()`'s event, narrowed to what this uses. */
 export type ScheduledEvent = {
@@ -57,10 +70,11 @@ export type ReconcileCronContext = {
 };
 
 /**
- * Not named `envString`: that name is how `tests/config-reads-env.test.mts`
- * finds a `process.env` reader on the AST, and this helper reads its argument,
- * never the environment. Reusing the name would add a module to that
- * allowlist's failure output for no reason.
+ * Still needed even though `envValue` hands back the raw value: it is the step
+ * that turns a number, a blank and a padded host into "not configured", which is
+ * what makes FALLBACK_ORIGIN reachable. Named `envString` this would be a
+ * `process.env` reader as far as `tests/config-reads-env.test.mts` is concerned,
+ * which is a different function -- the calls below pass their env explicitly.
  */
 function presentString(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
@@ -75,7 +89,7 @@ function presentString(value: unknown): string | undefined {
  * need a guess.
  */
 export function reconcileOrigin(env: ReconcileCronEnv): string {
-  const configured = presentString(env.NEXT_PUBLIC_SITE_URL);
+  const configured = presentString(envValue("NEXT_PUBLIC_SITE_URL", env));
   if (!configured) return FALLBACK_ORIGIN;
   return stripTrailingSlashes(configured);
 }
@@ -91,7 +105,7 @@ export function reconcileOrigin(env: ReconcileCronEnv): string {
 export function buildReconcileRequest(
   env: ReconcileCronEnv,
 ): { ok: true; request: Request } | { ok: false; reason: string } {
-  const secret = presentString(env.RECONCILE_SECRET);
+  const secret = envString("RECONCILE_SECRET", env);
   if (!secret) {
     return {
       ok: false,

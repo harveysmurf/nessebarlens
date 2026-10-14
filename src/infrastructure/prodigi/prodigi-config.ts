@@ -1,4 +1,8 @@
-import { envString, envStringStrippedSlash } from "../config/env";
+import {
+  envString,
+  envStringStrippedSlash,
+  type EnvReader,
+} from "../config/env";
 import type { ProdigiFailureBranch } from "../../domain/ordering/prodigi-result";
 import { isRecord } from "../../domain/json/record";
 import type { ProdigiFailureReason } from "../../domain/ordering/prodigi-policy";
@@ -118,7 +122,7 @@ export type ProdigiConfigResult =
  * the only place a Prodigi value reaches process.env is config.ts (#119).
  */
 export function readProdigiConfig(
-  env: Record<string, unknown>,
+  env: EnvReader,
 ): ProdigiConfigResult {
   const base = envStringStrippedSlash("PRODIGI_API_BASE", env);
   if (!base || !ALLOWED_BASES.has(base)) {
@@ -157,7 +161,7 @@ function isProdigiSandboxBase(base: string): boolean {
  * what "configured" means.
  */
 export function prodigiApiBaseIfAllowed(
-  env: Record<string, unknown>,
+  env: EnvReader,
 ): string | undefined {
   const base = envStringStrippedSlash("PRODIGI_API_BASE", env);
   return base && ALLOWED_BASES.has(base) ? base : undefined;
@@ -167,7 +171,7 @@ export function prodigiApiBaseIfAllowed(
  * True when this deployment has a usable Prodigi host/key pair. Reimplemented
  * on readProdigiConfig so "configured" has one definition; it never throws.
  */
-export function prodigiKeyConfigured(env: Record<string, unknown>): boolean {
+export function prodigiKeyConfigured(env: EnvReader): boolean {
   return readProdigiConfig(env).ok;
 }
 
