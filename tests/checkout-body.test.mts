@@ -149,9 +149,13 @@ test("a non-object checkout body is rejected before any field is read", () => {
   for (const raw of [null, undefined, 0, 42, "", "photoSlug=dawn", true]) {
     assert.deepEqual(parseCheckoutBody(raw), { error: "Invalid JSON body" }, String(raw));
   }
-  // An array is typeof "object", so it gets the next error rather than the
-  // shape error. Pinned because a caller might read that difference as a bug.
-  assert.deepEqual(parseCheckoutBody([]), { error: "photoSlug required" });
+  // An array is typeof "object", so it used to slip past the shape check and be
+  // told "photoSlug required" — the shape error for a body that never claimed to
+  // be a map. `isRecord` (#386) rejects it with the others, which is the honest
+  // answer: a JSON array is not a checkout body. Still pinned, because a caller
+  // reading the two errors apart is exactly how this difference gets noticed.
+  assert.deepEqual(parseCheckoutBody([]), { error: "Invalid JSON body" });
+  assert.deepEqual(parseCheckoutBody(["photoSlug"]), { error: "Invalid JSON body" });
 });
 
 test("a quote with no frame is accepted; a frame on a non-framed format is not", () => {
