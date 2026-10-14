@@ -15,6 +15,7 @@ import { readFileSync } from "node:fs";
 import test from "node:test";
 import {
   findProduct,
+  nominalSizeIn,
   PRINT_PRODUCTS,
   printAreaIn,
   type PrintProductEntry,
@@ -176,6 +177,38 @@ test("printAreaIn is the pixel area over the catalogue DPI", () => {
     assert.equal(inches.short, product.printAreaPx.short / product.printAreaDpi);
     assert.equal(inches.long, product.printAreaPx.long / product.printAreaDpi);
     assert.ok(inches.short > 0 && inches.long >= inches.short);
+  }
+});
+
+test("nominalSizeIn is the inchsize, ordered short/long", () => {
+  for (const product of PRINT_PRODUCTS) {
+    const [a, b] = product.sizeIn.split("x").map(Number);
+    assert.deepEqual(nominalSizeIn(product), { short: Math.min(a, b), long: Math.max(a, b) }, product.sku);
+  }
+});
+
+test("a malformed inchsize throws instead of returning NaN geometry", () => {
+  // `sizeIn` is `string`, so nothing stops a typo landing in the table. Every
+  // one of these used to reach the preview as NaN (#384). Each case also covers
+  // one arm of the guard: a wrong part count, a non-numeric half, and a
+  // non-positive extent on either axis.
+  const base = PRINT_PRODUCTS[0]!;
+  for (const sizeIn of [
+    "20x30x40", // a third component
+    "20", // no separator at all
+    "abcx30", // not a number on the short axis
+    "20x30cm", // not a number on the long axis
+    "0x30", // zero is not a size
+    "20x", // Number("") is NaN
+    "x30", // ditto, leading
+    "-20x30", // a negative extent is not a size
+    "20x-30", // ditto, on the long axis
+  ]) {
+    assert.throws(
+      () => nominalSizeIn({ ...base, sizeIn }),
+      new RegExp(`malformed sizeIn .*${sizeIn.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`),
+      `${sizeIn} must throw`,
+    );
   }
 });
 

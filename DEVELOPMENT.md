@@ -1696,7 +1696,11 @@ Three invariants: (1) `sku` and `unitCostEur` never enter the cached
   existing `fulfillment.ts` / `wrangler.toml` comments are deliberate and stay.
 - Follow existing module boundaries: `src/lib/*` for logic, `src/app/api/*` for
   routes, `src/components/*` for UI, `src/app/*/page.tsx` for pages.
-- TypeScript strict; run `npm run lint` before committing.
+- TypeScript strict, plus `noUncheckedIndexedAccess` in `src/` and `e2e/`: an
+  unchecked index there becomes a silent `NaN` in geometry or money maths. The
+  suite opts out of it for now (167 errors behind one override in
+  `tsconfig.tests-check.json`, tracked) — narrow a fixture lookup rather than
+  reaching for `!`. Run `npm run lint` before committing.
 - Fonts are vendored; never pull them from a CDN at build time.
 
 ### One source per grammar and per shape
