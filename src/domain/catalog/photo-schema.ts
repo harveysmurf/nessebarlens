@@ -1,4 +1,5 @@
 import { HEX_32_PATTERN, HEX_64_PATTERN } from "../pricing/crypto-hex";
+import { isRecord } from "../json/record";
 import { PHOTO_SLUG_PATTERN } from "./derivative-ladder";
 import {
   type MasterFacts,
@@ -93,10 +94,6 @@ const KNOWN_KEYS = new Set([
 ]);
 
 const ALT_MAX = 200;
-
-function isMapping(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 
 function requiredString(
   name: string,
@@ -416,7 +413,7 @@ export function validatePhotoFile(
     requirePrintOffer?: boolean;
   } = {},
 ): PhotoValidation {
-  if (!isMapping(data)) {
+  if (!isRecord(data)) {
     return { ok: false, problems: ["file: expected a YAML mapping"] };
   }
 
