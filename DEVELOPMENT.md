@@ -1716,6 +1716,28 @@ Three invariants: (1) `sku` and `unitCostEur` never enter the cached
   existing `fulfillment.ts` / `wrangler.toml` comments are deliberate and stay.
 - Follow existing module boundaries: `src/lib/*` for logic, `src/app/api/*` for
   routes, `src/components/*` for UI, `src/app/*/page.tsx` for pages.
+- **`any` is an error, and so is an `any` that flows** (#389). `npm run lint` runs
+  the five type-aware `@typescript-eslint/no-unsafe-*` rules over `src/**`:
+  `no-unsafe-assignment`, `-member-access`, `-return`, `-argument`, `-call`. They
+  need type information, so that block in `eslint.config.mjs` sets
+  `parserOptions.projectService: true` and is scoped to `src/**` — the nearest
+  tsconfig for `tests/` is the root one, which excludes `tests`, so widening the
+  scope would type-check the suite against a program it is not part of;
+  `tsconfig.tests-check.json` is the suite's own program and wiring that in is a
+  separate change. Typed linting roughly doubles the lint step (≈33s → ≈64s
+  locally); the `Lint & test` job absorbs it.
+
+  `no-explicit-any` only catches `any` we *write*. These five catch the one that
+  arrives from a dependency, which is the half that used to be invisible. If a
+  rule fires, narrow it — an inline `eslint-disable-next-line` is acceptable only
+  with a reason on it, and there is exactly one today: `NODE_ENV` in
+  `config/env.ts`. `@cloudflare/workers-types` declares a Workers `process` shim
+  as `var process: any`, and since #387 put that package in the program it wins
+  the merge against `@types/node`, so a bare `process.env` is `any` for every file
+  under `src/`. Redeclaring `process` does not fix it — a second `declare var` is
+  silently ignored in favour of the first, which reads like a fix and is not one.
+  So the `any` is admitted once, where it enters, and every reader below it is
+  typed.
 - TypeScript strict, plus `noUncheckedIndexedAccess` in `src/` and `e2e/`: an
   unchecked index there becomes a silent `NaN` in geometry or money maths. The
   suite opts out of it for now (167 errors behind one override in
