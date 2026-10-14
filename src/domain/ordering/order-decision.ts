@@ -24,6 +24,7 @@ import {
 import { referencesMasters } from "../catalog/master-guard";
 import { ISO_ALPHA2_PATTERN } from "../pricing/ship-to-countries";
 import { HTTPS_URL_PATTERN } from "../pricing/url-patterns";
+import { isRecord } from "../json/record";
 import type { OrderRecipient } from "./order-recipient";
 import { eurToCents, parseEurAmount, type PrintFormat } from "../pricing/pricing";
 import {
@@ -424,8 +425,8 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
   } catch {
     return null;
   }
-  if (!value || typeof value !== "object") return null;
-  const row = value as Record<string, unknown>;
+  if (!isRecord(value)) return null;
+  const row = value;
   if (row.v !== 1) return null;
   if (
     typeof row.sessionId !== "string" ||
@@ -1107,14 +1108,13 @@ function parseStoredShipments(raw: unknown): OrderShipment[] {
   const out: OrderShipment[] = [];
   for (const entry of raw) {
     if (out.length >= SHIPMENTS_MAX) break;
-    if (!entry || typeof entry !== "object") continue;
-    const s = entry as Record<string, unknown>;
+    if (!isRecord(entry)) continue;
     out.push({
-      status: clipShipmentField(s.status, SHIPMENT_STATUS_MAX),
-      carrier: clipShipmentField(s.carrier, SHIPMENT_CARRIER_MAX),
-      trackingUrl: clipShipmentField(s.trackingUrl, SHIPMENT_TRACKING_URL_MAX),
+      status: clipShipmentField(entry.status, SHIPMENT_STATUS_MAX),
+      carrier: clipShipmentField(entry.carrier, SHIPMENT_CARRIER_MAX),
+      trackingUrl: clipShipmentField(entry.trackingUrl, SHIPMENT_TRACKING_URL_MAX),
       trackingNumber: clipShipmentField(
-        s.trackingNumber,
+        entry.trackingNumber,
         SHIPMENT_TRACKING_NUMBER_MAX,
       ),
     });
@@ -1146,8 +1146,8 @@ function parseStoredEmailsSent(raw: unknown): EmailKind[] {
 /** undefined = malformed; null = explicitly null */
 function parseStoredRecipient(raw: unknown): OrderRecipient | null | undefined {
   if (raw === null) return null;
-  if (!raw || typeof raw !== "object") return undefined;
-  const r = raw as Record<string, unknown>;
+  if (!isRecord(raw)) return undefined;
+  const r = raw;
   for (const key of Object.keys(
     RECIPIENT_STRING_KEYS,
   ) as RecipientStringKey[]) {
