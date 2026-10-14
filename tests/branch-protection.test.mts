@@ -25,10 +25,16 @@ import assert from "node:assert/strict";
 import fs from "node:fs";
 import test from "node:test";
 
-import { ciJobs, readRequiredContexts, remediationCommand } from "../scripts/required-checks.mjs";
+import {
+  ciJobs,
+  readExternalRequiredContexts,
+  readRequiredContexts,
+  remediationCommand,
+} from "../scripts/required-checks.mjs";
 
 const jobs = ciJobs();
 const required = readRequiredContexts();
+const external = readExternalRequiredContexts();
 const byName = new Map(jobs.map((job) => [job.name, job]));
 
 test("every gating CI job is a required status check", () => {
@@ -44,8 +50,34 @@ test("every required status check names a job that exists in ci.yml", () => {
   // A renamed job leaves its old name in protection, which GitHub accepts
   // forever while the new name runs ungated — the exact hole this file closes,
   // reached the other way round.
-  const unknown = required.filter((name) => !byName.has(name));
-  assert.deepEqual(unknown, [], `required but no ci.yml job reports this name: ${unknown.join(", ")}`);
+  const known = new Set([...byName.keys(), ...external]);
+  const unknown = required.filter((name) => !known.has(name));
+  assert.deepEqual(unknown, [], `required but no trusted workflow reports this context: ${unknown.join(", ")}`);
+});
+
+test("every external required context is required and posted by a trusted workflow", () => {
+  assert.deepEqual(
+    external.filter((context) => !required.includes(context)),
+    [],
+    "external check contexts must also be in .github/required-checks.txt",
+  );
+  assert.deepEqual(
+    external.filter((context) => byName.has(context)),
+    [],
+    "an external context must not shadow a ci.yml job name",
+  );
+  const workflow = fs.readFileSync(
+    new URL("../.github/workflows/photo-master-attestation.yml", import.meta.url),
+    "utf8",
+  );
+  const attestation = fs.readFileSync(
+    new URL("../scripts/photo-master-attestation.mjs", import.meta.url),
+    "utf8",
+  );
+  for (const context of external) {
+    assert.ok(attestation.includes(`"${context}"`), `${context} is not posted by the attestation script`);
+    assert.match(workflow, /pull_request_target:/, "the attestation must use trusted base-branch workflow code");
+  }
 });
 
 test("no continue-on-error job is required", () => {

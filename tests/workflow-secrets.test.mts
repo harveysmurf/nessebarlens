@@ -47,10 +47,11 @@ const workflowDir = path.join(root, ".github", "workflows");
  * it is the reason these are per-environment lists rather than one global set.
  *
  * `production` — the same names with live values, plus the read-only R2 token
- * the release gate uses: `R2_MASTERS_READ_ACCESS_KEY_ID`,
+ * the release gate and trusted photo attestation use: `R2_MASTERS_READ_ACCESS_KEY_ID`,
  * `R2_MASTERS_READ_SECRET_ACCESS_KEY`, and `R2_S3_ENDPOINT`. These are
- * production-only on purpose (#243): the gate HeadObjects the production
- * masters bucket from the `production` job, which only runs on `main`; staging
+ * production-only on purpose (#243, #397): the release gate HeadObjects the
+ * production masters bucket on `main`, and the `pull_request_target` photo
+ * attestation runs trusted base-branch code that reads PR YAML as data; staging
  * serves its own bucket and is not gated.
  *
  * `repository` — `PRINT_ASSET_HMAC_SECRET` is a repository secret, not an
@@ -231,8 +232,9 @@ test("no workflow reads the retired Pages credentials or the unused R2 S3 keys",
   //     credential for the same data with no code behind it.
   //
   // `R2_S3_ENDPOINT` is deliberately NOT in this list any more: #243's release
-  // gate (scripts/verify-masters.mjs) reads the masters bucket over the S3 API
-  // in the production job, so the endpoint has a reader again. The read-only
+  // gates (scripts/verify-masters.mjs and the photo PR attestation) read the
+  // masters bucket over the S3 API in production, so the endpoint has readers
+  // again. The read-only
   // access keys are separate names (R2_MASTERS_READ_*), so the write-capable
   // R2_ACCESS_KEY_ID / R2_SECRET_ACCESS_KEY stay retired.
   //
