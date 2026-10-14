@@ -1,0 +1,32 @@
+slug: a-pause-at-the-waters-edge
+title: A Pause at the Water's Edge
+caption: A man with a cane pauses on the stone path, facing the distant shoreline.
+description: Photographed in 2024, this archival black-and-white image captures
+  a man with a cane standing on a stone path beside the sea. Empty benches and a
+  strip of grass frame the foreground, while the water opens toward a distant
+  coastal skyline. The quiet composition preserves an everyday moment at the
+  water's edge.
+alt: A man holding a cane stands on a stone path between two benches, looking
+  across the sea toward a distant shoreline.
+category: archive
+published: true
+# written by publish-photos
+master_sha256: 81500a34dfed0d449b84beb217254e665688a1dab3b2cd888d2affdf952cf0f2
+image_hash: 81500a34
+master_width: 3630
+master_height: 2722
+orientation: landscape
+print_asset_sha256: ad293e16a6e2416379635185282c7981ef77f05bee6141777b952bf630db2b07
+print_asset_md5: 612ad8bc955b03bc48f911e6d8d598ae
+print_options:
+  giclee:
+    - 20x30
+    - 30x40
+  framed:
+    - 20x30
+    - 30x40
+    - 30x45
+  canvas:
+    - 20x30
+    - 30x40
+    - 30x45
