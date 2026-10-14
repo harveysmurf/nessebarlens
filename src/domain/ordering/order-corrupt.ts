@@ -21,6 +21,7 @@
  */
 
 import { parseOrderRecord, type OrderRecord } from "./order-decision";
+import { isRecord } from "../json/record";
 
 /** Which reader found it. Named so an alert says where to look. */
 export type CorruptOrderPath =
@@ -65,8 +66,8 @@ export function describeCorruptOrder(
   try {
     const parsed: unknown = JSON.parse(raw);
     json = true;
-    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
-      const v = (parsed as Record<string, unknown>).v;
+    if (isRecord(parsed)) {
+      const v = parsed.v;
       if (typeof v === "number") version = v;
     }
   } catch {
