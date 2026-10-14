@@ -47,6 +47,12 @@ const RAW = [
   "\tinterface Env extends __BaseEnv_CloudflareEnv {}",
   "}",
   "interface CloudflareEnv extends __BaseEnv_CloudflareEnv {}",
+  "type StringifyValues<EnvType extends Record<string, unknown>> = {",
+  "\t[Binding in keyof EnvType]: EnvType[Binding] extends string ? EnvType[Binding] : string;",
+  "};",
+  "declare namespace NodeJS {",
+  '\tinterface ProcessEnv extends StringifyValues<Pick<Cloudflare.Env, "NEXT_PUBLIC_SITE_URL">> {}',
+  "}",
 ].join("\n");
 
 test("the strip takes GlobalProps and nothing after it", () => {
@@ -59,6 +65,30 @@ test("the strip takes GlobalProps and nothing after it", () => {
   assert.match(out, /^interface CloudflareEnv extends __BaseEnv_CloudflareEnv \{\}/mu);
 });
 
+test("the NodeJS.ProcessEnv augmentation is dropped whole", () => {
+  // #401. The augmentation makes NEXT_PUBLIC_SITE_URL *required* in
+  // `process.env` and narrows it to two literal hosts, which is a Worker fact
+  // leaking into a Node global. It rejects `delete process.env.X` (TS2790) and
+  // any other string (TS2322) — sixteen sites in the suite, currently quiet
+  // only because `process` is `any`.
+  const out = generatedBody(normalize(RAW));
+  assert.ok(!out.includes("ProcessEnv"), "the ProcessEnv augmentation must be gone");
+  assert.ok(!out.includes("declare namespace NodeJS"), "not left as an empty namespace");
+  // Wrangler's own output, kept deliberately: stripping it would be a third
+  // pattern to keep in step, and the next wrangler to use it would break.
+  assert.match(out, /type StringifyValues</u);
+});
+
+test("a ProcessEnv the strip cannot match throws instead of committing", () => {
+  // Re-indented by one tab, which is what wrangler changing its own emitter
+  // would look like. Committing this would put a Worker var in the Node global
+  // under a header that promises it was not.
+  assert.throws(
+    () => normalize(RAW.replace(/\tinterface ProcessEnv/u, "   interface ProcessEnv")),
+    /interface ProcessEnv` survived/u,
+  );
+});
+
 test("the reference is added exactly once", () => {
   const once = normalize(RAW);
   assert.equal(once.match(/@cloudflare\/workers-types/gu)?.length, 1);
@@ -68,8 +98,12 @@ test("the reference is added exactly once", () => {
 
 test("the committed file ends in a newline", () => {
   // Wrangler writes none, and git reports the whole file as changed when the
-  // last line differs only by its terminator.
-  assert.ok(normalize(RAW).endsWith("}\n"));
+  // last line differs only by its terminator. Exactly one: the last declaration
+  // is whatever survived the strips, so asserting on which brace it is would be
+  // asserting on the normalisations rather than on this.
+  const out = normalize(RAW);
+  assert.ok(out.endsWith("\n"), "no trailing newline");
+  assert.ok(!out.endsWith("\n\n"), "no blank line at the end");
 });
 
 test("a GlobalProps declaration the strip cannot match throws instead of committing", () => {
@@ -103,6 +137,9 @@ test("the committed file carries the reference and not the worker import", () =>
   const body = generatedBody(committed);
   assert.ok(!/\bimport\(/u.test(body), "no dynamic import may reach worker.ts");
   assert.ok(!body.includes(".open-next"), "no build-artifact path in a committed type");
+  // #401, on the committed file rather than the fixture: this is the one that
+  // is read by every program in the repo.
+  assert.ok(!body.includes("ProcessEnv"), "no Worker var described as a Node one");
 });
 
 test("the committed file still declares the env wrangler.toml configures", () => {
