@@ -1,11 +1,7 @@
 import type { MastersBucket } from "../../domain/catalog/master-key";
 import type { OrdersStore } from "../../domain/ordering/orders-store";
 import type { ContactRateLimiter } from "../../application/contact/submit-contact";
-import {
-  envString,
-  type EnvReader,
-  type PartialCloudflareEnv,
-} from "../config/env";
+import { envString, type EnvReader } from "../config/env";
 import { isRecord } from "../../domain/json/record";
 import { printAssetSecret } from "../config/config";
 import { prodigiKeyConfigured } from "../prodigi/prodigi-config";
@@ -47,15 +43,14 @@ export type WorkerBindings = {
   prodigiKeyConfigured: boolean;
 };
 
-export type { PartialCloudflareEnv };
-
 /**
  * Reads the Worker env. Injectable so tests can drive the real binding path.
  *
- * `EnvReader` and not the generated `PartialCloudflareEnv`: a caller's env here
- * is usually one that should be *refused* -- a D1 stub with no `batch`, a rate
- * limiter with no `limit` -- which is precisely what the guards below are for.
- * The real context is typed, via `readCloudflareEnv`.
+ * A caller's env here is usually one that should be *refused* -- a D1 stub with
+ * no `batch`, a rate limiter with no `limit` -- which is precisely what the
+ * guards below are for, and why the values in `EnvReader` are `unknown` rather
+ * than the SDK's binding types: the guards are the narrowing, and a type that
+ * claimed a binding was already good would make them dead code.
  */
 export type EnvContextReader = () => Promise<EnvReader>;
 
@@ -63,10 +58,11 @@ export type EnvContextReader = () => Promise<EnvReader>;
  * The slice of `@opennextjs/cloudflare` this module uses, narrowed to what the
  * reader actually survives.
  *
- * `env` is `PartialCloudflareEnv` where the SDK says `CloudflareEnv` with every
- * binding required: `readWorkerBindings` has to cope with an env that is empty,
- * partial or absent, and its tests hand it a D1 stub with no `batch`. Declaring
- * the looser shape here is the contract, not a workaround.
+ * The SDK types `env` as `CloudflareEnv`, every binding required, which is what
+ * the platform promises once a deploy is live. That is not what a reader gets:
+ * `readWorkerBindings` has to cope with an env that is empty, partial or absent,
+ * and its tests hand it a D1 stub with no `batch`. Declaring the looser
+ * `EnvReader` here is the contract, not a workaround.
  *
  * Only the `{ async: true }` overload is modelled, and that is what makes the
  * import below need no cast at all: the SDK's two overloads differ in `async`,
@@ -77,7 +73,7 @@ export type EnvContextReader = () => Promise<EnvReader>;
  */
 type CloudflareContextModule = {
   getCloudflareContext: (options: { async: true }) => Promise<{
-    env: PartialCloudflareEnv;
+    env: EnvReader;
   }>;
 };
 
@@ -91,7 +87,7 @@ const loadCloudflareModule = (): Promise<CloudflareContextModule> =>
  */
 export async function readCloudflareEnv(
   load: () => Promise<CloudflareContextModule> = loadCloudflareModule,
-): Promise<PartialCloudflareEnv> {
+): Promise<EnvReader> {
   const mod = await load();
   const ctx = await mod.getCloudflareContext({ async: true });
   return ctx.env ?? {};

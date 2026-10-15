@@ -29,6 +29,21 @@
   // Delete this override when that issue closes — a gate that passes because it
   // is stricter-but-broken is the failure `tests/tsconfig-gate.test.mts` exists
   // to catch, and this line is a known hole in it, not an endorsement.
+  //
+  // `cloudflare-env.d.ts` is excluded, and that is the whole point of this file
+  // after #401. It leads with `/// <reference types="@cloudflare/workers-types" />`,
+  // and that package declares `var process: any` and `var Buffer: any` as
+  // globals. In a program that includes it, every `process.env` and every
+  // `Buffer` is unchecked — which is why the Worker env type is described in
+  // `config/env.ts` by name rather than mapped from the generated interface, so
+  // nothing in the Node-facing program needs the Workers globals to be present.
+  //
+  // The Node program still reaches the package transitively —
+  // `worker-bindings.ts` → `@opennextjs/cloudflare` → `wrangler` → `miniflare` →
+  // `import '@cloudflare/workers-types'` — and lands on the package's `index.ts`,
+  // a *module*, rather than its `index.d.ts`, a global script. That is why the
+  // exclusion is sufficient today. It is a resolution choice we do not own, and
+  // `tests/tsconfig-split.test.mts` is the gate that notices if it flips.
   "extends": "./tsconfig.json",
   "compilerOptions": {
     "allowImportingTsExtensions": true,
@@ -42,5 +57,5 @@
     ".next/types/**/*.ts",
     ".next/dev/types/**/*.ts"
   ],
-  "exclude": ["node_modules", "worker.ts"]
+  "exclude": ["node_modules", "worker.ts", "cloudflare-env.d.ts"]
 }
