@@ -64,11 +64,14 @@ test("categoryHref is a complete map, so a new category cannot render href=undef
   }
 });
 
-// The dark matte on a gallery tile was hand-written as a `dark` boolean beside
-// each tile's copy on the home and story pages, while PhotoCard derived it.
-// The derivation is now the only spelling, so the drift it replaces would be
+// The film-specific styling was hand-written as a `dark` boolean beside each
+// tile's copy on the home and story pages, while PhotoCard derived it. The
+// derivation is now the only spelling, so the drift it replaces would be
 // invisible: a fourth category, or a tile repointed at a photo of another
-// category, would render the wrong matte with nothing failing.
+// category, would render the wrong treatment with nothing failing.
+// #409 cut the gallery cards loose from this entirely — see
+// "every gallery card is styled identically" in gallery-tiles.test.mts, which
+// is what keeps a category branch from being reintroduced here.
 test("isFilmPhoto is the category, checked against every photo", () => {
   for (const photo of PHOTOS) {
     assert.equal(
@@ -89,17 +92,17 @@ test("isFilmPhoto is the category, checked against every photo", () => {
   assert.equal(
     isFilmPhoto({ category: "panorama" as PhotoCategory }),
     false,
-    "an unhandled new category must not fall into the film matte",
+    "an unhandled new category must not be treated as film",
   );
 });
 
-test("every film photo carries a film look, so the filter agrees with the matte", () => {
+test("every film photo carries a film look, so the filter and the category agree", () => {
   // isFilmPhoto deliberately reads the category, not the presence of a
-  // filmLook, because the matte is a gallery convention and the filter is a
-  // rendering one. They coincide today; this test is what makes the
-  // coincidence a checked fact instead of an assumption, so the day a film
-  // photo ships unfiltered someone sees this fail and can decide whether the
-  // matte should follow.
+  // filmLook, because the two are different facts: the filter is a rendering
+  // one, the category is what the gallery is organised by. They coincide today;
+  // this test is what makes the coincidence a checked fact instead of an
+  // assumption, so the day a film photo ships unfiltered someone sees this fail
+  // and can decide whether the filter should follow.
   for (const photo of photosByCategory("film")) {
     assert.ok(photo.filmLook, `${photo.slug} is film with no film look`);
   }

@@ -15,7 +15,7 @@ export type Photo = {
   heroCaption?: string | undefined;
   /** Private master object key in MASTERS — never used in gallery UI. */
   imageKey: string;
-  /** Film gallery uses dark matte + filter. */
+  /** Film gallery uses a colour filter on the image (#409). */
   filmLook?: FilmLook | undefined;
   /** Set on at most one published photo; drives the homepage hero. */
   featured?: boolean | undefined;
@@ -126,7 +126,7 @@ export function filmLookClass(look: Photo["filmLook"]): string {
 }
 
 /**
- * Whether a photo's gallery tile is matted dark.
+ * Whether a photo belongs to the film gallery.
  *
  * The home and story pages each carried a hand-written `dark` boolean next to
  * per-tile copy, while PhotoCard derived the same thing from
@@ -134,10 +134,17 @@ export function filmLookClass(look: Photo["filmLook"]): string {
  * category, or reordering the tiles, would have left the hand-written flags
  * describing a photo the tile no longer shows.
  *
+ * This no longer decides how a tile looks. #409 removed the dark frame from the
+ * gallery cards so every card is styled identically, which leaves two callers:
+ * the film-look filter's category check, and the dark letterbox backdrop on the
+ * home and story pages. Backdrops are hidden behind the image except where a
+ * crop is shorter than the box, so unlike a padding frame they cannot draw a
+ * border the visitor did not ask for.
+ *
  * Derived from the category, not from the presence of a filmLook. filmLook
- * drives the CSS filter, the dark matte is a gallery convention, and they
- * happen to agree today — tying the matte to the filter would make a future
- * unfiltered film photo render on a pale tile.
+ * drives the CSS filter, and tying the two together would make a future
+ * unfiltered film photo lose its backdrop — or, worse, an unrelated category
+ * acquire one.
  */
 export function isFilmPhoto(photo: Pick<Photo, "category">): boolean {
   return photo.category === "film";

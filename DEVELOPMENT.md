@@ -1775,6 +1775,17 @@ flow.
   derived as `prints/{slug}.jpg` — the only form `masterKeyForSlug` accepts
   (`src/domain/catalog/master-key.ts`). The only master-key list is that derived
   `imageKey`, surfaced via `masterKeyForSlug()`.
+- **A gallery tile never draws a frame (#409).** `PhotoCard`'s wrapper is a
+  fixed-ratio box holding an `object-cover` image at `w-full h-full`, so the
+  image fills the content box exactly and anything showing past its edge comes
+  from the box. Tailwind preflight is `box-sizing: border-box`, so **a padding
+  utility on that box shrinks the content box and leaves a ring of the tile's
+  background visible on all four sides** — which is how film photos grew a 4px
+  `#1c1917` border while fine art and archive, un-padded, showed none. Cards are
+  now styled identically for every category. The dark film background survives
+  only on the home and story tiles, where it is a letterbox backdrop behind a
+  wider crop and stays hidden behind the image.
+  `tests/gallery-tiles.test.mts` pins all three properties.
 - **Master facts are measured, not typed (#295).** `publish-photos` writes the
   master's oriented `master_width`/`master_height` and the derived `orientation`
   into the entry, measured by the same `masterDimensions()` the derivative ladder
