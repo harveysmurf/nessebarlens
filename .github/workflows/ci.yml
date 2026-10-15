@@ -50,41 +50,58 @@ jobs:
       - name: Build catalog
         run: npm run build:catalog
 
-      - name: Lint
-        run: npm run --ignore-scripts lint
-
-      # Type-level constraints cannot die in a test: a Record keyed by a mapped
-      # type, a Record<union, string> label table, a `satisfies` guard — all of
-      # them are enforced by the compiler or not at all. Tests prove runtime
-      # behaviour and are blind here, so this needs its own gate. Before this
-      # step the only typecheck was `next build` in the preview job, one job
-      # later than a green "Lint & test" on a pull request implied.
-      - name: Typecheck
-        run: npm run --ignore-scripts typecheck
-
-      # #4: the suite was never parsed by the compiler. `tsconfig.json` excludes
-      # `tests/`, so every type error there — a fixture built with the wrong
-      # shape, a stale `@ts-expect-error` on prose, a call site inheriting
-      # `never` from an un-inferable `.mjs` export — was invisible to `next
-      # build` and to the `Typecheck` step above. This is the ratchet that
-      # closed it: the `typecheck:tests` gate found 359, the cleanup took it to
-      # 0, and this step is what keeps a new one from landing. Run it with
-      # `--ignore-scripts` for the same reason as the others: `build:catalog`
-      # already ran above and its hooks would rebuild the catalog each time.
-      - name: Typecheck tests
-        run: npm run --ignore-scripts typecheck:tests
-
-      # #387: `cloudflare-env.d.ts` is the Worker env type and is committed, so
-      # `typecheck` above reads whatever the last person committed. Nothing else
-      # in this job asks whether it still matches `wrangler.toml` -- a binding
-      # added to the config compiles fine against a stale generated file, which
-      # is the exact "declared but not bound" gap the type was meant to close.
-      # The step regenerates and restores, so it is safe on a dirty tree.
+      # SPIKE: one `parallel:` group instead of four sequential steps (GitHub changelog
+      # 2026-06-25 -- `background`, `wait`, `wait-all`, `cancel`, `parallel`). Every
+      # member runs as a background step with an implicit `wait` at the end of the group,
+      # so this is "run these four at once, then continue", not four detached steps.
       #
-      # It runs wrangler, so it needs no login: `wrangler types` reads the local
-      # config and never calls the API (verified byte-identical with
-      # HTTP(S)_PROXY pointed at a dead port). `scripts/cf-env-types.mjs` is what
-      # owns the normalization both sides agree on.
+      # The four are independent reads of one checkout. The win is bounded by the slowest
+      # member: on run 38757374897 they took 13s / 5s / 8s / 117s, so the group can save at
+      # most the 27s the other three added -- and only to the extent they do not steal CPU
+      # from the suite, which is the open question this spike exists to measure.
+      - parallel:
+          - name: Lint
+            run: npm run --ignore-scripts lint
+
+          # Type-level constraints cannot die in a test: a Record keyed by a mapped
+          # type, a Record<union, string> label table, a `satisfies` guard — all of
+          # them are enforced by the compiler or not at all. Tests prove runtime
+          # behaviour and are blind here, so this needs its own gate. Before this
+          # step the only typecheck was `next build` in the preview job, one job
+          # later than a green "Lint & test" on a pull request implied.
+          - name: Typecheck
+            run: npm run --ignore-scripts typecheck
+
+          # #4: the suite was never parsed by the compiler. `tsconfig.json` excludes
+          # `tests/`, so every type error there — a fixture built with the wrong
+          # shape, a stale `@ts-expect-error` on prose, a call site inheriting
+          # `never` from an un-inferable `.mjs` export — was invisible to `next
+          # build` and to the `Typecheck` step above. This is the ratchet that
+          # closed it: the `typecheck:tests` gate found 359, the cleanup took it to
+          # 0, and this step is what keeps a new one from landing. Run it with
+          # `--ignore-scripts` for the same reason as the others: `build:catalog`
+          # already ran above and its hooks would rebuild the catalog each time.
+          - name: Typecheck tests
+            run: npm run --ignore-scripts typecheck:tests
+
+          # #387: `cloudflare-env.d.ts` is the Worker env type and is committed, so
+          # `typecheck` above reads whatever the last person committed. Nothing else
+          # in this job asks whether it still matches `wrangler.toml` -- a binding
+          # added to the config compiles fine against a stale generated file, which
+          # is the exact "declared but not bound" gap the type was meant to close.
+          # The step regenerates and restores, so it is safe on a dirty tree.
+          #
+          # It runs wrangler, so it needs no login: `wrangler types` reads the local
+          # config and never calls the API (verified byte-identical with
+          # HTTP(S)_PROXY pointed at a dead port). `scripts/cf-env-types.mjs` is what
+          # owns the normalization both sides agree on.
+          - name: Test and coverage floors
+            run: npm run --ignore-scripts coverage
+
+      # Deliberately AFTER the group rather than in it: `cf-typegen:check` regenerates
+      # cloudflare-env.d.ts in the working tree while `typecheck` and `typecheck:tests`
+      # read it. Concurrently, a typecheck could read the regenerated file and pass on a
+      # commit whose committed one is stale -- the gap #387 closed. Serialized.
       - name: Worker env types match wrangler.toml
         run: npm run --ignore-scripts cf-typegen:check
 
@@ -94,8 +111,6 @@ jobs:
       # testRunExitCode). A separate `npm test` step above it executed the
       # identical files a second time for a verdict this step already owns.
       # `npm test` stays for a local run without coverage.
-      - name: Test and coverage floors
-        run: npm run --ignore-scripts coverage
 
   # #112: a workflow linter in CI, scoped to the class of bug the issue is
   # about. `preview.yml` used to interpolate `github.head_ref` — the PR

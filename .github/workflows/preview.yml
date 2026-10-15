@@ -58,17 +58,14 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: $/.github/actions/setup
-
-      # #266: wait for the required CI checks before building anything. This
-      # workflow used to run `lint` and `test` itself, in parallel with ci.yml's
-      # "Lint & test" job, so a commit whose lint failed still started a preview
-      # build and still posted a "Staging preview" comment (with no URL and no
-      # version) on the PR. The verdict now comes from the one place that owns
-      # it -- ci.yml -- instead of being re-derived here; the wait is on the
-      # check, not a second run of it, so lint/typecheck/test/coverage are not
-      # duplicated.
+      # SPIKE: `background: true` starts the poll and moves on. The 25s of checkout +
+      # npm ci below used to happen BEFORE the poll and therefore after nothing -- they
+      # were 25s of pure dead time on a run whose gate takes 2m29. They now overlap it.
+      # The poll itself is unchanged and still decides everything: the `wait` below sits
+      # immediately before the build, so a red "Lint & test" still fails the job there.
       - name: Wait for CI to pass
+        id: wait-for-ci
+        background: true
         env:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
@@ -121,6 +118,16 @@ jobs:
       # the branch name as source. Pass it through `env:` and let bash quote
       # it — the sanitizer then narrows it to [a-z0-9-], which is what makes
       # the step output safe to interpolate in the steps below.
+      - uses: $/.github/actions/setup
+
+      # #266: wait for the required CI checks before building anything. This
+      # workflow used to run `lint` and `test` itself, in parallel with ci.yml's
+      # "Lint & test" job, so a commit whose lint failed still started a preview
+      # build and still posted a "Staging preview" comment (with no URL and no
+      # version) on the PR. The verdict now comes from the one place that owns
+      # it -- ci.yml -- instead of being re-derived here; the wait is on the
+      # check, not a second run of it, so lint/typecheck/test/coverage are not
+      # duplicated.
       - name: Sanitize branch name
         id: branch
         env:
@@ -129,6 +136,12 @@ jobs:
 
       - name: Build catalog
         run: npm run build:catalog
+
+      # Everything above is toolchain prep that costs 25s and depends on nothing the
+      # gate says. This is where the verdict is collected: the job fails here if
+      # "Lint & test" did not pass, and nothing below runs.
+      - name: Wait for CI before building
+        wait: wait-for-ci
 
       - name: Build (OpenNext)
         run: npx opennextjs-cloudflare build
