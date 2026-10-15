@@ -29,9 +29,13 @@ name: Verify production masters drift
 on:
   workflow_dispatch:
   schedule:
-    # Off the hour, after the weekday Stripe check (verify-stripe.yml, :37).
-    # An object deleted or overwritten out of band is noticed the same day
-    # rather than at the next deploy.
+    # Off the hour, and *before* the weekday Stripe check (`37 6 * * 1-5`,
+    # verify-stripe.yml) rather than after it: 05:41 UTC is earlier than
+    # 06:37 UTC. The order carries no meaning — this reads the production
+    # bucket and that one reads Stripe's test mode, so they share no
+    # credential — but writing it down stops the next reader from having to
+    # work the hours out. An object deleted or overwritten out of band is
+    # noticed the same day rather than at the next deploy.
     - cron: "41 5 * * *"
 
 permissions:
