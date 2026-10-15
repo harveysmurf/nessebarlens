@@ -47,7 +47,7 @@ const workflowDir = path.join(root, ".github", "workflows");
  * it is the reason these are per-environment lists rather than one global set.
  *
  * `production` — the same names with live values, plus the read-only R2 token
- * the release gate and trusted photo attestation use: `R2_MASTERS_READ_ACCESS_KEY_ID`,
+ * the release gate, trusted photo attestation and daily drift check use: `R2_MASTERS_READ_ACCESS_KEY_ID`,
  * `R2_MASTERS_READ_SECRET_ACCESS_KEY`, and `R2_S3_ENDPOINT`. These are
  * production-only on purpose (#243, #397): the release gate HeadObjects the
  * production masters bucket on `main`, and the `pull_request_target` photo
