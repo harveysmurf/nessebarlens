@@ -219,6 +219,22 @@ test("a difference with no YAML change behind it fails, and names the slugs", ()
   assert.ok(lines.some((line) => line.trim() === "npm run publish-photos -- --promote --pr 406"));
 });
 
+test("the failure says the ack label needs a re-run, not just a label", () => {
+  // Labelling a pull request does not re-trigger `pull_request`, whose default
+  // types are opened, synchronize and reopened. An instruction to label and stop
+  // is a remedy that looks like it worked and leaves the merge box red, and the
+  // merge box is the only thing the person blocked by this check reads.
+  const { lines } = listingCheckVerdict({
+    changes: oneChange,
+    yamlChanged: false,
+    acked: false,
+    prNumber: "406",
+  });
+  const message = lines.join("\n");
+  assert.match(message, /photo-listing-ack/);
+  assert.match(message, /re-run this job/i, "the label is only half the remedy, and the other half is not obvious");
+});
+
 test("a YAML pull request logs the difference and passes", () => {
   // The #404 attestation runs for these, so failing here as well would be a
   // second gate on the same PR-time signal, and the advisory escape hatch would

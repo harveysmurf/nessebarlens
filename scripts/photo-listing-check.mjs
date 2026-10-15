@@ -271,6 +271,16 @@ export function listingCheckVerdict({ changes, yamlChanged, acked, prNumber }) {
   // The promotion command is copy-pasteable rather than described: the person
   // reading a red merge box is about to fix this by hand, and `--pr <number>`
   // is the one thing they would otherwise have to go and look up.
+  //
+  // The escape hatch carries its own re-run instruction, and this line is the
+  // only place it can be read. DEVELOPMENT.md says it too, but the person who
+  // hits this is standing in a merge box, not in the docs: labelling a pull
+  // request does not re-trigger `pull_request` (its default types are opened,
+  // synchronize, reopened), so without this the documented remedy looks like it
+  // worked and leaves the check red with no new run to explain why. Adding
+  // `labeled` to ci.yml's types is not the fix -- dependabot-triage.yml labels
+  // pull requests through the API, which would re-run the whole suite on every
+  // bot label.
   const promote = prNumber
     ? `npm run publish-photos -- --promote --pr ${prNumber}`
     : "npm run publish-photos -- --promote --pr <number>";
@@ -281,7 +291,9 @@ export function listingCheckVerdict({ changes, yamlChanged, acked, prNumber }) {
       ...lines,
       "Promote the assets for these slugs before merging, or the release gate (release.yml's Verify production masters) will refuse to deploy:",
       `  ${promote}`,
-      `Or label the pull request ${ACK_LABEL} if these assets are already promoted; the difference is then a notice.`,
+      `Or label the pull request ${ACK_LABEL} if these assets are already promoted, then re-run this job from the Checks tab:`,
+      "  adding the label does not re-trigger CI -- pull_request runs on opened, synchronize and reopened only,",
+      "  so labelling alone leaves this check red with no new run to notice the label.",
       "Note: this check reads no bucket. It reports that the listing set moved, not that an object is missing.",
     ],
   };
