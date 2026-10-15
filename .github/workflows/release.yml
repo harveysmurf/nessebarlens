@@ -125,14 +125,56 @@ jobs:
           retention-days: 3
           if-no-files-found: error
 
+  # #243: the catalog must not list a photo whose full-res master or print asset
+  # is missing from, or differs from, what was promoted. This is the
+  # authoritative guarantee, and it is a *release* gate rather than a PR one:
+  # nothing on a pull request can promise what the production bucket holds by the
+  # time that commit is deployed.
+  #
+  # It runs before *either* environment changes, and `staging` depends on it, so
+  # a forgotten `--promote` fails the release with staging and production both
+  # still on their current versions — no rollback needed, because nothing moved.
+  # Keeping it as a step inside `production` meant a run that promoted staging
+  # first and then discovered the gap, which left the two environments out of
+  # step and made the failure look like a staging problem.
+  #
+  # The token is read-only (Object Read on nessebar-lens-masters) and lives only
+  # in this Environment. `nessebar-lens-masters-staging` is deliberately never
+  # read here: it is a separate bucket (#212) and proves nothing about
+  # production. The same secrets appear in photo-master-attestation.yml's verify
+  # step, which is the one other trusted reader.
+  masters:
+    name: Verify production masters
+    needs: checks
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: $/.github/actions/setup
+
+      - name: Verify production masters
+        env:
+          R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+          R2_MASTERS_READ_ACCESS_KEY_ID: ${{ secrets.R2_MASTERS_READ_ACCESS_KEY_ID }}
+          R2_MASTERS_READ_SECRET_ACCESS_KEY: ${{ secrets.R2_MASTERS_READ_SECRET_ACCESS_KEY }}
+        run: npm run verify:masters
+
   # `needs: build` waits for both matrix legs, so a production build failure
   # stops the staging deploy too. That is the cheap direction to fail in: the
   # alternative is deploying a staging artifact whose production twin never
   # built, which is exactly the "rehearses an environment that gates nothing"
   # shape #200 set out to remove.
+  #
+  # `needs: masters` as well: the catalog that is about to be served names photos,
+  # and a missing production object must stop the release before staging moves,
+  # not after production does (#404).
   staging:
     name: Deploy staging
-    needs: build
+    needs: [build, masters]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: staging
@@ -224,7 +266,7 @@ jobs:
   # artifact production is about to deploy.
   production:
     name: Deploy production
-    needs: [checks, build, staging]
+    needs: [checks, build, staging, masters]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
@@ -257,19 +299,10 @@ jobs:
           bash scripts/artifact-manifest.sh check .open-next .open-next/MANIFEST.sha256
           bash scripts/assert-artifact-origin.sh .open-next "$EXPECTED_ORIGIN" "$FORBIDDEN_ORIGIN"
 
-      # #243: the catalog must not list a photo whose full-res master is missing
-      # from, or differs from, what was promoted. This runs before any production
-      # change (migrations, deploy), so a forgotten `--promote` fails the release
-      # with production still on its current version — no rollback needed,
-      # because nothing changed. The token is read-only (Object Read on
-      # nessebar-lens-masters) and lives only in this Environment; it never
-      # reaches a pull_request-triggered job.
-      - name: Verify production masters
-        env:
-          R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
-          R2_MASTERS_READ_ACCESS_KEY_ID: ${{ secrets.R2_MASTERS_READ_ACCESS_KEY_ID }}
-          R2_MASTERS_READ_SECRET_ACCESS_KEY: ${{ secrets.R2_MASTERS_READ_SECRET_ACCESS_KEY }}
-        run: npm run verify:masters
+      # The masters gate is the `masters` job above, which both deploys depend
+      # on. It is not repeated here: a second read of the same bucket later in
+      # the pipeline would be a second answer to the same question, taken after
+      # staging has already moved.
 
       # Recorded before the deploy, because afterwards the newest version *is*
       # the bad one and there is nothing to roll back to. `deployments list`
@@ -426,7 +459,7 @@ jobs:
   # floor left production a commit behind while the merged PR looked shipped.
   notify:
     name: Notify incident
-    needs: [checks, build, staging, production]
+    needs: [checks, build, staging, production, masters]
     if: failure() && github.ref == 'refs/heads/main'
 
     # #206 regression: a called workflow cannot hold a permission the caller did
@@ -443,7 +476,7 @@ jobs:
 
   resolve:
     name: Close incident
-    needs: [checks, build, staging, production]
+    needs: [checks, build, staging, production, masters]
     if: success() && github.ref == 'refs/heads/main'
 
     # #206 regression: a called workflow cannot hold a permission the caller did

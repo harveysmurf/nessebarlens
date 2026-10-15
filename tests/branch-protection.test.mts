@@ -27,14 +27,12 @@ import test from "node:test";
 
 import {
   ciJobs,
-  readExternalRequiredContexts,
   readRequiredContexts,
   remediationCommand,
 } from "../scripts/required-checks.mjs";
 
 const jobs = ciJobs();
 const required = readRequiredContexts();
-const external = readExternalRequiredContexts();
 const byName = new Map(jobs.map((job) => [job.name, job]));
 
 test("every gating CI job is a required status check", () => {
@@ -50,34 +48,45 @@ test("every required status check names a job that exists in ci.yml", () => {
   // A renamed job leaves its old name in protection, which GitHub accepts
   // forever while the new name runs ungated — the exact hole this file closes,
   // reached the other way round.
-  const known = new Set([...byName.keys(), ...external]);
+  //
+  // `byName` alone as of #404: `Photo master promotion` was the one required
+  // context no ci.yml job reported, and the list that tracked those is gone
+  // with it. The advisory photo check now has its own test below, asserting the
+  // opposite — that it is required by nothing.
+  const known = new Set(byName.keys());
   const unknown = required.filter((name) => !known.has(name));
   assert.deepEqual(unknown, [], `required but no trusted workflow reports this context: ${unknown.join(", ")}`);
 });
 
-test("every external required context is required and posted by a trusted workflow", () => {
-  assert.deepEqual(
-    external.filter((context) => !required.includes(context)),
-    [],
-    "external check contexts must also be in .github/required-checks.txt",
-  );
-  assert.deepEqual(
-    external.filter((context) => byName.has(context)),
-    [],
-    "an external context must not shadow a ci.yml job name",
-  );
-  const workflow = fs.readFileSync(
+test("the advisory photo check is required by nothing, on purpose", () => {
+  // #404. This was a required commit status once, and it could not stay one:
+  // the workflow that posts it is path-filtered, GitHub cannot require a check
+  // that does not report, so on a PR touching no photo listing the status never
+  // arrived, stayed pending, and blocked the merge. The test exists so that
+  // putting the context back is a deliberate act with this failure in front of
+  // you, rather than a quiet re-add that re-breaks every non-photo PR.
+  const attestation = fs.readFileSync(
     new URL("../.github/workflows/photo-master-attestation.yml", import.meta.url),
     "utf8",
   );
-  const attestation = fs.readFileSync(
-    new URL("../scripts/photo-master-attestation.mjs", import.meta.url),
+  assert.equal(
+    required.includes("Photo master promotion"),
+    false,
+    "the photo check is path-filtered and cannot be a required status (#404)",
+  );
+  assert.doesNotMatch(
+    attestation,
+    /statuses: write/,
+    "the attestation must not post a commit status; the job's own check is the signal",
+  );
+  // The guarantee it stood in for moved, rather than disappearing: the release
+  // gate reads the same bucket, and both deploys depend on it.
+  const release = fs.readFileSync(
+    new URL("../.github/workflows/release.yml", import.meta.url),
     "utf8",
   );
-  for (const context of external) {
-    assert.ok(attestation.includes(`"${context}"`), `${context} is not posted by the attestation script`);
-    assert.match(workflow, /pull_request_target:/, "the attestation must use trusted base-branch workflow code");
-  }
+  assert.match(release, /name: Verify production masters/, "the release gate must still exist");
+  assert.match(release, /needs: \[build, masters\]/, "staging must depend on the masters gate");
 });
 
 test("no continue-on-error job is required", () => {
