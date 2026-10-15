@@ -1033,7 +1033,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
-| `.github/workflows/ci.yml` | PR + `workflow_call` (from `release.yml`; no push trigger) | `npm ci` → **build catalog** → lint → typecheck → **typecheck tests** → **test and coverage floors** (the checks use `--ignore-scripts`, so the `pre*` hooks do not regenerate the catalog — #274; `npm run coverage` runs the suite once and fails the job on a test failure before it checks the floors — #273); plus a `workflow-audit` job (**install zizmor** → **gate on workflow script injection**, scoped to `template-injection` at Medium confidence and up — the other 40 findings are reported, not gated); plus two pull-request-only browser jobs — **required** `e2e-smoke` (no secrets: `npm ci` → **cache playwright browsers** → **install chromium** → **e2e smoke flow (seeded)**: `npm run test:e2e -- --grep-invert @hosted` → **upload the failure trace** on failure) and **best-effort** `e2e-hosted-checkout` (`continue-on-error`; staging Environment → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **e2e hosted checkout** (`npm run test:e2e -- --grep @hosted`, headed under Xvfb) → **upload the trace** every run); plus `e2e-worker` — runs on PRs **and** `workflow_call` (release.yml builds the same tree), no secrets so it also runs on forks: **cache build** → **install chromium** → **prepare the local worker** (`.dev.vars` from non-secret values, `wrangler d1 migrations apply --local`, seed `MASTERS` with `e2e/fixtures/worker-master.jpg`) → **build catalog** (`npm run build:catalog`) → **build the worker** (`opennextjs-cloudflare build`, `NEXT_PUBLIC_SITE_URL=http://localhost:8787`) → **start the worker** (`opennextjs-cloudflare preview`) → **run e2e against the worker** (`npm run test:e2e -- --grep-invert @hosted` with `E2E_BASE_URL`, plus `e2e/worker-runtime.spec.ts`: print-asset streams the seeded master, Stripe webhook bad sig is 400 not 503, Prodigi webhook 401/400) → **smoke test the worker** (`scripts/smoke.sh`) → **upload the failure trace** |
+| `.github/workflows/ci.yml` | PR + `workflow_call` (from `release.yml`; no push trigger) | `npm ci` → **build catalog** → lint → typecheck → **typecheck tests** → **test and coverage floors** (the checks use `--ignore-scripts`, so the `pre*` hooks do not regenerate the catalog — #274; `npm run coverage` runs the suite once and fails the job on a test failure before it checks the floors — #273); plus a **required, pull-request-only** `photo-listing-check` job — no secrets, no `paths:` filter, `fetch-depth: 0` for the base commit → **compare the base and head listing sets** (`scripts/photo-listing-check.mjs`: builds each tree's catalog from source and diffs the listing set, failing only when the set moved with no `content/photos/` change behind it — §Photo listing drift, #406); plus a `workflow-audit` job (**install zizmor** → **gate on workflow script injection**, scoped to `template-injection` at Medium confidence and up — the other 40 findings are reported, not gated); plus two pull-request-only browser jobs — **required** `e2e-smoke` (no secrets: `npm ci` → **cache playwright browsers** → **install chromium** → **e2e smoke flow (seeded)**: `npm run test:e2e -- --grep-invert @hosted` → **upload the failure trace** on failure) and **best-effort** `e2e-hosted-checkout` (`continue-on-error`; staging Environment → **install chromium** → **require a stripe test key** → **require a prodigi sandbox key** → **e2e hosted checkout** (`npm run test:e2e -- --grep @hosted`, headed under Xvfb) → **upload the trace** every run); plus `e2e-worker` — runs on PRs **and** `workflow_call` (release.yml builds the same tree), no secrets so it also runs on forks: **cache build** → **install chromium** → **prepare the local worker** (`.dev.vars` from non-secret values, `wrangler d1 migrations apply --local`, seed `MASTERS` with `e2e/fixtures/worker-master.jpg`) → **build catalog** (`npm run build:catalog`) → **build the worker** (`opennextjs-cloudflare build`, `NEXT_PUBLIC_SITE_URL=http://localhost:8787`) → **start the worker** (`opennextjs-cloudflare preview`) → **run e2e against the worker** (`npm run test:e2e -- --grep-invert @hosted` with `E2E_BASE_URL`, plus `e2e/worker-runtime.spec.ts`: print-asset streams the seeded master, Stripe webhook bad sig is 400 not 503, Prodigi webhook 401/400) → **smoke test the worker** (`scripts/smoke.sh`) → **upload the failure trace** |
 | `.github/workflows/preview.yml` | PR open/sync | **waits for `ci.yml`'s `Lint & test` check run on the same commit** and refuses to build if it did not pass (#266; it no longer re-runs lint/test itself) → staging Environment → build → **Worker Version upload `--env staging`** (a version of `nessebar-lens-staging`, so `ORDERS_DB` is the staging D1 and unreviewed PR code cannot write production orders — #202; the step asserts the reported URL is a `…-nessebar-lens-staging.…` hostname) with secrets attached via `--secrets-file` → **smoke test** the version URL (`scripts/smoke.sh`) → PR comment; `versions list`/`delete --env staging` on close |
 | `.github/workflows/release.yml` | push to `main` + `workflow_dispatch` | The whole production path, in order (`concurrency: release`, never cancelled). `checks` (`ci.yml`) → `build` (matrix over `staging`/`production`, one artifact each — `NEXT_PUBLIC_*` and `metadataBase` bake the origin into the prerendered HTML, so one shared artifact would put nessebarlens.com's canonicals on staging; each leg gets `environment: ${{ matrix.env }}` and its own `NEXT_PUBLIC_*`) → `staging`: staging Environment → verify artifact (`artifact-manifest.sh` + `assert-artifact-origin.sh`) → **D1 migrations (`--env staging`)** → `opennextjs-cloudflare deploy --env staging --secrets-file` (the `staging` target of `sync-worker-secrets.sh`: `sk_test_` enforced, Resend key / Prodigi token / print HMAC required) → **smoke test** `https://staging.nessebarlens.com` → `production` (`needs: staging`): production Environment → verify artifact → record the current `100%` version id → **D1 migrations (`--remote`)** → `opennextjs-cloudflare deploy --secrets-file` (guards run first in `version-only` mode) → **smoke test** `https://nessebarlens.com` → on failure `wrangler versions deploy <previous>@100 -y` and fail the job. `notify`/`resolve` from #199 on `main` |
 | `.github/workflows/reconcile.yml` | `workflow_dispatch` only | production Environment → `POST /api/internal/reconcile` with `x-reconcile-secret`. The `*/15` schedule moved to a Cloudflare Cron Trigger (#201) because GitHub delivered about 11 of 168 expected runs in 42 h. Kept as the one-shot path and as the fallback for one release — **delete it once the Cron Trigger has a green week's worth of ticks in the dashboard** |
@@ -1139,9 +1139,10 @@ npm run lint && node scripts/zizmor-gate.mjs
 ### Required status checks (#205 item 1)
 
 `main` requires exactly the contexts listed in `.github/required-checks.txt` —
-`Lint & test`, `Workflow audit`, `E2E smoke flow` and `E2E Worker runtime`.
-Before #205, protection required only `Lint & test`, so the zizmor gate and the
-browser smoke flow could both be red and the merge button was still enabled.
+`Lint & test`, `Workflow audit`, `E2E smoke flow`, `E2E Worker runtime` and
+`Photo listing check`. Before #205, protection required only `Lint & test`, so
+the zizmor gate and the browser smoke flow could both be red and the merge
+button was still enabled.
 
 `Photo master promotion` is deliberately **not** in that list (#404). It comes
 from a path-filtered workflow, and GitHub cannot require a check that does not
@@ -1149,6 +1150,10 @@ report: on a PR touching no `content/photos/*.y{a,}ml` the status never arrives,
 stays pending, and blocks the merge forever. What it stood in for — production
 never serving a listing whose master is missing — is enforced by the release
 gate instead (§5).
+
+`Photo listing check` is the other half of that story and **is** required
+(#406), precisely because it is the opposite: it runs on every pull request, so
+its status always arrives. See §Photo listing drift below.
 
 A branch-protection rule is a repository setting, so nothing in the repo can
 force it to stay correct. Two things do, and the split between them is a hard
@@ -1191,6 +1196,66 @@ GITHUB_TOKEN=$(gh auth token) node scripts/required-checks.mjs
 `E2E hosted checkout (best effort)` stays optional. It is `continue-on-error`
 (#169), so requiring it would block merges on a result the workflow itself
 discards.
+
+### Photo listing drift (#406)
+
+The `Photo master promotion` attestation answers one question — *are the objects
+behind this changed YAML already in the bucket?* — and only for PRs that change
+`content/photos/*.y{a,}ml`. That leaves a whole class with no PR-time signal at
+all: a PR that changes which photos production lists, or which objects they
+need, **by editing code**.
+
+- `photo-schema.ts`, e.g. what `published` defaults to when the key is absent.
+- `derivative-ladder.ts`, which owns the bucket keys `prints/{slug}.jpg` and
+  `print-assets/{slug}.jpg`.
+
+Both move the listing set exactly as much as editing YAML does, and the
+attestation never starts a run for them. The failure surfaced later, from
+`release.yml`'s `Verify production masters`, with `main` already undeployable.
+
+`Photo listing check` is a `ci.yml` job that closes that gap. It compares the
+**listing set** of base and head — for every published photo, the slug, both
+SHA-256s, and both bucket keys — and:
+
+- **fails** when the two sets differ *and* the PR touches no `content/photos/`,
+  which is exactly the case where the attestation is the missing signal;
+- **logs and passes** when the PR does change YAML, because the attestation owns
+  that case and two gates on one PR-time signal would need two escape hatches;
+- **notices** when the PR carries the `photo-listing-ack` label.
+
+It reads no bucket. A difference is *not* proof that an object is missing — the
+assets are often already promoted — so the release gate remains the enforcement
+and this is the PR-time notice that it is about to refuse.
+
+Both sides are built from source, because the code is half of what is being
+compared: base from a `git worktree` of the merge base, built with **its own**
+validator and **its own** key derivation, so editing either one moves the base
+set and the difference shows up. `scripts/photo-listing-check.mjs` owns the
+worktree, the two builds and the verdict; the extraction and the diff are pure
+functions in the same file, unit-tested against literal listing sets.
+
+Two properties are load-bearing and pinned by `tests/photo-listing-check.test.mts`
+rather than by the check passing:
+
+- **It cannot be skipped.** No `paths:` filter, no `continue-on-error`, and the
+  only `if:` it may carry is the `pull_request` guard. A required check that does
+  not report on every PR blocks every merge — the #404 failure mode pointed the
+  other way.
+- **It holds nothing.** No `secrets.*`, no `environment:`, `contents: read` from
+  the workflow default, and no `pull_request_target` anywhere. The job executes
+  the pull request's own catalog builder, which is the design and is safe only
+  because there is nothing there to take.
+
+To reproduce it locally (needs `git fetch --unshallow` first):
+
+```
+node scripts/photo-listing-check.mjs
+```
+
+It creates `.listing-base/` and `.listing-check/`, and removes both on every exit
+path. `.listing-base/` is created **inside** the tree on purpose: it has no
+`node_modules` of its own, and base's `build-catalog.mjs` imports `yaml`, which
+Node resolves by walking up out of `scripts/`.
 
 ### Action versions and the runner image
 
@@ -1603,6 +1668,26 @@ What to do if `--promote` refuses:
   run guarded `--promote --pr <recovery-pr>` while it is open. The promoter
   checks the same `ingest/{slug}.jpg` hash, writes the missing objects, and
   auto-merges the recovery PR after required checks pass.
+
+### When `Photo listing check` is red (#406)
+
+The photo flow above is the YAML path, and it has its own check. This is the
+other one, and it fires when the PR changes the listing set *without* changing
+`content/photos/` — a schema default moving, or `derivative-ladder.ts` changing
+a bucket key. The failure names each affected slug and the kind of change:
+
+| Reported as | What moved | What to do |
+| --- | --- | --- |
+| `newly listed: <slug>` / `no longer listed: <slug>` | the listing set | the catalog default or the validator changed; confirm it is intended |
+| `renamed <old> -> <new>` | the slug, same bytes | promote under the new slug: `--promote --pr <n>` |
+| `<slug>: master sha256 … changed` | the digital master | promote — buyers' downloads change |
+| `<slug>: print asset sha256 … changed` | the Prodigi asset only | promote; the master did not move |
+| `<slug>: master key changed` | the bucket key derivation | either the ladder edit is wrong, or every object has to be re-promoted under the new key |
+
+If the assets are already promoted under the new keys — common when the ladder
+change is intentional — label the PR `photo-listing-ack` and re-run. The label
+turns the failure into a notice; it does not suppress the log, and it is a
+deliberate human act rather than a `continue-on-error` the workflow ignores.
 
 Nothing is uploaded and auto-merge is not enabled on any refusal, so fixing the
 input and re-running is always safe. The web keys from `--apply` are

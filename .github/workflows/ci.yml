@@ -368,6 +368,56 @@ jobs:
           retention-days: 7
           if-no-files-found: ignore
 
+  # #406: the other half of #404's photo story. The attestation only runs when
+  # content/photos/*.yaml changes, so a PR that changes what production lists
+  # through *code* — a schema default moving, or the bucket key derivation in
+  # derivative-ladder.ts — gets no PR-time signal at all, and finds out from
+  # release.yml's masters gate with main already undeployable.
+  #
+  # It compares the listing set of base and head, both built from source: base
+  # from its own validator and its own key derivation, head from the pull
+  # request's. That is the only way a code-only listing change is visible at all,
+  # and it is safe here precisely because the job holds nothing: no bucket
+  # secrets, no `environment:`, `contents: read` only. Never `pull_request_target`
+  # — that would give a job executing pull-request code a base-branch ref and a
+  # write token, which is the pairing #404 keeps out.
+  #
+  # It reads no bucket. A difference is not proof that an asset is missing; the
+  # release gate remains the enforcement, and this is the PR-time notice that it
+  # is about to refuse. `photo-listing-ack` turns the failure into a notice for
+  # the assets-that-are-already-promoted case.
+  #
+  # Required, and deliberately unfilterable. No `paths:`, and the only `if:` is
+  # the pull_request guard: a required check that does not report on some pull
+  # requests stays pending and blocks the merge forever, which is what took
+  # `Photo master promotion` out of the required list in #404.
+  # tests/photo-listing-check.test.mts pins all of that, and the reasoning for
+  # each half is in DEVELOPMENT.md §Photo listing drift.
+  photo-listing-check:
+    name: Photo listing check
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          # The base commit, not just the head. A shallow checkout has no
+          # origin/main, and `git merge-base` fails on a missing ref — which
+          # would leave the check unable to compare anything at all.
+          fetch-depth: 0
+
+      - uses: $/.github/actions/setup
+
+      # Through env, never interpolated into the script: `github.head_ref` and
+      # friends are author-controlled, and the zizmor gate in `Workflow audit`
+      # is scoped to exactly that.
+      - name: Compare the base and head listing sets
+        env:
+          PHOTO_LISTING_ACKED: ${{ contains(github.event.pull_request.labels.*.name, 'photo-listing-ack') }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+        run: node scripts/photo-listing-check.mjs
+
   # #204: run the built Worker, not `next dev`. Every other job here exercises
   # Node and Next; the artifact we ship is `.open-next` in workerd with real
   # bindings (`ORDERS_DB`, `MASTERS`, `ASSETS` with `run_worker_first`) and
