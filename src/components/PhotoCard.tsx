@@ -7,11 +7,12 @@ export function PhotoCard({ photo }: { photo: Photo }) {
 
   return (
     <Link href={`/prints/${photo.slug}`} className="group cursor-pointer space-y-3 block">
-      <div
-        className={`aspect-[4/3] overflow-hidden rounded-sm ${
-          isFilmPhoto(photo) ? "bg-stone-900 p-1" : "bg-stone-200"
-        }`}
-      >
+      {/* #409: every tile is styled identically. This was a category branch that
+          gave film a `bg-stone-900 p-1` frame — 4px of padding on a border-box,
+          so the object-cover image exposed a black ring on all four edges while
+          the other two galleries showed none. No padding utility belongs here:
+          the image fills the box, so padding can only ever draw a frame. */}
+      <div className="aspect-[4/3] overflow-hidden rounded-sm bg-stone-200">
         <WebPhoto
           photo={photo}
           preferred={1500}

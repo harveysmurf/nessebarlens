@@ -67,10 +67,13 @@ export default function StoryPage() {
                   block.flip ? "md:order-2 order-1" : ""
                 }`}
               >
+                {/* #409: no padding utility here either. The dark background is a
+                    letterbox backdrop behind a wider-than-3:2 crop, matching the
+                    home page; padding around it only drew a black frame. */}
                 <Link
                   href={block.href}
                   className={`aspect-[3/2] overflow-hidden rounded-sm block ${
-                    photo && isFilmPhoto(photo) ? "bg-stone-900 p-1" : "bg-stone-200"
+                    photo && isFilmPhoto(photo) ? "bg-stone-900" : "bg-stone-200"
                   }`}
                 >
                   {photo ? (
