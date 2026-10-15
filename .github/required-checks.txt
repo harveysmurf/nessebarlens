@@ -28,13 +28,14 @@
 #
 # `Photo listing check` is the other half of that story, and it IS required
 # (#406) precisely because it is the opposite of `Photo master promotion`: it runs
-# on every pull request with no `paths:` filter and no skip condition, so its
-# status always arrives. It covers what the path-filtered one structurally
-# cannot — a pull request that changes which photos production lists, or which
-# bucket objects they need, by editing code rather than YAML. If a `paths:` or an
-# `if:` is ever added to that job, it has to come out of this list in the same
-# commit: a required context that stops reporting blocks every merge until
-# someone notices.
+# on every pull request with no `paths:` filter and no `if:` beyond the
+# `github.event_name == 'pull_request'` guard, so its status always arrives. It
+# covers what the path-filtered one structurally cannot — a pull request that
+# changes which photos production lists, or which bucket objects they need, by
+# editing code rather than YAML. If a `paths:` or any further `if:` is ever
+# added to that job, it has to come out of this list in the same commit: a
+# required context that stops reporting blocks every merge until someone
+# notices.
 Lint & test
 Workflow audit
 E2E smoke flow
