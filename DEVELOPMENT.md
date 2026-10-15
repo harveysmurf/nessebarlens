@@ -1689,6 +1689,16 @@ change is intentional — label the PR `photo-listing-ack` and re-run. The label
 turns the failure into a notice; it does not suppress the log, and it is a
 deliberate human act rather than a `continue-on-error` the workflow ignores.
 
+Two things that escape hatch depends on, neither of which the workflow can check
+for itself. The label has to **exist in the repository** — it is not created by
+applying it, and a missing label makes the documented step impossible rather than
+merely slow; recreate it with `gh label create photo-listing-ack --color c5def5
+--description "Assets already promoted: demote the Photo listing check failure to
+a notice"`. And labelling does not re-run anything: `pull_request` carries its
+default types (`opened`, `synchronize`, `reopened`), and `labeled` is not one of
+them, so the job still reads the payload from the run that failed. Re-run it from
+the PR's checks page, or push an empty commit.
+
 Nothing is uploaded and auto-merge is not enabled on any refusal, so fixing the
 input and re-running is always safe. The web keys from `--apply` are
 content-addressed, so they are never rewritten by a promote.
