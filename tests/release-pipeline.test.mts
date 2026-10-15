@@ -127,6 +127,20 @@ test("production deploys only after staging has migrated and passed its smoke", 
   );
 });
 
+test("both deploys wait for the masters gate, so a missing object stops the release early", () => {
+  // #243/#404: the gate moved out of the production job and ahead of staging.
+  // Production staying safe is not enough — if only production needed it, a
+  // forgotten `--promote` would migrate staging, deploy staging and then fail,
+  // leaving the two environments out of step with nothing rolled back.
+  for (const job of ["staging", "production"]) {
+    const needs = needed(release!, job);
+    assert.ok(
+      needs.includes("masters"),
+      `${job} needs ${JSON.stringify(needs)} — without masters it changes before the catalog is checked against the production bucket`,
+    );
+  }
+});
+
 test("checks runs the full CI suite, not a subset of it", () => {
   const body = jobs(release!).checks ?? "";
   assert.match(
@@ -311,7 +325,7 @@ test("a red run on main opens an incident and a green one closes it", () => {
   // than only the deploy step.
   assert.deepEqual(
     needed(release!, "notify").sort(),
-    ["build", "checks", "production", "staging"],
+    ["build", "checks", "masters", "production", "staging"],
   );
   assert.match(body.notify, /^ {4}if: failure\(\) && github\.ref == 'refs\/heads\/main'$/m);
   assert.match(body.resolve, /^ {4}if: success\(\) && github\.ref == 'refs\/heads\/main'$/m);

@@ -3,7 +3,7 @@
  * in the repo can force them to stay correct. This module is the bridge:
  *
  *   .github/required-checks.txt   what we intend to require, committed
- *   ci.yml + external check list  trusted status producers and which can block
+ *   ci.yml                       trusted status producers and which can block
  *   the live branch protection     what GitHub actually requires
  *
  * Run it BY HAND, from a machine holding a token that can read branch
@@ -38,7 +38,6 @@ import { fileURLToPath } from "node:url";
 
 const root = path.join(import.meta.dirname, "..");
 const listFile = path.join(root, ".github", "required-checks.txt");
-const externalListFile = path.join(root, ".github", "external-required-checks.txt");
 const ciFile = path.join(root, ".github", "workflows", "ci.yml");
 
 /**
@@ -79,15 +78,6 @@ function parseJobs(text) {
 
 /** Contexts from .github/required-checks.txt, comments and blanks dropped. */
 export function readRequiredContexts(file = listFile) {
-  return fs
-    .readFileSync(file, "utf8")
-    .split("\n")
-    .map((line) => line.replace(/#.*$/, "").trim())
-    .filter((line) => line.length > 0);
-}
-
-/** Contexts posted by trusted workflows rather than named ci.yml jobs. */
-export function readExternalRequiredContexts(file = externalListFile) {
   return fs
     .readFileSync(file, "utf8")
     .split("\n")

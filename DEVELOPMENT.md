@@ -511,14 +511,17 @@ other way, describing a version the deploy then replaces.
 `--secrets-file` has no window at all, and it is the same mechanism previews use,
 so there is one thing to reason about rather than two.
 
-Before any of that, the `production` job runs **`Verify production masters`**
-(`npm run verify:masters`, #243) after the downloaded build is verified and
-before the D1 migrations. It `HeadObject`s
+Before any of that, the **`masters` job** runs **`Verify production masters`**
+(`npm run verify:masters`, #243) after `checks` and before *either* environment
+changes. It `HeadObject`s
 `nessebar-lens-masters/prints/{slug}.jpg` for every published photo and compares
 the object's `sha256` metadata against the catalog's `master_sha256`; a photo
-whose master is missing, empty, or stale fails the release with production still
-on its current version, so a forgotten `--promote` stops the deploy instead of
-shipping a photo that cannot be downloaded or printed. The fix is
+whose master is missing, empty, or stale fails the release with staging and
+production both still on their current versions, so a forgotten `--promote`
+stops the release with nothing to roll back. Both `staging` and `production`
+depend on it (#404) — as a step inside `production` it ran *after* staging had
+already been migrated and deployed, so a missing master left the two
+environments out of step. The fix is
 `npm run publish-photos -- --promote --pr <n>` (§6a). There is no allow-list
 anymore (#245): every published photo has a real master, so the check always
 reads the bucket and always requires `R2_MASTERS_READ_*`. A catalog with no
@@ -1114,20 +1117,26 @@ npm run lint && node scripts/zizmor-gate.mjs
 ### Required status checks (#205 item 1)
 
 `main` requires exactly the contexts listed in `.github/required-checks.txt` —
-`Lint & test`, `Workflow audit`, `E2E smoke flow`, `E2E Worker runtime`, and
-`Photo master promotion`.
+`Lint & test`, `Workflow audit`, `E2E smoke flow` and `E2E Worker runtime`.
 Before #205, protection required only `Lint & test`, so the zizmor gate and the
 browser smoke flow could both be red and the merge button was still enabled.
+
+`Photo master promotion` is deliberately **not** in that list (#404). It comes
+from a path-filtered workflow, and GitHub cannot require a check that does not
+report: on a PR touching no `content/photos/*.y{a,}ml` the status never arrives,
+stays pending, and blocks the merge forever. What it stood in for — production
+never serving a listing whose master is missing — is enforced by the release
+gate instead (§5).
 
 A branch-protection rule is a repository setting, so nothing in the repo can
 force it to stay correct. Two things do, and the split between them is a hard
 platform limit rather than a preference:
 
 - `tests/branch-protection.test.mts` holds the committed list against named
-  `ci.yml` jobs and trusted external contexts in both directions — a new gating
-  job missing from the list fails, an unknown status context fails, and a
-  `continue-on-error` job listed as required fails. This runs on **every test
-  run**.
+  `ci.yml` jobs in both directions — a new gating job missing from the list
+  fails, an unknown status context fails, a `continue-on-error` job listed as
+  required fails, and re-adding the advisory photo check fails. This runs on
+  **every test run**.
 - `scripts/required-checks.mjs` holds the committed list against the **live**
   rule and prints the exact `gh api` call to reconcile. It is run **by hand**,
   not from CI.
@@ -1144,10 +1153,12 @@ job-scoped-permissions discipline in #209 keeps it out, which is a worse trade
 than rare, deliberate UI drift.
 
 Adding a gate means updating its trusted producer, `.github/required-checks.txt`,
-the matching job or context declaration (`.github/external-required-checks.txt`
-for statuses posted outside `ci.yml`), and the `gh api -X PATCH` that makes
-GitHub agree. Miss a declaration and the test fails on every run. Miss the
-live update and only the manual comparison finds it.
+and the `gh api -X PATCH` that makes GitHub agree. (A context posted outside
+`ci.yml` used to need a second declaration in
+`.github/external-required-checks.txt`; that file went with `Photo master
+promotion` in #404, when the last non-`ci.yml` required context did.) Miss the
+test list and the test fails on every run. Miss the live update and only the
+manual comparison finds it.
 
 Run the live comparison locally with a token that can read protection:
 
@@ -1329,12 +1340,16 @@ The three production `R2_*` rows are the read-only token for the release gate
 (#243) and photo promotion attestation (#397):
 `R2_MASTERS_READ_ACCESS_KEY_ID` / `R2_MASTERS_READ_SECRET_ACCESS_KEY` are scoped
 to Object Read on `nessebar-lens-masters` only, and `R2_S3_ENDPOINT` is where
-they connect. They are in no other environment. `release.yml` is push-only;
-`photo-master-attestation.yml` uses `pull_request_target` and explicitly checks
-out the base commit, reads changed PR YAML only through the GitHub API as data,
-and never executes PR code. Its read-only job waits for the guarded local
-`--promote` command to write matching production masters. Ordinary
-`pull_request` workflows never receive these secrets.
+they connect. They are in no other environment, and in both workflows they are
+on a **single step's** `env:` — the release's `Verify production masters` job
+and the attestation's verify step — never at job level, because the attestation's
+`inspect` step parses untrusted PR YAML and must not be able to reach the bucket.
+`release.yml` is push-only; `photo-master-attestation.yml` uses
+`pull_request_target` and explicitly checks out the base commit, reads changed PR
+YAML only through the GitHub API as data, and never executes PR code. Its
+read-only step waits for the guarded local `--promote` command to write matching
+production masters. Ordinary `pull_request` workflows never receive these
+secrets.
 
 The contact-form secrets (#293) live in both `staging` and `production`:
 `TURNSTILE_SECRET_KEY` (server-side Siteverify; use the test secret
@@ -1488,11 +1503,20 @@ from §7) into `ingest/` (repo root, gitignored), both named for the same slug:
   `master_sha256`, `image_hash` or the master objects.
 - The production masters bucket is **never** written by `--apply`. Its client
   only has the web and staging buckets, so a `--promote` object is unreachable
-  from this command. A trusted `pull_request_target` workflow posts the required
-  `Photo master promotion` status for every PR. It succeeds immediately when no
-  published photo YAML changed; otherwise it reads the PR YAML as data and waits
-  until both production objects match. The protected branch cannot merge the
-  catalog entry before that status succeeds.
+  from this command. A trusted `pull_request_target` workflow checks the PR when
+  it changes `content/photos/*.y{a,}ml`: it reads the PR YAML as data and, only
+  for listings that are added, newly published, renamed or re-hashed, waits until
+  both production objects match. Metadata-only edits, deletions and
+  `published: false` entries skip the wait (#404).
+
+  That check is **advisory**, not a required status — a path-filtered workflow
+  cannot be required, because on a PR touching no listing the check never
+  reports and a required one would block the merge forever. So a photo PR *can*
+  merge before `--promote` runs. Production stays safe: the release refuses to
+  deploy (§5), leaving `main` undeployable rather than serving a listing whose
+  objects are missing. Recovery is either
+  `npm run publish-photos -- --promote --pr <n>` on a fresh catalog-only PR and
+  a re-run of the release, or reverting the YAML.
 
 ### After the preview: `--promote` (#242)
 
@@ -1526,11 +1550,11 @@ catalog entry (a `--replace-image`), which overwrites the fixed key and reminds
 you that past buyers' downloads now get the new file. It then `HeadObject`s each
 master **and print-asset** key and confirms the `sha256` metadata and byte
 length before running
-`gh pr merge <n> --auto --squash`. The required `Photo master promotion`
-status observes these verified objects and passes; branch protection then
-allows the auto-merge once the other required checks pass. Merging deploys
-staging → smoke tests → master check (which now also verifies the print assets)
-→ production.
+`gh pr merge <n> --auto --squash`. The advisory `Photo master promotion` check
+observes these verified objects and passes; branch protection allows the
+auto-merge once the required checks pass. Merging runs the master check → staging
+→ smoke tests → production (the master check, which now also verifies the print
+assets, runs before either environment changes, #404).
 
 What to do if `--promote` refuses:
 
@@ -1544,8 +1568,9 @@ What to do if `--promote` refuses:
 - **`changes files outside content/photos/`** — the PR is broader than a photo
   publish; promote does not merge it. Split the photo change into its own PR.
 - **`PR #n is not open` after a catalog entry was merged without promotion** —
-  the merge gate should prevent this for new PRs. For an older merged entry,
-  create a catalog-only recovery PR with a comment noting the original PR, then
+  possible since the photo check became advisory (#404); the release gate is what
+  catches it. Create a catalog-only recovery PR with a comment noting the
+  original PR, then
   run guarded `--promote --pr <recovery-pr>` while it is open. The promoter
   checks the same `ingest/{slug}.jpg` hash, writes the missing objects, and
   auto-merges the recovery PR after required checks pass.
