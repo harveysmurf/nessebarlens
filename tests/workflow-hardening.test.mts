@@ -1058,6 +1058,39 @@ test("the drift check opens one stable incident and closes it on green (#405)", 
   assert.doesNotMatch(text, /wrangler (deploy|versions secret|rollback)|opennextjs-cloudflare deploy/);
 });
 
+test("the drift check queues behind a release instead of racing the traffic split (#405)", () => {
+  const text = workflowText("verify-masters-drift.yml");
+
+  // It shares release.yml's group, so a run that lands during
+  // `wrangler versions deploy <new>@100` waits for the split to settle rather
+  // than reading it. `servingVersionId` refuses to guess when no version holds
+  // exactly 100%, and that refusal opens an incident -- correct, but not
+  // something a read-only daily check should page about on its own timing.
+  assert.match(
+    text,
+    /^concurrency:\s*\n {2}group: release\s*\n {2}cancel-in-progress: false$/m,
+    "the drift check must share release.yml's concurrency group, or it races the deploy",
+  );
+
+  // release.yml must still be in that group, or the coupling is one-sided: the
+  // drift check would queue behind nothing. Pinned from both sides so dropping
+  // either half is a test failure rather than a race nobody notices.
+  assert.match(workflowText("release.yml"), /^concurrency:\s*\n {2}group: release\s*\n {2}cancel-in-progress: false$/m);
+
+  // `cancel-in-progress: true` here would let a daily check cancel the release
+  // holding the slot -- a check that never changes production cancelling the
+  // thing that does.
+  assert.doesNotMatch(text, /^concurrency:\s*\n {2}group: release\s*\n {2}cancel-in-progress: true$/m);
+
+  // The wait is bounded, or a hung check would hold the slot indefinitely and
+  // delay every release behind it.
+  const timeouts = [...text.matchAll(/^ {4}timeout-minutes: (\d+)$/gm)].map((match) => Number(match[1]));
+  assert.equal(timeouts.length, 2, "both check jobs must declare a timeout-minutes");
+  for (const minutes of timeouts) {
+    assert.ok(minutes > 0 && minutes <= 15, `timeout-minutes ${minutes} must bound the shared slot`);
+  }
+});
+
 test("no pull_request-triggered workflow reads the masters read-only secrets (#243)", () => {
   // The read token reaches the masters bucket; a pull_request job runs
   // unreviewed code, so it must never hold it. release.yml is push-only, which

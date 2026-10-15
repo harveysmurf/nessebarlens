@@ -26,6 +26,10 @@ name: Verify production masters drift
 # checks out a commit and runs that commit's build hooks, so it must never do that
 # on unreviewed code. Alert only — it opens or closes one incident issue and never
 # changes production.
+#
+# It runs in the `release` concurrency group, so it queues behind a deploy
+# rather than reading a half-finished traffic split. See `concurrency:` below for
+# why that is the right way round.
 on:
   workflow_dispatch:
   schedule:
@@ -41,9 +45,25 @@ on:
 permissions:
   contents: read
 
+# Deliberately `release`'s group and not its own (#405). The lookup reads the
+# version holding 100% of traffic, and during `wrangler versions deploy
+# <new>@100` there is a window where no version holds exactly 100%. The script
+# refuses to guess in that window, so the run fails and opens an incident about
+# a deploy that is still in progress — correct, and not worth being woken for.
+#
+# Queuing behind the release is the fix: a run that lands mid-deploy waits
+# until the traffic split settles instead of reading it. `cancel-in-progress:
+# false` is the load-bearing half — with it, the queued run runs afterwards;
+# without it, this workflow would cancel the release holding the slot, which is
+# the exact opposite of what a read-only daily check is for.
+#
+# The trade-off, stated because it is real: a stuck drift check now delays the
+# *release* too, since they share one slot. Bounded by this workflow's own
+# `timeout-minutes` (10 + 15), so the worst case is a release waiting half an
+# hour for a check that was going to tell it nothing it does not already know.
 concurrency:
-  group: verify-masters-drift
-  cancel-in-progress: true
+  group: release
+  cancel-in-progress: false
 
 jobs:
   deployed-sha:
