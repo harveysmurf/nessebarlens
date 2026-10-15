@@ -51,6 +51,11 @@ yarn-error.log*
 # generated catalog (compiled from content/photos/*.yaml)
 /src/generated/
 
+# photo listing drift check scratch: the base git worktree it builds and the
+# catalogs it writes there (#406). Both are removed on every exit path.
+/.listing-base/
+/.listing-check/
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
