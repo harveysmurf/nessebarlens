@@ -876,7 +876,16 @@ test("release.yml's masters gate runs before either environment changes (#243, #
   }
 });
 
-test("the masters read-only secrets are limited to trusted production workflows (#243, #397)", () => {
+// The three trusted readers of the production masters bucket, and no others: the
+// advisory PR attestation, the release gate, and the daily drift check (#405).
+// Adding a fourth is a deliberate act with this assertion in front of it.
+const MASTERS_READERS = [
+  "photo-master-attestation.yml",
+  "release.yml",
+  "verify-masters-drift.yml",
+];
+
+test("the masters read-only secrets are limited to trusted production workflows (#243, #397, #405)", () => {
   const release = workflowText("release.yml");
   const staging = jobBlock(release, "staging");
   for (const secret of MASTERS_READ_SECRETS) {
@@ -885,10 +894,10 @@ test("the masters read-only secrets are limited to trusted production workflows 
       .map(({ name }) => name);
     assert.deepEqual(
       readers,
-      ["photo-master-attestation.yml", "release.yml"],
-      `${secret} is read by ${readers.join(", ")}; it belongs only to the trusted PR attestation and release gate`,
+      MASTERS_READERS,
+      `${secret} is read by ${readers.join(", ")}; it belongs only to the trusted PR attestation, the release gate and the drift check`,
     );
-    for (const name of ["photo-master-attestation.yml", "release.yml"]) {
+    for (const name of MASTERS_READERS) {
       const text = workflowText(name);
       assert.equal(
         [...text.matchAll(new RegExp(`secrets\\.${secret}\\b`, "g"))].length,
@@ -954,6 +963,99 @@ test("photo master attestation keeps secrets on trusted base code and scopes API
   for (const body of runBodies(text)) {
     assert.doesNotMatch(body, /\$\{\{/, `expression inside run:\n${body}`);
   }
+});
+
+test("the drift check verifies the deployed commit and only ever alerts (#405)", () => {
+  const text = workflowText("verify-masters-drift.yml");
+  const header = text.slice(0, text.search(/^jobs:[ \t]*$/m));
+
+  // Schedule and dispatch only. It checks out a commit and runs that commit's
+  // build hooks, so a `pull_request*` trigger would run unreviewed code holding
+  // production credentials — the one trigger this file must never grow.
+  const onBlock = header.slice(header.search(/^on:[ \t]*$/m), header.search(/^permissions:/m));
+  const triggers = [...onBlock.matchAll(/^ {2}([a-z_]+):/gm)].map((match) => match[1]);
+  assert.deepEqual(
+    triggers,
+    ["workflow_dispatch", "schedule"],
+    "the drift check must be schedule/dispatch only",
+  );
+  assert.match(onBlock, /- cron: "[^"]*"/);
+
+  assert.deepEqual(permissionsAt(text, 0), ["contents: read"]);
+
+  // Two jobs, because a job may check out exactly once
+  // (tests/workflow-setup.test.mts) and these two need different commits: the
+  // lookup needs wrangler and wrangler.toml, the check needs the deployed tree.
+  // The split also separates the credentials — the lookup never sees the bucket,
+  // the check never sees the Cloudflare API token.
+  const lookup = jobBlock(text, "deployed-sha");
+  const check = jobBlock(text, "verify");
+  for (const [name, block] of [
+    ["deployed-sha", lookup],
+    ["verify", check],
+  ] as const) {
+    assert.match(block, /^ {4}environment: production$/m, `${name} must hold production's Environment secrets`);
+    assert.doesNotMatch(block, /^ {4}permissions:/m, `${name} inherits the workflow's contents: read`);
+  }
+
+  // It checks the deployed commit rather than the branch, and `main` is never a
+  // fallback: the sha is the version's `prod-<sha>` tag, read once and passed on.
+  assert.match(lookup, /run: node scripts\/resolve-deployed-sha\.mjs/);
+  assert.match(lookup, /^ {4}outputs:\n {6}sha: \$\{\{ steps\.resolve\.outputs\.sha \}\}$/m);
+  assert.match(check, /^ {4}needs: deployed-sha$/m);
+  assert.match(check, /ref: \$\{\{ needs\.deployed-sha\.outputs\.sha \}\}/);
+  assert.match(check, /npm run verify:masters/);
+  assert.doesNotMatch(check, /ref: main\b/, "checking out the branch is the failure mode this avoids");
+
+  // Secrets on steps, never on the job, and each exactly once in the file.
+  for (const [name, block] of [
+    ["deployed-sha", lookup],
+    ["verify", check],
+  ] as const) {
+    const jobEnv = block.match(/^ {4}env:\n((?: {6}.*\n)+)/m)?.[1] ?? "";
+    assert.doesNotMatch(jobEnv, /secrets\./, `no secret may be job-level in ${name}`);
+    assert.match(block, /^ {10}persist-credentials: false$/m, `${name} must drop its checkout credentials`);
+  }
+  for (const name of ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", ...MASTERS_READ_SECRETS]) {
+    assert.equal(
+      [...text.matchAll(new RegExp(`secrets\\.${name}\\b`, "g"))].length,
+      1,
+      `${name} must appear exactly once, on the step that uses it`,
+    );
+  }
+  // Neither job holds both kinds of credential.
+  assert.doesNotMatch(lookup, /secrets\.R2_/);
+  assert.doesNotMatch(check, /secrets\.CLOUDFLARE_/);
+
+  for (const job of ["notify", "resolve"]) {
+    assert.deepEqual(permissionsAt(jobBlock(text, job), 4), ["contents: read", "issues: write"]);
+  }
+
+  for (const body of runBodies(text)) {
+    assert.doesNotMatch(body, /\$\{\{/, `expression inside run:\n${body}`);
+  }
+});
+
+test("the drift check opens one stable incident and closes it on green (#405)", () => {
+  const text = workflowText("verify-masters-drift.yml");
+  for (const job of ["notify", "resolve"]) {
+    const block = jobBlock(text, job);
+    assert.match(block, /uses: \$\/\.github\/workflows\/notify-failure\.yml/);
+    assert.match(block, /^ {6}title: "incident: Production photo masters drifted"$/m);
+    // `deployed-sha` is in `needs` as well as `verify`, or an unresolvable sha
+    // skips `verify`, `failure()` finds nothing failed, and the one case we
+    // cannot name stays silent.
+    assert.match(block, /^ {4}needs: \[deployed-sha, verify\]$/m);
+  }
+  assert.match(jobBlock(text, "notify"), /^ {4}if: failure\(\) && github\.ref == 'refs\/heads\/main'$/m);
+  assert.match(jobBlock(text, "resolve"), /^ {4}if: success\(\) && github\.ref == 'refs\/heads\/main'$/m);
+  // Exactly the title, on both: a green run has to find the issue the red one
+  // opened, so a stray suffix here is an incident nobody ever closes.
+  const titles = [...text.matchAll(/title: "incident: Production photo masters drifted"/g)];
+  assert.equal(titles.length, 2);
+  assert.match(jobBlock(text, "resolve"), /^ {6}close: true$/m);
+  // Alert only. Nothing here may touch production.
+  assert.doesNotMatch(text, /wrangler (deploy|versions secret|rollback)|opennextjs-cloudflare deploy/);
 });
 
 test("no pull_request-triggered workflow reads the masters read-only secrets (#243)", () => {

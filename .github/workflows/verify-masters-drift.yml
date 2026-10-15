@@ -1,0 +1,140 @@
+name: Verify production masters drift
+
+# The bucket is checked at release time (`Verify production masters`, #243), which
+# makes "production never serves a listing whose master is missing" true at every
+# deploy and unverified in between. Only the guarded `publish-photos --promote`
+# writes to `nessebar-lens-masters`, so the gap is narrow — but it is a gap, and
+# what it costs is a buyer's download 404 or a Prodigi asset fetch against a photo
+# the site is still selling. This closes it.
+#
+# It checks the **deployed** commit, not `main`, and that is the whole design.
+# After #404 an unpromoted photo PR can sit on `main` with its release refused by
+# the gate, so checking `main` would re-report that known release failure as fresh
+# drift every morning. `scripts/resolve-deployed-sha.mjs` reads the `prod-<sha>`
+# tag off the version holding 100% of traffic and `verify` checks out that sha, so
+# the catalog being verified is the one users can actually reach. No fallback to
+# `main`: a green run against the wrong commit would close the very incident this
+# opens.
+#
+# Two jobs rather than one because a job may check out exactly once
+# (tests/workflow-setup.test.mts), and these two need different commits: the
+# lookup needs a tree with wrangler and `wrangler.toml` in it, the check needs the
+# deployed tree. Each holds a different credential for that reason too — the
+# lookup never sees the bucket, the check never sees the Cloudflare API token.
+#
+# `schedule` and `workflow_dispatch` only, never a `pull_request*` trigger: it
+# checks out a commit and runs that commit's build hooks, so it must never do that
+# on unreviewed code. Alert only — it opens or closes one incident issue and never
+# changes production.
+on:
+  workflow_dispatch:
+  schedule:
+    # Off the hour, after the weekday Stripe check (verify-stripe.yml, :37).
+    # An object deleted or overwritten out of band is noticed the same day
+    # rather than at the next deploy.
+    - cron: "41 5 * * *"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-masters-drift
+  cancel-in-progress: true
+
+jobs:
+  deployed-sha:
+    name: Resolve the deployed commit
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    outputs:
+      sha: ${{ steps.resolve.outputs.sha }}
+    # The Cloudflare API token lives in the production Environment, so the job
+    # that uses it has to be in it. It gets nothing else: no bucket credentials,
+    # and it does not read a single photo.
+    environment: production
+    steps:
+      # The checkout is for wrangler and wrangler.toml, not for a catalog: this
+      # tree is only the tool that answers "which commit is serving?".
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: $/.github/actions/setup
+
+      # No fallback exists in the script, on purpose: an unresolvable sha fails
+      # here, and the incident below is opened about *that* rather than about a
+      # catalog nobody is being served.
+      - name: Resolve the commit production is serving
+        id: resolve
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: node scripts/resolve-deployed-sha.mjs
+
+  verify:
+    name: Verify production masters drift
+    needs: deployed-sha
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    # The read-only R2 token, production-only (#243). The check needs nothing
+    # else, so it inherits `contents: read` and declares no permissions.
+    environment: production
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          ref: ${{ needs.deployed-sha.outputs.sha }}
+
+      - uses: $/.github/actions/setup
+
+      # `preverify:masters` rebuilds `src/generated/catalog.ts` from *this*
+      # commit's YAML, which is the point: the catalog being verified is the
+      # deployed one. Unchanged from #243 on purpose — same script, same
+      # invariant, asked again a day later.
+      - name: Verify the deployed catalog against the production masters
+        env:
+          R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+          R2_MASTERS_READ_ACCESS_KEY_ID: ${{ secrets.R2_MASTERS_READ_ACCESS_KEY_ID }}
+          R2_MASTERS_READ_SECRET_ACCESS_KEY: ${{ secrets.R2_MASTERS_READ_SECRET_ACCESS_KEY }}
+        run: npm run verify:masters
+
+  # #405: a check that fails at 05:41 and nobody reads is the same as no check.
+  #
+  # `needs` carries `deployed-sha` as well as `verify` so that an unresolvable
+  # sha still pages. Without it, `verify` would be skipped, `failure()` would
+  # have nothing failed to report, and the one case where production might be
+  # serving something we cannot even name would be the silent one.
+  #
+  # The ref guard is needed despite `schedule` running on main by definition:
+  # `workflow_dispatch` lets an operator fire this from any branch, and a green
+  # branch run must not close a live production incident.
+  notify:
+    name: Notify incident
+    needs: [deployed-sha, verify]
+    if: failure() && github.ref == 'refs/heads/main'
+
+    # #206 regression: a called workflow cannot hold a permission the caller did
+    # not grant, so `notify-failure.yml`'s `issues: write` used to make every
+    # caller startup-fail. Granted here, on the two jobs that actually write
+    # issues -- the two check jobs keep `contents: read` and never see it.
+    permissions:
+      contents: read
+      issues: write
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: Production photo masters drifted"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+
+  resolve:
+    name: Close incident
+    needs: [deployed-sha, verify]
+    if: success() && github.ref == 'refs/heads/main'
+
+    permissions:
+      contents: read
+      issues: write
+    uses: $/.github/workflows/notify-failure.yml
+    with:
+      title: "incident: Production photo masters drifted"
+      run_url: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      close: true

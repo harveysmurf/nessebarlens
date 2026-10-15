@@ -527,6 +527,22 @@ anymore (#245): every published photo has a real master, so the check always
 reads the bucket and always requires `R2_MASTERS_READ_*`. A catalog with no
 published photos still makes it a no-op.
 
+That makes the invariant true *at every deploy* and unverified in between, so a
+daily cron asks it again (#405,
+`.github/workflows/verify-masters-drift.yml`, `41 5 * * *`): **resolve the
+commit production is serving, and verify that commit's catalog.**
+`scripts/resolve-deployed-sha.mjs` reads the version holding 100% of traffic and
+takes the commit from its `prod-<sha>` tag — the tag `release.yml` writes with
+`--tag="prod-$COMMIT_SHA"` — and the workflow checks out that sha before running
+the same `npm run verify:masters`. It checks the deployed commit rather than
+`main` deliberately: `main` can legitimately be ahead of production (an
+unpromoted photo PR whose release the gate refused, §6a), and checking `main`
+would re-report that known failure as fresh drift every morning. There is no
+fallback — an unresolvable sha fails the run and opens the incident, because a
+green run against the wrong commit would close the incident this exists to open.
+Alert only: it opens or closes one `incident: Production photo masters drifted`
+issue and never changes production.
+
 Production targets the **production Worker**, `nessebar-lens` — the top-level
 bindings in `wrangler.toml`. A preview targets the **staging Worker**,
 `nessebar-lens-staging`, as a version of it (#202); before that it was a version
@@ -1022,6 +1038,7 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 | `.github/workflows/release.yml` | push to `main` + `workflow_dispatch` | The whole production path, in order (`concurrency: release`, never cancelled). `checks` (`ci.yml`) → `build` (matrix over `staging`/`production`, one artifact each — `NEXT_PUBLIC_*` and `metadataBase` bake the origin into the prerendered HTML, so one shared artifact would put nessebarlens.com's canonicals on staging; each leg gets `environment: ${{ matrix.env }}` and its own `NEXT_PUBLIC_*`) → `staging`: staging Environment → verify artifact (`artifact-manifest.sh` + `assert-artifact-origin.sh`) → **D1 migrations (`--env staging`)** → `opennextjs-cloudflare deploy --env staging --secrets-file` (the `staging` target of `sync-worker-secrets.sh`: `sk_test_` enforced, Resend key / Prodigi token / print HMAC required) → **smoke test** `https://staging.nessebarlens.com` → `production` (`needs: staging`): production Environment → verify artifact → record the current `100%` version id → **D1 migrations (`--remote`)** → `opennextjs-cloudflare deploy --secrets-file` (guards run first in `version-only` mode) → **smoke test** `https://nessebarlens.com` → on failure `wrangler versions deploy <previous>@100 -y` and fail the job. `notify`/`resolve` from #199 on `main` |
 | `.github/workflows/reconcile.yml` | `workflow_dispatch` only | production Environment → `POST /api/internal/reconcile` with `x-reconcile-secret`. The `*/15` schedule moved to a Cloudflare Cron Trigger (#201) because GitHub delivered about 11 of 168 expected runs in 42 h. Kept as the one-shot path and as the fallback for one release — **delete it once the Cron Trigger has a green week's worth of ticks in the dashboard** |
 | `.github/workflows/verify-stripe.yml` | cron `37 6 * * 1-5` | staging Environment → guard that the key is `sk_test_` → `scripts/verify-stripe-integration.mjs` (disputes/refunds against test mode) |
+| `.github/workflows/verify-masters-drift.yml` | cron `41 5 * * *` + `workflow_dispatch` | The bucket checked again a day after the deploy, for the **deployed** commit rather than `main` (#405). `deployed-sha`: production Environment → `scripts/resolve-deployed-sha.mjs` (the `100%` version, then its `prod-<sha>` tag → the sha). `verify`: `needs: deployed-sha`, production Environment → checkout that sha → **build catalog from it** (`preverify:masters`) → `npm run verify:masters`. Two jobs because a job may check out exactly once (`tests/workflow-setup.test.mts`) and these two need different trees — which also keeps the two credentials apart: the lookup never sees the bucket, the check never sees the Cloudflare token. `notify`/`resolve` with the `incident: Production photo masters drifted` title |
 | `.github/workflows/dependabot-triage.yml` | `pull_request` from `dependabot[bot]` | No secrets (#225). Reads the group with `dependabot/fetch-metadata` → **labels** the PR `deps:<group>` → for money-path groups (`deploy`, `framework`, `payments`, ungrouped security updates) **posts the rehearsal checklist** once per PR → for `dev-tooling`/`actions` **patch and minor only**, `gh pr merge --auto --squash`. Token is `contents: write` + `pull-requests: write` on the job only. See "Dependency updates". |
 | `.github/workflows/release-backstop.yml` | hourly cron + `workflow_dispatch` | If the tip of `main` is more than 10 minutes old and `release.yml` has no run for that SHA, dispatches `release.yml` (#225). Covers merges made with `GITHUB_TOKEN` (auto-merge), which do not fire push workflows. |
 | `.github/workflows/notify-failure.yml` | `workflow_call` only | The incident signal (#199). Not run directly — every workflow below calls it. Opens (or comments on) one `incident`-labelled issue per failing workflow, and closes it on the next green run. |
@@ -1030,8 +1047,8 @@ GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
 
 A red run on `main` notifies nobody by itself, and that is how production failed
 ten times in a day and the reconcile cron six times without anyone noticing.
-Each of `release.yml`, `reconcile.yml`, `verify-stripe.yml` and
-`release-backstop.yml` ends with two jobs:
+Each of `release.yml`, `reconcile.yml`, `verify-stripe.yml`,
+`verify-masters-drift.yml` and `release-backstop.yml` ends with two jobs:
 
 ```yaml
 notify:   { needs: [<every job>], if: failure() && github.ref == 'refs/heads/main', uses: $/.github/workflows/notify-failure.yml }
@@ -1059,6 +1076,11 @@ or runs on a schedule loses its notify/resolve pair, or if any other workflow
 gains `issues: write` at the top level. `preview.yml` is exempt: it runs on
 `pull_request`, where the PR is the notification, and its deploy target is a
 version URL that only the PR author is waiting on.
+
+`needs` also decides *which* failures page. `verify-masters-drift.yml` lists
+both `deployed-sha` and `verify`: an unresolvable sha skips `verify`, `failure()`
+would find nothing failed, and the one case where production might be serving
+something we cannot even name would be the silent one.
 
 Adding a new deploy or scheduled workflow means adding the two jobs. The test
 tells you.
@@ -1350,6 +1372,13 @@ YAML only through the GitHub API as data, and never executes PR code. Its
 read-only step waits for the guarded local `--promote` command to write matching
 production masters. Ordinary `pull_request` workflows never receive these
 secrets.
+
+There are exactly three readers of the masters token, and
+`tests/workflow-hardening.test.mts` pins that list rather than counting: the PR
+attestation, the release gate, and the daily drift check (#405). The drift check
+is `schedule`/`workflow_dispatch` only and reads a commit that already passed the
+release pipeline, so it must never gain a `pull_request*` trigger — a fourth
+reader is a deliberate act with that assertion in front of it.
 
 The contact-form secrets (#293) live in both `staging` and `production`:
 `TURNSTILE_SECRET_KEY` (server-side Siteverify; use the test secret
