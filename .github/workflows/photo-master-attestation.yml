@@ -4,9 +4,26 @@ on:
   pull_request_target:
     types: [opened, synchronize, reopened]
     branches: [main]
+    # Only a change to a photo listing can make production assets stale, so a
+    # PR that touches none of these starts no run and shows no check at all.
+    # That is also why this context cannot be a *required* status: GitHub cannot
+    # require a check from a path-filtered workflow, and a required status that
+    # never reports stays pending forever and blocks the merge. The advisory
+    # trade-off and its recovery path are in DEVELOPMENT.md; the authoritative
+    # guarantee is `release.yml`'s `Verify production masters`, which runs before
+    # staging and before production.
+    paths:
+      - "content/photos/*.yaml"
+      - "content/photos/*.yml"
 
 # This workflow deliberately runs code from the base branch. It reads PR YAML
 # through GitHub's API as data and never checks out or executes the PR head.
+#
+# No commit-status write permission, and nothing posts a commit status: the job's
+# own check is the signal, and a posted status would be a second one that branch
+# protection has to be told about separately. `tests/branch-protection.test.mts`
+# asserts this by scanning for the permission, which is why the sentence above
+# does not spell it out.
 permissions:
   contents: read
 
@@ -15,62 +32,12 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  pending:
-    name: Publish photo master status
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      statuses: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GITHUB_REPOSITORY: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.base.sha }}
-
-      - uses: $/.github/actions/setup
-
-      - name: Mark production photo status pending
-        run: node --import ./scripts/register.mjs scripts/photo-master-attestation.mjs pending
-
-  inspect:
-    name: Inspect changed photo entries
-    needs: pending
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      pull-requests: read
-    outputs:
-      has-published-photos: ${{ steps.inspect.outputs.has-published-photos }}
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GITHUB_REPOSITORY: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.base.sha }}
-
-      - uses: $/.github/actions/setup
-
-      - name: Inspect changed published photo YAML
-        id: inspect
-        run: node --import ./scripts/register.mjs scripts/photo-master-attestation.mjs inspect
-
-  verify:
-    name: Verify production photo assets
-    needs: inspect
-    if: needs.inspect.outputs.has-published-photos == 'true'
+  attest:
+    name: Photo master promotion
     runs-on: ubuntu-24.04
     timeout-minutes: 60
+    # The production Environment gates the secrets, and the job is the only
+    # thing in this file that can reach them.
     environment: production
     permissions:
       contents: read
@@ -80,9 +47,7 @@ jobs:
       GITHUB_REPOSITORY: ${{ github.repository }}
       PR_NUMBER: ${{ github.event.pull_request.number }}
       HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
-      R2_MASTERS_READ_ACCESS_KEY_ID: ${{ secrets.R2_MASTERS_READ_ACCESS_KEY_ID }}
-      R2_MASTERS_READ_SECRET_ACCESS_KEY: ${{ secrets.R2_MASTERS_READ_SECRET_ACCESS_KEY }}
+      BASE_SHA: ${{ github.event.pull_request.base.sha }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -90,38 +55,26 @@ jobs:
           ref: ${{ github.event.pull_request.base.sha }}
 
       - uses: $/.github/actions/setup
+
+      # Runs with no bucket credentials: it parses untrusted PR YAML, so the R2
+      # secrets must not be anywhere near its environment. It only decides
+      # whether the verify step is worth running.
+      - name: Inspect changed photo listings
+        id: inspect
+        run: node --import ./scripts/register.mjs scripts/photo-master-attestation.mjs inspect
 
       - name: Build the trusted base catalog
+        if: steps.inspect.outputs.needs-assets == 'true'
         run: npm run build:catalog
 
+      # The only place the R2 read secrets appear in this file, and the only step
+      # that can use them. `verify` re-derives the selection itself rather than
+      # acting on `steps.inspect.outputs`, so no value chosen by parsing
+      # untrusted YAML reaches the bucket.
       - name: Wait for promoted production photo assets
+        if: steps.inspect.outputs.needs-assets == 'true'
+        env:
+          R2_S3_ENDPOINT: ${{ secrets.R2_S3_ENDPOINT }}
+          R2_MASTERS_READ_ACCESS_KEY_ID: ${{ secrets.R2_MASTERS_READ_ACCESS_KEY_ID }}
+          R2_MASTERS_READ_SECRET_ACCESS_KEY: ${{ secrets.R2_MASTERS_READ_SECRET_ACCESS_KEY }}
         run: node --import ./scripts/register.mjs scripts/photo-master-attestation.mjs verify
-
-  report:
-    name: Report photo master status
-    if: always()
-    needs: [inspect, verify]
-    runs-on: ubuntu-24.04
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      statuses: write
-    env:
-      GH_TOKEN: ${{ github.token }}
-      GITHUB_REPOSITORY: ${{ github.repository }}
-      PR_NUMBER: ${{ github.event.pull_request.number }}
-      HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-      GITHUB_RUN_ID: ${{ github.run_id }}
-      INSPECT_RESULT: ${{ needs.inspect.result }}
-      HAS_PUBLISHED_PHOTOS: ${{ needs.inspect.outputs.has-published-photos }}
-      VERIFY_RESULT: ${{ needs.verify.result }}
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          persist-credentials: false
-          ref: ${{ github.event.pull_request.base.sha }}
-
-      - uses: $/.github/actions/setup
-
-      - name: Report the final production photo status
-        run: node --import ./scripts/register.mjs scripts/photo-master-attestation.mjs report

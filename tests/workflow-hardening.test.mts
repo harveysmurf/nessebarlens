@@ -840,11 +840,28 @@ const MASTERS_READ_SECRETS = [
   "R2_S3_ENDPOINT",
 ];
 
-test("release.yml's production leg verifies masters before any production change (#243)", () => {
-  const production = jobBlock(workflowText("release.yml"), "production");
+test("release.yml's masters gate runs before either environment changes (#243, #404)", () => {
+  const release = workflowText("release.yml");
+  const masters = jobBlock(release, "masters");
+  assert.match(masters, /^ {4}environment: production$/m, "the gate reads production secrets");
+  assert.match(masters, /^ {4}needs: checks$/m);
+  assert.match(masters, /npm run verify:masters/, "the gate runs the catalog/master comparison");
+  for (const secret of MASTERS_READ_SECRETS) {
+    assert.match(masters, new RegExp(`secrets\\.${secret}\\b`));
+  }
+  // Both deploys depend on it, so a forgotten `--promote` fails the release with
+  // staging and production still on their current versions.
+  assert.match(jobBlock(release, "staging"), /^ {4}needs: \[build, masters\]$/m);
+  assert.match(
+    jobBlock(release, "production"),
+    /^ {4}needs: \[checks, build, staging, masters\]$/m,
+  );
+  // …and the production job does not repeat it: a second read of the same bucket
+  // after staging has moved answers the question too late to be useful.
+  const production = jobBlock(release, "production");
+  assert.doesNotMatch(production, /npm run verify:masters/);
   const order = [
     "Verify the downloaded build",
-    "Verify production masters",
     "Apply D1 migrations (production)",
     "Deploy production (OpenNext)",
     "Smoke test production",
@@ -856,12 +873,6 @@ test("release.yml's production leg verifies masters before any production change
   });
   for (let i = 1; i < positions.length; i += 1) {
     assert.ok(positions[i]! > positions[i - 1]!, `${order[i]} must run after ${order[i - 1]}`);
-  }
-  // The gate reads the read-only token through the step env and runs the script.
-  const step = production.slice(positions[1], positions[2]);
-  assert.match(step, /npm run verify:masters/);
-  for (const secret of MASTERS_READ_SECRETS) {
-    assert.match(step, new RegExp(`secrets\\.${secret}\\b`));
   }
 });
 
@@ -892,19 +903,54 @@ test("the masters read-only secrets are limited to trusted production workflows 
   }
 });
 
-test("photo master attestation keeps secrets on trusted base code and scopes API writes", () => {
+test("photo master attestation keeps secrets on trusted base code and scopes API writes (#404)", () => {
   const text = workflowText("photo-master-attestation.yml");
+
+  // Path-filtered: a PR that touches no listing starts no run at all, which is
+  // also why this can no longer be a required status (GitHub cannot require a
+  // check that does not report, and a required one never reported blocks the
+  // merge forever). Both extensions, because a listing is either.
+  assert.match(text, /^ {4}paths:\n(?: {6}- .*\n)+/m);
+  const paths = text.match(/^ {4}paths:\n((?: {6}- .*\n)+)/m)?.[1] ?? "";
+  assert.match(paths, /content\/photos\/\*\.yaml/);
+  assert.match(paths, /content\/photos\/\*\.yml/);
+
+  // One job, and the only holder of the bucket credentials.
+  const jobsBody = text.slice(text.indexOf("\njobs:\n"));
+  const jobs = [...jobsBody.matchAll(/^ {2}([a-z][\w-]*):$/gm)].map((match) => match[1]);
+  assert.deepEqual(jobs, ["attest"], "the four-job shape posted a status from three of them");
+  assert.match(text, /^ {4}environment: production$/m);
+
+  // No commit status: the job's own check is the signal, and a second one would
+  // be a required context the path filter can never satisfy.
+  assert.doesNotMatch(text, /statuses: write/);
+  assert.doesNotMatch(text, /\/statuses\//);
+
+  // The trusted boundary: base code only, no credentials on disk, head YAML read
+  // as data through the API.
   assert.match(text, /^ {2}pull_request_target:/m);
   assert.match(text, /ref: \$\{\{ github\.event\.pull_request\.base\.sha \}\}/);
   assert.match(text, /^ {10}persist-credentials: false$/m);
-  assert.match(text, /^ {4}environment: production$/m);
-  assert.match(text, /^ {6}statuses: write$/m);
-  assert.doesNotMatch(text, /pull_request:\n/);
-  const pending = text.match(/  pending:[\s\S]*?(?=\n  [a-z][\w-]*:|$)/)?.[0] ?? "";
-  const report = text.match(/  report:[\s\S]*?(?=\n  [a-z][\w-]*:|$)/)?.[0] ?? "";
-  assert.match(pending, /^      statuses: write$/m);
-  assert.match(report, /^      statuses: write$/m);
+
+  // Each R2 secret appears exactly once, inside the step that reads the bucket.
+  const verifyStep = text.match(
+    /- name: Wait for promoted production photo assets\n[\s\S]*?(?=\n {6}- name:|\n {2}[a-z][\w-]*:|$)/,
+  )?.[0] ?? "";
+  assert.ok(verifyStep.includes("photo-master-attestation.mjs verify"), "the verify step must exist");
+  for (const secret of MASTERS_READ_SECRETS) {
+    const occurrences = [...text.matchAll(new RegExp(`secrets\\.${secret}\\b`, "g"))];
+    assert.equal(occurrences.length, 1, `${secret} must appear exactly once`);
+    assert.ok(
+      verifyStep.includes(`secrets.${secret}`),
+      `${secret} must be on the verify step, which parses no untrusted YAML`,
+    );
+    // The job-level `env:` block holds only event and API values.
+    const jobEnv = text.match(/^ {4}env:\n((?: {6}.*\n)+)/m)?.[1] ?? "";
+    assert.doesNotMatch(jobEnv, new RegExp(`secrets\\.${secret}\\b`), `${secret} is job-level`);
+  }
+
   assert.doesNotMatch(text, /PutObjectCommand|PutObject/);
+  assert.doesNotMatch(text, /pull_request:\n/);
   for (const body of runBodies(text)) {
     assert.doesNotMatch(body, /\$\{\{/, `expression inside run:\n${body}`);
   }

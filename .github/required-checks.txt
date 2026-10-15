@@ -17,8 +17,15 @@
 # `E2E hosted checkout (best effort)` is deliberately absent: it is
 # `continue-on-error`, so requiring it would gate merges on a check that is
 # designed not to block. Required gates that do block are listed below.
+#
+# `Photo master promotion` is absent for a different reason (#404). It is posted
+# by a path-filtered workflow, and GitHub cannot require a check that does not
+# report: on a PR that touches no photo listing the status never arrives, stays
+# pending, and blocks the merge forever. The guarantee it stood in for is
+# `release.yml`'s `Verify production masters`, which runs before staging and
+# before production, so an unpromoted photo leaves `main` undeployable rather
+# than serving a listing it cannot fill.
 Lint & test
 Workflow audit
 E2E smoke flow
 E2E Worker runtime
-Photo master promotion

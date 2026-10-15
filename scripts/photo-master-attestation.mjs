@@ -5,8 +5,21 @@
  * This script runs only from the base branch in the pull_request_target
  * workflow. It reads changed catalog YAML through GitHub's API as data; it
  * never checks out or executes the pull request head. Published photo changes
- * stay pending until the guarded local `publish-photos --promote` command has
+ * stay unverified until the guarded local `publish-photos --promote` command has
  * written matching production masters and print assets.
+ *
+ * The check is advisory (#404). The authoritative guarantee is
+ * `release.yml`'s `Verify production masters` job, which runs before staging and
+ * before production, so a photo merged without `--promote` leaves `main`
+ * undeployable rather than serving a catalog that lists a photo it cannot
+ * deliver. This workflow saves someone finding that out in a release log.
+ *
+ * Two modes, and the split is deliberate. `inspect` parses untrusted PR YAML and
+ * so runs with no bucket credentials; `verify` holds the read-only R2 secrets and
+ * re-derives the selection itself rather than trusting a value passed between
+ * steps, so there is no path by which a value chosen by untrusted YAML reaches a
+ * step that can read the bucket. The selection is a handful of API calls, which
+ * is what makes recomputing it free.
  */
 
 import { appendFile } from "node:fs/promises";
@@ -17,24 +30,36 @@ import { parse as parseYaml } from "yaml";
 
 import { validatePhotoFile } from "../src/domain/catalog/photo-schema";
 
-export const PHOTO_MASTER_STATUS_CONTEXT = "Photo master promotion";
 const CATALOG_PATH = /^content\/photos\/([^/]+)\.ya?ml$/;
 const API_BASE = "https://api.github.com";
 const WAIT_INTERVAL_MS = 30_000;
 const WAIT_TIMEOUT_MS = 55 * 60_000;
 
-/** @typedef {{path?: string, filename?: string, status?: string}} PullFile */
+/** @typedef {{path?: string, filename?: string, previous_filename?: string, status?: string}} PullFile */
 
-/** @param {PullFile[]} files */
+/**
+ * The changed catalog YAML in a PR, with the path it had at base when there is
+ * one. `previousPath` is what makes a rename distinguishable from a new file:
+ * a file renamed into `content/photos/` has no base catalog entry under that
+ * path, so it counts as new, while a rename within the directory is a rename.
+ * @param {PullFile[]} files
+ */
 export function changedPhotoYamlFiles(files) {
-  return files
-    .filter((file) => {
-      const filePath = file.filename ?? file.path ?? "";
-      const status = file.status?.toLowerCase();
-      return CATALOG_PATH.test(filePath) && status !== "removed";
-    })
-    .map((file) => file.filename ?? file.path)
-    .filter((filePath) => typeof filePath === "string");
+  /** @type {{path: string, previousPath?: string}[]} */
+  const out = [];
+  for (const file of files) {
+    const filePath = file.filename ?? file.path ?? "";
+    if (!CATALOG_PATH.test(filePath)) continue;
+    if (file.status?.toLowerCase() === "removed") continue;
+    const previous = file.previous_filename;
+    out.push({
+      path: filePath,
+      ...(typeof previous === "string" && previous !== filePath && CATALOG_PATH.test(previous)
+        ? { previousPath: previous }
+        : {}),
+    });
+  }
+  return out;
 }
 
 /**
@@ -61,6 +86,49 @@ export function publishedPhotoFromYaml(filePath, yamlText) {
     masterSha256: validation.photo.masterSha256,
     printAsset: validation.photo.printAsset,
   };
+}
+
+/**
+ * Why one listing needs production objects, or `null` when it does not.
+ *
+ * One function rather than a boolean plus a log formatter, because the two
+ * would have to agree about when a change needs assets and a pair that can
+ * disagree is how a photo gets skipped. Pure: both sides are the
+ * `publishedPhotoFromYaml` result, or `undefined`.
+ *
+ * `renamed` is the one thing not visible in the two entries — the slug is the
+ * filename, so a rename within the directory shows up as a changed slug, which
+ * is why it is passed rather than inferred.
+ * @param {ReturnType<typeof publishedPhotoFromYaml>} base
+ * @param {ReturnType<typeof publishedPhotoFromYaml>} head
+ * @param {{renamed?: boolean}} [context]
+ */
+export function photoAssetChange(base, head, { renamed = false } = {}) {
+  // An unpublished or absent head needs nothing. Deletions never reach here:
+  // `changedPhotoYamlFiles` drops them, and an unpublished entry is the
+  // deliberate "this photo is not offered" case.
+  if (!head?.published) return null;
+  if (!base) return { needs: true, reason: renamed ? "renamed" : "new listing" };
+  if (base.slug !== head.slug) return { needs: true, reason: "renamed" };
+  if (base.masterSha256 !== head.masterSha256) {
+    return { needs: true, reason: "master changed" };
+  }
+  if (base.printAsset?.sha256 !== head.printAsset?.sha256) {
+    return { needs: true, reason: "print asset changed" };
+  }
+  // Title, description, print options: the catalog's text moved, the objects
+  // the bucket must hold did not.
+  return null;
+}
+
+/**
+ * Whether this PR needs the production bucket read for one listing. The
+ * decision, with the reason split out for the log line.
+ * @param {ReturnType<typeof publishedPhotoFromYaml>} base
+ * @param {ReturnType<typeof publishedPhotoFromYaml>} head
+ */
+export function photoNeedsAssets(base, head) {
+  return photoAssetChange(base, head) !== null;
 }
 
 /** @param {string} name */
@@ -117,8 +185,14 @@ async function readPullFiles(repo, number, token, fetchImpl) {
   }
 }
 
-/** @param {string} repo @param {string} filePath @param {string} sha @param {string} token @param {typeof fetch} fetchImpl */
-async function readFileAtHead(repo, filePath, sha, token, fetchImpl) {
+/**
+ * A file's text at one ref, or `undefined` when it is not there. The 404 is an
+ * answer, not a failure: a photo that exists at head and not at base is a new
+ * listing, which is the common case for exactly the PRs this workflow exists
+ * for. Any other non-OK response still throws.
+ * @param {string} repo @param {string} filePath @param {string} sha @param {string} token @param {typeof fetch} fetchImpl
+ */
+async function readFileAt(repo, filePath, sha, token, fetchImpl) {
   const encodedPath = filePath.split("/").map(encodeURIComponent).join("/");
   const response = await fetchImpl(
     `${API_BASE}/repos/${repo}/contents/${encodedPath}?ref=${encodeURIComponent(sha)}`,
@@ -130,8 +204,9 @@ async function readFileAtHead(repo, filePath, sha, token, fetchImpl) {
       },
     },
   );
+  if (response.status === 404) return undefined;
   if (!response.ok) {
-    throw new Error(`GitHub could not read ${filePath} at the PR head (${response.status})`);
+    throw new Error(`GitHub could not read ${filePath} at ${sha} (${response.status})`);
   }
   const file = await response.json();
   if (file.encoding !== "base64" || typeof file.content !== "string") {
@@ -141,14 +216,36 @@ async function readFileAtHead(repo, filePath, sha, token, fetchImpl) {
 }
 
 /**
- * Returns the changed, published photo entries from one exact PR head. The
- * caller treats a stale workflow event as a failure; a synchronize event starts
- * a fresh attestation for the new SHA.
+ * One listing read at one ref.
+ *
+ * `strict` is the head/base asymmetry, and it is the point: invalid head YAML is
+ * this PR's own doing and fails the job, while an unreadable or invalid *base*
+ * entry is not something this PR can fix, and treating it as "needs assets" is
+ * the direction that keeps a photo from shipping unverified.
+ * @param {string} repo @param {string} filePath @param {string} sha @param {string} token @param {typeof fetch} fetchImpl @param {{strict: boolean}} options
  */
-export async function readChangedPublishedPhotos({
+async function photoAtRef(repo, filePath, sha, token, fetchImpl, { strict }) {
+  const yamlText = await readFileAt(repo, filePath, sha, token, fetchImpl);
+  if (yamlText === undefined) return undefined;
+  try {
+    return publishedPhotoFromYaml(filePath, yamlText);
+  } catch (error) {
+    if (strict) throw error;
+    return undefined;
+  }
+}
+
+/**
+ * The changed listings that need production objects, read at one exact PR head
+ * against the base the run checked out. The caller treats a stale workflow event
+ * as a failure; a synchronize event starts a fresh attestation for the new SHA.
+ * @param {{repo: string, number: number, headSha: string, baseSha: string, token: string, fetchImpl?: typeof fetch}} options
+ */
+export async function readPhotosNeedingAssets({
   repo,
   number,
   headSha,
+  baseSha,
   token,
   fetchImpl = fetch,
 }) {
@@ -157,20 +254,23 @@ export async function readChangedPublishedPhotos({
     throw new Error(`PR #${number} changed while its photo assets were being checked`);
   }
   const files = await readPullFiles(repo, number, token, fetchImpl);
-  const paths = changedPhotoYamlFiles(files);
-  const photos = [];
-  for (const filePath of paths) {
-    const yamlText = await readFileAtHead(
+  /** @type {{photo: NonNullable<ReturnType<typeof publishedPhotoFromYaml>>, reason: string}[]} */
+  const needing = [];
+  for (const { path, previousPath } of changedPhotoYamlFiles(files)) {
+    const head = await photoAtRef(repo, path, headSha, token, fetchImpl, { strict: true });
+    if (!head) continue;
+    const base = await photoAtRef(
       repo,
-      filePath,
-      headSha,
+      previousPath ?? path,
+      baseSha,
       token,
       fetchImpl,
+      { strict: false },
     );
-    const photo = publishedPhotoFromYaml(filePath, yamlText);
-    if (photo) photos.push(photo);
+    const change = photoAssetChange(base, head, { renamed: previousPath !== undefined });
+    if (change) needing.push({ photo: head, reason: change.reason });
   }
-  return photos;
+  return needing;
 }
 
 /** @param {number} milliseconds */
@@ -216,98 +316,53 @@ async function verifyPhotos(photos, s3) {
   return verifyMasters({ photos, s3 });
 }
 
-/** @param {string} state @param {{repo: string, sha: string, token: string, runUrl: string, fetchImpl?: typeof fetch}} options */
-export async function postPhotoMasterStatus(state, {
-  repo,
-  sha,
-  token,
-  runUrl,
-  fetchImpl = fetch,
-}) {
-  if (!["pending", "success", "failure", "error"].includes(state)) {
-    throw new Error(`invalid commit status state: ${state}`);
-  }
-  const response = await fetchImpl(`${API_BASE}/repos/${repo}/statuses/${sha}`, {
-    method: "POST",
-    headers: {
-      accept: "application/vnd.github+json",
-      authorization: `Bearer ${token}`,
-      "content-type": "application/json",
-      "x-github-api-version": "2022-11-28",
-    },
-    body: JSON.stringify({
-      state,
-      context: PHOTO_MASTER_STATUS_CONTEXT,
-      description:
-        state === "success"
-          ? "Changed published photo assets match production masters."
-          : state === "pending"
-            ? "Waiting for changed photo assets to be promoted."
-            : "Production photo assets did not pass verification.",
-      target_url: runUrl,
-    }),
-  });
-  if (!response.ok) {
-    throw new Error(`GitHub could not post photo master status (${response.status})`);
-  }
-}
-
-/** @param {{inspectResult: string, hasPublishedPhotos: string, verifyResult: string}} results */
-export function finalStatusState({ inspectResult, hasPublishedPhotos, verifyResult }) {
-  if (inspectResult !== "success") return "failure";
-  if (hasPublishedPhotos !== "true") return "success";
-  return verifyResult === "success" ? "success" : "failure";
-}
-
 /** @param {string} mode */
 async function main(mode) {
   const repo = requiredEnv("GITHUB_REPOSITORY");
   const number = Number(requiredEnv("PR_NUMBER"));
   const headSha = requiredEnv("HEAD_SHA");
+  const baseSha = requiredEnv("BASE_SHA");
   const token = requiredEnv("GH_TOKEN");
-  const runUrl = `${process.env.GITHUB_SERVER_URL ?? "https://github.com"}/${repo}/actions/runs/${requiredEnv("GITHUB_RUN_ID")}`;
 
-  if (mode === "pending" || mode === "success" || mode === "failure") {
-    await postPhotoMasterStatus(mode, { repo, sha: headSha, token, runUrl });
+  if (mode !== "inspect" && mode !== "verify") {
+    throw new Error("usage: photo-master-attestation.mjs <inspect|verify>");
+  }
+
+  // Re-derived in both modes rather than passed between them: the step that
+  // holds the bucket credentials must not act on a decision a step without them
+  // made. It is a few API calls.
+  const needing = await readPhotosNeedingAssets({ repo, number, headSha, baseSha, token });
+
+  if (mode === "inspect") {
+    await appendFile(requiredEnv("GITHUB_OUTPUT"), `needs-assets=${needing.length > 0}\n`);
+    if (needing.length === 0) {
+      console.log(
+        "no changed listing adds, renames, newly publishes or re-hashes a published photo; no production read needed",
+      );
+      return;
+    }
+    for (const { photo, reason } of needing) {
+      console.log(`${photo.slug}: needs production assets (${reason})`);
+    }
+    console.log(`production read needed for ${needing.length} photo(s)`);
     return;
   }
 
-  const photos = await readChangedPublishedPhotos({ repo, number, headSha, token });
-  if (mode === "inspect") {
-    const output = requiredEnv("GITHUB_OUTPUT");
-    await appendFile(output, `has-published-photos=${photos.length > 0}\n`);
+  if (needing.length === 0) {
     console.log(
-      photos.length > 0
-        ? `photo-master gate required for ${photos.length} published photo(s)`
-        : "no changed published photo entries require production verification",
+      "no changed listing adds, renames, newly publishes or re-hashes a published photo; no production read needed",
     );
     return;
   }
-  if (mode === "verify") {
-    if (photos.length === 0) {
-      console.log("no changed published photo entries require production verification");
-      return;
-    }
-    const { createMastersS3 } = await import("./verify-masters.mjs");
-    const result = await waitForPhotoMasters({ photos, s3: createMastersS3(process.env) });
-    if (!result.ok) {
-      throw new Error(
-        `production photo assets did not match the PR catalog before timeout: ${result.failures.join("; ")}`,
-      );
-    }
-    console.log(`verified production master and print asset for ${photos.length} photo(s)`);
-    return;
+  const { createMastersS3 } = await import("./verify-masters.mjs");
+  const photos = needing.map(({ photo }) => photo);
+  const result = await waitForPhotoMasters({ photos, s3: createMastersS3(process.env) });
+  if (!result.ok) {
+    throw new Error(
+      `production photo assets did not match the PR catalog before timeout: ${result.failures.join("; ")}`,
+    );
   }
-  if (mode === "report") {
-    const state = finalStatusState({
-      inspectResult: requiredEnv("INSPECT_RESULT"),
-      hasPublishedPhotos: requiredEnv("HAS_PUBLISHED_PHOTOS"),
-      verifyResult: requiredEnv("VERIFY_RESULT"),
-    });
-    await postPhotoMasterStatus(state, { repo, sha: headSha, token, runUrl });
-    return;
-  }
-  throw new Error("usage: photo-master-attestation.mjs <pending|inspect|verify|report>");
+  console.log(`verified production master and print asset for ${photos.length} photo(s)`);
 }
 
 if (process.argv[1] === fileURLToPath(import.meta.url)) {
