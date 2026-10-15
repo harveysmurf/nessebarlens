@@ -1166,7 +1166,14 @@ platform limit rather than a preference:
   **every test run**.
 - `scripts/required-checks.mjs` holds the committed list against the **live**
   rule and prints the exact `gh api` call to reconcile. It is run **by hand**,
-  not from CI.
+  not from CI. It reads the list from the **default branch over the API**, not
+  from the working tree (#413): the rule is remote state and the file was local
+  state, so from any other checkout the verdict described a repository that does
+  not exist, and the printed remedy — built from the same local list — would have
+  written an unmerged branch's contexts over the live rule. Every run prints a
+  `declared side:` line naming the ref it read. `--local` inspects uncommitted
+  edits, labels the output as not-the-default-branch, and refuses to print a
+  remedy. A failed API read exits 2 without falling back to disk.
 
 The live half cannot be a workflow step. Reading branch protection requires the
 `administration` permission, which is not among the scopes `permissions:`
