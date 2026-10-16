@@ -3,6 +3,7 @@
 import Script from "next/script";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { parseContactMessage } from "@/domain/contact/contact-message";
+import { fieldControlClass, fieldLabelClass } from "./field-styles";
 
 /**
  * Contact form (#293).
@@ -51,11 +52,6 @@ type FieldErrors = Partial<Record<ContactFieldName, string>>;
 function turnstileApi(): TurnstileApi | undefined {
   return (window as Window & { turnstile?: TurnstileApi }).turnstile;
 }
-
-const INPUT_CLASS =
-  "w-full border border-stone-300 rounded p-2.5 text-sm bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900";
-const LABEL_CLASS =
-  "block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-1.5";
 
 /**
  * Run the domain's validation over the current values, keyed by field for
@@ -193,7 +189,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
       )}
 
       <div>
-        <label htmlFor="contact-name" className={LABEL_CLASS}>
+        <label htmlFor="contact-name" className={fieldLabelClass()}>
           Name
         </label>
         <input
@@ -205,7 +201,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
           onChange={(e) => setName(e.target.value)}
           aria-invalid={errors.name ? true : undefined}
           aria-describedby={errors.name ? "contact-name-error" : undefined}
-          className={INPUT_CLASS}
+          className={fieldControlClass()}
         />
         {errors.name && (
           <p id="contact-name-error" role="alert" className="text-[11px] text-red-700 mt-1.5">
@@ -215,7 +211,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
       </div>
 
       <div>
-        <label htmlFor="contact-email" className={LABEL_CLASS}>
+        <label htmlFor="contact-email" className={fieldLabelClass()}>
           Email
         </label>
         <input
@@ -227,7 +223,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
           onChange={(e) => setEmail(e.target.value)}
           aria-invalid={errors.email ? true : undefined}
           aria-describedby={errors.email ? "contact-email-error" : undefined}
-          className={INPUT_CLASS}
+          className={fieldControlClass()}
         />
         {errors.email && (
           <p id="contact-email-error" role="alert" className="text-[11px] text-red-700 mt-1.5">
@@ -237,7 +233,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
       </div>
 
       <div>
-        <label htmlFor="contact-message" className={LABEL_CLASS}>
+        <label htmlFor="contact-message" className={fieldLabelClass()}>
           Message
         </label>
         <textarea
@@ -248,7 +244,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
           onChange={(e) => setMessage(e.target.value)}
           aria-invalid={errors.message ? true : undefined}
           aria-describedby={errors.message ? "contact-message-error" : undefined}
-          className={INPUT_CLASS}
+          className={fieldControlClass()}
         />
         {errors.message && (
           <p id="contact-message-error" role="alert" className="text-[11px] text-red-700 mt-1.5">

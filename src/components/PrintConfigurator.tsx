@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import { fieldControlClass, fieldLabelClass } from "./field-styles";
 import {
   DEFAULT_SHIPPING_COUNTRY,
   isShipToCountryCode,
@@ -338,7 +339,7 @@ export function PrintConfigurator({
           // states the delivered pixel size instead of offering print sizes
           // (#325). Physical formats are unchanged below.
           <div>
-            <span className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-1">
+            <span className={fieldLabelClass("compact")}>
               Resolution
             </span>
             <p
@@ -352,7 +353,7 @@ export function PrintConfigurator({
           <div>
             <label
               htmlFor="print-size"
-              className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-1"
+              className={fieldLabelClass("compact")}
             >
               Dimensions
             </label>
@@ -360,7 +361,7 @@ export function PrintConfigurator({
               id="print-size"
               value={size}
               onChange={(e) => selectSize(e.target.value)}
-              className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900"
+              className={fieldControlClass("compact")}
             >
               {sizes.map((s) => (
                 <option key={s.id} value={s.id}>
@@ -375,7 +376,7 @@ export function PrintConfigurator({
           <div>
             <label
               htmlFor="print-paper"
-              className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-1"
+              className={fieldLabelClass("compact")}
             >
               Paper
             </label>
@@ -384,7 +385,7 @@ export function PrintConfigurator({
               value={paper}
               onChange={(e) => selectPaper(e.target.value)}
               aria-describedby="print-paper-note"
-              className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900"
+              className={fieldControlClass("compact")}
             >
               {CONFIGURATOR_PAPERS.map((p) => (
                 <option key={p.id} value={p.id}>
@@ -404,7 +405,7 @@ export function PrintConfigurator({
           <div>
             <label
               htmlFor="frame-finish"
-              className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-1"
+              className={fieldLabelClass("compact")}
             >
               Frame Finish
             </label>
@@ -415,7 +416,7 @@ export function PrintConfigurator({
               // The mount note is visually tied to this control and carries the
               // size a screen reader user would otherwise never hear (#334).
               aria-describedby="frame-mount-note"
-              className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900"
+              className={fieldControlClass("compact")}
             >
               {CONFIGURATOR_FRAMES.map((f) => (
                 <option key={f.id} value={f.id}>
@@ -437,7 +438,7 @@ export function PrintConfigurator({
           <div>
             <label
               htmlFor="frame-mount"
-              className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-1"
+              className={fieldLabelClass("compact")}
             >
               Mount
             </label>
@@ -447,7 +448,7 @@ export function PrintConfigurator({
               onChange={(e) => selectMount(e.target.value)}
               aria-describedby="frame-mount-help"
               data-mount-select
-              className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900"
+              className={fieldControlClass("compact")}
             >
               {CONFIGURATOR_MOUNTS.map((m) => (
                 <option
@@ -476,7 +477,7 @@ export function PrintConfigurator({
           <div>
             <label
               htmlFor="shipping-country"
-              className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-1"
+              className={fieldLabelClass("compact")}
             >
               Ship to
             </label>
@@ -484,7 +485,7 @@ export function PrintConfigurator({
               id="shipping-country"
               value={destinationCountry}
               onChange={(e) => selectDestination(e.target.value)}
-              className="w-full border border-stone-300 rounded p-2.5 text-xs bg-stone-50 outline-none focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-stone-900"
+              className={fieldControlClass("compact")}
             >
               {SHIP_TO_COUNTRIES.map((c) => (
                 <option key={c.code} value={c.code}>
