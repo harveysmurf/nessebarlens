@@ -1,8 +1,10 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { AnalyticsBeacon } from "@/components/AnalyticsBeacon";
+import { JsonLd } from "@/components/JsonLd";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
+import { sitewideJsonLd } from "@/infrastructure/seo/json-ld";
 import {
   HOME_COPY,
   OG_IMAGE,
@@ -136,6 +138,12 @@ export default function RootLayout({
       <body
         className={`${cormorant.variable} ${inter.variable} font-sans antialiased selection:bg-stone-900 selection:text-white flex flex-col min-h-screen bg-gallery-50 text-gallery-900`}
       >
+{/*
+          Sitewide Organization + WebSite, before anything a page renders:
+          JSON-LD belongs to the document, not to the page's content, and this
+          is the only place a crawler can be sure to find it.
+        */}
+        <JsonLd data={sitewideJsonLd()} />
         <AnalyticsBeacon />
         <SiteHeader />
         <main className="flex-1">{children}</main>
