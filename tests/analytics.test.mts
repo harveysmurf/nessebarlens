@@ -157,7 +157,7 @@ test("/api/e drops an unknown event without writing", async () => {
 test("/api/e drops an invalid path without writing", async () => {
   const { analytics, points } = collector();
   globals.__analyticsBindings = { analytics, analyticsEnv: "production" };
-  for (const path of ["contact", "//evil.example", `/${"a".repeat(200)}`]) {
+  for (const path of [123, "contact", "//evil.example", `/${"a".repeat(200)}`]) {
     const response = await route.POST(request({ event: "contact_open", path }));
     assert.equal(response.status, 204);
   }

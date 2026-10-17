@@ -30,9 +30,9 @@ function normalisePath(value: unknown): string | undefined {
   if (typeof value !== "string") return undefined;
   if (!value.startsWith("/") || value.startsWith("//")) return undefined;
   if (value.length > MAX_PATH_LENGTH) return undefined;
-  const stripped = value.split(/[?#]/, 1)[0];
-  if (!stripped || stripped.length > MAX_PATH_LENGTH) return undefined;
-  return stripped;
+  // The first character is "/", which is neither "?" nor "#", so splitting can
+  // never produce an empty first segment.
+  return value.split(/[?#]/)[0];
 }
 
 export async function POST(request: Request): Promise<Response> {
