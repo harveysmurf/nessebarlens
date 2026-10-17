@@ -32,7 +32,7 @@ export function SiteHeader() {
                 className={`py-2 border-b-2 transition-all ${
                   active
                     ? "border-stone-900 text-stone-900"
-                    : "border-transparent text-stone-400 hover:text-stone-900"
+                    : "border-transparent text-stone-500 hover:text-stone-900"
                 }`}
               >
                 {item.label}

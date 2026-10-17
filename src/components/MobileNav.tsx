@@ -161,7 +161,7 @@ export function MobileNav() {
                         className={`font-serif text-3xl font-light transition-colors ${
                           active
                             ? "text-stone-900 underline decoration-1 underline-offset-8"
-                            : "text-stone-400 hover:text-stone-900"
+                            : "text-stone-500 hover:text-stone-900"
                         }`}
                       >
                         {item.label}

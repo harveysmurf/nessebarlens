@@ -111,7 +111,7 @@ export function PrintDetail({
           master={master}
           size={size}
         />
-        <div className="flex justify-between text-[10px] text-stone-400 uppercase tracking-widest px-1">
+        <div className="flex justify-between text-[10px] text-stone-500 uppercase tracking-widest px-1">
           <span>{caption}</span>
           <span>{masterResolutionLabel(master)}</span>
           <span>Global Delivery via Prodigi</span>

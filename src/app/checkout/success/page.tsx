@@ -28,7 +28,7 @@ export default async function CheckoutSuccessPage({
 
   return (
     <section className="fade-in max-w-lg mx-auto px-6 py-20 text-center space-y-6">
-      <span className="text-[10px] uppercase tracking-[0.3em] text-stone-400 font-medium">
+      <span className="text-[10px] uppercase tracking-[0.3em] text-stone-500 font-medium">
         Payment received
       </span>
       <h1 className="font-serif text-3xl font-light text-stone-900">
@@ -189,7 +189,7 @@ function OrderCard(props: {
     <div className="bg-white border border-stone-200 rounded-sm p-5 space-y-3 text-left">
       {props.children}
       {props.reference ? (
-        <p className="text-[10px] text-stone-400 text-center">
+        <p className="text-[10px] text-stone-500 text-center">
           Order reference <span className="font-medium">{props.reference}</span>
         </p>
       ) : null}
