@@ -1,0 +1,36 @@
+# Nessebar Lens
+
+Fine art, archive, and film photography of Old Town Nessebar, Bulgaria, by a
+single photographer working across three decades. Photographs are sold as
+museum-quality giclée prints produced by a print partner, and as high-resolution
+digital downloads. There is no subscription, no account, and no cart to persist:
+checkout is a single Stripe-hosted page.
+
+The canonical machine-readable index of this site is the sitemap:
+https://nessebarlens.com/sitemap.xml
+
+## Pages
+
+- [Home](https://nessebarlens.com/): The featured photograph and an entry point
+  to each of the three galleries.
+- [Fine Art](https://nessebarlens.com/fine-art): The curated portfolio —
+  composed architecture, atmospheric coastlines, and colour graded for print.
+- [Archive](https://nessebarlens.com/archive): Photojournalistic work: everyday
+  street life in Nessebar over thirty years.
+- [Film Photography](https://nessebarlens.com/film): Analog 35mm and 120 film
+  negatives, unedited grain and light leaks included.
+- [Our Story](https://nessebarlens.com/story): How the three bodies of work
+  relate, and how a print is made.
+- [Contact](https://nessebarlens.com/contact): Direct contact with the studio
+  about a print, a licence, or an order.
+
+## Individual photographs
+
+Each photograph has its own page at `/prints/{slug}` carrying the title, the
+full description, the print sizes available, and the price. The complete list is
+in the sitemap; it is not repeated here because it changes with every publish.
+
+## Not indexed
+
+The checkout pages (`/checkout/success`, `/checkout/cancel`) are per-session and
+carry `noindex`. They are not in the sitemap and should not be requested.
