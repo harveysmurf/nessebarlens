@@ -224,6 +224,14 @@ test("each route's canonical is absolute and built from the configured site URL"
   assert.equal(canonicalUrl("/story", ENV), `${SITE}/story`);
   assert.equal(canonicalUrl("/prints/dawn", ENV), `${SITE}/prints/dawn`);
 
+  // Every caller spells the leading slash, so the normalisation below is
+  // unreachable from the site's own code — and unreachable code that builds a
+  // URL is exactly what the coverage gate is for. It stays because the failure
+  // it prevents is invisible: without it a route spelled `story` yields
+  // `https://nessebarlens.comstory`, which is a canonical to a host that does
+  // not exist rather than an error anyone would see.
+  assert.equal(canonicalUrl("story", ENV), `${SITE}/story`);
+
   // A relative canonical is silently resolved against whatever origin the
   // crawler guessed, which is how a preview deployment gets indexed as the site.
   for (const route of routesOnDisk()) {
