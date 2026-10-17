@@ -23,6 +23,7 @@ import {
   ANALYTICS_ORIGIN,
   contentSecurityPolicy,
   originOf,
+  RUM_ORIGIN,
   securityHeaders,
   TURNSTILE_ORIGIN,
 } from "../src/infrastructure/seo/security-headers.ts";
@@ -73,10 +74,52 @@ test("Turnstile is allowed to load a script and to run a widget frame", () => {
   assert.equal(directive("frame-src"), `frame-src ${TURNSTILE_ORIGIN}`);
 });
 
-test("the analytics beacon is allowed to load and to report", () => {
-  assert.match(directive("script-src"), new RegExp(ANALYTICS_ORIGIN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
-  assert.match(directive("connect-src"), new RegExp(ANALYTICS_ORIGIN.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+test("the analytics beacon may load its script and report to where it reports", () => {
+  // Two hosts, asserted separately, because the failure is silent: block the
+  // report host and the beacon still loads, still runs, and swallows the error,
+  // so every pageview is dropped with nothing red anywhere. The previous
+  // version of this test asserted the *script* origin in `connect-src`, which
+  // passed while doing exactly that (#438 review).
+  assert.match(directive("script-src"), new RegExp(escape(ANALYTICS_ORIGIN)));
+  assert.match(directive("connect-src"), new RegExp(escape(RUM_ORIGIN)));
+
+  assert.notEqual(
+    RUM_ORIGIN,
+    ANALYTICS_ORIGIN,
+    "if these are ever the same host again, one of them is wrong: the beacon is " +
+      "served from static.cloudflareinsights.com and reports to cloudflareinsights.com",
+  );
 });
+
+test("the report host is the one the shipped beacon actually calls", () => {
+  // Ties the constant to the component that ships it, so changing the beacon's
+  // src without widening the policy — or widening the policy without needing it
+  // — is a failing test rather than a silent drop of the analytics.
+  const beacon = fs.readFileSync(
+    path.join(import.meta.dirname, "..", "src", "components", "AnalyticsBeacon.tsx"),
+    "utf8",
+  );
+  const src = /src="(https:\/\/[^"]+)"/.exec(beacon)?.[1];
+  assert.ok(src, "AnalyticsBeacon.tsx no longer carries an absolute script src");
+
+  const origin = new URL(src).origin;
+  assert.equal(
+    origin,
+    ANALYTICS_ORIGIN,
+    `the beacon loads from ${origin}, but script-src allows ${ANALYTICS_ORIGIN}`,
+  );
+  assert.doesNotMatch(
+    directive("connect-src"),
+    new RegExp(escape(ANALYTICS_ORIGIN)),
+    "connect-src names the script origin, which is where the beacon is loaded " +
+      "from, not where it reports to. That is the mistake, not the fix.",
+  );
+});
+
+/** A host as a regular expression, so a dot in it is not a wildcard. */
+function escape(origin: string): string {
+  return origin.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
 
 test("images come from the R2 base the gallery actually uses", () => {
   const img = directive("img-src");

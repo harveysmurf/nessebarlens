@@ -28,8 +28,39 @@
 /** Turnstile: the script is loaded from here and the widget runs in an iframe. */
 export const TURNSTILE_ORIGIN = "https://challenges.cloudflare.com";
 
-/** Cloudflare Web Analytics: the beacon script is served from here. */
+/**
+ * Cloudflare Web Analytics: the beacon **script** is served from here.
+ *
+ * Script origin only. The beacon does not report to the host it was served
+ * from — see `RUM_ORIGIN` below. Naming this one in `connect-src` reads like
+ * the beacon is covered and is the exact mistake this constant is split to
+ * prevent.
+ */
 export const ANALYTICS_ORIGIN = "https://static.cloudflareinsights.com";
+
+/**
+ * Cloudflare Web Analytics: the host the beacon **reports** to.
+ *
+ * A different host from the script, which is why it is a separate constant
+ * rather than a reuse of `ANALYTICS_ORIGIN`. Taken from the shipped
+ * `beacon.min.js`, not from documentation:
+ *
+ * ```js
+ * const endpoint = window.__cfBeacon?.send?.to
+ *   ?? (window.__cfBeacon?.version ? "https://cloudflareinsights.com/cdn-cgi/rum" : null)
+ * ```
+ *
+ * The relative `/cdn-cgi/rum` in that file is the fallback for an edge-injected
+ * beacon; the absolute apex URL is what a hand-placed `<script>` gets. We place
+ * it by hand because the site is served by an OpenNext Worker and Cloudflare's
+ * edge injection never fires on it (#119), so `window.__cfBeacon` is always
+ * undefined here and the apex URL is always the one used.
+ *
+ * A `connect-src` naming only `ANALYTICS_ORIGIN` blocks every pageview the site
+ * records, and does it silently: the beacon swallows the error and no test in
+ * this repo fails, because the script still loads.
+ */
+export const RUM_ORIGIN = "https://cloudflareinsights.com";
 
 /**
  * The origin of a configured base URL, or undefined when unset or unparseable.
@@ -106,8 +137,9 @@ export function contentSecurityPolicy(
     `img-src ${imgSources}`,
     // The configurator previews the chosen file with a blob: URL.
     `font-src 'self'`,
-    // The quote and checkout fetches, plus the analytics beacon's reporting.
-    `connect-src 'self' ${ANALYTICS_ORIGIN}`,
+    // The quote and checkout fetches, plus the analytics beacon's reporting —
+    // which is `RUM_ORIGIN`, not the origin the script came from.
+    `connect-src 'self' ${RUM_ORIGIN}`,
     `frame-src ${TURNSTILE_ORIGIN}`,
     `worker-src 'self' blob:`,
     `manifest-src 'self'`,

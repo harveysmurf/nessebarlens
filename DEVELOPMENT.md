@@ -1844,6 +1844,15 @@ flow.
   that page's `no-referrer` has to beat the site-wide `Referrer-Policy`.
   Content-hashed assets come from the ASSETS binding and bypass `next.config.ts`
   entirely, so a CSP check against `/_next/static/...` measures the wrong server.
+  The analytics beacon is **two hosts**: the script is served from
+  `static.cloudflareinsights.com` (`script-src`) and reports to
+  `cloudflareinsights.com/cdn-cgi/rum` (`connect-src`). Those are separate
+  constants on purpose. Naming the script host in `connect-src` blocks every
+  pageview silently — the beacon still loads and swallows the error, and no test
+  in the tree goes red. The endpoint comes from the shipped `beacon.min.js`, not
+  from Cloudflare's docs: a hand-placed `<script>` gets the absolute apex URL,
+  and the relative `/cdn-cgi/rum` in that file is only for the edge-injected
+  beacon this Worker never receives.
 - **One JSON-LD escape.** `src/infrastructure/seo/json-ld.ts` builds the
   Organization/WebSite graph and the Product/BreadcrumbList pair, and
   `serializeJsonLd` rewrites `<` as `\u003c` so catalog copy cannot close the
