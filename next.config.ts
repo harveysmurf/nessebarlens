@@ -1,5 +1,31 @@
 import type { NextConfig } from "next";
 import { initOpenNextCloudflareForDev } from "@opennextjs/cloudflare";
+import {
+  originOf,
+  securityHeaders,
+  // Extensionless, like every other import in this repo. `next.config.ts` has
+  // no tsconfig paths alias, so this is a relative specifier — and the module it
+  // pulls in imports nothing, which is what keeps the workerd probe in
+  // tests/fixtures/next-config-init-probe.mjs able to evaluate the real config
+  // under a bare `node`.
+} from "./src/infrastructure/seo/security-headers";
+
+// The one origin outside the site itself that the browser must be allowed to
+// load images from: the R2 custom domain behind NEXT_PUBLIC_WEB_IMAGES_BASE.
+// Read here, at config-evaluation time, because headers() is a pure function of
+// the build — NEXT_PUBLIC_* is inlined the same way, so the policy and the
+// ladder can never disagree about which deploy they belong to.
+const IMAGE_ORIGIN = originOf(process.env.NEXT_PUBLIC_WEB_IMAGES_BASE);
+
+// The production policy and the dev policy are the same string except for one
+// token. React's development build calls eval(); React's production build never
+// does. Narrowing it to development is what lets the Playwright suite — which
+// runs `next dev` — still exercise every origin and directive in the policy
+// without a console error on every page load, while what deploys keeps the token
+// out. `tests/security-headers.test.mts` asserts the two differ by exactly this.
+const CSP_OPTIONS = {
+  allowEval: process.env.NODE_ENV === "development",
+};
 
 // NEXT_PUBLIC_* is inlined at build time, so a build missing the site url
 // cannot be repaired by a later deploy: it ships a checkout that redirects to
@@ -34,8 +60,22 @@ const nextConfig: NextConfig = {
   // this response from naming either one to anything the page loads or links to;
   // `private, no-store` keeps a paid order's page out of shared caches, matching
   // what /api/download already sends on every response.
+  //
+  // The site-wide rule comes FIRST and this one second, because Next resolves
+  // overlapping header keys last-wins: the wildcard sets Referrer-Policy, and
+  // `no-referrer` below is the narrower statement that has to beat it. Swapping
+  // the two would quietly downgrade the paid page to the site-wide policy.
+  //
+  // `/:path*` covers `/` too (`:path*` matches zero or more segments), and the
+  // static bundle is not covered: content-hashed assets are served by the
+  // ASSETS binding and bypass next.config entirely, so a CSP assertion that
+  // reads a header off `/_next/static/...` measures the wrong server.
   async headers() {
     return [
+      {
+        source: "/:path*",
+        headers: securityHeaders(IMAGE_ORIGIN, CSP_OPTIONS),
+      },
       {
         source: "/checkout/success",
         headers: [

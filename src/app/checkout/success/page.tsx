@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import OrderStatusPoller from "./OrderStatusPoller";
 import {
@@ -9,6 +10,14 @@ import { orderReference } from "@/domain/ordering/order-reference";
 import { buttonClass } from "@/components/Button";
 import { PageShell } from "@/components/PageShell";
 import { BODY_COPY, eyebrowClass } from "@/components/type-styles";
+import { pageMetadata } from "@/infrastructure/seo/page-metadata";
+
+/**
+ * `noindex, nofollow`, and deliberately not a canonical to a public page: this
+ * URL carries a Stripe session id, so there is nothing here to point a crawler
+ * at except itself. Excluded from the sitemap by the same flag.
+ */
+export const metadata: Metadata = pageMetadata("/checkout/success");
 
 export default async function CheckoutSuccessPage({
   searchParams,

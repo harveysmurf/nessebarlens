@@ -1,9 +1,16 @@
 import type { Metadata } from "next";
 import localFont from "next/font/local";
+import { AnalyticsBeacon } from "@/components/AnalyticsBeacon";
+import { JsonLd } from "@/components/JsonLd";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
-import { AnalyticsBeacon } from "@/components/AnalyticsBeacon";
-import { configuredSiteUrl } from "@/infrastructure/config/config";
+import { sitewideJsonLd } from "@/infrastructure/seo/json-ld";
+import {
+  HOME_COPY,
+  OG_IMAGE,
+  SITE_TITLE,
+  seoOrigin,
+} from "@/infrastructure/seo/page-metadata";
 import "./globals.css";
 
 const cormorant = localFont({
@@ -85,32 +92,38 @@ const inter = localFont({
   ],
 });
 
-const SITE_TITLE = "Nessebar Lens";
-const SITE_DESCRIPTION =
-  "Fine art, archive, and film photography from Old Town Nessebar. Museum-quality prints and digital downloads.";
-
 // Same helper the Stripe origin uses, so there is one spelling of the site URL
 // and the localhost fallback matches; metadataBase makes relative image paths
 // absolute for the OG/Twitter crawlers.
-const OG_IMAGE = "/og-image.jpg";
+//
+// The root's own title and description are `HOME_COPY`, which is the same object
+// `PAGE_COPY["/"]` holds, and `/` exports the same pair through
+// `pageMetadata("/")`. They are stated here rather than merged up from the
+// homepage page segment, because a root layout cannot read a child segment's
+// metadata: a page that forgot to export any would otherwise inherit the root's
+// words, which is the bug this change exists to close. One shared constant is
+// the price of that, not a second hand-written string.
+//
+// `metadataBase` is the only field here that no page should repeat — it is what
+// makes `alternates.canonical` and the relative OG image absolute, and a child
+// layout that re-declared it would silently change the origin of every route
+// below it.
 
 export const metadata: Metadata = {
-  title: SITE_TITLE,
-  description: SITE_DESCRIPTION,
-  metadataBase: new URL(
-    configuredSiteUrl() ?? "http://localhost:3000",
-  ),
+  title: HOME_COPY.title,
+  description: HOME_COPY.description,
+  metadataBase: new URL(seoOrigin()),
   openGraph: {
     type: "website",
     siteName: SITE_TITLE,
-    title: SITE_TITLE,
-    description: SITE_DESCRIPTION,
+    title: HOME_COPY.title,
+    description: HOME_COPY.description,
     images: [{ url: OG_IMAGE, width: 1200, height: 630, alt: SITE_TITLE }],
   },
   twitter: {
     card: "summary_large_image",
-    title: SITE_TITLE,
-    description: SITE_DESCRIPTION,
+    title: HOME_COPY.title,
+    description: HOME_COPY.description,
     images: [OG_IMAGE],
   },
 };
@@ -125,6 +138,12 @@ export default function RootLayout({
       <body
         className={`${cormorant.variable} ${inter.variable} font-sans antialiased selection:bg-stone-900 selection:text-white flex flex-col min-h-screen bg-gallery-50 text-gallery-900`}
       >
+{/*
+          Sitewide Organization + WebSite, before anything a page renders:
+          JSON-LD belongs to the document, not to the page's content, and this
+          is the only place a crawler can be sure to find it.
+        */}
+        <JsonLd data={sitewideJsonLd()} />
         <AnalyticsBeacon />
         <SiteHeader />
         <main className="flex-1">{children}</main>

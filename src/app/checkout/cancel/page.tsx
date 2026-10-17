@@ -1,7 +1,16 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { buttonClass } from "@/components/Button";
 import { PageShell } from "@/components/PageShell";
 import { BODY_COPY, eyebrowClass } from "@/components/type-styles";
+import { pageMetadata } from "@/infrastructure/seo/page-metadata";
+
+/**
+ * `noindex, nofollow`: the URL can carry a `?slug=` back to a print, so this
+ * page exists in as many shapes as the catalog has photos, and none of them is
+ * worth a search result. `pageMetadata` also keeps it out of the sitemap.
+ */
+export const metadata: Metadata = pageMetadata("/checkout/cancel");
 
 export default async function CheckoutCancelPage({
   searchParams,

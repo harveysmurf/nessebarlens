@@ -1827,6 +1827,39 @@ flow.
   It must not be the site origin: the Worker doesn't serve `/{slug}/{hash8}/{width}.{ext}` (that was #268).
   The value is baked at build time, so after changing the secret, redeploy. A preview job that started before the change keeps the old value and needs a new run.
   To check caching, use GET, not HEAD: `curl -s -o /dev/null -D - <url> | grep cf-cache-status` shows MISS, then HIT. HEAD always shows DYNAMIC.
+- **One metadata table, one CSP string (#438).** Every route's title, description
+  and canonical come from `PAGE_COPY` in
+  `src/infrastructure/seo/page-metadata.ts`; a page that hand-writes a `metadata`
+  object fails `tests/seo-metadata.test.mts`, because Next replaces `openGraph`
+  and `twitter` wholesale when a page exports them. `/sitemap.xml` and
+  `/robots.txt` are route exports under `src/app`, built from that same table and
+  from `PHOTOS` — a hand-written sitemap is a second list that goes stale.
+  `lastModified` is deliberately absent: the catalog has no trustworthy date.
+  The CSP and the three other security headers live in
+  `src/infrastructure/seo/security-headers.ts`, which imports nothing so
+  `next.config.ts` can pull it into the workerd probe. `'unsafe-inline'` is
+  required by Next's bootstrap script; a nonce migration is its own change.
+  HSTS is at the zone, not here. The `/:path*` rule must stay *before*
+  `/checkout/success` — Next resolves overlapping header keys last-wins, and
+  that page's `no-referrer` has to beat the site-wide `Referrer-Policy`.
+  Content-hashed assets come from the ASSETS binding and bypass `next.config.ts`
+  entirely, so a CSP check against `/_next/static/...` measures the wrong server.
+  The analytics beacon is **two hosts**: the script is served from
+  `static.cloudflareinsights.com` (`script-src`) and reports to
+  `cloudflareinsights.com/cdn-cgi/rum` (`connect-src`). Those are separate
+  constants on purpose. Naming the script host in `connect-src` blocks every
+  pageview silently — the beacon still loads and swallows the error, and no test
+  in the tree goes red. The endpoint comes from the shipped `beacon.min.js`, not
+  from Cloudflare's docs: a hand-placed `<script>` gets the absolute apex URL,
+  and the relative `/cdn-cgi/rum` in that file is only for the edge-injected
+  beacon this Worker never receives.
+- **One JSON-LD escape.** `src/infrastructure/seo/json-ld.ts` builds the
+  Organization/WebSite graph and the Product/BreadcrumbList pair, and
+  `serializeJsonLd` rewrites `<` as `\u003c` so catalog copy cannot close the
+  `<script>` element. A Product carries exactly one Offer — the digital download
+  at `DIGITAL_PRICE_EUR` — because the physical prints are quoted per size and
+  destination by Prodigi, so any stated range would be one we do not sell at.
+  No `AggregateRating` and no `Review`: the studio has published neither.
 - **Quotes are cached; checkout is not.** `/api/quote` is unauthenticated and
   shares Prodigi's rate limit with `/api/checkout`, so a cached-miss loop could
   otherwise 429 Prodigi and break checkout for real customers. `src/application/checkout/quote-cache.ts`
