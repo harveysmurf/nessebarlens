@@ -4,7 +4,7 @@ import Script from "next/script";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { parseContactMessage } from "@/domain/contact/contact-message";
 import { fieldControlClass, fieldLabelClass } from "./field-styles";
-import { BUTTON_LABEL } from "@/components/type-styles";
+import { Button } from "@/components/Button";
 
 /**
  * Contact form (#293).
@@ -280,13 +280,9 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
         </p>
       )}
 
-      <button
-        type="submit"
-        disabled={disabled}
-        className={`${BUTTON_LABEL} w-full bg-stone-900 hover:bg-stone-800 disabled:opacity-60 text-white py-3.5 px-4 rounded transition-all shadow-sm`}
-      >
+      <Button type="submit" shape="form" disabled={disabled}>
         {busy ? "Sending…" : "Send Message"}
-      </button>
+      </Button>
     </form>
   );
 }

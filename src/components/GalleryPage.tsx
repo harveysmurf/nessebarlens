@@ -1,3 +1,4 @@
+import { PageShell } from "@/components/PageShell";
 import { PhotoCard } from "@/components/PhotoCard";
 import { CATEGORY } from "@/domain/catalog/categories";
 import type { Photo } from "@/domain/catalog/photos";
@@ -33,23 +34,25 @@ export function GalleryPage({ category }: { category: PhotoCategory }) {
   const photos: Photo[] = photosByCategory(category);
 
   return (
-    <section className="fade-in max-w-7xl mx-auto px-6 py-12">
-      <div className="mb-10 text-center space-y-2">
-        <span
-          className={`text-[10px] uppercase tracking-[0.25em] px-2 py-0.5 rounded font-mono ${meta.badgeClass}`}
-        >
-          {meta.badge}
-        </span>
-        <h2 className="font-serif text-3xl font-light">
-          {CATEGORY[category].galleryTitle}
-        </h2>
-        <p className="text-xs text-stone-500">{meta.blurb}</p>
-      </div>
-      <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
-        {photos.map((photo) => (
-          <PhotoCard key={photo.slug} photo={photo} />
-        ))}
-      </div>
+    <section className="fade-in">
+      <PageShell width="7xl" padding={12}>
+        <div className="mb-10 text-center space-y-2">
+          <span
+            className={`text-[10px] uppercase tracking-[0.25em] px-2 py-0.5 rounded font-mono ${meta.badgeClass}`}
+          >
+            {meta.badge}
+          </span>
+          <h2 className="font-serif text-3xl font-light">
+            {CATEGORY[category].galleryTitle}
+          </h2>
+          <p className="text-xs text-stone-500">{meta.blurb}</p>
+        </div>
+        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
+          {photos.map((photo) => (
+            <PhotoCard key={photo.slug} photo={photo} />
+          ))}
+        </div>
+      </PageShell>
     </section>
   );
 }

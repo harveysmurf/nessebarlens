@@ -1,6 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PrintDetail } from "@/components/PrintDetail";
+import { PageShell } from "@/components/PageShell";
 import { categoryHref } from "@/domain/catalog/categories";
 import { filmLookClass, getPhoto, PHOTOS } from "@/domain/catalog/photos";
 import { galleryImage } from "@/infrastructure/media/gallery-image";
@@ -25,35 +26,37 @@ export default async function PrintDetailPage({
   const filmLookClassName = filmLookClass(photo.filmLook);
 
   return (
-    <section className="fade-in max-w-7xl mx-auto px-6 py-10">
-      <Link
-        href={categoryHref(photo.category)}
-        className="text-xs uppercase tracking-widest text-stone-500 hover:text-stone-900 mb-8 inline-flex items-center gap-2 font-medium"
-      >
-        ← Back to Gallery
-      </Link>
+    <section className="fade-in">
+      <PageShell width="7xl" padding={10}>
+        <Link
+          href={categoryHref(photo.category)}
+          className="text-xs uppercase tracking-widest text-stone-500 hover:text-stone-900 mb-8 inline-flex items-center gap-2 font-medium"
+        >
+          ← Back to Gallery
+        </Link>
 
-      <PrintDetail
-        photoSlug={photo.slug}
-        title={photo.title}
-        offer={photo.printOffer}
-        master={photo.master}
-        image={image}
-        alt={photo.alt}
-        filmLookClassName={filmLookClassName}
-      >
-        <div>
-          <span className="text-[10px] uppercase tracking-[0.2em] font-mono font-medium text-amber-800">
-            {photo.categoryLabel}
-          </span>
-          <h1 className="font-serif text-3xl font-normal text-stone-900 mt-1">
-            {photo.title}
-          </h1>
-          <p className="text-xs text-stone-500 mt-2 leading-relaxed">
-            {photo.description}
-          </p>
-        </div>
-      </PrintDetail>
+        <PrintDetail
+          photoSlug={photo.slug}
+          title={photo.title}
+          offer={photo.printOffer}
+          master={photo.master}
+          image={image}
+          alt={photo.alt}
+          filmLookClassName={filmLookClassName}
+        >
+          <div>
+            <span className="text-[10px] uppercase tracking-[0.2em] font-mono font-medium text-amber-800">
+              {photo.categoryLabel}
+            </span>
+            <h1 className="font-serif text-3xl font-normal text-stone-900 mt-1">
+              {photo.title}
+            </h1>
+            <p className="text-xs text-stone-500 mt-2 leading-relaxed">
+              {photo.description}
+            </p>
+          </div>
+        </PrintDetail>
+      </PageShell>
     </section>
   );
 }

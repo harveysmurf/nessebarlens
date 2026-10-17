@@ -5,6 +5,7 @@ import { CATEGORY } from "@/domain/catalog/categories";
 import { PHOTO_CATEGORIES, type PhotoCategory } from "@/domain/catalog/photo-schema";
 import { featuredPhoto, photosByCategory } from "@/domain/catalog/photos";
 import { eyebrowClass } from "@/components/type-styles";
+import { PageShell } from "@/components/PageShell";
 
 /** The homepage tile's own copy. The href and the heading are the registry's (#421). */
 const TILE_BLURB: Record<PhotoCategory, string> = {
@@ -35,7 +36,15 @@ export default function HomePage() {
 
   return (
     <section className="fade-in">
-      <div className="max-w-7xl mx-auto px-6 pt-10 pb-16 space-y-16">
+      <PageShell
+        width="7xl"
+        padding={10}
+        // The only shell whose two ends differ: 10 below the sticky header, 16
+        // under the footer. `pb-16` after `py-10` wins because Tailwind emits
+        // them in that order at the same specificity — `page-shell.test.mts`
+        // asserts that in the compiled stylesheet.
+        className="pb-16 space-y-16"
+      >
         <Link
           href={`/prints/${hero.slug}`}
           className="relative aspect-[21/9] rounded-sm overflow-hidden bg-gallery-200 group block"
@@ -102,7 +111,7 @@ export default function HomePage() {
             );
           })}
         </div>
-      </div>
+      </PageShell>
     </section>
   );
 }

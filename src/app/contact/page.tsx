@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ContactForm } from "@/components/ContactForm";
 import { turnstileSiteKey } from "@/infrastructure/config/config";
+import { PageShell } from "@/components/PageShell";
 import { eyebrowClass } from "@/components/type-styles";
 
 // The site key is read from the Worker's runtime environment, so the page must
@@ -17,7 +18,7 @@ export const metadata: Metadata = {
 export default function ContactPage() {
   return (
     <section className="fade-in">
-      <div className="max-w-2xl mx-auto px-6 py-16 space-y-8">
+      <PageShell width="2xl" padding={16} className="space-y-8">
         <div className="text-center space-y-3">
           <span className={eyebrowClass()}>
             Get in touch
@@ -32,7 +33,7 @@ export default function ContactPage() {
         </div>
 
         <ContactForm siteKey={turnstileSiteKey()} />
-      </div>
+      </PageShell>
     </section>
   );
 }

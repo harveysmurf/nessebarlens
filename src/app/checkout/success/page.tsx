@@ -6,7 +6,9 @@ import {
 } from "./order-state";
 import { getConfig } from "@/infrastructure/config/config";
 import { orderReference } from "@/domain/ordering/order-reference";
-import { BUTTON_LABEL, eyebrowClass } from "@/components/type-styles";
+import { buttonClass } from "@/components/Button";
+import { PageShell } from "@/components/PageShell";
+import { BODY_COPY, eyebrowClass } from "@/components/type-styles";
 
 export default async function CheckoutSuccessPage({
   searchParams,
@@ -28,145 +30,147 @@ export default async function CheckoutSuccessPage({
   const ttlCopy = ttlCopyOf(tokenTtlSeconds);
 
   return (
-    <section className="fade-in max-w-lg mx-auto px-6 py-20 text-center space-y-6">
-      <span className={eyebrowClass()}>
-        Payment received
-      </span>
-      <h1 className="font-serif text-3xl font-light text-stone-900">
-        Thank you
-      </h1>
+    <section className="fade-in">
+      <PageShell width="lg" padding={20} className="text-center space-y-6">
+        <span className={eyebrowClass()}>
+          Payment received
+        </span>
+        <h1 className="font-serif text-3xl font-light text-stone-900">
+          Thank you
+        </h1>
 
-      {state === "missing-session" ? (
-        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded p-3">
-          We could not read your order reference from this link. Open it from the
-          Stripe receipt email if you need your download.
-        </p>
-      ) : state === "invalid-session" ? (
-        <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded p-3">
-          That order reference is not valid. Open this page from the Stripe
-          receipt email.
-        </p>
-      ) : state === "physical" ? (
-        <OrderCard reference={reference}>
-          <p className="text-xs text-stone-600 leading-relaxed font-light">
-            Your print is being produced and will ship from our partner studio.
-            You do not need to do anything else.
+        {state === "missing-session" ? (
+          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded p-3">
+            We could not read your order reference from this link. Open it from the
+            Stripe receipt email if you need your download.
           </p>
-        </OrderCard>
-      ) : state === "physical-unfulfilled" ? (
-        // Paid, but never sent to production (e.g. an address Prodigi cannot
-        // accept). No poller: nothing changes until someone acts, and we must
-        // not claim the print is being made.
-        <OrderCard reference={reference}>
-          <p className="text-xs text-stone-600 leading-relaxed font-light">
-            Your payment was received, but we could not send your order to
-            production automatically. We will contact you by email about your
-            order.
+        ) : state === "invalid-session" ? (
+          <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded p-3">
+            That order reference is not valid. Open this page from the Stripe
+            receipt email.
           </p>
-        </OrderCard>
-      ) : state === "digital-ready" && downloadHref ? (
-        <OrderCard reference={reference}>
-          <p className="text-xs text-stone-600 leading-relaxed font-light">
-            Your download is ready. This link works {maxDownloads} times and
-            expires {ttlCopy}.
-          </p>
-          {/*
-            A plain <a>, deliberately not <Link>.
+        ) : state === "physical" ? (
+          <OrderCard reference={reference}>
+            <p className={BODY_COPY}>
+              Your print is being produced and will ship from our partner studio.
+              You do not need to do anything else.
+            </p>
+          </OrderCard>
+        ) : state === "physical-unfulfilled" ? (
+          // Paid, but never sent to production (e.g. an address Prodigi cannot
+          // accept). No poller: nothing changes until someone acts, and we must
+          // not claim the print is being made.
+          <OrderCard reference={reference}>
+            <p className={BODY_COPY}>
+              Your payment was received, but we could not send your order to
+              production automatically. We will contact you by email about your
+              order.
+            </p>
+          </OrderCard>
+        ) : state === "digital-ready" && downloadHref ? (
+          <OrderCard reference={reference}>
+            <p className={BODY_COPY}>
+              Your download is ready. This link works {maxDownloads} times and
+              expires {ttlCopy}.
+            </p>
+            {/*
+              A plain <a>, deliberately not <Link>.
 
-            <Link> to a Route Handler prefetches as soon as it scrolls into view,
-            so merely rendering this page issued a GET to /api/download — running
-            the KV lookup and starting to stream the full-resolution master before
-            any click (#103). <Link> gains nothing here: a file download has no
-            client navigation to preserve, and the route's response is not RSC,
-            so Next fell back to a hard navigation regardless. `download` tells
-            the browser to save rather than navigate, which is what this is.
+              <Link> to a Route Handler prefetches as soon as it scrolls into view,
+              so merely rendering this page issued a GET to /api/download — running
+              the KV lookup and starting to stream the full-resolution master before
+              any click (#103). <Link> gains nothing here: a file download has no
+              client navigation to preserve, and the route's response is not RSC,
+              so Next fell back to a hard navigation regardless. `download` tells
+              the browser to save rather than navigate, which is what this is.
 
-            Which now also costs a download if it ever were prefetched: the link
-            carries a token, and each redemption spends one (#111). A stray
-            prefetch would burn the customer's count on a render they never
-            asked for, so the plain <a> is load-bearing rather than stylistic.
-          */}
-          <a
-            href={downloadHref}
-            download
-            className={`${BUTTON_LABEL} inline-block w-full text-center bg-stone-900 hover:bg-stone-800 text-white py-3 rounded transition-all`}
-          >
-            Download your file
-          </a>
-        </OrderCard>
-      ) : state === "digital-no-token" ? (
-        /*
-          Paid, and the order record says the file is ready — but there is no
-          download token for it, which is the only thing that now grants the
-          file (#111). Reachable for orders stored before tokens existed; the
-          token is deliberately not minted here, because this URL carries the
-          session id and minting on demand would restore exactly the bearer
-          credential tokens replaced. Ask for the link by email instead, which is
-          what #117 is for.
-        */
-        <OrderCard reference={reference}>
-          <p className="text-xs text-stone-600 leading-relaxed font-light">
-            Your payment went through, but we cannot show a download link here.
-            Please contact us and quote the reference below and we will send it.
-          </p>
-        </OrderCard>
-      ) : state === "revoked" ? (
-        <OrderCard reference={reference}>
-          <p className="text-xs text-stone-600 leading-relaxed font-light">
-            This order was refunded or is under dispute, so there is nothing
-            further to send you.
-          </p>
-        </OrderCard>
-      ) : state === "unavailable" ? (
-        /*
-          A record exists under this session id but cannot be parsed, so
-          resolveCheckoutPageState returns "unavailable" and
-          /api/order-status answers 500 corrupt-order for it. Distinct from
-          "processing" on purpose: that branch's poller would retry the same
-          failing endpoint until its deadline, and "we are preparing your
-          download" is a claim we cannot make — the order record is already
-          there and it is broken. No poller, because nothing can change
-          without someone fixing the record.
+              Which now also costs a download if it ever were prefetched: the link
+              carries a token, and each redemption spends one (#111). A stray
+              prefetch would burn the customer's count on a render they never
+              asked for, so the plain <a> is load-bearing rather than stylistic.
+            */}
+            <a
+              href={downloadHref}
+              download
+              className={buttonClass("block")}
+            >
+              Download your file
+            </a>
+          </OrderCard>
+        ) : state === "digital-no-token" ? (
+          /*
+            Paid, and the order record says the file is ready — but there is no
+            download token for it, which is the only thing that now grants the
+            file (#111). Reachable for orders stored before tokens existed; the
+            token is deliberately not minted here, because this URL carries the
+            session id and minting on demand would restore exactly the bearer
+            credential tokens replaced. Ask for the link by email instead, which is
+            what #117 is for.
+          */
+          <OrderCard reference={reference}>
+            <p className={BODY_COPY}>
+              Your payment went through, but we cannot show a download link here.
+              Please contact us and quote the reference below and we will send it.
+            </p>
+          </OrderCard>
+        ) : state === "revoked" ? (
+          <OrderCard reference={reference}>
+            <p className={BODY_COPY}>
+              This order was refunded or is under dispute, so there is nothing
+              further to send you.
+            </p>
+          </OrderCard>
+        ) : state === "unavailable" ? (
+          /*
+            A record exists under this session id but cannot be parsed, so
+            resolveCheckoutPageState returns "unavailable" and
+            /api/order-status answers 500 corrupt-order for it. Distinct from
+            "processing" on purpose: that branch's poller would retry the same
+            failing endpoint until its deadline, and "we are preparing your
+            download" is a claim we cannot make — the order record is already
+            there and it is broken. No poller, because nothing can change
+            without someone fixing the record.
 
-          Unlike digital-unavailable, this does not promise that the team has
-          been notified. lib/order-corrupt.ts does emit order.corrupt for this
-          branch (#140), so an operator now sees it — but that log is ours to
-          read, not a commitment made to the customer in the moment they are
-          told their order is unreadable. The copy asks them to get in touch,
-          which is the one thing we can honour without a human having seen the
-          alert yet.
-        */
-        <OrderCard reference={reference}>
-          <p className="text-xs text-stone-600 leading-relaxed font-light">
-            We could not read this order, so we cannot show you its status here.
-            Please contact us and quote the reference below — your payment went
-            through and we will get your order to the right place.
-          </p>
-        </OrderCard>
-      ) : state === "digital-unavailable" ? (
-        <OrderCard reference={reference}>
-          <p className="text-xs text-stone-600 leading-relaxed font-light">
-            Your payment went through but we could not prepare the download. Our
-            team has been notified — quote the reference below and we will sort it
-            out.
-          </p>
-        </OrderCard>
-      ) : (
-        // processing, and the degraded cases that cannot assert anything yet.
-        <OrderCard reference={reference} sessionId={sessionId}>
-          <p className="text-xs text-stone-600 leading-relaxed font-light">
-            We are preparing your download. This page updates on its own — no need
-            to refresh.
-          </p>
-        </OrderCard>
-      )}
+            Unlike digital-unavailable, this does not promise that the team has
+            been notified. lib/order-corrupt.ts does emit order.corrupt for this
+            branch (#140), so an operator now sees it — but that log is ours to
+            read, not a commitment made to the customer in the moment they are
+            told their order is unreadable. The copy asks them to get in touch,
+            which is the one thing we can honour without a human having seen the
+            alert yet.
+          */
+          <OrderCard reference={reference}>
+            <p className={BODY_COPY}>
+              We could not read this order, so we cannot show you its status here.
+              Please contact us and quote the reference below — your payment went
+              through and we will get your order to the right place.
+            </p>
+          </OrderCard>
+        ) : state === "digital-unavailable" ? (
+          <OrderCard reference={reference}>
+            <p className={BODY_COPY}>
+              Your payment went through but we could not prepare the download. Our
+              team has been notified — quote the reference below and we will sort it
+              out.
+            </p>
+          </OrderCard>
+        ) : (
+          // processing, and the degraded cases that cannot assert anything yet.
+          <OrderCard reference={reference} sessionId={sessionId}>
+            <p className={BODY_COPY}>
+              We are preparing your download. This page updates on its own — no need
+              to refresh.
+            </p>
+          </OrderCard>
+        )}
 
       <Link
-        href="/"
-        className="inline-block text-xs uppercase tracking-widest border-b border-stone-800 pb-0.5 font-medium hover:text-stone-500"
-      >
-        Back to gallery
-      </Link>
+          href="/"
+          className="inline-block text-xs uppercase tracking-widest border-b border-stone-800 pb-0.5 font-medium hover:text-stone-500"
+        >
+          Back to gallery
+        </Link>
+      </PageShell>
     </section>
   );
 }

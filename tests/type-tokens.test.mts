@@ -31,8 +31,13 @@
  *   literal now lives in one module and nowhere else.
  * - **the utilities survive the scanner.** A Tailwind utility assembled inside a
  *   module is invisible to the scanner unless every candidate is a literal, which
- *   is how `aspect-[${ratio}]` shipped without a rule. Both tokens are written as
+ *   is how `aspect-[${ratio}]` shipped without a rule. Every token here is written as
  *   literal candidates, and the compiled stylesheet is checked for each.
+ *
+ * `BODY_COPY` joined them in #425: eleven paragraphs across three files wrote it
+ * out, ten byte for byte and one in a different token order. The `BUTTON_LABEL`
+ * check below changed with that pull request too — the label no longer appears in
+ * a call site's className at all, because `Button` concatenates it with its fill.
  */
 
 import assert from "node:assert/strict";
@@ -43,7 +48,7 @@ import ts from "typescript";
 import postcss from "postcss";
 import tailwindcss from "@tailwindcss/postcss";
 
-import { BUTTON_LABEL, eyebrowClass } from "../src/components/type-styles.ts";
+import { BODY_COPY, BUTTON_LABEL, eyebrowClass } from "../src/components/type-styles.ts";
 import { contrast, oklchToHex } from "./contrast.mts";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
@@ -54,6 +59,8 @@ const AA_NORMAL_TEXT = 4.5;
 /** The literals these two tokens replaced, byte for byte. See the header. */
 const EYEBROW_LITERAL = "text-[10px] uppercase tracking-[0.3em] text-stone-500 font-medium";
 const BUTTON_LABEL_LITERAL = "text-xs uppercase tracking-widest font-medium";
+/** #425: the eleven body-copy paragraphs, one of them in a different token order. */
+const BODY_COPY_LITERAL = "text-xs text-stone-600 leading-relaxed font-light";
 
 function sourceOf(relative: string): string {
   return readFileSync(path.join(ROOT, relative), "utf8");
@@ -130,6 +137,13 @@ test("the button label renders exactly the typography it replaced", () => {
   assert.equal(BUTTON_LABEL, BUTTON_LABEL_LITERAL);
 });
 
+test("body copy renders exactly the literal it replaced", () => {
+  // Pinned as a literal for the same reason the other two are: this string is the
+  // design, and eleven paragraphs render from it at once. A failure here is a
+  // restyle of the whole site's body copy, not a typo in a test.
+  assert.equal(BODY_COPY, BODY_COPY_LITERAL);
+});
+
 test("the two tokens are not the same thing", () => {
   // 0.1em against 0.3em. Not a rounding difference: at `text-[10px]` it is 1px of
   // letter spacing against 3px, and at `text-xs` 1.2px against 3.6px. Collapsing
@@ -189,24 +203,42 @@ test("each token's foreground clears AA on its own surface", () => {
   );
 });
 
-test("every BUTTON_LABEL sits on the fill its contrast is computed against", () => {
-  // The contract, enforced at the call site rather than described in a comment.
-  // A `BUTTON_LABEL` on the page background is still a legible label, so nothing
-  // else in the build would notice — it would just stop being the token whose
-  // 17.49:1 was ever checked.
-  const wrong: string[] = [];
-  let uses = 0;
-  for (const { file, text } of classNameInitializers()) {
-    if (!text.includes("BUTTON_LABEL")) continue;
-    uses += 1;
-    if (!/\bbg-stone-900\b/.test(text)) wrong.push(`${file}: ${text}`);
+test("every BUTTON_LABEL reaches the page through the one module that fills it", () => {
+  // The contract used to be enforced at the call site: every use had to carry
+  // `bg-stone-900` in the same className, because the token's 17.49:1 is computed
+  // against that fill and nothing else. #425 moved the box into `Button`, which
+  // concatenates the label and the fill in one module — so the pairing can no
+  // longer come apart, and what is left to hold is that nobody starts
+  // interpolating the label into a className somewhere else. Read from the AST:
+  // a text search would find this file's own comments.
+  const referencing = new Set<string>();
+  for (const file of srcFiles()) {
+    const relative = path.relative(ROOT, file).split(path.sep).join("/");
+    // The declaring module quotes the token in its own docs.
+    if (relative === "src/components/type-styles.ts") continue;
+    const source = ts.createSourceFile(
+      relative,
+      readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+      /\.[cm]?tsx$/.test(file) ? ts.ScriptKind.TSX : ts.ScriptKind.TS,
+    );
+    const visit = (node: ts.Node): void => {
+      // An import specifier is a reference too: the file that names the token is
+      // a file that can reach for it, whether or not it did.
+      if (ts.isImportSpecifier(node) && node.name.text === "BUTTON_LABEL") {
+        referencing.add(relative);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
   }
-  assert.ok(uses > 0, "BUTTON_LABEL should be used somewhere, or the token is dead");
+
   assert.deepEqual(
-    wrong,
-    [],
-    `BUTTON_LABEL is white-on-stone-900; without that fill it is a page-surface\n` +
-      `label carrying a contrast value that was never checked against it:\n  ${wrong.join("\n  ")}`,
+    [...referencing],
+    ["src/components/Button.tsx"],
+    `BUTTON_LABEL is white-on-stone-900; only the module that writes that fill may\n` +
+      `reach for it. These do: ${[...referencing].join(", ")}`,
   );
 });
 
@@ -225,11 +257,36 @@ test("no call site spells the eyebrow's tracking any more", () => {
   );
 });
 
-test("both tokens are in use, so neither is dead", () => {
+test("no call site spells the body copy out any more", () => {
+  // Eleven paragraphs across three files wrote this class out, ten byte for byte
+  // and one with the same tokens in another order — a near-copy that hides the
+  // next real difference from whoever reads it. Matched loosely on the pair that
+  // makes it body copy rather than the whole string, so a partial re-inline is
+  // caught too. The photo page's description is a different step of the ink ramp
+  // and does not match, which is the point.
+  const spelled: string[] = [];
+  for (const { file, text } of classNameInitializers()) {
+    if (file === "src/components/type-styles.ts") continue;
+    if (/text-stone-600[^"`]*leading-relaxed|leading-relaxed[^"`]*text-stone-600/.test(text)) {
+      spelled.push(`${file}: ${text}`);
+    }
+  }
+  assert.deepEqual(
+    spelled,
+    [],
+    `body copy is BODY_COPY now:\n  ${spelled.join("\n  ")}`,
+  );
+});
+
+test("every token is in use, so none is dead", () => {
   const initializers = classNameInitializers();
   assert.ok(
     initializers.some(({ text }) => text.includes("eyebrowClass")),
     "eyebrowClass should be used by at least one page",
+  );
+  assert.ok(
+    initializers.some(({ text }) => text.includes("BODY_COPY")),
+    "BODY_COPY should be used by at least one page",
   );
   // A third check on the same theme as the deleted --gallery-800: a token nobody
   // reaches is a claim about the site's type that nothing backs up.
@@ -252,6 +309,7 @@ test("every utility the tokens can emit survives the Tailwind scanner", async ()
     ...eyebrowClass("accent").split(" "),
     ...eyebrowClass("signature").split(" "),
     ...BUTTON_LABEL.split(" "),
+    ...BODY_COPY.split(" "),
   ]);
 
   for (const cls of candidates) {

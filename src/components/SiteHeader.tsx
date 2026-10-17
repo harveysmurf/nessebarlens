@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { CATEGORY_TAGLINE } from "@/domain/catalog/categories";
 import { MobileNav } from "./MobileNav";
 import { NAV, isActive } from "./nav";
+import { containerClass } from "@/components/PageShell";
 import { eyebrowClass } from "@/components/type-styles";
 
 export function SiteHeader() {
@@ -12,7 +13,9 @@ export function SiteHeader() {
 
   return (
     <header className="border-b border-gallery-200/70 bg-gallery-50/90 backdrop-blur-md sticky top-0 z-40">
-      <div className="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between gap-4">
+      <div
+        className={`${containerClass("7xl")} h-20 flex items-center justify-between gap-4`}
+      >
         <Link href="/" className="group min-w-0">
           <span className="font-serif text-2xl font-light tracking-tight block whitespace-nowrap text-gallery-900">
             NESSEBAR LENS

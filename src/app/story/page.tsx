@@ -3,7 +3,8 @@ import { PhotoTile } from "@/components/PhotoTile";
 import { CATEGORY } from "@/domain/catalog/categories";
 import { PHOTO_CATEGORIES, type PhotoCategory } from "@/domain/catalog/photo-schema";
 import { photosByCategory } from "@/domain/catalog/photos";
-import { eyebrowClass } from "@/components/type-styles";
+import { BODY_COPY, eyebrowClass } from "@/components/type-styles";
+import { PageShell } from "@/components/PageShell";
 
 /**
  * The /story block's own copy. The href and the heading are the registry's
@@ -44,7 +45,7 @@ const BLOCKS = PHOTO_CATEGORIES.map((category, i) => ({
 export default function StoryPage() {
   return (
     <section className="fade-in">
-      <div className="max-w-5xl mx-auto px-6 py-16 space-y-20">
+      <PageShell width="5xl" padding={16} className="space-y-20">
         <div className="text-center space-y-3 max-w-2xl mx-auto">
           <span className={eyebrowClass()}>
             Visual Heritage
@@ -52,7 +53,7 @@ export default function StoryPage() {
           <h1 className="font-serif text-4xl sm:text-6xl font-light">
             Stories from the Black Sea Peninsula
           </h1>
-          <p className="text-stone-600 text-xs font-light leading-relaxed">
+          <p className={BODY_COPY}>
             A clean, unhurried collection of prints captured over decades.
             High-resolution medium format, historical street photojournalism, and
             grain-textured analog film negatives.
@@ -92,7 +93,7 @@ export default function StoryPage() {
                   CATEGORY {block.n}
                 </span>
                 <h2 className="font-serif text-2xl font-normal">{block.title}</h2>
-                <p className="text-xs text-stone-600 leading-relaxed font-light">
+                <p className={BODY_COPY}>
                   {block.body}
                 </p>
                 <Link
@@ -105,7 +106,7 @@ export default function StoryPage() {
             </div>
           );
         })}
-      </div>
+      </PageShell>
     </section>
   );
 }
