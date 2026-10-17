@@ -18,7 +18,7 @@ export default function ContactPage() {
     <section className="fade-in">
       <div className="max-w-2xl mx-auto px-6 py-16 space-y-8">
         <div className="text-center space-y-3">
-          <span className="text-[10px] uppercase tracking-[0.3em] text-stone-400 font-medium">
+          <span className="text-[10px] uppercase tracking-[0.3em] text-stone-500 font-medium">
             Get in touch
           </span>
           <h1 className="font-serif text-4xl sm:text-5xl font-light">

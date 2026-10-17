@@ -1,8 +1,8 @@
 import Link from "next/link";
-import { WebPhoto } from "@/components/WebPhoto";
+import { PhotoTile } from "@/components/PhotoTile";
 import { CATEGORY } from "@/domain/catalog/categories";
 import { PHOTO_CATEGORIES, type PhotoCategory } from "@/domain/catalog/photo-schema";
-import { filmLookClass, isFilmPhoto, photosByCategory } from "@/domain/catalog/photos";
+import { photosByCategory } from "@/domain/catalog/photos";
 
 /**
  * The /story block's own copy. The href and the heading are the registry's
@@ -45,7 +45,7 @@ export default function StoryPage() {
     <section className="fade-in">
       <div className="max-w-5xl mx-auto px-6 py-16 space-y-20">
         <div className="text-center space-y-3 max-w-2xl mx-auto">
-          <span className="text-[10px] uppercase tracking-[0.3em] text-stone-400 font-medium">
+          <span className="text-[10px] uppercase tracking-[0.3em] text-stone-500 font-medium">
             Visual Heritage
           </span>
           <h1 className="font-serif text-4xl sm:text-6xl font-light">
@@ -75,23 +75,11 @@ export default function StoryPage() {
                   block.flip ? "md:order-2 order-1" : ""
                 }`}
               >
-                {/* #409: no padding utility here either. The dark background is a
-                    letterbox backdrop behind a wider-than-3:2 crop, matching the
-                    home page; padding around it only drew a black frame. */}
-                <Link
-                  href={block.href}
-                  className={`aspect-[3/2] overflow-hidden rounded-sm block ${
-                    photo && isFilmPhoto(photo) ? "bg-stone-900" : "bg-stone-200"
-                  }`}
-                >
-                  {photo ? (
-                    <WebPhoto
-                      photo={photo}
-                      preferred={1500}
-                      sizes="(max-width: 768px) 100vw, 60vw"
-                      className={`w-full h-full object-cover hover:scale-105 transition-transform duration-700 ${filmLookClass(photo.filmLook)}`}
-                    />
-                  ) : null}
+                {/* #409: no padding utility here either — that padding is what
+                    drew a 4px black frame around the film blocks. The backdrop
+                    itself moved into `PhotoTile` (#422). */}
+                <Link href={block.href} className="block">
+                  <PhotoTile photo={photo} ratio="3/2" sizes="(max-width: 768px) 100vw, 60vw" />
                 </Link>
               </div>
               <div
@@ -99,7 +87,7 @@ export default function StoryPage() {
                   block.flip ? "md:order-1 order-2" : ""
                 }`}
               >
-                <span className="text-[10px] uppercase tracking-widest text-stone-400 font-mono">
+                <span className="text-[10px] uppercase tracking-widest text-stone-500 font-mono">
                   CATEGORY {block.n}
                 </span>
                 <h2 className="font-serif text-2xl font-normal">{block.title}</h2>

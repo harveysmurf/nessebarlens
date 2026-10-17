@@ -1,13 +1,9 @@
 import Link from "next/link";
+import { PhotoTile } from "@/components/PhotoTile";
 import { WebPhoto } from "@/components/WebPhoto";
 import { CATEGORY } from "@/domain/catalog/categories";
 import { PHOTO_CATEGORIES, type PhotoCategory } from "@/domain/catalog/photo-schema";
-import {
-  featuredPhoto,
-  filmLookClass,
-  isFilmPhoto,
-  photosByCategory,
-} from "@/domain/catalog/photos";
+import { featuredPhoto, photosByCategory } from "@/domain/catalog/photos";
 
 /** The homepage tile's own copy. The href and the heading are the registry's (#421). */
 const TILE_BLURB: Record<PhotoCategory, string> = {
@@ -73,7 +69,7 @@ export default function HomePage() {
             memories, and analog film grain across Old Town Nessebar.&rdquo;
           </p>
           <div className="w-12 h-[1px] bg-stone-300 mx-auto" />
-          <p className="text-[10px] uppercase tracking-widest text-stone-400 pt-2">
+          <p className="text-[10px] uppercase tracking-widest text-stone-500 pt-2">
             Prefer the story layout?{" "}
             <Link href="/story" className="underline hover:text-stone-800">
               View Concept B
@@ -89,20 +85,7 @@ export default function HomePage() {
             const photo = photosByCategory(cat.category)[0];
             return (
               <Link key={cat.href} href={cat.href} className="group space-y-3 block">
-                <div
-                  className={`aspect-[4/3] overflow-hidden rounded-sm ${
-                    photo && isFilmPhoto(photo) ? "bg-stone-900" : "bg-stone-200"
-                  }`}
-                >
-                  {photo ? (
-                    <WebPhoto
-                      photo={photo}
-                      preferred={1500}
-                      sizes="(max-width: 768px) 100vw, 33vw"
-                      className={`w-full h-full object-cover group-hover:scale-105 transition-transform duration-700 ${filmLookClass(photo.filmLook)}`}
-                    />
-                  ) : null}
-                </div>
+                <PhotoTile photo={photo} sizes="(max-width: 768px) 100vw, 33vw" />
                 <div className="border-b border-stone-200 pb-3 flex justify-between items-baseline gap-3">
                   <div>
                     <h3 className="font-serif text-xl font-normal">

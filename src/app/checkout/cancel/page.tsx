@@ -10,7 +10,7 @@ export default async function CheckoutCancelPage({
 
   return (
     <section className="fade-in max-w-lg mx-auto px-6 py-20 text-center space-y-6">
-      <span className="text-[10px] uppercase tracking-[0.3em] text-stone-400 font-medium">
+      <span className="text-[10px] uppercase tracking-[0.3em] text-stone-500 font-medium">
         Checkout cancelled
       </span>
       <h1 className="font-serif text-3xl font-light text-stone-900">

@@ -316,7 +316,7 @@ export function PrintConfigurator({
                     className="sr-only"
                   />
                   <div className="font-medium text-stone-900">{f.title}</div>
-                  <div className="text-[10px] text-stone-400">
+                  <div className="text-[10px] text-stone-500">
                     {f.sub}
                     {f.id === "digital" ? ` · €${DIGITAL_PRICE_EUR}` : ""}
                   </div>
@@ -511,7 +511,7 @@ export function PrintConfigurator({
           >
             {busy ? "Opening Checkout…" : "Checkout with Stripe"}
           </button>
-          <p className="text-[10px] text-center text-stone-400 mt-2">
+          <p className="text-[10px] text-center text-stone-500 mt-2">
             {isDigital
               ? "Secure payment · Download link after fulfillment"
               : "Secure payment · Live Prodigi shipping · Prodigi fulfillment"}

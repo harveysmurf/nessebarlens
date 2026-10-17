@@ -22,9 +22,14 @@ import { PhotoCard } from "../src/components/PhotoCard.tsx";
 import { webDerivativeUrls } from "../src/infrastructure/media/derivatives.ts";
 import { PHOTOS, isFilmPhoto } from "../src/domain/catalog/photos.ts";
 import { load } from "./tsx-hooks.mjs";
+import { contrast } from "./contrast.mts";
 
 const BASE = "NEXT_PUBLIC_WEB_IMAGES_BASE";
 const BASE_URL = "https://cdn.example.com/g";
+
+/** The backdrops a tile can choose, and the foregrounds it can pair them with. */
+const STONE = { "stone-100": "#f5f5f4", "stone-200": "#e7e5e4", "stone-900": "#1c1917" } as const;
+const FOREGROUND = { "stone-100": "#f5f5f4", "gallery-900": "#181615" } as const;
 
 /** Set env for the duration of `fn`, the way `derivatives.test.mts` does. */
 function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
@@ -70,6 +75,19 @@ function imageClasses(html: string): string {
   return match[1];
 }
 
+/**
+ * The className on the element that stands in for the image when there is none.
+ *
+ * WebPhoto's fallback is a `<span>` in the tile's place, not an `<img>`, so the
+ * two need separate extraction — asking `imageClasses` for it would fail on the
+ * `no <img>` that is precisely the condition under test.
+ */
+function fallbackClasses(html: string): string {
+  const match = html.match(/<span class="([^"]*object-cover[^"]*)"/);
+  assert.ok(match, `no fallback span in: ${html.slice(0, 400)}`);
+  return match[1];
+}
+
 test("a .tsx component imports and renders under the test runner", () => {
   // The whole of #420. Before it, this import alone died with
   // ERR_UNKNOWN_FILE_EXTENSION ".tsx".
@@ -96,13 +114,37 @@ test("the rendered image is the derivative ladder, not a bare <img>", () => {
   });
 });
 
-test("the tile wrapper is identical for a film and a non-film photo", () => {
+test("the tile wrapper draws no frame for a film or a non-film photo", () => {
   // #409, asserted by rendering rather than by reading the source. The card was
   // given `bg-stone-900 p-1` for film against `bg-stone-200` for the rest, which
-  // drew a 4px frame; the fix made the wrapper static. A source-reading test can
-  // see that there is no branch — only that whatever the className is, it is the
-  // same string for both photos.
-  assert.equal(tileWrapper(renderCard(filmPhoto)), tileWrapper(renderCard(plainPhoto)));
+  // drew a 4px frame. A source-reading test can see that there is no branch —
+  // only that whatever the className is, it is the same string for both photos.
+  //
+  // #422 changed that premise, deliberately. The wrapper does branch now, on the
+  // letterbox backdrop, because the card had been the odd one out: it hard-coded
+  // `bg-stone-200` for every photo while the home and story tiles gave film a
+  // dark backdrop. So string equality is no longer the property worth holding.
+  // What #409 was actually about is that neither branch pads the box, and the
+  // only thing that differs between them is the backdrop colour — which is what
+  // this asserts instead.
+  const film = tileWrapper(renderCard(filmPhoto));
+  const plain = tileWrapper(renderCard(plainPhoto));
+
+  for (const [label, wrapper] of [["film", film], ["plain", plain]] as const) {
+    assert.doesNotMatch(
+      wrapper,
+      /\bp-\d|\bpx-\d|\bpy-\d|\bpt-\d|\bpb-\d|\bpl-\d|\bpr-\d/,
+      `the ${label} tile wrapper pads its box, which draws a frame: ${wrapper}`,
+    );
+  }
+
+  assert.match(film, /bg-stone-900$/, `film tile lost its letterbox backdrop: ${film}`);
+  assert.match(plain, /bg-stone-200$/, `non-film tile gained a dark backdrop: ${plain}`);
+  assert.equal(
+    film.replace(/bg-stone-\d+$/, ""),
+    plain.replace(/bg-stone-\d+$/, ""),
+    "the two wrappers should differ only in the backdrop colour",
+  );
 });
 
 test("the film look reaches the image and not the wrapper", () => {
@@ -146,4 +188,42 @@ test("a component with no buildable ladder renders its alt text instead", () => 
   );
   assert.doesNotMatch(html, /<img/);
   assert.ok(html.includes(plainPhoto.alt), "the alt text should still be rendered");
+});
+
+test("the alt-text fallback is readable on whichever backdrop the tile chose", () => {
+  // The fallback is a `<span>` holding the photo's alt text, so it inherits the
+  // body's `text-gallery-900` — near-black — from whatever surface the tile put
+  // behind it. That coupling is invisible in every screenshot, because a photo
+  // with a buildable ladder shows an image and the backdrop never shows. It only
+  // appears when a photo has none.
+  //
+  // #422 made it worse before it made it right: the card used to hard-code a
+  // light backdrop for every photo, so its fallback was near-black on light and
+  // readable. Giving film the dark letterbox it has everywhere else put
+  // near-black on near-black — 1.03:1, which is not a colour, it is a hole in the
+  // page. The tile now pairs the fallback's text colour with the backdrop it
+  // chose, and this asserts the pairing actually clears AA, by computing it.
+  for (const [label, photo] of [
+    ["film", filmPhoto],
+    ["non-film", plainPhoto],
+  ] as const) {
+    const html = withEnv({ [BASE]: undefined }, () =>
+      renderToStaticMarkup(createElement(PhotoCard, { photo })),
+    );
+    const backdrop = tileWrapper(html).match(/bg-(stone-\d+)$/)?.[1];
+    assert.ok(backdrop, `the ${label} tile should declare a backdrop`);
+
+    const text = STONE[backdrop as keyof typeof STONE];
+    assert.ok(text, `no hex for ${backdrop}`);
+    const declared = fallbackClasses(html).match(/\btext-(stone-\d+|gallery-\d+)\b/)?.[1];
+    assert.ok(declared, `the ${label} fallback should declare its own text colour`);
+    assert.ok(declared in FOREGROUND, `no hex for ${declared}`);
+
+    const ratio = contrast(FOREGROUND[declared as keyof typeof FOREGROUND], text);
+    assert.ok(
+      ratio >= 4.5,
+      `the ${label} alt-text fallback is ${ratio.toFixed(2)}:1 on ${backdrop} — ` +
+        `a photo with no image would show alt text nobody can read.`,
+    );
+  }
 });
