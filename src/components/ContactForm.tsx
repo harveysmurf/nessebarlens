@@ -3,6 +3,7 @@
 import Script from "next/script";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { parseContactMessage } from "@/domain/contact/contact-message";
+import { track } from "@/analytics/track";
 import { fieldControlClass, fieldLabelClass } from "./field-styles";
 import { Button } from "@/components/Button";
 
@@ -106,6 +107,10 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
   useEffect(() => {
     if (scriptReady) renderWidget();
   }, [scriptReady, renderWidget]);
+
+  useEffect(() => {
+    track("contact_open");
+  }, []);
 
   useEffect(() => {
     return () => {

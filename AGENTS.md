@@ -45,3 +45,77 @@ long version lives; it is the thing to read before touching the theme.
   default build passed over a mutation that should have failed it. A guard that
   can pass when it should fail is worse than no guard; prefer a check you can
   demonstrate failing by mutation.
+
+# Analytics: two sources, one number you act on
+
+**Analytics Engine owns behaviour.** Web Analytics is the cookieless traffic and
+Core Web Vitals baseline only; its totals will not match AE (ad blockers,
+consent, worker-generated HTML). Read AE for "did they submit", WA for "how many
+arrived". The site is an OpenNext Worker, so Cloudflare's edge beacon injection
+does not fire — the manual beacon in `src/components/AnalyticsBeacon.tsx` is the
+only pageview source.
+
+## Dataset and event shape
+
+Dataset `nessebar_events`, binding `ANALYTICS`, declared in both `wrangler.toml`
+environments. `ANALYTICS_ENV` is the discriminator (`production` / `staging`);
+never derive it from `NODE_ENV`.
+
+Blob order is the read contract:
+
+| blobs[0] | blobs[1] | blobs[2] | writer |
+| --- | --- | --- | --- |
+| `contact` | status | env | contact route (`/api/contact`) |
+| event name | path | env | interaction beacon (`/api/e`) |
+
+Contact statuses are closed: `malformed`, `unconfigured`, `ok`, `invalid`,
+`rate-limited`, `rejected`, `delivery-failed`. Interaction events are the exact
+allowlist in `src/analytics/events.ts`: `contact_open`, `configurator_open`,
+`configurator_submit`.
+
+No PII is ever written: no name, email, message, IP or user agent. Writes are
+best-effort; a throwing `writeDataPoint` must never change a response.
+
+## Read path
+
+Use the **unified** SQL API, not `/accounts/<id>/analytics_engine/sql` (that
+returns 403 Authorization error for every token on this account):
+
+```
+POST https://api.cloudflare.com/client/v4/analytics/sql
+Authorization: Bearer <Account Analytics Read token>
+{
+  "query": "...",
+  "scope": { "accountTag": "117232faceb06cc3cb98cedd86d59241" },
+  "time_range": { "start": "...", "end": "..." }
+}
+```
+
+Datasets appear as `events.analyticsEngine.nessebar_events`. Saved queries:
+
+```sql
+-- events per day by type
+SELECT toStartOfDay(timestamp) AS day, blob1 AS event, count() AS n
+FROM events.analyticsEngine.nessebar_events
+WHERE blob3 = 'production'
+GROUP BY day, event ORDER BY day DESC;
+
+-- contact attempts by status
+SELECT blob2 AS status, count() AS n
+FROM events.analyticsEngine.nessebar_events
+WHERE blob1 = 'contact' AND blob3 = 'production'
+GROUP BY status ORDER BY n DESC;
+
+-- top paths where the contact page was opened
+SELECT blob2 AS path, count() AS n
+FROM events.analyticsEngine.nessebar_events
+WHERE blob1 = 'contact_open' AND blob3 = 'production'
+GROUP BY path ORDER BY n DESC LIMIT 20;
+```
+
+## Known limitation
+
+Web Analytics on the free plan has 0 rules and postfix hostname matching, so
+staging (`staging.nessebarlens.com`) counts as production in WA. Either filter by
+host in the dashboard or accept the inflation, and document which. AE is not
+affected: `blob3` separates the environments.
