@@ -47,6 +47,9 @@ type WorkerEnvShape = {
   readonly MASTERS?: unknown;
   readonly ORDERS_DB?: unknown;
   readonly CONTACT_RATE_LIMIT?: unknown;
+  readonly ANALYTICS?: unknown;
+  readonly ANALYTICS_RATE_LIMIT?: unknown;
+  readonly ANALYTICS_ENV?: unknown;
   readonly ASSETS?: unknown;
   readonly NEXT_PUBLIC_SITE_URL?: unknown;
 };

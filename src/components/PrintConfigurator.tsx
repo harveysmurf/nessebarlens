@@ -34,6 +34,7 @@ import {
   type PrintSelection,
 } from "@/domain/ordering/print-selection";
 import type { MasterFacts } from "@/domain/catalog/master-facts";
+import { track } from "@/analytics/track";
 import { assess } from "@/domain/catalog/print-eligibility";
 import { findProduct } from "@/domain/pricing/print-products";
 import type { PrintOffer } from "@/domain/catalog/print-offer";
@@ -106,6 +107,10 @@ export function PrintConfigurator({
         ? "This photo's shape doesn't fit this frame without a mount."
         : "This photo's resolution is too low for an unmounted print at this size."
       : null;
+
+  useEffect(() => {
+    track("configurator_open");
+  }, []);
 
   useEffect(() => {
     if (isDigital) return;
@@ -206,6 +211,7 @@ export function PrintConfigurator({
   }
 
   async function checkout() {
+    track("configurator_submit");
     setBusy(true);
     setError(null);
     try {

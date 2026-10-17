@@ -20,6 +20,8 @@ type Fake = {
   turnstileSecret?: string;
   contactRecipient?: string;
   contactRateLimiter?: { limit(options: { key: string }): Promise<{ success: boolean }> };
+  analytics?: { writeDataPoint(point: { blobs?: unknown[] }): void };
+  analyticsEnv?: string;
   prodigiKeyConfigured: boolean;
 };
 
@@ -195,4 +197,79 @@ test("contact: the rate-limit binding sheds the request before any provider call
   assert.equal(response.status, 429);
   assert.equal(limited, true);
   assert.equal(calls.length, 0);
+});
+
+test("contact: analytics records the closed status only, never visitor content", async () => {
+  const points: Array<{ blobs?: unknown[] }> = [];
+  withBindings({
+    ...CONFIGURED,
+    analytics: { writeDataPoint: (point) => points.push(point) },
+    analyticsEnv: "test",
+  });
+  scriptedFetch([siteverifyOk, resendOk]);
+  const response = await route.POST(jsonRequest(VALID));
+  assert.equal(response.status, 200);
+  assert.deepEqual(points, [
+    {
+      blobs: ["contact", "ok", "test"],
+      doubles: [1],
+      indexes: ["contact"],
+    },
+  ]);
+  const written = JSON.stringify(points);
+  assert.equal(written.includes(VALID.email), false, "email must never be written");
+  assert.equal(written.includes(VALID.name), false, "name must never be written");
+  assert.equal(written.includes(VALID.message), false, "message must never be written");
+});
+
+test("contact: malformed, unconfigured and invalid attempts are each recorded", async () => {
+  const collect = () => {
+    const points: Array<{ blobs?: unknown[] }> = [];
+    withBindings({
+      ...CONFIGURED,
+      analytics: { writeDataPoint: (point) => points.push(point) },
+      analyticsEnv: "test",
+    });
+    return points;
+  };
+
+  const malformedPoints = collect();
+  scriptedFetch([]);
+  const malformed = await route.POST(
+    new Request(`${SITE}/api/contact`, { method: "POST", body: "not json" }),
+  );
+  assert.equal(malformed.status, 400);
+  assert.deepEqual(malformedPoints[0]?.blobs, ["contact", "malformed", "test"]);
+
+  const unconfiguredPoints = collect();
+  globals.__buzzBindings = {
+    prodigiKeyConfigured: false,
+    analytics: { writeDataPoint: (point) => unconfiguredPoints.push(point) },
+    analyticsEnv: "test",
+  };
+  const unconfigured = await route.POST(jsonRequest(VALID));
+  assert.equal(unconfigured.status, 503);
+  assert.deepEqual(unconfiguredPoints[0]?.blobs, ["contact", "unconfigured", "test"]);
+
+  const invalidPoints = collect();
+  scriptedFetch([]);
+  const invalid = await route.POST(jsonRequest({ ...VALID, email: "nope" }));
+  assert.equal(invalid.status, 400);
+  assert.deepEqual(invalidPoints[0]?.blobs, ["contact", "invalid", "test"]);
+});
+
+test("contact: a throwing analytics write cannot change the response", async () => {
+  withBindings({
+    ...CONFIGURED,
+    analytics: {
+      writeDataPoint() {
+        throw new Error("analytics quota");
+      },
+    },
+    analyticsEnv: "test",
+  });
+  scriptedFetch([siteverifyOk, resendOk]);
+  const response = await route.POST(jsonRequest(VALID));
+  assert.equal(response.status, 200);
+  assert.deepEqual(await body(response), { ok: true });
 });
