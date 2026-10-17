@@ -398,6 +398,10 @@ test("every declared gallery token is used, and every used one is declared", () 
  * variant uses, `collapse`, `invert`, `p-2` and one class made out of an
  * ordinary verb.
  *
+ * `AGENTS.md` joins them for a sharper reason: it is the file that records this
+ * invariant for the next agent, and `next dev` rewrites it, so it is where a
+ * utility name would most plausibly accumulate by accident.
+ *
  * The exclusion itself is asserted as text rather than measured through a build.
  * That is a deliberate retreat, and the reason is worth recording: compiling
  * `globals.css` with Tailwind's default detection does reproduce the effect, but
@@ -412,13 +416,14 @@ const EXCLUDED_FROM_PRODUCTION_CSS = [
   "../../tests",
   "../../scripts",
   "../../DEVELOPMENT.md",
+  "../../AGENTS.md",
 ];
 
-test("the directories that are not source cannot reach the production stylesheet", () => {
+test("the paths that are not source cannot reach the production stylesheet", () => {
   const css = sourceOf("src/app/globals.css");
 
-  // Each one named, rather than a count: a fourth unscanned directory is the
-  // failure this is for, and "three are excluded" would not say which.
+  // Each one named, rather than a count: an unscanned path is the failure this is
+  // for, and "three are excluded" would not say which one is missing.
   const missing = EXCLUDED_FROM_PRODUCTION_CSS.filter(
     (dir) => !new RegExp(`@source not "${dir.replace(/[./]/g, (c) => `\\${c}`)}";`).test(css),
   );

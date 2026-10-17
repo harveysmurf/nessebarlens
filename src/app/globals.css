@@ -1,7 +1,7 @@
 @import "tailwindcss";
 
 /*
- * Tailwind v4 scans the whole project by default, and two things in this repo
+ * Tailwind v4 scans the whole project by default, and a few paths in this repo
  * are not source: `tests/`, where class names are quoted in assertions and
  * explained in comments, and `DEVELOPMENT.md`, a 129KB design document.
  *
@@ -22,9 +22,15 @@
 * Excluding the files removes that ability, so **nothing outside `src/` can add
  * production CSS.** Tests and any other check that needs a stylesheet compile
  * their own, with `source(none)` and an explicit `@source` — see
- * `gallery-tiles.test.mts`. `border-palette.test.mts` asserts the three lines
+ * `gallery-tiles.test.mts`. `border-palette.test.mts` asserts the four lines
  * are present and that `src/` compiles to no rule at all for the border step
  * retired above.
+ *
+ * `AGENTS.md` is excluded for the same reason, and is the fourth line because it
+ * is where the invariant above is recorded for the next agent: a file that
+ * explains "prose generates live utilities" and then names one would be the
+ * counterexample. It is also the file `next dev` rewrites and that agents append
+ * to, so it is the one most likely to accumulate a utility name by accident.
  *
  * The residual is stated rather than hidden: `src/` comments are still scanned,
  * and two utilities are named in prose there, in `PhotoTile`'s and `PhotoCard`'s
@@ -37,6 +43,7 @@
 @source not "../../tests";
 @source not "../../scripts";
 @source not "../../DEVELOPMENT.md";
+@source not "../../AGENTS.md";
 
 /*
  * Two ramps with a boundary between them, not one palette (#424).
