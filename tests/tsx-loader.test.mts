@@ -22,14 +22,60 @@ import { PhotoCard } from "../src/components/PhotoCard.tsx";
 import { webDerivativeUrls } from "../src/infrastructure/media/derivatives.ts";
 import { PHOTOS, isFilmPhoto } from "../src/domain/catalog/photos.ts";
 import { load } from "./tsx-hooks.mjs";
-import { contrast } from "./contrast.mts";
+import { contrast, oklchToHex } from "./contrast.mts";
 
 const BASE = "NEXT_PUBLIC_WEB_IMAGES_BASE";
 const BASE_URL = "https://cdn.example.com/g";
 
-/** The backdrops a tile can choose, and the foregrounds it can pair them with. */
-const STONE = { "stone-100": "#f5f5f4", "stone-200": "#e7e5e4", "stone-900": "#1c1917" } as const;
-const FOREGROUND = { "stone-100": "#f5f5f4", "gallery-900": "#181615" } as const;
+const ROOT = new URL("../", import.meta.url);
+
+/** A file in the repo, by repo-relative path. */
+function sourceOf(relative: string): string {
+  return readFileSync(new URL(relative, ROOT), "utf8");
+}
+
+/**
+ * The backdrops a tile can choose, and the foregrounds it can pair them with.
+ *
+ * The two ramps are read from where they are declared rather than written out:
+ * `gallery-200` from `globals.css`, which ships a hex, and the two `stone-*`
+ * steps from Tailwind's own theme. #424 moved the non-film backdrop from
+ * `stone-200` to `gallery-200` and this test's job is to hold the *fallback
+ * contrast* on whatever backdrop the tile picked — a hex copied in here would
+ * keep passing after the declaration moved, which is the one thing it must not do.
+ */
+function themeColor(name: string): string {
+  const css = sourceOf("src/app/globals.css");
+  // The theme aliases the ramp: `@theme` writes `--color-gallery-200:
+  // var(--gallery-200)` and `:root` holds the hex. Both hops are followed, so the
+  // value here is the one that ships rather than the alias.
+  const aliased = css.match(new RegExp(`--color-${name}:\\s*var\\((--[\\w-]+)\\)`));
+  if (aliased) {
+    const value = css.match(new RegExp(`${aliased[1]}:\\s*(#[0-9a-f]{6})`, "i"));
+    assert.ok(value, `${aliased[1]} should be declared as a hex in globals.css`);
+    return value[1];
+  }
+  const oklch = sourceOf("node_modules/tailwindcss/theme.css").match(
+    new RegExp(`--color-${name}:\\s*oklch\\(([^)]+)\\)`),
+  );
+  assert.ok(oklch, `no colour declared for ${name}`);
+  const [l, c, h] = oklch[1].split(/\s+/);
+  return oklchToHex(
+    Number.parseFloat(l) / (l.endsWith("%") ? 100 : 1),
+    Number.parseFloat(c),
+    Number.parseFloat(h),
+  );
+}
+
+const STONE: Record<string, string> = {
+  "stone-100": themeColor("stone-100"),
+  "gallery-200": themeColor("gallery-200"),
+  "stone-900": themeColor("stone-900"),
+};
+const FOREGROUND: Record<string, string> = {
+  "stone-100": themeColor("stone-100"),
+  "gallery-900": themeColor("gallery-900"),
+};
 
 /** Set env for the duration of `fn`, the way `derivatives.test.mts` does. */
 function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
@@ -139,10 +185,10 @@ test("the tile wrapper draws no frame for a film or a non-film photo", () => {
   }
 
   assert.match(film, /bg-stone-900$/, `film tile lost its letterbox backdrop: ${film}`);
-  assert.match(plain, /bg-stone-200$/, `non-film tile gained a dark backdrop: ${plain}`);
+  assert.match(plain, /bg-gallery-200$/, `non-film tile gained a dark backdrop: ${plain}`);
   assert.equal(
-    film.replace(/bg-stone-\d+$/, ""),
-    plain.replace(/bg-stone-\d+$/, ""),
+    film.replace(/bg-[\w-]+$/, ""),
+    plain.replace(/bg-[\w-]+$/, ""),
     "the two wrappers should differ only in the backdrop colour",
   );
 });
@@ -210,7 +256,7 @@ test("the alt-text fallback is readable on whichever backdrop the tile chose", (
     const html = withEnv({ [BASE]: undefined }, () =>
       renderToStaticMarkup(createElement(PhotoCard, { photo })),
     );
-    const backdrop = tileWrapper(html).match(/bg-(stone-\d+)$/)?.[1];
+    const backdrop = tileWrapper(html).match(/bg-(stone-\d+|gallery-\d+)$/)?.[1];
     assert.ok(backdrop, `the ${label} tile should declare a backdrop`);
 
     const text = STONE[backdrop as keyof typeof STONE];

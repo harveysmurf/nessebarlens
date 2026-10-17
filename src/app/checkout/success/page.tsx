@@ -6,6 +6,7 @@ import {
 } from "./order-state";
 import { getConfig } from "@/infrastructure/config/config";
 import { orderReference } from "@/domain/ordering/order-reference";
+import { BUTTON_LABEL, eyebrowClass } from "@/components/type-styles";
 
 export default async function CheckoutSuccessPage({
   searchParams,
@@ -28,7 +29,7 @@ export default async function CheckoutSuccessPage({
 
   return (
     <section className="fade-in max-w-lg mx-auto px-6 py-20 text-center space-y-6">
-      <span className="text-[10px] uppercase tracking-[0.3em] text-stone-500 font-medium">
+      <span className={eyebrowClass()}>
         Payment received
       </span>
       <h1 className="font-serif text-3xl font-light text-stone-900">
@@ -88,7 +89,7 @@ export default async function CheckoutSuccessPage({
           <a
             href={downloadHref}
             download
-            className="inline-block w-full text-center bg-stone-900 hover:bg-stone-800 text-white font-medium py-3 rounded text-xs uppercase tracking-widest transition-all"
+            className={`${BUTTON_LABEL} inline-block w-full text-center bg-stone-900 hover:bg-stone-800 text-white py-3 rounded transition-all`}
           >
             Download your file
           </a>
@@ -186,7 +187,7 @@ function OrderCard(props: {
   children: React.ReactNode;
 }) {
   return (
-    <div className="bg-white border border-stone-200 rounded-sm p-5 space-y-3 text-left">
+    <div className="bg-white border border-gallery-200 rounded-sm p-5 space-y-3 text-left">
       {props.children}
       {props.reference ? (
         <p className="text-[10px] text-stone-500 text-center">

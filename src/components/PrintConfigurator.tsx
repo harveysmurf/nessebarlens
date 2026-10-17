@@ -49,6 +49,7 @@ import {
   isPrintPaperValue,
   isPrintSize,
 } from "@/domain/pricing/sku-map";
+import { BUTTON_LABEL } from "@/components/type-styles";
 
 export function PrintConfigurator({
   photoSlug,
@@ -256,7 +257,7 @@ export function PrintConfigurator({
 
   return (
     <div className="space-y-6">
-      <div className="border-y border-stone-100 py-4 space-y-1">
+      <div className="border-y border-gallery-100 py-4 space-y-1">
         <div className="flex justify-between items-baseline">
           <span className="text-xs uppercase tracking-wider text-stone-500">
             {isDigital ? "Price" : "Print"}
@@ -303,7 +304,7 @@ export function PrintConfigurator({
                   className={`p-3 rounded text-left transition-colors cursor-pointer has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-stone-900 ${
                     active
                       ? "border-2 border-stone-900"
-                      : "border border-stone-200 hover:border-stone-400"
+                      : "border border-gallery-200 hover:border-stone-400"
                   }`}
                 >
                   <input
@@ -507,7 +508,7 @@ export function PrintConfigurator({
                   (isFramed && mount === "none" && !noMountEligible)))
             }
             onClick={checkout}
-            className="w-full bg-stone-900 hover:bg-stone-800 disabled:opacity-60 text-white font-medium py-3.5 px-4 rounded text-xs uppercase tracking-widest transition-all shadow-sm"
+            className={`${BUTTON_LABEL} w-full bg-stone-900 hover:bg-stone-800 disabled:opacity-60 text-white py-3.5 px-4 rounded transition-all shadow-sm`}
           >
             {busy ? "Opening Checkout…" : "Checkout with Stripe"}
           </button>

@@ -3,6 +3,7 @@ import { PhotoTile } from "@/components/PhotoTile";
 import { CATEGORY } from "@/domain/catalog/categories";
 import { PHOTO_CATEGORIES, type PhotoCategory } from "@/domain/catalog/photo-schema";
 import { photosByCategory } from "@/domain/catalog/photos";
+import { eyebrowClass } from "@/components/type-styles";
 
 /**
  * The /story block's own copy. The href and the heading are the registry's
@@ -45,7 +46,7 @@ export default function StoryPage() {
     <section className="fade-in">
       <div className="max-w-5xl mx-auto px-6 py-16 space-y-20">
         <div className="text-center space-y-3 max-w-2xl mx-auto">
-          <span className="text-[10px] uppercase tracking-[0.3em] text-stone-500 font-medium">
+          <span className={eyebrowClass()}>
             Visual Heritage
           </span>
           <h1 className="font-serif text-4xl sm:text-6xl font-light">
@@ -67,7 +68,7 @@ export default function StoryPage() {
             <div
               key={block.href}
               className={`grid md:grid-cols-12 gap-8 items-center ${
-                i < BLOCKS.length - 1 ? "border-b border-stone-200/80 pb-12" : ""
+                i < BLOCKS.length - 1 ? "border-b border-gallery-200/80 pb-12" : ""
               }`}
             >
               <div

@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { ContactForm } from "@/components/ContactForm";
 import { turnstileSiteKey } from "@/infrastructure/config/config";
+import { eyebrowClass } from "@/components/type-styles";
 
 // The site key is read from the Worker's runtime environment, so the page must
 // render per request: a static build would bake whatever the CI build happened
@@ -18,7 +19,7 @@ export default function ContactPage() {
     <section className="fade-in">
       <div className="max-w-2xl mx-auto px-6 py-16 space-y-8">
         <div className="text-center space-y-3">
-          <span className="text-[10px] uppercase tracking-[0.3em] text-stone-500 font-medium">
+          <span className={eyebrowClass()}>
             Get in touch
           </span>
           <h1 className="font-serif text-4xl sm:text-5xl font-light">

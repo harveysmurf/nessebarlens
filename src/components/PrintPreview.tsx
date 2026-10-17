@@ -154,7 +154,7 @@ function ViewToggle({
             className={`text-[10px] uppercase tracking-widest px-2 py-1 rounded cursor-pointer has-[:focus-visible]:outline has-[:focus-visible]:outline-2 has-[:focus-visible]:outline-offset-2 has-[:focus-visible]:outline-stone-900 ${
               active
                 ? "border border-stone-900"
-                : "border border-stone-200 text-stone-500"
+                : "border border-gallery-200 text-stone-500"
             }`}
           >
             <input
