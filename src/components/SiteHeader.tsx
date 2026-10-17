@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
+import { CATEGORY_TAGLINE } from "@/domain/catalog/categories";
 import { MobileNav } from "./MobileNav";
 import { NAV, isActive } from "./nav";
 
@@ -16,7 +17,7 @@ export function SiteHeader() {
             NESSEBAR LENS
           </span>
           <span className="hidden sm:block text-[9px] uppercase tracking-[0.3em] text-stone-500 font-medium">
-            Old Town Nessebar • Fine Art, Archive & Film
+            Old Town Nessebar • {CATEGORY_TAGLINE}
           </span>
         </Link>
 

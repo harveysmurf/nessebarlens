@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { WebPhoto } from "@/components/WebPhoto";
+import { CATEGORY } from "@/domain/catalog/categories";
+import { PHOTO_CATEGORIES, type PhotoCategory } from "@/domain/catalog/photo-schema";
 import {
   featuredPhoto,
   filmLookClass,
@@ -7,29 +9,29 @@ import {
   photosByCategory,
 } from "@/domain/catalog/photos";
 
-const CATEGORIES = [
-  {
-    href: "/fine-art",
-    category: "fine-art",
-    n: "01",
-    title: "Fine Art",
-    blurb: "Best high-end portfolio gallery captures",
-  },
-  {
-    href: "/archive",
-    category: "archive",
-    n: "02",
-    title: "Archive",
-    blurb: "Everyday street & journalistic moments",
-  },
-  {
-    href: "/film",
-    category: "film",
-    n: "03",
-    title: "Film Photography",
-    blurb: "Authentic 35mm & 120 film stock negatives",
-  },
-] as const;
+/** The homepage tile's own copy. The href and the heading are the registry's (#421). */
+const TILE_BLURB: Record<PhotoCategory, string> = {
+  "fine-art": "Best high-end portfolio gallery captures",
+  archive: "Everyday street & journalistic moments",
+  film: "Authentic 35mm & 120 film stock negatives",
+};
+
+/**
+ * One tile per category, in `PHOTO_CATEGORIES`' display order, so the "01"
+ * numbering is derived from the catalog rather than typed a second time — it
+ * was typed here and again on /story, and those two had to be edited in step.
+ *
+ * Adding a category still means adding its blurb above: that is a compile
+ * error in one place, which is the point. What is gone is the href, the
+ * heading, and the hand-kept "01".
+ */
+const CATEGORIES = PHOTO_CATEGORIES.map((category, i) => ({
+  category,
+  href: CATEGORY[category].href,
+  title: CATEGORY[category].homeTitle,
+  n: String(i + 1).padStart(2, "0"),
+  blurb: TILE_BLURB[category],
+}));
 
 export default function HomePage() {
   const hero = featuredPhoto()!;

@@ -1,4 +1,5 @@
 import { PHOTOS as CATALOG } from "../../generated/catalog";
+import { categoryLabel } from "./categories";
 import type { MasterFacts } from "./master-facts";
 import type { FilmLook, PhotoCategory, PhotoFile } from "./photo-schema";
 import type { PrintOffer } from "./print-offer";
@@ -34,28 +35,19 @@ export type Photo = {
 };
 
 /**
- * The label shown above a print's title. Derived from the category, so a file
- * cannot carry a second spelling of it — one `Record`, like `CATEGORY_HREF`,
- * so a new category is a compile error here rather than an empty label.
- */
-const CATEGORY_LABEL: Record<PhotoCategory, string> = {
-  "fine-art": "Fine Art Collection",
-  archive: "Everyday Archive • Photojournalism",
-  film: "Film Photography",
-};
-
-/**
  * The runtime shape of a catalog entry. `categoryLabel` and `imageKey` are
  * derived here rather than stored in YAML, so the file stays about the photo
  * and the code keeps the two rules (a label per category, a master key per
- * slug) in exactly one place.
+ * slug) in exactly one place. The label itself is `categories.ts`'s
+ * `printLabel` (#421), which is one `Record` over every category, so a new
+ * category is a compile error there rather than an empty label here.
  */
 function toPhoto(file: PhotoFile): Photo {
   return {
     slug: file.slug,
     title: file.title,
     category: file.category,
-    categoryLabel: CATEGORY_LABEL[file.category],
+    categoryLabel: categoryLabel(file.category),
     caption: file.caption,
     description: file.description,
     alt: file.alt,
@@ -99,17 +91,11 @@ export function featuredPhoto(
   );
 }
 
-// A Record rather than a switch: a switch falls off the end when a category
-// is added, so a new one would type-check and render href={undefined}.
-const CATEGORY_HREF: Record<PhotoCategory, string> = {
-  "fine-art": "/fine-art",
-  archive: "/archive",
-  film: "/film",
-};
-
-export function categoryHref(category: PhotoCategory): string {
-  return CATEGORY_HREF[category];
-}
+// `CATEGORY_HREF` and `CATEGORY_LABEL` moved to `categories.ts` (#421), which is
+// one `Record` over every category rather than a switch — a switch falls off the
+// end when a category is added, so a new one would type-check and render
+// href={undefined}. `categoryHref` moved with them; callers import it from
+// there, since a photo's href is a category's fact, not a photo's.
 
 // The one place a film look is written as a CSS class. This string was
 // hand-rolled in every page and component that renders a film photo, and the

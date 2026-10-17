@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createPortal } from "react-dom";
+import { CATEGORY_TAGLINE } from "@/domain/catalog/categories";
 import {
   useCallback,
   useEffect,
@@ -170,7 +171,7 @@ export function MobileNav() {
                 })}
               </ul>
               <p className="mt-auto text-[10px] uppercase tracking-[0.3em] text-stone-500">
-                Old Town Nessebar • Fine Art, Archive &amp; Film
+                Old Town Nessebar • {CATEGORY_TAGLINE}
               </p>
             </nav>
           </div>,
