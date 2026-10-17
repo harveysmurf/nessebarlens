@@ -141,6 +141,46 @@ async function expectPreviewImage(page: Page) {
     .toBe(true);
 }
 
+/**
+ * The meta row under the stage must keep the print size and the pixel size
+ * visibly apart, in every format and at every width (#432). It is a
+ * `justify-between` row, and justify-between distributes only the *free* space:
+ * the framed caption names the product, the size, the moulding and the mount,
+ * which consumed all of it and left the two runs meeting with nothing between
+ * them — at desktop the two were 7px apart, at mobile width exactly 0. Measured
+ * boxes, because that is where the defect lives: no source-text check can see
+ * two rendered strings touching.
+ *
+ * Both floors sit below the authored gaps on purpose. What this holds is
+ * "separated", not "separated by exactly one rem", so the guard survives the gap
+ * being retuned and still fails loudly at the zero it was written for.
+ */
+const META_MIN_GAP_PX = 12;
+const META_MIN_ROW_GAP_PX = 4;
+
+async function expectMetaSeparated(page: Page) {
+  const caption = await page.getByTestId("preview-meta-caption").boundingBox();
+  const resolution = await page
+    .getByTestId("preview-meta-resolution")
+    .boundingBox();
+  expect(caption).not.toBeNull();
+  expect(resolution).not.toBeNull();
+
+  const gapX = resolution!.x - (caption!.x + caption!.width);
+  const gapY = resolution!.y - (caption!.y + caption!.height);
+
+  // Wrapped onto a second row is the other half of the fix: the gap turns the
+  // overflow `flex-wrap` now absorbs into a line, not a collision. `align-items`
+  // stretches both runs to their line's height, so two runs sharing a line
+  // always report a *negative* gapY — the taller caption overhangs the shorter
+  // one — hence a `> 0.5` test rather than a bare sign test.
+  if (gapY > 0.5) {
+    expect(gapY).toBeGreaterThanOrEqual(META_MIN_ROW_GAP_PX);
+    return;
+  }
+  expect(gapX).toBeGreaterThanOrEqual(META_MIN_GAP_PX);
+}
+
 test.beforeEach(async ({ page }) => {
   await page.route(`${IMAGES_BASE}/**`, (route) => {
     const webp = route.request().url().endsWith(".webp");
@@ -442,5 +482,30 @@ test.describe("product preview (#326)", () => {
       body: await preview(page).screenshot(),
       contentType: "image/png",
     });
+  });
+
+  test("the print size and the pixel size stay apart in every format (#432)", async ({
+    page,
+  }, testInfo) => {
+    // Desktop, because that is where justify-between has space to hand out and
+    // the bug is least visible, and mobile, because that is where it bites.
+    for (const width of [1280, 360]) {
+      await page.setViewportSize({ width, height: 900 });
+      await page.goto(`/prints/${HARBOUR}`);
+
+      // The opening format, then framed — its caption is the long one, and the
+      // one that used to eat every pixel of free space in the row.
+      await expectMetaSeparated(page);
+      await page.locator("label[for='format-option-framed']").click();
+      await expect
+        .poll(() => preview(page).getAttribute("data-preview-kind"))
+        .toBe("framed");
+      await expectMetaSeparated(page);
+
+      await testInfo.attach(`preview-meta-${width}`, {
+        body: await page.getByTestId("preview-meta").screenshot(),
+        contentType: "image/png",
+      });
+    }
   });
 });
