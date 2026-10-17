@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import localFont from "next/font/local";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
+import { AnalyticsBeacon } from "@/components/AnalyticsBeacon";
 import { configuredSiteUrl } from "@/infrastructure/config/config";
 import "./globals.css";
 
@@ -124,6 +125,7 @@ export default function RootLayout({
       <body
         className={`${cormorant.variable} ${inter.variable} font-sans antialiased selection:bg-stone-900 selection:text-white flex flex-col min-h-screen bg-gallery-50 text-gallery-900`}
       >
+        <AnalyticsBeacon />
         <SiteHeader />
         <main className="flex-1">{children}</main>
         <SiteFooter />
