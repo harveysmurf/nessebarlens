@@ -1,6 +1,7 @@
 import type { MastersBucket } from "../../domain/catalog/master-key";
 import type { OrdersStore } from "../../domain/ordering/orders-store";
 import type { ContactRateLimiter } from "../../application/contact/submit-contact";
+import type { AnalyticsEngineDataset } from "@cloudflare/workers-types";
 import { envString, type EnvReader } from "../config/env";
 import { isRecord } from "../../domain/json/record";
 import { printAssetSecret } from "../config/config";
@@ -40,6 +41,23 @@ export type WorkerBindings = {
    * depth: absent skips the rate check, Turnstile still gates.
    */
   contactRateLimiter: ContactRateLimiter | undefined;
+  /**
+   * Workers rate-limit binding for /api/e (#119). Optional: absent skips the
+   * check rather than failing a beacon, but without it one client can spend the
+   * Analytics Engine daily quota.
+   */
+  analyticsRateLimiter: ContactRateLimiter | undefined;
+  /**
+   * Analytics Engine dataset (#119). Absent ⇒ writes are skipped. Analytics must
+   * never fail a request, so this is optional by design.
+   */
+  analytics: AnalyticsEngineDataset | undefined;
+  /**
+   * "production" / "staging", from ANALYTICS_ENV. Never derived from NODE_ENV;
+   * "unknown" when absent so a misconfigured deploy cannot masquerade as
+   * production in the data.
+   */
+  analyticsEnv: string;
   prodigiKeyConfigured: boolean;
 };
 
@@ -153,6 +171,13 @@ export async function readWorkerBindings(
     contactRateLimiter: isContactRateLimiter(env.CONTACT_RATE_LIMIT)
       ? env.CONTACT_RATE_LIMIT
       : undefined,
+    analyticsRateLimiter: isContactRateLimiter(env.ANALYTICS_RATE_LIMIT)
+      ? env.ANALYTICS_RATE_LIMIT
+      : undefined,
+    analytics: isAnalyticsEngineDataset(env.ANALYTICS)
+      ? env.ANALYTICS
+      : undefined,
+    analyticsEnv: envString("ANALYTICS_ENV", env) ?? "unknown",
     prodigiKeyConfigured: prodigiKeyConfigured(env),
   };
 }
@@ -206,4 +231,15 @@ export function isMastersBucket(value: unknown): value is MastersBucket {
  */
 export function isContactRateLimiter(value: unknown): value is ContactRateLimiter {
   return hasMethods(value, "limit");
+}
+
+/**
+ * The Analytics Engine binding. `writeDataPoint` is the whole contract the
+ * analytics writers use; a binding missing it would throw on the first point,
+ * so the shape is checked rather than trusted. Exported for the binding tests.
+ */
+export function isAnalyticsEngineDataset(
+  value: unknown,
+): value is AnalyticsEngineDataset {
+  return hasMethods(value, "writeDataPoint");
 }

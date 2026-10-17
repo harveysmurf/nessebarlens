@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   isContactRateLimiter,
+  isAnalyticsEngineDataset,
   isMastersBucket,
   isOrdersDatabase,
   isOrdersStore,
@@ -233,6 +234,44 @@ test("isContactRateLimiter accepts only an object exposing limit", () => {
   assert.equal(isContactRateLimiter({ limit: "yes" }), false);
   assert.equal(isContactRateLimiter({ other: 1 }), false);
   assert.equal(isContactRateLimiter(null), false);
+});
+
+test("isAnalyticsEngineDataset accepts only an object exposing writeDataPoint", () => {
+  assert.equal(isAnalyticsEngineDataset({ writeDataPoint: () => {} }), true);
+  assert.equal(isAnalyticsEngineDataset({ writeDataPoint: "yes" }), false);
+  assert.equal(isAnalyticsEngineDataset({ writeDataPoints: () => {} }), false);
+  assert.equal(isAnalyticsEngineDataset(null), false);
+});
+
+test("analytics bindings and env name are read, and bad shapes are dropped", async () => {
+  const saved = process.env.ANALYTICS_ENV;
+  try {
+    delete process.env.ANALYTICS_ENV;
+    const dataset = { writeDataPoint: () => {} };
+    const limiter = { limit: async () => ({ success: true }) };
+    const bindings = await readWorkerBindings({
+      readEnv: async () => ({
+        ANALYTICS: dataset,
+        ANALYTICS_ENV: " staging ",
+        ANALYTICS_RATE_LIMIT: limiter,
+      }),
+    });
+    assert.equal(bindings.analytics, dataset);
+    assert.equal(bindings.analyticsEnv, "staging", "the env name is trimmed");
+    assert.equal(bindings.analyticsRateLimiter, limiter);
+  } finally {
+    if (saved === undefined) delete process.env.ANALYTICS_ENV;
+    else process.env.ANALYTICS_ENV = saved;
+  }
+
+  const bad = await readWorkerBindings({
+    readEnv: async () => ({
+      ANALYTICS: { writeDataPoint: "nope" },
+      ANALYTICS_RATE_LIMIT: { notLimit: 1 },
+    }),
+  });
+  assert.equal(bad.analytics, undefined);
+  assert.equal(bad.analyticsRateLimiter, undefined);
 });
 
 test("contact bindings are read, and the rate limiter passes its shape guard", async () => {

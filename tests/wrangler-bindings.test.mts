@@ -44,7 +44,7 @@ function parseBindings(toml: string): Binding[] {
   let current: { section: string; fields: Record<string, string> } | null = null;
   const flush = () => {
     if (!current) return;
-    const m = current.section.match(/^(?:env\.([\w-]+)\.)?(r2_buckets|d1_databases|ratelimits)$/);
+    const m = current.section.match(/^(?:env\.([\w-]+)\.)?(r2_buckets|d1_databases|ratelimits|analytics_engine_datasets)$/);
     if (m) {
       const kind = m[2];
       found.push({
@@ -57,7 +57,9 @@ function parseBindings(toml: string): Binding[] {
             ? current.fields.bucket_name
             : kind === "d1_databases"
               ? current.fields.database_name
-              : current.fields.namespace_id) ?? "",
+              : kind === "analytics_engine_datasets"
+                ? current.fields.dataset
+                : current.fields.namespace_id) ?? "",
       });
     }
     current = null;
@@ -139,6 +141,31 @@ test("the contact rate limiter is declared at the top level and redeclared in st
   const rateLimits = bindings.filter((b) => b.kind === "ratelimits");
   assert.equal(rateLimits.find((b) => b.env === "")?.binding, "CONTACT_RATE_LIMIT");
   assert.equal(rateLimits.find((b) => b.env === "staging")?.binding, "CONTACT_RATE_LIMIT");
+});
+
+test("the interaction rate limiter is declared at the top level and redeclared in staging", () => {
+  const rateLimits = bindings.filter(
+    (b) => b.kind === "ratelimits" && b.binding === "ANALYTICS_RATE_LIMIT",
+  );
+  assert.ok(rateLimits.some((b) => b.env === ""), "top-level ANALYTICS_RATE_LIMIT is missing");
+  assert.ok(rateLimits.some((b) => b.env === "staging"), "staging ANALYTICS_RATE_LIMIT is missing");
+});
+
+test("the Analytics Engine dataset is declared identically in both envs", () => {
+  // #119: wrangler does not inherit bindings into [env.*]. A binding test that
+  // only checks the top level is how a staging deploy goes green while every
+  // analytics write is silently dropped.
+  const datasets = bindings.filter((b) => b.kind === "analytics_engine_datasets");
+  const top = datasets.find((b) => b.env === "");
+  const staging = datasets.find((b) => b.env === "staging");
+  assert.equal(top?.binding, "ANALYTICS");
+  assert.equal(staging?.binding, "ANALYTICS");
+  assert.equal(top?.resource, "nessebar_events");
+  assert.equal(
+    staging?.resource,
+    top?.resource,
+    "staging must not point at a different Analytics Engine dataset",
+  );
 });
 
 test("negative control: a staging block pointing at the production bucket is rejected", () => {

@@ -41,6 +41,10 @@ crons = ["*/15 * * * *"]
 # from the Worker env; this is a runtime var for the same name. Each environment
 # overrides it with its own host (see below).
 NEXT_PUBLIC_SITE_URL = "https://nessebarlens.com"
+# Stamped into every Analytics Engine point so production and staging rows are
+# distinguishable in one dataset. Never derived from NODE_ENV: a Worker build
+# runs with the same NODE_ENV everywhere, so it cannot tell the envs apart.
+ANALYTICS_ENV = "production"
 
 [assets]
 directory = ".open-next/assets"
@@ -74,6 +78,25 @@ namespace_id = "1001"
 limit = 5
 period = 60
 
+# Abuse control for the unauthenticated interaction beacon (#119). 120 writes
+# per minute per caller IP is generous for a human session but stops one client
+# from spending the 100k/day Analytics Engine quota. Declared in both envs for
+# the same reason as CONTACT_RATE_LIMIT: wrangler does not inherit bindings.
+[[ratelimits]]
+name = "ANALYTICS_RATE_LIMIT"
+namespace_id = "1002"
+
+[ratelimits.simple]
+limit = 120
+period = 60
+
+# Deliberate placement events. The dataset is created on first write; the
+# binding name ANALYTICS is what the Worker reads. Declared in both envs because
+# wrangler does not inherit bindings into [env.*].
+[[analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "nessebar_events"
+
 # Staging: a second, always-on Worker on its own hostname and its own D1, so a
 # full purchase can be rehearsed with sandbox keys without touching production
 # orders. Deploy with `--env staging` (opennextjs-cloudflare forwards it to
@@ -104,6 +127,7 @@ crons = ["*/15 * * * *"]
 
 [env.staging.vars]
 NEXT_PUBLIC_SITE_URL = "https://staging.nessebarlens.com"
+ANALYTICS_ENV = "staging"
 
 [[env.staging.d1_databases]]
 binding = "ORDERS_DB"
@@ -148,3 +172,18 @@ namespace_id = "1001"
 [env.staging.ratelimits.simple]
 limit = 5
 period = 60
+
+[[env.staging.ratelimits]]
+name = "ANALYTICS_RATE_LIMIT"
+namespace_id = "1002"
+
+[env.staging.ratelimits.simple]
+limit = 120
+period = 60
+
+# Same dataset name on purpose: ANALYTICS_ENV (blob3) is the discriminator, so
+# dashboards read one dataset and filter by env. Pointing staging at a
+# differently named dataset would silently split the data.
+[[env.staging.analytics_engine_datasets]]
+binding = "ANALYTICS"
+dataset = "nessebar_events"
