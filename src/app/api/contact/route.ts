@@ -5,6 +5,7 @@ import { createTurnstileVerifier } from "@/infrastructure/turnstile/cloudflare-t
 import { createContactEmailSender } from "@/infrastructure/contact/email-contact-message";
 import { submitContact } from "@/application/contact/submit-contact";
 import { contactResponse } from "@/application/contact/contact-response";
+import { recordContactAttempt } from "@/infrastructure/cloudflare/analytics";
 
 /**
  * POST /api/contact (#293).
@@ -20,12 +21,17 @@ import { contactResponse } from "@/application/contact/contact-response";
  * safe to keep because neither contains user content.
  */
 export async function POST(request: Request) {
+  const bindings = await readWorkerBindings();
   const body = await readJsonBody(request);
   if (!body.ok) {
-    return NextResponse.json({ error: body.error }, { status: body.status });
+    const response = NextResponse.json(
+      { error: body.error },
+      { status: body.status },
+    );
+    recordContactAttempt(bindings.analytics, bindings.analyticsEnv, "malformed");
+    return response;
   }
 
-  const bindings = await readWorkerBindings();
   // 503, not a 400: with no verifier or no recipient the feature is not
   // deployed, which is a human's job to fix. Failing closed here means a
   // submission is never accepted on a promise we cannot keep.
@@ -37,10 +43,16 @@ export async function POST(request: Request) {
     console.error(
       "contact unconfigured: TURNSTILE_SECRET_KEY, CONTACT_TO_EMAIL or RESEND_API_KEY is missing",
     );
-    return NextResponse.json(
+    const response = NextResponse.json(
       { error: "Contact is not configured" },
       { status: 503 },
     );
+    recordContactAttempt(
+      bindings.analytics,
+      bindings.analyticsEnv,
+      "unconfigured",
+    );
+    return response;
   }
 
   const remoteIp = request.headers.get("cf-connecting-ip")?.trim() || undefined;
@@ -66,5 +78,8 @@ export async function POST(request: Request) {
   }
 
   const mapped = contactResponse(outcome);
+  // Status only: the closed ContactOutcome kind, never name, email, message,
+  // IP or user agent.
+  recordContactAttempt(bindings.analytics, bindings.analyticsEnv, outcome.kind);
   return NextResponse.json(mapped.body, { status: mapped.status });
 }
