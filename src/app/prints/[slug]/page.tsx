@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { PrintDetail } from "@/components/PrintDetail";
-import { categoryHref, filmLookClass, getPhoto, PHOTOS } from "@/domain/catalog/photos";
+import { categoryHref } from "@/domain/catalog/categories";
+import { filmLookClass, getPhoto, PHOTOS } from "@/domain/catalog/photos";
 import { galleryImage } from "@/infrastructure/media/gallery-image";
 
 export function generateStaticParams() {

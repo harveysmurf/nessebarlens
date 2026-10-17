@@ -13,10 +13,13 @@
  * archive, which had no padding, showed none. Reported as #409, and fixed by
  * making the cards identical.
  *
- * These assertions read the component source because the repo has no React
- * render harness — see print-copy.test.mts, which pins PrintConfigurator the
- * same way. What is asserted is the property, not the literal: a future edit
- * that reintroduces the frame by a different spelling still fails.
+ * These assertions read the component source because the tile's markup is
+ * about class names and there is no reason to render it — see
+ * print-copy.test.mts, which pins PrintConfigurator the same way. What is
+ * asserted is the property, not the literal: a future edit that reintroduces
+ * the frame by a different spelling still fails. (The repo does have a render
+ * harness for assertions that are *about* text; `category-registry.test.mts`
+ * uses it, since there the copy itself is the subject.)
  */
 
 import assert from "node:assert/strict";

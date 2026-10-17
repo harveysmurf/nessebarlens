@@ -2,12 +2,12 @@ import assert from "node:assert/strict";
 import test from "node:test";
 import {
   PHOTOS,
-  categoryHref,
   featuredPhoto,
   getPhoto,
   isFilmPhoto,
   photosByCategory,
 } from "../src/domain/catalog/photos.ts";
+import { categoryHref } from "../src/domain/catalog/categories.ts";
 import type { PhotoCategory } from "../src/domain/catalog/photo-schema.ts";
 import { PHOTO_SLUG_PATTERN, isMasterKey } from "../src/domain/catalog/derivative-ladder.ts";
 import { masterKeyForSlug } from "../src/domain/catalog/master-key.ts";

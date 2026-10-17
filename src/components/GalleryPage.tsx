@@ -1,29 +1,29 @@
 import { PhotoCard } from "@/components/PhotoCard";
+import { CATEGORY } from "@/domain/catalog/categories";
 import type { Photo } from "@/domain/catalog/photos";
 import { photosByCategory } from "@/domain/catalog/photos";
 import type { PhotoCategory } from "@/domain/catalog/photo-schema";
 
-const META: Record<
-  PhotoCategory,
-  { badge: string; badgeClass: string; title: string; blurb: string }
-> = {
+/**
+ * The gallery's own copy: the badge, its colour, and the blurb. The heading is
+ * not here — `CATEGORY[category].galleryTitle` owns it (#421), so the gallery and
+ * the nav cannot spell the category differently by accident.
+ */
+const META: Record<PhotoCategory, { badge: string; badgeClass: string; blurb: string }> = {
   "fine-art": {
     badge: "Curated Portfolio",
     badgeClass: "text-amber-800 bg-amber-100/60",
-    title: "Fine Art Photography",
     blurb:
       "My flagship gallery captures • Museum-quality giclée prints via Prodigi • Available on Hahnemühle Photo Rag",
   },
   archive: {
     badge: "Photojournalism",
     badgeClass: "text-blue-900 bg-blue-100/60",
-    title: "Everyday Archive",
     blurb: "Street life, candid moments, and historic everyday events in Old Town Nessebar",
   },
   film: {
     badge: "Analog Negative",
     badgeClass: "text-emerald-900 bg-emerald-100/60",
-    title: "Film Photography",
     blurb: "Authentic 35mm & 120 format film grain captures • Kodak, Leica & Hasselblad",
   },
 };
@@ -40,7 +40,9 @@ export function GalleryPage({ category }: { category: PhotoCategory }) {
         >
           {meta.badge}
         </span>
-        <h2 className="font-serif text-3xl font-light">{meta.title}</h2>
+        <h2 className="font-serif text-3xl font-light">
+          {CATEGORY[category].galleryTitle}
+        </h2>
         <p className="text-xs text-stone-500">{meta.blurb}</p>
       </div>
       <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">

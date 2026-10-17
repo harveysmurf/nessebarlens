@@ -1,36 +1,44 @@
 import Link from "next/link";
 import { WebPhoto } from "@/components/WebPhoto";
+import { CATEGORY } from "@/domain/catalog/categories";
+import { PHOTO_CATEGORIES, type PhotoCategory } from "@/domain/catalog/photo-schema";
 import { filmLookClass, isFilmPhoto, photosByCategory } from "@/domain/catalog/photos";
 
-const BLOCKS = [
-  {
-    href: "/fine-art",
-    category: "fine-art",
-    n: "01",
-    title: "Fine Art Collection",
+/**
+ * The /story block's own copy. The href and the heading are the registry's
+ * (#421) — this is the surface where "Fine Art" and "Fine Art Collection" were
+ * most obviously two different sentences, so the difference is declared rather
+ * than averaged away.
+ */
+const BLOCK_COPY: Record<
+  PhotoCategory,
+  { body: string; cta: string; flip: boolean }
+> = {
+  "fine-art": {
     body: "My highest-grade artistic works. Carefully composed architecture, dramatic atmospheric coastlines, and pristine color grading tailored for museum Giclée prints.",
     cta: "Browse Fine Art Gallery →",
     flip: false,
   },
-  {
-    href: "/archive",
-    category: "archive",
-    n: "02",
-    title: "Everyday Archive",
+  archive: {
     body: "Photojournalistic records of Nessebar's daily soul — fishermen untangling nets at sunrise, autumn cobblers, seasonal storms, and local town life.",
     cta: "Browse Archival Gallery →",
     flip: true,
   },
-  {
-    href: "/film",
-    category: "film",
-    n: "03",
-    title: "Film Photography",
+  film: {
     body: "Exclusively analog medium format and 35mm captures. Unfiltered organic grain, authentic light leaks, and Kodak/Ilford film characteristics.",
     cta: "Browse Film Gallery →",
     flip: false,
   },
-] as const;
+};
+
+/** One block per category, in `PHOTO_CATEGORIES`' display order (#421). */
+const BLOCKS = PHOTO_CATEGORIES.map((category, i) => ({
+  category,
+  href: CATEGORY[category].href,
+  title: CATEGORY[category].storyTitle,
+  n: String(i + 1).padStart(2, "0"),
+  ...BLOCK_COPY[category],
+}));
 
 export default function StoryPage() {
   return (
