@@ -111,9 +111,22 @@ export function PrintDetail({
           master={master}
           size={size}
         />
-        <div className="flex justify-between text-[10px] text-stone-500 uppercase tracking-widest px-1">
-          <span>{caption}</span>
-          <span>{masterResolutionLabel(master)}</span>
+        {/*
+         * `gap-*` and not `justify-between` alone: justify-between distributes
+         * only the *free* space, so a caption long enough to use it all (framed
+         * names the size, the moulding and the mount) left the print size butted
+         * against the pixel size with nothing between them. The gap makes the
+         * separation a floor instead of a dividend, and `flex-wrap` turns the
+         * overflow it would otherwise cause into a second row.
+         */}
+        <div
+          data-testid="preview-meta"
+          className="flex flex-wrap justify-between gap-x-6 gap-y-2 text-[10px] text-stone-500 uppercase tracking-widest px-1"
+        >
+          <span data-testid="preview-meta-caption">{caption}</span>
+          <span data-testid="preview-meta-resolution">
+            {masterResolutionLabel(master)}
+          </span>
           <span>Global Delivery via Prodigi</span>
         </div>
         {note && (
