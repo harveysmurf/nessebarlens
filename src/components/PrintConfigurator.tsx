@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { fieldControlClass, fieldLabelClass } from "./field-styles";
+import { Button } from "@/components/Button";
 import {
   DEFAULT_SHIPPING_COUNTRY,
   isShipToCountryCode,
@@ -49,7 +50,6 @@ import {
   isPrintPaperValue,
   isPrintSize,
 } from "@/domain/pricing/sku-map";
-import { BUTTON_LABEL } from "@/components/type-styles";
 
 export function PrintConfigurator({
   photoSlug,
@@ -498,8 +498,9 @@ export function PrintConfigurator({
         )}
 
         <div className="pt-4">
-          <button
+          <Button
             type="button"
+            shape="form"
             disabled={
               busy ||
               (!isDigital &&
@@ -508,10 +509,9 @@ export function PrintConfigurator({
                   (isFramed && mount === "none" && !noMountEligible)))
             }
             onClick={checkout}
-            className={`${BUTTON_LABEL} w-full bg-stone-900 hover:bg-stone-800 disabled:opacity-60 text-white py-3.5 px-4 rounded transition-all shadow-sm`}
           >
             {busy ? "Opening Checkout…" : "Checkout with Stripe"}
-          </button>
+          </Button>
           <p className="text-[10px] text-center text-stone-500 mt-2">
             {isDigital
               ? "Secure payment · Download link after fulfillment"

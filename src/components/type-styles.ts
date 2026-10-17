@@ -1,5 +1,5 @@
 /**
- * The site's small-uppercase-tracked type, shared by every surface that uses it.
+ * The type several surfaces share: a button label, an eyebrow, and body copy.
  *
  * #424 found the eyebrow spelled four ways across twelve files — `tracking-[0.3em]`,
  * `tracking-widest`, `tracking-wider`, `tracking-[0.25em]` — and the split ran
@@ -24,21 +24,36 @@
  * surface. A fourth button or eyebrow must reach for a token, and adding a
  * colour to one is a contrast decision rather than a typo.
  *
- * Boxes stay at the call sites. The buttons genuinely differ in width, padding
- * and shadow, and choosing between them is a design call this change does not
- * make.
+ * Boxes are not type, so they live with the thing that renders them: the three
+ * filled-button boxes are `Button`'s, named `form` / `inline` / `block` (#425).
  */
 
 /**
  * A button label on a filled background.
  *
- * Only the typography. The box — `w-full`, `px-6`, `shadow-sm`, `disabled:opacity-60`
- * — is the caller's, because those differ per button and are not part of the
- * contrast contract.
+ * Only the typography. The box is `Button`'s, because the three boxes are a
+ * design fact rather than a typo — see `Button.tsx`.
  *
- * Every use must sit on `bg-stone-900`; the test fails one that does not.
+ * Every use must sit on `bg-stone-900`; the test fails one that does not. #425
+ * made that structural: the label and its fill are concatenated in one module, so
+ * a label cannot now reach a background it was not measured against.
  */
 export const BUTTON_LABEL = "text-xs uppercase tracking-widest font-medium";
+
+/**
+ * A paragraph of body copy.
+ *
+ * Eleven paragraphs across three files wrote this out, ten of them byte for byte
+ * and the eleventh in a different token order — which renders identically and is
+ * exactly the kind of near-copy that hides a real difference from the next
+ * reader. It is a constant and not a `<Prose>` component because all eleven are
+ * a single `<p>`: what they share is the className, not an element.
+ *
+ * Only one paragraph on the site is deliberately not this one: the photo page's
+ * description is one step lighter in the ink ramp and carries a top margin of its
+ * own, which is why it is not a copy to fold in here.
+ */
+export const BODY_COPY = "text-xs text-stone-600 leading-relaxed font-light";
 
 /**
  * How prominently an eyebrow is set. Both were hand-tuned per site; they are
