@@ -3,17 +3,18 @@ import { ContactForm } from "@/components/ContactForm";
 import { turnstileSiteKey } from "@/infrastructure/config/config";
 import { PageShell } from "@/components/PageShell";
 import { eyebrowClass } from "@/components/type-styles";
+import { pageMetadata } from "@/infrastructure/seo/page-metadata";
 
 // The site key is read from the Worker's runtime environment, so the page must
 // render per request: a static build would bake whatever the CI build happened
 // to have and then serve it from assets, ignoring a per-environment key.
 export const dynamic = "force-dynamic";
 
-export const metadata: Metadata = {
-  title: "Contact — Nessebar Lens",
-  description:
-    "Get in touch with the Nessebar Lens studio about prints, licensing or an order.",
-};
+// The hand-written title this replaced was 22 characters — visible in full in
+// every SERP, and carrying none of the words someone searching for a Nessebar
+// print would type. The canonical is new too: /contact had none, so the same page
+// was reachable at /contact, /contact/ and /Contact as three separate URLs.
+export const metadata: Metadata = pageMetadata("/contact");
 
 export default function ContactPage() {
   return (

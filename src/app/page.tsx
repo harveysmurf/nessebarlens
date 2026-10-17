@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { PhotoTile } from "@/components/PhotoTile";
 import { WebPhoto } from "@/components/WebPhoto";
@@ -6,6 +7,14 @@ import { PHOTO_CATEGORIES, type PhotoCategory } from "@/domain/catalog/photo-sch
 import { featuredPhoto, photosByCategory } from "@/domain/catalog/photos";
 import { eyebrowClass } from "@/components/type-styles";
 import { PageShell } from "@/components/PageShell";
+import { pageMetadata } from "@/infrastructure/seo/page-metadata";
+
+/**
+ * The home page's own title and canonical. The layout carries the same pair for
+ * the fallback case (a page that exports nothing), which is why both read from
+ * `HOME_COPY` rather than one copying the other's string.
+ */
+export const metadata: Metadata = pageMetadata("/");
 
 /** The homepage tile's own copy. The href and the heading are the registry's (#421). */
 const TILE_BLURB: Record<PhotoCategory, string> = {

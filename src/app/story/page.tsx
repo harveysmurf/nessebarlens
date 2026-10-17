@@ -1,3 +1,4 @@
+import type { Metadata } from "next";
 import Link from "next/link";
 import { PhotoTile } from "@/components/PhotoTile";
 import { CATEGORY } from "@/domain/catalog/categories";
@@ -5,6 +6,10 @@ import { PHOTO_CATEGORIES, type PhotoCategory } from "@/domain/catalog/photo-sch
 import { photosByCategory } from "@/domain/catalog/photos";
 import { BODY_COPY, eyebrowClass } from "@/components/type-styles";
 import { PageShell } from "@/components/PageShell";
+import { pageMetadata } from "@/infrastructure/seo/page-metadata";
+
+/** The route's own words, from the one table in `page-metadata.ts`. */
+export const metadata: Metadata = pageMetadata("/story");
 
 /**
  * The /story block's own copy. The href and the heading are the registry's
