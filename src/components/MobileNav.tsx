@@ -12,6 +12,7 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { NAV, isActive } from "./nav";
+import { eyebrowClass } from "@/components/type-styles";
 
 const PANEL_ID = "mobile-nav-panel";
 const DESKTOP_QUERY = "(min-width: 768px)";
@@ -170,7 +171,7 @@ export function MobileNav() {
                   );
                 })}
               </ul>
-              <p className="mt-auto text-[10px] uppercase tracking-[0.3em] text-stone-500">
+              <p className={`mt-auto ${eyebrowClass()}`}>
                 Old Town Nessebar • {CATEGORY_TAGLINE}
               </p>
             </nav>

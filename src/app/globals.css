@@ -1,12 +1,71 @@
 @import "tailwindcss";
 
+/*
+ * Tailwind v4 scans the whole project by default, and two things in this repo
+ * are not source: `tests/`, where class names are quoted in assertions and
+ * explained in comments, and `DEVELOPMENT.md`, a 129KB design document.
+ *
+ * Neither is a page, and both were putting rules in the shipped stylesheet that
+ * no element can reach: the test suite's prose contributed the border step this
+ * change retires, the step its hover variant uses, and three unrelated utilities
+ * that assertions happen to mention; the design document contributed one more,
+ * made out of an ordinary English word in a sentence. `border-palette.test.mts`
+ * lists them, which is why it — not this file — is where they are named.
+ *
+ * It is not cosmetic. The muted text step #423 retired measures 2.38:1 on the
+ * page background, and the retired border step was being emitted with not one use
+ * anywhere in `src/`. A dead rule is cheap, but it is worse than dead: it means
+ * the production stylesheet says a colour is available when the design says it is
+ * not, and a check that greps the built CSS for "is this still here" cannot tell
+ * a live utility from a comment that mentions one.
+ *
+* Excluding the files removes that ability, so **nothing outside `src/` can add
+ * production CSS.** Tests and any other check that needs a stylesheet compile
+ * their own, with `source(none)` and an explicit `@source` — see
+ * `gallery-tiles.test.mts`. `border-palette.test.mts` asserts the three lines
+ * are present and that `src/` compiles to no rule at all for the border step
+ * retired above.
+ *
+ * The residual is stated rather than hidden: `src/` comments are still scanned,
+ * and two utilities are named in prose there, in `PhotoTile`'s and `PhotoCard`'s
+ * history of steps since replaced. Tailwind reads file text, so there is no "code
+ * only" mode, and the honest response is to leave the history legible rather than
+ * mangle it to hide a 40-byte rule. This file is held to the stricter rule: it
+ * names no retired utility at all, which is why the border step retired above is
+ * absent from the built CSS by name rather than described here.
+ */
+@source not "../../tests";
+@source not "../../scripts";
+@source not "../../DEVELOPMENT.md";
+
+/*
+ * Two ramps with a boundary between them, not one palette (#424).
+ *
+ * `gallery-*` is the **surface** ramp: the page, the panels, and the hairlines
+ * that separate them. `stone-*` is Tailwind's own **ink** ramp: text and the
+ * borders that mark state rather than separate surfaces.
+ *
+ * The boundary is the point. It used to be crossed, and the worst crossing was
+ * `SiteFooter`: a warm panel closed by a cool grey top border, two components
+ * from a `SiteHeader` that closed the same column of content with the warm one.
+ * The two steps differ by 15/255 on blue, which is invisible on a body of text
+ * and obvious on a one-pixel divider — so the header and the footer framed the
+ * same page in two different greys, and nothing in the build could see it.
+ * `tests/border-palette.test.mts` now holds the boundary, by role rather than by
+ * hue: a border that separates surfaces belongs here, a border that marks a state
+ * belongs to ink, and every remaining stone border is declared with the reason.
+ *
+ * `--gallery-800` was deleted rather than kept for symmetry: four of five steps
+ * were live, this one had zero uses in `src/`, and a declared colour nothing
+ * reaches is a step the next person counts in a contrast table. The same test
+ * fails if another unused step is ever added.
+ */
 :root {
   --background: #faf8f5;
   --foreground: #181615;
   --gallery-50: #faf8f5;
   --gallery-100: #f3efea;
   --gallery-200: #e6dfd5;
-  --gallery-800: #2a2725;
   --gallery-900: #181615;
 }
 
@@ -16,7 +75,6 @@
   --color-gallery-50: var(--gallery-50);
   --color-gallery-100: var(--gallery-100);
   --color-gallery-200: var(--gallery-200);
-  --color-gallery-800: var(--gallery-800);
   --color-gallery-900: var(--gallery-900);
   --font-sans: var(--font-inter);
   --font-serif: var(--font-cormorant);

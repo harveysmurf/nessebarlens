@@ -55,6 +55,13 @@ const DURATION_CLASS: Record<500 | 700, string> = {
  * value asks the browser for the wrong image silently. `ratio` and `duration`
  * differ too, and are props rather than constants — see the note below.
  *
+ * The non-film backdrop is `bg-gallery-200`, not `bg-stone-200` (#424). It is a
+ * surface, not ink, and it sits directly on the page background; `gallery-200`
+ * and `stone-200` differ by 15/255 on blue, which is why this was a placeholder
+ * the eye read as a different material from the page around it. The film
+ * backdrop stays `bg-stone-900` — that is ink, the deliberate letterbox that
+ * `gallery-tiles.test.mts` pins.
+ *
  * The tile's own `group` is what `group-hover:scale-105` matches. The caller's
  * `<Link>` already carries `group` in two of three cases, so this is a superset
  * of what was there: /story, whose link was the box itself and so had no `group`
@@ -94,7 +101,7 @@ export function PhotoTile({
   return (
     <div
       className={`group ${RATIO_CLASS[ratio]} overflow-hidden rounded-sm ${
-        film ? "bg-stone-900" : "bg-stone-200"
+        film ? "bg-stone-900" : "bg-gallery-200"
       }`}
     >
       {photo ? (

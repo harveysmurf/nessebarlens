@@ -146,7 +146,7 @@ test("the film backdrop is a letterbox, not a frame", () => {
   );
   assert.match(
     source,
-    /film \? "bg-stone-900" : "bg-stone-200"/,
+    /film \? "bg-stone-900" : "bg-gallery-200"/,
     "the tile's backdrop should follow that predicate",
   );
 });
@@ -247,7 +247,7 @@ test("every class the tile can emit survives the Tailwind scanner", async () => 
     "group-hover:scale-105",
     "transition-transform",
     "bg-stone-900",
-    "bg-stone-200",
+    "bg-gallery-200",
     // `group` itself is deliberately absent from this list: it declares nothing,
     // so Tailwind emits no rule for it and instead reaches it through
     // `:where(.group)` inside the `group-hover:` rule above. If that rule
@@ -273,7 +273,7 @@ test("no tile utility is built by interpolation", () => {
   //
   // Not a general "no dynamic classes" check. This repo legitimately interpolates
   // whole alternatives (`${isFilmPhoto(photo) ? "bg-stone-900" :
-  // "bg-stone-200"}`) where the class is chosen rather than spelled. The
+  // "bg-gallery-200"}`) where the class is chosen rather than spelled. The
   // distinction is whether the class exists before or after the interpolation.
   //
   // Read from the AST, not the text, because this component's own comment quotes

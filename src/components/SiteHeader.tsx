@@ -5,6 +5,7 @@ import { usePathname } from "next/navigation";
 import { CATEGORY_TAGLINE } from "@/domain/catalog/categories";
 import { MobileNav } from "./MobileNav";
 import { NAV, isActive } from "./nav";
+import { eyebrowClass } from "@/components/type-styles";
 
 export function SiteHeader() {
   const pathname = usePathname();
@@ -16,7 +17,7 @@ export function SiteHeader() {
           <span className="font-serif text-2xl font-light tracking-tight block whitespace-nowrap text-gallery-900">
             NESSEBAR LENS
           </span>
-          <span className="hidden sm:block text-[9px] uppercase tracking-[0.3em] text-stone-500 font-medium">
+          <span className={`hidden sm:block ${eyebrowClass('signature')}`}>
             Old Town Nessebar • {CATEGORY_TAGLINE}
           </span>
         </Link>

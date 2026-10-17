@@ -4,6 +4,7 @@ import { WebPhoto } from "@/components/WebPhoto";
 import { CATEGORY } from "@/domain/catalog/categories";
 import { PHOTO_CATEGORIES, type PhotoCategory } from "@/domain/catalog/photo-schema";
 import { featuredPhoto, photosByCategory } from "@/domain/catalog/photos";
+import { eyebrowClass } from "@/components/type-styles";
 
 /** The homepage tile's own copy. The href and the heading are the registry's (#421). */
 const TILE_BLURB: Record<PhotoCategory, string> = {
@@ -37,7 +38,7 @@ export default function HomePage() {
       <div className="max-w-7xl mx-auto px-6 pt-10 pb-16 space-y-16">
         <Link
           href={`/prints/${hero.slug}`}
-          className="relative aspect-[21/9] rounded-sm overflow-hidden bg-stone-200 group block"
+          className="relative aspect-[21/9] rounded-sm overflow-hidden bg-gallery-200 group block"
         >
           <WebPhoto
             photo={hero}
@@ -48,7 +49,7 @@ export default function HomePage() {
           />
           <div className="absolute inset-0 bg-gradient-to-t from-gallery-900/80 via-transparent to-transparent flex items-end p-8 sm:p-12">
             <div className="text-white space-y-1">
-              <span className="text-[10px] uppercase tracking-[0.3em] text-amber-200 font-medium">
+              <span className={eyebrowClass('accent')}>
                 Featured Fine Art Print
               </span>
               <h1 className="font-serif text-3xl sm:text-5xl font-light">
@@ -86,7 +87,7 @@ export default function HomePage() {
             return (
               <Link key={cat.href} href={cat.href} className="group space-y-3 block">
                 <PhotoTile photo={photo} sizes="(max-width: 768px) 100vw, 33vw" />
-                <div className="border-b border-stone-200 pb-3 flex justify-between items-baseline gap-3">
+                <div className="border-b border-gallery-200 pb-3 flex justify-between items-baseline gap-3">
                   <div>
                     <h3 className="font-serif text-xl font-normal">
                       {cat.n}. {cat.title}

@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BUTTON_LABEL, eyebrowClass } from "@/components/type-styles";
 
 export default async function CheckoutCancelPage({
   searchParams,
@@ -10,7 +11,7 @@ export default async function CheckoutCancelPage({
 
   return (
     <section className="fade-in max-w-lg mx-auto px-6 py-20 text-center space-y-6">
-      <span className="text-[10px] uppercase tracking-[0.3em] text-stone-500 font-medium">
+      <span className={eyebrowClass()}>
         Checkout cancelled
       </span>
       <h1 className="font-serif text-3xl font-light text-stone-900">
@@ -22,7 +23,7 @@ export default async function CheckoutCancelPage({
       </p>
       <Link
         href={backHref}
-        className="inline-block bg-stone-900 hover:bg-stone-800 text-white font-medium py-3 px-6 rounded text-xs uppercase tracking-widest transition-all"
+        className={`${BUTTON_LABEL} inline-block bg-stone-900 hover:bg-stone-800 text-white py-3 px-6 rounded transition-all`}
       >
         {slug ? "Return to print" : "Back to gallery"}
       </Link>

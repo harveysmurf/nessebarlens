@@ -123,7 +123,7 @@ export function PrintDetail({
         )}
       </div>
 
-      <div className="lg:col-span-5 bg-white p-8 rounded-sm border border-stone-200/80 shadow-sm space-y-6">
+      <div className="lg:col-span-5 bg-white p-8 rounded-sm border border-gallery-200/80 shadow-sm space-y-6">
         {children}
         <PrintConfigurator
           photoSlug={photoSlug}
