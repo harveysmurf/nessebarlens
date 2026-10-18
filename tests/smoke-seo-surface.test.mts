@@ -205,7 +205,7 @@ async function withStub(
       defect === "no-beacon"
         ? ""
         : '<script src="https://static.cloudflareinsights.com/beacon.min.js" ' +
-          `data-cf-beacon='{"token":"stub"}'></script>`;
+          `data-cf-beacon='{"token":"stub","send":{"to":"https://cloudflareinsights.com/cdn-cgi/rum"}}'></script>`;
     return send(200, `<!doctype html><html><body>${beacon}</body></html>`, withCsp({}));
   });
 
@@ -265,14 +265,17 @@ function run(baseUrl: string, options: RunOptions = {}): Promise<{ code: number 
 }
 
 test("the healthy stub passes, so a failure below is the defect and not the harness", async () => {
+  // A deployed origin, not the stub's localhost: a local build renders no
+  // beacon and skips those checks, and this case exists to prove the harness
+  // runs the full battery rather than to re-test the skip.
   await withStub(undefined, async (baseUrl) => {
-    const { code, out } = await run(baseUrl);
+    const { code, out } = await run(baseUrl, { expected: PROD, forbidden: OTHER_ORIGIN });
     assert.equal(code, 0, `the stub is meant to be healthy:\n${out}`);
     // The cross-origin check only runs when the two hosts are known, so passing
     // SMOKE_FORBIDDEN_ORIGIN has to actually reach it rather than be skipped.
     assert.doesNotMatch(out, /^smoke: SKIP/m);
     assert.match(out, /smoke: \d+ passed, 0 failed/);
-  });
+  }, PROD);
 });
 
 const DEFECTS = Object.keys(DEFECT_LABEL) as Defect[];
@@ -280,7 +283,7 @@ const DEFECTS = Object.keys(DEFECT_LABEL) as Defect[];
 for (const defect of DEFECTS) {
   test(`smoke.sh fails when the build has: ${defect}`, async () => {
     await withStub(defect, async (baseUrl) => {
-      const { code, out } = await run(baseUrl);
+      const { code, out } = await run(baseUrl, { expected: PROD, forbidden: OTHER_ORIGIN });
       const label = DEFECT_LABEL[defect];
 
       assert.notEqual(
@@ -295,9 +298,22 @@ for (const defect of DEFECTS) {
         failed.some((line) => line.includes(label)),
         `expected the failure to name "${label}", got:\n${failed.join("\n") || out}`,
       );
-    });
+    }, PROD);
   });
 }
+
+test("a local origin skips the beacon checks rather than demanding the flood back", async () => {
+  // #443: a build configured for localhost renders no beacon, because dev and
+  // test runs were recording ~1,200 pageviews/day in production Web Analytics.
+  // The CI Worker battery is exactly that build, so it must skip these two
+  // checks and still pass everything else.
+  await withStub(undefined, async (baseUrl) => {
+    const { code, out } = await run(baseUrl, { forbidden: null });
+    assert.equal(code, 0, out);
+    assert.match(out, /^smoke: SKIP {2}beacon checks \(local origin /m);
+    assert.doesNotMatch(out, /^smoke: FAIL/m);
+  });
+});
 
 test("an origin with no counterpart skips the cross-origin check rather than inventing one", async () => {
   // A preview version URL has no alias and no "other environment" to be wrong

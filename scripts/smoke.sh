@@ -316,13 +316,31 @@ check_body "GET /robots.txt points at the sitemap" 200 "Sitemap:" "$BASE/robots.
 # The site is an OpenNext Worker, so Cloudflare's edge beacon injection does not
 # fire and the manual one in AnalyticsBeacon.tsx is the only pageview source. Its
 # absence is invisible in every other check here: the pages still render.
-check_body "GET / carries the Web Analytics beacon" 200 "static.cloudflareinsights.com/beacon.min.js" \
-  "$BASE/"
-# The beacon is loaded from one host and reports to another. A CSP that named
-# only the script origin blocks every pageview at runtime, which no status code
-# in this script would ever show.
-check_csp_directive "GET / CSP allows the beacon to report" 200 "connect-src" \
-  "https://cloudflareinsights.com" "$BASE/"
+#
+# A build whose NEXT_PUBLIC_SITE_URL is local renders no beacon on purpose, so
+# dev and test traffic never reaches production Web Analytics (#443): this is
+# the CI battery's Worker run and a local preview. Asserting the beacon there
+# would demand the flood back, so the check reports itself skipped instead of
+# pretending either way.
+case "$EXPECTED_ORIGIN" in
+  http://localhost|http://localhost:*|http://127.0.0.1|http://127.0.0.1:*)
+    echo "smoke: SKIP  beacon checks (local origin $EXPECTED_ORIGIN renders none)"
+    ;;
+  *)
+    check_body "GET / carries the Web Analytics beacon" 200 "static.cloudflareinsights.com/beacon.min.js" \
+      "$BASE/"
+    # The endpoint the snippet pins, not just the script: the beacon posts to
+    # /cdn-cgi/rum by default, this Worker 404s that path, and the beacon
+    # swallows the error — the pageview is lost with every other check green.
+    check_body "GET / beacon reports to the apex RUM endpoint" 200 \
+      "cloudflareinsights.com/cdn-cgi/rum" "$BASE/"
+    # The beacon is loaded from one host and reports to another. A CSP that named
+    # only the script origin blocks every pageview at runtime, which no status
+    # code in this script would ever show.
+    check_csp_directive "GET / CSP allows the beacon to report" 200 "connect-src" \
+      "https://cloudflareinsights.com" "$BASE/"
+    ;;
+esac
 
 echo "smoke: ${pass} passed, ${fail} failed"
 ((fail == 0))
