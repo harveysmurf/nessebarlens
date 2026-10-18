@@ -26,21 +26,32 @@
  *      the complete OG/Twitter block on every page, because Next replaces
  *      `openGraph` wholesale when a page exports it.
  *
- * Between them, the SERP windows hold each indexed route's title to 50-65
- * characters and its description to 100-160. Both are guards on the copy that
- * lives in `PAGE_COPY`, which is a proposal Simo may rewrite, so the value of
- * the assertions is entirely in what happens to the rewrite: without a cap, a
- * description that grows past the snippet limit is silently truncated by Google
- * with nothing here to notice.
+ * Between them, two SERP windows hold that copy: `TITLE_MIN`/`TITLE_MAX` for a
+ * title, `DESCRIPTION_MIN`/`DESCRIPTION_MAX` for a description, applied over
+ * `INDEXABLE_ROUTES`. `PAGE_COPY` is a proposal Simo may rewrite, so the value
+ * of the assertions is entirely in what happens to the rewrite — past the
+ * description cap, Google truncates the tail to an ellipsis with nothing here to
+ * notice.
  *
- * A guard written to measure a guard must read the exported predicate, not parse
- * the source. These windows were once "verified" by a scratch script that
- * regex-matched the literal rows of `PAGE_COPY`, and it silently skipped `/` —
- * that row is `"/": HOME_COPY`, a reference rather than a literal. The figures it
- * reported were plausible and one route short, which is how a floor came to be
- * set above the homepage's own description. Ask `INDEXABLE_ROUTES` and
- * `PAGE_COPY` what they hold, as the tests here do, and delete the script: a
- * hand-rolled measurer left on disk is how the wrong number comes back.
+ * Two rules about how these gates are written and checked, both paid for:
+ *
+ *   - **Name a constant, never its value.** Prose that restates a number drifts
+ *     the moment the constant moves, and a diff review cannot catch it: the
+ *     changed line is the constant, while the stale sentence sits above it,
+ *     unchanged and unremarked. This header shipped `120-160` for a floor that
+ *     was already 100, and the reviewer read the diff and missed it too. Hence
+ *     the named ranges above — read them from the constants. There is no test
+ *     for this and there should not be: a test that parses comments is the
+ *     fragile-measurement mistake below, wearing a different hat.
+ *
+ *   - **Read the exported predicate, do not parse the source.** These windows
+ *     were once "verified" by a scratch script that regex-matched the literal
+ *     rows of `PAGE_COPY`, and it silently skipped `/` — that row is
+ *     `"/": HOME_COPY`, a reference, not a literal. Its figures were plausible
+ *     and one route short, which is how a floor came to be set above the
+ *     homepage's own description. Ask `INDEXABLE_ROUTES` and `PAGE_COPY` what
+ *     they hold, as the tests here do, and delete the script: a hand-rolled
+ *     measurer left on disk is how the wrong number comes back.
  *
  * The residual is stated rather than hidden: property 1 walks the filesystem for
  * `page.tsx` files, and separately reads each page's source to confirm it
@@ -82,19 +93,20 @@ const TITLE_MAX = 65;
 /**
  * The same window for a description, which Google truncates later and harder.
  *
- * The cap, 160, is the real limit: the snippet ends around 155-160 characters,
- * and three indexed descriptions already sit at 145-153, so one more rewrite word
- * is enough to lose the tail to an ellipsis.
+ * The cap is the real limit, and the limit is Google's rather than ours: the
+ * snippet ends somewhere around 155-160 characters, and three indexed
+ * descriptions already sit at 145-153, so one more rewrite word is enough to
+ * lose the tail to an ellipsis.
  *
- * The floor is stub detection, not a search-term argument, and it is 100 because
- * that is where the real copy begins: the shortest indexed description is `/` at
- * 108, so the floor has 8 characters of headroom. It was 120 once, picked by
+ * The floor is stub detection, not a search-term argument, and it sits where the
+ * real copy begins: the shortest indexed description is `/` at 108, which leaves
+ * the floor a few characters of headroom. The floor was higher once, picked by
  * analogy with the title window rather than measured against this table, and it
  * failed `/` — the most-read string on the site.
  *
- * Do not raise it back to 120 for symmetry with the titles. A check that
- * manufactures copy work is making a product decision, and lengthening `/` to
- * clear a floor is Simo's call, not a side effect of a constant.
+ * Do not raise it back for symmetry with the titles. A check that manufactures
+ * copy work is making a product decision, and lengthening `/` to clear a floor is
+ * Simo's call, not a side effect of a constant.
  */
 const DESCRIPTION_MIN = 100;
 const DESCRIPTION_MAX = 160;

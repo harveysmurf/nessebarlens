@@ -45,6 +45,23 @@ long version lives; it is the thing to read before touching the theme.
   default build passed over a mutation that should have failed it. A guard that
   can pass when it should fail is worse than no guard; prefer a check you can
   demonstrate failing by mutation.
+- **Name a constant, never restate its value in prose.** A sentence that writes
+  `50-65` or `100-160` drifts the moment the constant moves, and a diff review
+  cannot catch it: the changed line is the constant, while the stale sentence
+  sits above it, unchanged and unremarked. It happened here — a test header
+  claimed `120-160` for a floor already at 100, and the reviewer read the diff
+  and missed it too. Name `TITLE_MIN`/`TITLE_MAX` and let the range be read from
+  the code; then there is nothing to drift. No test for this, and there should
+  not be one: a test that parses comments is the fragile-measurement mistake
+  above, wearing a different hat.
+- **A measurement reads the exported predicate, not the source it came from.**
+  The SERP windows were checked once by a scratch script that regex-matched the
+  literal rows of `PAGE_COPY` and skipped `/` without error, because that row is
+  `"/": HOME_COPY` — a reference, not a literal. Its numbers were plausible and
+  one route short, and a floor got set above the homepage's own description on
+  the strength of them. Anything that measures a guard imports the module and
+  asks it; a hand-rolled second measurer left on disk is how the wrong number
+  comes back.
 
 # Analytics: two sources, one number you act on
 
