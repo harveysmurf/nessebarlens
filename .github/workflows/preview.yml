@@ -268,6 +268,12 @@ jobs:
         id: smoke
         env:
           SMOKE_URL: ${{ steps.deploy.outputs.url }}
+          # The version URL is not the origin the build asserts: a preview is
+          # uploaded with --env staging, so /llms.txt and /sitemap.xml name
+          # staging.nessebarlens.com whichever version URL is requested. Read the
+          # same secret the upload used rather than naming the host here, so the
+          # two cannot drift.
+          SMOKE_EXPECTED_ORIGIN: ${{ secrets.NEXT_PUBLIC_SITE_URL }}
         run: |
           set -uo pipefail
           # tee is last in the pipe, so capture the status explicitly rather
