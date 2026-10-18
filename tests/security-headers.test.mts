@@ -20,6 +20,10 @@ import path from "node:path";
 import test from "node:test";
 
 import {
+  BEACON_ENDPOINT,
+  BEACON_SCRIPT,
+} from "../src/components/AnalyticsBeacon.tsx";
+import {
   ANALYTICS_ORIGIN,
   contentSecurityPolicy,
   originOf,
@@ -92,21 +96,21 @@ test("the analytics beacon may load its script and report to where it reports", 
 });
 
 test("the report host is the one the shipped beacon actually calls", () => {
-  // Ties the constant to the component that ships it, so changing the beacon's
-  // src without widening the policy — or widening the policy without needing it
-  // — is a failing test rather than a silent drop of the analytics.
-  const beacon = fs.readFileSync(
-    path.join(import.meta.dirname, "..", "src", "components", "AnalyticsBeacon.tsx"),
-    "utf8",
-  );
-  const src = /src="(https:\/\/[^"]+)"/.exec(beacon)?.[1];
-  assert.ok(src, "AnalyticsBeacon.tsx no longer carries an absolute script src");
-
-  const origin = new URL(src).origin;
+  // Ties the constants to the component that ships them, so changing the
+  // beacon's script or report URL without widening the policy — or widening
+  // the policy without needing it — is a failing test rather than a silent
+  // drop of the analytics. Imported rather than read as source: the component
+  // holds these as named constants, and a regex over the file would break the
+  // moment they moved without proving anything the import does not.
   assert.equal(
-    origin,
+    new URL(BEACON_SCRIPT).origin,
     ANALYTICS_ORIGIN,
-    `the beacon loads from ${origin}, but script-src allows ${ANALYTICS_ORIGIN}`,
+    `the beacon loads from ${BEACON_SCRIPT}, but script-src allows ${ANALYTICS_ORIGIN}`,
+  );
+  assert.equal(
+    new URL(BEACON_ENDPOINT).origin,
+    RUM_ORIGIN,
+    `the beacon reports to ${BEACON_ENDPOINT}, but connect-src allows ${RUM_ORIGIN}`,
   );
   assert.doesNotMatch(
     directive("connect-src"),
