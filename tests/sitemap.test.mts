@@ -21,9 +21,22 @@ import { PHOTOS } from "../src/domain/catalog/photos.ts";
 import { INDEXABLE_ROUTES } from "../src/infrastructure/seo/page-metadata.ts";
 import robots from "../src/app/robots.ts";
 import sitemap from "../src/app/sitemap.ts";
+import { GET as llmsRoute } from "../src/app/llms.txt/route.ts";
 
 const root = path.join(import.meta.dirname, "..");
 const SITE = "https://nessebarlens.com";
+
+/** The body llms.txt serves, with the site URL pinned the way the site pins it. */
+async function llmsText(siteUrl: string = SITE): Promise<string> {
+  const saved = process.env.NEXT_PUBLIC_SITE_URL;
+  process.env.NEXT_PUBLIC_SITE_URL = siteUrl;
+  try {
+    return await llmsRoute().text();
+  } finally {
+    if (saved === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = saved;
+  }
+}
 
 /** sitemap() reads process.env through the same config reader as everything else. */
 function withSiteUrl(): MetadataRouteSitemap {
@@ -166,18 +179,58 @@ test("the sitemap and robots.txt agree on the origin", () => {
   }
 });
 
-test("llms.txt lists the public pages and points at the sitemap", () => {
-  const llms = fs.readFileSync(path.join(root, "public", "llms.txt"), "utf8");
+test("llms.txt lists the public pages and points at the sitemap", async () => {
+  const body = await llmsText();
 
-  assert.match(llms, /sitemap\.xml/, "llms.txt must point at the machine-readable index");
+  assert.match(body, /sitemap\.xml/, "llms.txt must point at the machine-readable index");
   for (const route of INDEXABLE_ROUTES) {
     if (route === "/") continue;
     assert.ok(
-      llms.includes(`https://nessebarlens.com${route}`),
+      body.includes(`https://nessebarlens.com${route}`),
       `llms.txt does not mention ${route}`,
     );
   }
   // The per-photo pages change with every publish, so llms.txt points at the
   // sitemap instead of carrying a second list that goes stale.
-  assert.doesNotMatch(llms, /\/prints\/[a-z0-9-]{20,}/, "llms.txt must not duplicate the print list");
+  assert.doesNotMatch(body, /\/prints\/[a-z0-9-]{20,}/, "llms.txt must not duplicate the print list");
+});
+
+test("llms.txt carries the configured origin, so a staging build ships staging URLs", async () => {
+  const body = await llmsText("https://staging.example.com");
+  // Same reason the sitemap and robots assertions above exist: a preview that
+  // advertises the production origin tells a crawler the preview is the site.
+  assert.ok(body.includes("https://staging.example.com/"), body.slice(0, 200));
+  assert.doesNotMatch(
+    body,
+    /https:\/\/nessebarlens\.com/,
+    "a staging build of llms.txt is advertising the production origin",
+  );
+});
+
+test("no file in public/ hardcodes a site origin", () => {
+  // `public/` is copied into `.open-next` verbatim — nothing in the build
+  // rewrites it. A site origin written into one of those files therefore ships
+  // to *both* environments, and the only thing that notices is
+  // `scripts/assert-artifact-origin.sh`, after a full build, in CI.
+  //
+  // llms.txt did exactly this (#438): seven references to the production origin
+  // in a file the staging deploy refused. A static file in `public/` may describe
+  // the site's *content*; it may not name the site's address.
+  const dir = path.join(root, "public");
+  const offenders: string[] = [];
+  for (const name of fs.readdirSync(dir)) {
+    const full = path.join(dir, name);
+    if (!fs.statSync(full).isFile()) continue;
+    if (name.endsWith(".jpg") || name.endsWith(".png") || name.endsWith(".ico")) continue;
+
+    const text = fs.readFileSync(full, "utf8");
+    if (/https:\/\/(staging\.)?nessebarlens\.com/.test(text)) offenders.push(name);
+  }
+
+  assert.deepEqual(
+    offenders,
+    [],
+    "these files in public/ name a site origin and will ship it to both environments. " +
+      "Build the URL from configuredSiteUrl() in a route instead.",
+  );
 });
