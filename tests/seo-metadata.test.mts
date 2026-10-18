@@ -27,11 +27,20 @@
  *      `openGraph` wholesale when a page exports it.
  *
  * Between them, the SERP windows hold each indexed route's title to 50-65
- * characters and its description to 120-160. Both are guards on the copy that
+ * characters and its description to 100-160. Both are guards on the copy that
  * lives in `PAGE_COPY`, which is a proposal Simo may rewrite, so the value of
  * the assertions is entirely in what happens to the rewrite: without a cap, a
  * description that grows past the snippet limit is silently truncated by Google
  * with nothing here to notice.
+ *
+ * A guard written to measure a guard must read the exported predicate, not parse
+ * the source. These windows were once "verified" by a scratch script that
+ * regex-matched the literal rows of `PAGE_COPY`, and it silently skipped `/` —
+ * that row is `"/": HOME_COPY`, a reference rather than a literal. The figures it
+ * reported were plausible and one route short, which is how a floor came to be
+ * set above the homepage's own description. Ask `INDEXABLE_ROUTES` and
+ * `PAGE_COPY` what they hold, as the tests here do, and delete the script: a
+ * hand-rolled measurer left on disk is how the wrong number comes back.
  *
  * The residual is stated rather than hidden: property 1 walks the filesystem for
  * `page.tsx` files, and separately reads each page's source to confirm it
