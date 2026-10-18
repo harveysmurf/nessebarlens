@@ -258,7 +258,14 @@ jobs:
             --message="staging-$COMMIT_SHA"
           rm -f staging-secrets.json
 
+      # The smoke asserts the *served* SEO surface, so it needs the same two
+      # origins the artifact assertion above just used: `assert-artifact-origin.sh`
+      # reads build bytes and never requests a route, which is how a build that
+      # lost /llms.txt, the sitemap and the beacon passed every gate on #436/#437.
       - name: Smoke test staging
+        env:
+          SMOKE_EXPECTED_ORIGIN: ${{ env.EXPECTED_ORIGIN }}
+          SMOKE_FORBIDDEN_ORIGIN: ${{ env.FORBIDDEN_ORIGIN }}
         run: bash scripts/smoke.sh "$EXPECTED_ORIGIN"
 
   # `needs: staging` is the whole point of this file. Production waits for a
@@ -423,6 +430,11 @@ jobs:
         run: bash scripts/smoke.sh "$EXPECTED_ORIGIN"
         env:
           SMOKE_ALLOW_PRODUCTION: "1"
+          # Same two origins the artifact assertion used, and the same reason:
+          # a production site serving staging canonicals renders every page
+          # perfectly, which is exactly why nothing else here would notice.
+          SMOKE_EXPECTED_ORIGIN: ${{ env.EXPECTED_ORIGIN }}
+          SMOKE_FORBIDDEN_ORIGIN: ${{ env.FORBIDDEN_ORIGIN }}
 
       # `<id>@100` is the version-spec shorthand: deploy that version with all
       # of the traffic. Without the percentage the spec is ambiguous and wrangler
