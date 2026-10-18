@@ -4,11 +4,20 @@ import { seoOrigin } from "@/infrastructure/seo/page-metadata";
 /**
  * Cloudflare Web Analytics beacon (#119).
  *
- * The manual snippet, not edge injection: this site is served by an OpenNext
- * Worker (`x-opennext: 1`), and Cloudflare does not inject the beacon into
- * Worker-generated HTML — verified on apex and www with zero matches for
- * `cloudflareinsights`. `auto_install` is off so there is no double-count if
- * that ever changes.
+ * The manual snippet, not edge injection — and the reason is configuration, not
+ * the Worker. Cloudflare's automatic injection **does** reach this site's HTML:
+ * it fires only for browser-like user agents, so a `curl` of `/` shows nothing
+ * and "zero matches for `cloudflareinsights`" was a measurement of curl, not of
+ * the site. With the Web Analytics site set to manual installation and the zone's
+ * RUM setting off, nothing injects and this is the only beacon.
+ *
+ * That is a runtime invariant, not a preference. With both on, the injected
+ * snippet seeded `window.__cfBeacon` and this one merged into it, which dropped
+ * `send.to`: the endpoint resolved to null and zero pageviews were sent while
+ * every status check stayed green. So `scripts/smoke.sh` fetches `/` with a
+ * browser-like UA and fails the release when the body carries more than one
+ * beacon — the count, not the presence, because a presence check is satisfied by
+ * the injector alone.
  *
  * `send.to` is not optional here. Without it the beacon posts to the relative
  * `/cdn-cgi/rum`, which this Worker answers with a 404 (plain Cloudflare error
@@ -26,7 +35,10 @@ import { seoOrigin } from "@/infrastructure/seo/page-metadata";
  *
  * The token is public (it ships in every page's HTML) and belongs in source.
  * `afterInteractive` keeps the script off the render-blocking path, so it
- * cannot move the LCP candidate.
+ * cannot move the LCP candidate. It is also why the served HTML carries a
+ * preload link and an RSC payload entry for this src but no `<script>` tag:
+ * Next creates the element at runtime, and the smoke's injection check reads
+ * that absence as its signal.
  */
 /** The script origin. Exported so the CSP test asserts the same string. */
 export const BEACON_SCRIPT =
