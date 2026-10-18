@@ -95,6 +95,17 @@ if [[ -z "$VALID_SLUG" ]]; then
 fi
 BAD_SLUG="zzz-not-a-real-photo-slug"
 
+# A browser-like request. Cloudflare's automatic Web Analytics injection only
+# fires for browser-like user agents, so every beacon check in this file used to
+# read a body that curl had fetched: the injected snippet was never in it. That is
+# why "no matches for cloudflareinsights" was believed while a second beacon was
+# serving every visitor, and a guard that cannot see the thing it guards is the
+# fragile-measurement mistake in a different costume.
+BROWSER_HEADERS=(
+  -H 'User-Agent: Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36'
+  -H 'Accept: text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8'
+)
+
 BODY="$(mktemp)"
 HEADERS="$(mktemp)"
 trap 'rm -f "$BODY" "$HEADERS"' EXIT
@@ -258,6 +269,53 @@ check_csp_directive() {
   fi
 }
 
+# check_one_beacon <name> <expected-status> <curl args...>
+# Exactly one beacon in the body, and no script tag loading one.
+#
+# Two assertions because no single substring can carry it. `beacon.min.js`
+# occurs TWICE for one correct beacon — Next emits a preload link and an RSC
+# payload entry for the same `afterInteractive` script — so counting the src
+# over-counts by one per beacon, and "exactly one src" would fail the healthy
+# build on every deploy. `data-cf-beacon` occurs once per instance, whoever
+# wrote it. And because our own beacon is `afterInteractive`, Next never writes
+# a literal `<script>` tag for it: any beacon script tag in the served HTML was
+# put there by something else. The second assertion catches an injector that
+# writes only a script tag, which the first cannot see.
+check_one_beacon() {
+  local name="$1" expected="$2"
+  shift 2
+  local instances scripts
+  if ! check "$name" "$expected" "$@"; then
+    return 1
+  fi
+  instances="$(grep -o 'data-cf-beacon' "$BODY" | wc -l | tr -d '[:space:]')"
+  scripts="$(grep -oE '<script[^>]*beacon\.min\.js' "$BODY" | wc -l | tr -d '[:space:]')"
+
+  if [[ "$instances" -lt 1 ]]; then
+    echo "smoke: FAIL  ${name} body carries no beacon at all, expected 1"
+    fail=$((fail + 1))
+    return 1
+  fi
+  if [[ "$instances" -ne 1 ]]; then
+    # Two beacons collide: the first one to run seeds window.__cfBeacon and the
+    # second merges into it, which drops `send.to` and sends nothing at all.
+    # Every other check in this file stays green through that, so it has to be
+    # caught here or not at all.
+    echo "smoke: FAIL  ${name} body carries ${instances} beacons, expected 1"
+    grep -oE '.{0,90}data-cf-beacon.{0,150}' "$BODY" | head -4 | cut -c1-200 | sed -e 's/^/smoke:        /'
+    fail=$((fail + 1))
+    return 1
+  fi
+  if [[ "$scripts" -ne 0 ]]; then
+    echo "smoke: FAIL  ${name} body loads the beacon from ${scripts} script tag(s); this site's own beacon is afterInteractive and renders none"
+    grep -oE '<script[^>]*beacon\.min\.js[^>]*>' "$BODY" | head -3 | cut -c1-200 | sed -e 's/^/smoke:        /'
+    fail=$((fail + 1))
+    return 1
+  fi
+  echo "smoke: PASS  ${name} body carries exactly one beacon and no injected script tag"
+  pass=$((pass + 1))
+}
+
 echo "smoke: base=$BASE slug=$VALID_SLUG attempts=$ATTEMPTS"
 echo "smoke: canonical=$EXPECTED_ORIGIN forbidden=${FORBIDDEN_ORIGIN:-<none>}"
 
@@ -313,32 +371,42 @@ check_body "GET /sitemap.xml names this origin" 200 "<loc>$EXPECTED_ORIGIN/" "$B
 check_header "GET /sitemap.xml content type" 200 "content-type: application/xml" "$BASE/sitemap.xml"
 check_body "GET /robots.txt points at the sitemap" 200 "Sitemap:" "$BASE/robots.txt"
 
-# The site is an OpenNext Worker, so Cloudflare's edge beacon injection does not
-# fire and the manual one in AnalyticsBeacon.tsx is the only pageview source. Its
-# absence is invisible in every other check here: the pages still render.
+# This site's Web Analytics is the manual beacon in AnalyticsBeacon.tsx, and the
+# reason it is the *only* one is configuration, not the Worker: Cloudflare's
+# automatic injection does reach an OpenNext Worker's HTML. It fires only for
+# browser-like user agents, so curl never saw it — which is how a second beacon
+# served every visitor for a day while this script reported a clean HTML.
+#
+# When both are present the first one to run seeds `window.__cfBeacon` and ours
+# merges into it, dropping `send.to`: the endpoint resolves to null, zero
+# pageviews are sent, and every status code in this file is still 200. So the
+# checks below run on a browser-like request and assert the count, not the
+# presence, and they fail the release if injection is ever re-enabled. A config
+# assertion would only prove intent, would need account WA credentials in CI,
+# and would miss an injector nobody has heard of.
 #
 # A build whose NEXT_PUBLIC_SITE_URL is local renders no beacon on purpose, so
 # dev and test traffic never reaches production Web Analytics (#443): this is
 # the CI battery's Worker run and a local preview. Asserting the beacon there
-# would demand the flood back, so the check reports itself skipped instead of
+# would demand the flood back, so the checks report themselves skipped instead of
 # pretending either way.
 case "$EXPECTED_ORIGIN" in
   http://localhost|http://localhost:*|http://127.0.0.1|http://127.0.0.1:*)
     echo "smoke: SKIP  beacon checks (local origin $EXPECTED_ORIGIN renders none)"
     ;;
   *)
-    check_body "GET / carries the Web Analytics beacon" 200 "static.cloudflareinsights.com/beacon.min.js" \
-      "$BASE/"
+    check_one_beacon "GET / serves exactly one Web Analytics beacon" 200 \
+      "${BROWSER_HEADERS[@]}" "$BASE/"
     # The endpoint the snippet pins, not just the script: the beacon posts to
     # /cdn-cgi/rum by default, this Worker 404s that path, and the beacon
     # swallows the error — the pageview is lost with every other check green.
     check_body "GET / beacon reports to the apex RUM endpoint" 200 \
-      "cloudflareinsights.com/cdn-cgi/rum" "$BASE/"
+      "cloudflareinsights.com/cdn-cgi/rum" "${BROWSER_HEADERS[@]}" "$BASE/"
     # The beacon is loaded from one host and reports to another. A CSP that named
     # only the script origin blocks every pageview at runtime, which no status
     # code in this script would ever show.
     check_csp_directive "GET / CSP allows the beacon to report" 200 "connect-src" \
-      "https://cloudflareinsights.com" "$BASE/"
+      "https://cloudflareinsights.com" "${BROWSER_HEADERS[@]}" "$BASE/"
     ;;
 esac
 

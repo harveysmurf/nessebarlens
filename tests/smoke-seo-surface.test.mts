@@ -71,6 +71,24 @@ type Defect =
   | "no-sitemap-line"
   /** #434's beacon absent, though every page still renders. */
   | "no-beacon"
+  /**
+   * Cloudflare's automatic injection, for a browser-like agent only: a second
+   * beacon carrying the token. The collision drops `send.to` and sends nothing.
+   */
+  | "injected-beacon"
+  /**
+   * An injector that writes only a script tag. The count assertion cannot see
+   * it — there is still exactly one `data-cf-beacon` — so the script-tag
+   * assertion is the only thing standing between this and a silent zero.
+   */
+  | "injected-script-only"
+  /**
+   * An injector that rewrites the payload instead of adding a script tag: a
+   * second `afterInteractive` entry and no `<script>` element. Nothing but the
+   * count can see this, which is why the two assertions are separate tests
+   * rather than one convenient count.
+   */
+  | "injected-payload"
   /** No CSP header at all. */
   | "no-csp"
   /** The RUM origin in `script-src` only — the mistake security-headers.ts documents. */
@@ -84,10 +102,45 @@ const DEFECT_LABEL: Record<Defect, string> = {
   "llms-as-html": "GET /llms.txt content type",
   "sitemap-as-text": "GET /sitemap.xml content type",
   "no-sitemap-line": "GET /robots.txt points at the sitemap",
-  "no-beacon": "GET / carries the Web Analytics beacon",
+  "no-beacon": "GET / serves exactly one Web Analytics beacon",
+  "injected-beacon": "GET / serves exactly one Web Analytics beacon",
+  "injected-script-only": "GET / serves exactly one Web Analytics beacon",
+  "injected-payload": "GET / serves exactly one Web Analytics beacon",
   "no-csp": "GET / CSP allows the beacon to report",
   "rum-in-script-src": "GET / CSP allows the beacon to report",
 };
+
+/**
+ * How Next actually serves an `afterInteractive` script: a preload link and an
+ * RSC payload entry for the same src, and **no literal `<script>` tag**, because
+ * the element is created at runtime. Matched against production HTML — a stub
+ * that writes a script tag would make the injection assertion unfalsifiable,
+ * since every healthy build would already look injected.
+ */
+const BEACON_SRC = "https://static.cloudflareinsights.com/beacon.min.js";
+const BEACON_PRELOAD = `<link rel="preload" href="${BEACON_SRC}" as="script"/>`;
+// Only three things in this payload matter to the smoke: the src, the
+// `data-cf-beacon` attribute name, and the pinned endpoint. Its JSON shape does
+// not, so it is not reproduced — the assertions read names and hosts.
+const BEACON_PAYLOAD =
+  `"src":"${BEACON_SRC}","strategy":"afterInteractive",` +
+  '"data-cf-beacon":"token=stub;to=https://cloudflareinsights.com/cdn-cgi/rum"';
+
+/** What edge injection adds: a real script tag, versioned, deferred. */
+const INJECTED_WITH_ATTR =
+  `<script defer src='${BEACON_SRC}?v=1-0-0' data-cf-beacon='{"token":"stub"}'></script>`;
+const INJECTED_BARE = `<script defer src='${BEACON_SRC}?v=1-0-0'></script>`;
+
+/**
+ * Cloudflare injects only for browser-like agents, which is the whole reason the
+ * beacon checks carry a browser UA. Modelled here so a case that depended on
+ * the smoke sending one would pass against a plain-curl stub and fail in
+ * production.
+ */
+function isBrowserLike(userAgent: string | string[] | undefined): boolean {
+  const ua = Array.isArray(userAgent) ? userAgent.join(" ") : userAgent;
+  return /Mozilla|AppleWebKit|Chrome/.test(ua ?? "");
+}
 
 function cspFor(defect: Defect | undefined): string | undefined {
   if (defect === "no-csp") return undefined;
@@ -201,12 +254,19 @@ async function withStub(
       return send(400, "format must be one of", withCsp({ "content-type": "text/plain" }));
     }
 
-    const beacon =
-      defect === "no-beacon"
-        ? ""
-        : '<script src="https://static.cloudflareinsights.com/beacon.min.js" ' +
-          `data-cf-beacon='{"token":"stub","send":{"to":"https://cloudflareinsights.com/cdn-cgi/rum"}}'></script>`;
-    return send(200, `<!doctype html><html><body>${beacon}</body></html>`, withCsp({}));
+    // Injection is browser-only, so a stub reached by curl stays healthy and the
+    // smoke has to ask as a browser to see it at all.
+    const browser = isBrowserLike(req.headers["user-agent"]);
+    const injected =
+      browser && defect === "injected-beacon"
+        ? INJECTED_WITH_ATTR
+        : browser && defect === "injected-script-only"
+          ? INJECTED_BARE
+          : browser && defect === "injected-payload"
+            ? BEACON_PAYLOAD
+            : "";
+    const beacons = defect === "no-beacon" ? "" : BEACON_PRELOAD + BEACON_PAYLOAD + injected;
+    return send(200, `<!doctype html><html><body>${beacons}</body></html>`, withCsp({}));
   });
 
   await new Promise<void>((resolve) => server.listen(0, "127.0.0.1", resolve));

@@ -68,11 +68,23 @@ long version lives; it is the thing to read before touching the theme.
 **Analytics Engine owns behaviour.** Web Analytics is the cookieless traffic and
 Core Web Vitals baseline only; its totals will not match AE (ad blockers,
 consent, worker-generated HTML). Read AE for "did they submit", WA for "how many
-arrived". The site is an OpenNext Worker, so Cloudflare's edge beacon injection
-does not fire — the manual beacon in `src/components/AnalyticsBeacon.tsx` is the
-only pageview source. It posts cross-origin to `cloudflareinsights.com` via
-`send.to` (the Worker 404s the relative `/cdn-cgi/rum`), and it is suppressed on
-localhost/127.0.0.1 so dev runs do not inflate WA.
+arrived". The site is an OpenNext Worker, and Cloudflare's automatic beacon
+injection **does** fire into its HTML — but only for browser-like user agents, so
+a `curl` of `/` cannot see it. "Zero matches for `cloudflareinsights`" measured
+curl, not the site. The manual beacon in `src/components/AnalyticsBeacon.tsx` is
+the only pageview source because Web Analytics is in manual-installation mode
+(`auto_install=false` with the ruleset disabled — the dashboard's "Enable with JS
+Snippet installation"), not because the Worker blocks injection. The zone RUM
+setting reads `manual` and is *not* the control: it is derived from that site
+config, and PATCHing it to `off` or `manual` is rejected, so anyone restoring this
+belongs in the Web Analytics site config, not the zone setting. Two beacons do
+not double-count: the first seeds `window.__cfBeacon`, ours merges into it and
+loses `send.to`, and the result is zero pageviews. So
+`scripts/smoke.sh` fetches `/` with a browser UA and fails the release if the
+body carries more than one. The beacon posts cross-origin to
+`cloudflareinsights.com` via `send.to` (the Worker 404s the relative
+`/cdn-cgi/rum`), and it is suppressed on localhost/127.0.0.1 so dev runs do not
+inflate WA.
 
 ## Dataset and event shape
 
