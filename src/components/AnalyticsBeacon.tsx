@@ -8,8 +8,11 @@ import { seoOrigin } from "@/infrastructure/seo/page-metadata";
  * the Worker. Cloudflare's automatic injection **does** reach this site's HTML:
  * it fires only for browser-like user agents, so a `curl` of `/` shows nothing
  * and "zero matches for `cloudflareinsights`" was a measurement of curl, not of
- * the site. With the Web Analytics site set to manual installation and the zone's
- * RUM setting off, nothing injects and this is the only beacon.
+ * the site. Web Analytics is in manual-installation mode (`auto_install=false`,
+ * ruleset disabled — "Enable with JS Snippet installation" in the dashboard), so
+ * nothing injects and this is the only beacon. The zone RUM setting reads
+ * `manual` and is derived from that site config, not the other way round; it is
+ * rejected when PATCHed, so it is a symptom to read, never the thing to change.
  *
  * That is a runtime invariant, not a preference. With both on, the injected
  * snippet seeded `window.__cfBeacon` and this one merged into it, which dropped
