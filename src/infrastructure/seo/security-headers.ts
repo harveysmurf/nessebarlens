@@ -50,11 +50,13 @@ export const ANALYTICS_ORIGIN = "https://static.cloudflareinsights.com";
  *   ?? (window.__cfBeacon?.version ? "https://cloudflareinsights.com/cdn-cgi/rum" : null)
  * ```
  *
- * The relative `/cdn-cgi/rum` in that file is the fallback for an edge-injected
- * beacon; the absolute apex URL is what a hand-placed `<script>` gets. We place
- * it by hand because the site is served by an OpenNext Worker and Cloudflare's
- * edge injection never fires on it (#119), so `window.__cfBeacon` is always
- * undefined here and the apex URL is always the one used.
+ * That ternary is easy to read backwards. The apex URL is the fallback when
+ * `version` is *undefined*, not when it is set — and a hand-placed snippet with
+ * `data-cf-beacon` always sets it, so without `send.to` the beacon posts to the
+ * relative `/cdn-cgi/rum`. This Worker answers that with a 404, which is why
+ * `AnalyticsBeacon` pins `send.to` to the apex URL below. We place the snippet
+ * by hand because the site is served by an OpenNext Worker and Cloudflare's
+ * edge injection never fires on it (#119).
  *
  * A `connect-src` naming only `ANALYTICS_ORIGIN` blocks every pageview the site
  * records, and does it silently: the beacon swallows the error and no test in

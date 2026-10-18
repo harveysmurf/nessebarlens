@@ -70,7 +70,9 @@ Core Web Vitals baseline only; its totals will not match AE (ad blockers,
 consent, worker-generated HTML). Read AE for "did they submit", WA for "how many
 arrived". The site is an OpenNext Worker, so Cloudflare's edge beacon injection
 does not fire — the manual beacon in `src/components/AnalyticsBeacon.tsx` is the
-only pageview source.
+only pageview source. It posts cross-origin to `cloudflareinsights.com` via
+`send.to` (the Worker 404s the relative `/cdn-cgi/rum`), and it is suppressed on
+localhost/127.0.0.1 so dev runs do not inflate WA.
 
 ## Dataset and event shape
 
