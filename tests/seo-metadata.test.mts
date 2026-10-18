@@ -16,13 +16,22 @@
  *      Walking the filesystem is what makes the first half true; the second half
  *      is what stops a stale entry from lingering after a route is deleted.
  *
- *   2. **Uniqueness.** No two routes share a title, and no route's title or
- *      description is the root's *by coincidence* — they are different strings
- *      from the same table, which is a weaker but checkable statement.
+ *   2. **Uniqueness, both fields.** No two routes share a title, and none share
+ *      a description — and no route's title or description is the root's *by
+ *      coincidence*, which is a weaker but checkable statement. The two gates
+ *      iterate the same set for the same reason: a description check looser
+ *      than the title check is the drift this file exists to prevent.
  *
  *   3. **Shape.** An absolute canonical built from `NEXT_PUBLIC_SITE_URL`, and
  *      the complete OG/Twitter block on every page, because Next replaces
  *      `openGraph` wholesale when a page exports it.
+ *
+ * Between them, the SERP windows hold each indexed route's title to 50-65
+ * characters and its description to 120-160. Both are guards on the copy that
+ * lives in `PAGE_COPY`, which is a proposal Simo may rewrite, so the value of
+ * the assertions is entirely in what happens to the rewrite: without a cap, a
+ * description that grows past the snippet limit is silently truncated by Google
+ * with nothing here to notice.
  *
  * The residual is stated rather than hidden: property 1 walks the filesystem for
  * `page.tsx` files, and separately reads each page's source to confirm it
@@ -61,6 +70,38 @@ const ENV = { NEXT_PUBLIC_SITE_URL: SITE } as const;
 /** Google's SERP truncates around 60; below ~50 the search terms are missing. */
 const TITLE_MIN = 50;
 const TITLE_MAX = 65;
+/**
+ * The same window for a description, which Google truncates later and harder.
+ *
+ * The cap, 160, is the real limit: the snippet ends around 155-160 characters,
+ * and three indexed descriptions already sit at 145-153, so one more rewrite word
+ * is enough to lose the tail to an ellipsis.
+ *
+ * The floor is stub detection, not a search-term argument, and it is 100 because
+ * that is where the real copy begins: the shortest indexed description is `/` at
+ * 108, so the floor has 8 characters of headroom. It was 120 once, picked by
+ * analogy with the title window rather than measured against this table, and it
+ * failed `/` — the most-read string on the site.
+ *
+ * Do not raise it back to 120 for symmetry with the titles. A check that
+ * manufactures copy work is making a product decision, and lengthening `/` to
+ * clear a floor is Simo's call, not a side effect of a constant.
+ */
+const DESCRIPTION_MIN = 100;
+const DESCRIPTION_MAX = 160;
+
+/**
+ * The routes the length floors do not apply to, in one list so the two gates
+ * exempt the same set instead of each naming its own.
+ *
+ * Spelled out rather than derived from `isIndexable`, because this list *is* the
+ * claim that these specific pages are exempt: derived from the predicate it is
+ * checked against, the exemption would hold whatever the predicate said. The
+ * print route is also noindex and is deliberately absent — it has no `PAGE_COPY`
+ * row, its copy comes from the catalog, and `printMetadata` has its own title
+ * check below.
+ */
+const NOINDEX_ROUTES = ["/checkout/cancel", "/checkout/success"];
 
 /**
  * Every route that has a `page.tsx`, from the filesystem.
@@ -187,23 +228,62 @@ test("no two routes ship the same title", () => {
   );
 });
 
-test("every indexed route has a title inside the SERP window", () => {
+test("no two routes ship the same description", () => {
+  // The title check above iterates the whole table, and this one deliberately
+  // matches it rather than the narrower indexed set: a description gate looser
+  // than the title gate is the drift this file exists to prevent, and the two
+  // checkout rows are unique today so the wider scope costs nothing.
+  const descriptions = new Map<string, string[]>();
+  for (const route of Object.keys(PAGE_COPY)) {
+    const description = PAGE_COPY[route]?.description ?? "";
+    descriptions.set(description, [...(descriptions.get(description) ?? []), route]);
+  }
+
+  const shared = [...descriptions.entries()].filter(([, routes]) => routes.length > 1);
+  assert.deepEqual(
+    shared,
+    [],
+    "two routes share a description; Google shows one snippet for the pair",
+  );
+});
+
+test("every indexed route's title and description sit inside their SERP windows", () => {
+  // One loop, one predicate, both fields. Separate tests would each carry their
+  // own route set, and a later edit that narrowed one of them would leave a
+  // route gated on its title and ungated on its description with both tests
+  // green.
   for (const route of INDEXABLE_ROUTES) {
     const title = PAGE_COPY[route]?.title ?? "";
     assert.ok(
       title.length >= TITLE_MIN && title.length <= TITLE_MAX,
       `${route} title is ${title.length} characters, outside ${TITLE_MIN}-${TITLE_MAX}: "${title}"`,
     );
+
+    const description = PAGE_COPY[route]?.description ?? "";
+    assert.ok(
+      description.length >= DESCRIPTION_MIN && description.length <= DESCRIPTION_MAX,
+      `${route} description is ${description.length} characters, outside ` +
+        `${DESCRIPTION_MIN}-${DESCRIPTION_MAX}: "${description}"`,
+    );
   }
 });
 
-test("the noindex checkout pages are exempt from the length floor, and say so", () => {
-  // Stated rather than left implicit: the two checkout titles are short on
-  // purpose, and a future reader tightening the floor above should know these
-  // two were excluded deliberately and not forgotten.
-  for (const route of ["/checkout/cancel", "/checkout/success"]) {
+test("the noindex checkout pages are exempt from both length floors, and say so", () => {
+  // Stated rather than left implicit: the two checkout rows are short on
+  // purpose, and a future reader tightening the floors above should know these
+  // two were excluded deliberately and not forgotten. Both gates read the one
+  // list, so a route cannot be exempt from one floor and held to the other.
+  for (const route of NOINDEX_ROUTES) {
     assert.equal(isIndexable(route), false);
-    assert.ok((PAGE_COPY[route]?.title ?? "").length < TITLE_MIN);
+    assert.ok(
+      (PAGE_COPY[route]?.title ?? "").length < TITLE_MIN,
+      `${route} is exempt from the title floor, so its title must stay under ${TITLE_MIN}`,
+    );
+    assert.ok(
+      (PAGE_COPY[route]?.description ?? "").length < DESCRIPTION_MIN,
+      `${route} is exempt from the description floor, so its description must ` +
+        `stay under ${DESCRIPTION_MIN}`,
+    );
   }
 });
 
@@ -297,7 +377,9 @@ test("the indexable set is the table minus checkout minus the dynamic route", ()
   assert.deepEqual(
     [...INDEXABLE_ROUTES].sort(),
     Object.keys(PAGE_COPY)
-      .filter((route) => route !== "/checkout/cancel" && route !== "/checkout/success")
+      // `NOINDEX_ROUTES`, so adding a third exempt page cannot leave this
+      // filtering the old pair and disagreeing with the length gates.
+      .filter((route) => !NOINDEX_ROUTES.includes(route))
       .sort(),
   );
   assert.equal(isIndexable(PRINT_ROUTE), false, "the print route is a pattern, not a URL");
