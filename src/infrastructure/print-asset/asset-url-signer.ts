@@ -11,7 +11,7 @@
  * constants and crypto helpers are imported from domain here.
  */
 
-import { PHOTO_SLUG_PATTERN } from "../../domain/catalog/derivative-ladder";
+import { isPhotoSlug } from "../../domain/catalog/derivative-ladder";
 import { masterKeyForSlug } from "../../domain/catalog/master-key";
 import {
   HEX_64_PATTERN,
@@ -54,10 +54,6 @@ const SIGNING_V1 = (slug: string, exp: number): string => `v1.${slug}.${exp}`;
  */
 function resolveSecret(secret: string | null | undefined): string | null {
   return secret === undefined ? printAssetSecret() : usablePrintAssetSecret(secret);
-}
-
-export function isPhotoSlug(value: string): boolean {
-  return PHOTO_SLUG_PATTERN.test(value);
 }
 
 /**

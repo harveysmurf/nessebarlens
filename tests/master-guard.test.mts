@@ -5,6 +5,7 @@ import {
   MASTERS_BUCKET_NAME,
   PHOTO_SLUG_PATTERN,
   isMasterKey,
+  isPhotoSlug,
 } from "../src/domain/catalog/derivative-ladder.ts";
 import { assertNoMasterLeak } from "../src/infrastructure/prodigi/prodigi-order.ts";
 import {
@@ -13,7 +14,6 @@ import {
   resolveDownload,
 } from "../src/domain/ordering/order-decision.ts";
 import { masterKeyForSlug } from "../src/domain/catalog/master-key.ts";
-import { isPhotoSlug } from "../src/application/fulfillment/print-asset.ts";
 import { PHOTOS, getPhoto } from "../src/domain/catalog/photos.ts";
 import { SAMPLE_SLUG } from "./fixtures/sample-photo.mts";
 
@@ -113,9 +113,11 @@ test("isMasterKey accepts exactly prints/{slug}.jpg and nothing looser", () => {
 });
 
 test("the slug pattern is shared, and masterKeyForSlug resolves through the catalog", () => {
-  // print-asset's isPhotoSlug used to carry its own copy of this grammar.
+  // The predicate lives beside the pattern it answers for, so the two cannot
+  // drift; the application layer and the signer each used to carry their own
+  // copy of the grammar.
   for (const slug of PHOTOS.map((p) => p.slug)) {
-    assert.equal(isPhotoSlug(slug), PHOTO_SLUG_PATTERN.test(slug), slug);
+    assert.equal(isPhotoSlug(slug), true, slug);
     assert.equal(masterKeyForSlug(slug), getPhoto(slug)?.imageKey, slug);
   }
   for (const bad of ["", "Dawn", "dawn_1", "-dawn", "dawn-", "dawn.jpg", "a".repeat(300)]) {
@@ -123,6 +125,7 @@ test("the slug pattern is shared, and masterKeyForSlug resolves through the cata
     if (bad !== "a".repeat(300)) {
       // The pattern itself sets no length cap; only the catalog gates a slug.
       assert.equal(PHOTO_SLUG_PATTERN.test(bad), false, bad);
+      assert.equal(isPhotoSlug(bad), false, bad);
     }
   }
   // Every catalog slug and imageKey satisfies the shared grammar.

@@ -10,7 +10,7 @@
  * secret or the site URL from configuration — the port hides both.
  */
 
-import { PHOTO_SLUG_PATTERN } from "../../domain/catalog/derivative-ladder";
+import { isPhotoSlug } from "../../domain/catalog/derivative-ladder";
 import {
   printAssetKeyForSlug,
   readMasterObject,
@@ -31,10 +31,6 @@ export type PrintAssetStream =
       contentType: "image/jpeg";
       size: number;
     };
-
-export function isPhotoSlug(value: string): boolean {
-  return PHOTO_SLUG_PATTERN.test(value);
-}
 
 /**
  * Whether this deployment can actually serve a print asset for `slug`.
