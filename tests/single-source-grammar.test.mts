@@ -149,6 +149,29 @@ function regexLiterals(): Map<string, Declared[]> {
   return bySource;
 }
 
+/** Every function declaration of a given name, as `file:line`. */
+function functionDeclarationSites(name: string): Declared[] {
+  const sites: Declared[] = [];
+  for (const file of allSourceFiles()) {
+    const text = fs.readFileSync(file, "utf8");
+    const source = ts.createSourceFile(
+      file,
+      text,
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const visit = (node: ts.Node): void => {
+      if (ts.isFunctionDeclaration(node) && node.name?.text === name) {
+        const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+        sites.push({ file: relative(file), line: line + 1 });
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  return sites;
+}
+
 /** Object type literals and interfaces, by declared name. */
 function shapeDeclarations(): Map<string, Declared[]> {
   const byName = new Map<string, Declared[]>();
@@ -228,6 +251,28 @@ test("the master-marker and slug grammars are still single modules", () => {
   const bySource = regexLiterals();
   const slugSites = bySource.get("/^[a-z0-9]+(?:-[a-z0-9]+)*$/") ?? [];
   assert.equal(slugSites.length, 1, "slug pattern duplicated");
+});
+
+test("the slug predicate is declared once, beside the pattern it answers for", () => {
+  // The pattern was always one declaration, but the *predicate* around it was
+  // two: the application layer and the signer each wrote
+  // `PHOTO_SLUG_PATTERN.test(...)` into their own module, so a tightened
+  // grammar had to be found in three places. The regex walk above cannot see
+  // this -- a function is not a regex literal -- so the duplication needed its
+  // own guard.
+  //
+  // Exported or not: a private copy is the same duplication, and it is the
+  // one that a copy-paste into a module nobody exports from would leave
+  // behind.
+  const sites = functionDeclarationSites("isPhotoSlug");
+  assert.equal(
+    sites.length,
+    1,
+    `isPhotoSlug declared ${sites.length} times: ${sites
+      .map((s) => `${s.file}:${s.line}`)
+      .join(", ")}`,
+  );
+  assert.equal(sites[0]!.file, "src/domain/catalog/derivative-ladder.ts");
 });
 
 test("the master marker tracks the bucket name instead of re-spelling it", () => {

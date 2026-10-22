@@ -127,7 +127,34 @@ export async function quotePhysical(opts: {
   // operator whether Prodigi is unwell or we sent a request it will never
   // accept, which is the whole difference between the 502 and 503 answers and
   // between "check Prodigi's status page" and "fix our SKU map".
-  const raw = await res.text();
+  //
+  // A read that rejects is a dropped connection, not a body, and it must not
+  // escape: this function promises a `ProdigiResult`, and a rejection here
+  // reached the route as a 500 for what is Prodigi's side of the wire. The
+  // order adapter reads its body the same way, and the reason is kept rather
+  // than discarded, so a body that never arrived can be named as such.
+  let readFailure: unknown = null;
+  const raw = await res.text().then(
+    (text) => text,
+    (e: unknown) => {
+      readFailure = e;
+      return "";
+    },
+  );
+
+  // A mid-read abort is a worse fact than whatever status arrived with it:
+  // the status is the truncated remnant, not an answer. The timeout is only
+  // consulted when the read actually failed -- a signal that fires after a
+  // good body was read says nothing about that body.
+  if (readFailure !== null && isProdigiTimeout(readFailure, signal)) {
+    return {
+      ok: false,
+      kind: "timeout",
+      reason: "prodigi-timeout",
+      message: "Prodigi quote timed out",
+      status: res.status,
+    };
+  }
 
   if (!res.ok) {
     const { kind, reason } = classifyProdigiStatus(res.status);
@@ -148,7 +175,10 @@ export async function quotePhysical(opts: {
       ok: false,
       kind: "server",
       reason: "prodigi-unavailable",
-      message: "Prodigi quote returned invalid JSON",
+      message:
+        readFailure === null
+          ? "Prodigi quote returned invalid JSON"
+          : "Prodigi quote body could not be read",
       status: res.status,
     };
   }

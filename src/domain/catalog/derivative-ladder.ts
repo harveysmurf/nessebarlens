@@ -30,6 +30,18 @@
  */
 export const PHOTO_SLUG_PATTERN = /^[a-z0-9]+(?:-[a-z0-9]+)*$/;
 
+/**
+ * Whether a value is a photo slug.
+ *
+ * The predicate lives beside the pattern it answers for, so the two cannot
+ * drift: the application layer and the signer each carried their own copy of
+ * `PHOTO_SLUG_PATTERN.test(...)`, and a future tightening of the grammar would
+ * have had to be found in three places.
+ */
+export function isPhotoSlug(value: string): boolean {
+  return PHOTO_SLUG_PATTERN.test(value);
+}
+
 /** The same slug grammar without anchors, for building a longer key pattern. */
 const SLUG_BODY = PHOTO_SLUG_PATTERN.source.replace(/^\^/, "").replace(/\$$/, "");
 

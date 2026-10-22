@@ -12,7 +12,14 @@ import {
   type FetchProdigiOrder,
 } from "../src/infrastructure/prodigi/prodigi-callback.ts";
 import { PRODIGI_ORDER_TIMEOUT_MS } from "../src/domain/ordering/prodigi-timeout.ts";
-import { parseOrderRecord, type OrderRecord } from "../src/domain/ordering/order-decision.ts";
+import {
+  parseOrderRecord,
+  SHIPMENT_CARRIER_MAX,
+  SHIPMENT_STATUS_MAX,
+  SHIPMENT_TRACKING_NUMBER_MAX,
+  SHIPMENT_TRACKING_URL_MAX,
+  type OrderRecord,
+} from "../src/domain/ordering/order-decision.ts";
 import { buildProdigiOrderBody } from "../src/infrastructure/prodigi/prodigi-order.ts";
 import type { OrderRecipient } from "../src/domain/ordering/order-recipient.ts";
 import type { SendEmail } from "../src/domain/ordering/email.ts";
@@ -860,5 +867,37 @@ test("the shipped copy is built with the shipment's tracking details", async () 
     mails[0]!.text.includes("WRONG-1"),
     false,
     "the first Shipped entry wins, not the first shipment",
+  );
+});
+
+test("a shipment field is clipped to the cap the record parser reads it back with", () => {
+  // The write side (this fetch) and the read side (the record parser) clip
+  // with the same function now, so the two cannot disagree: a value longer
+  // than the cap that is stored and then truncated again on read is a
+  // tracking number that changed under the customer.
+  const shipments = shipmentsFromProdigiOrder({
+    shipments: [
+      {
+        status: "s".repeat(SHIPMENT_STATUS_MAX + 10),
+        carrier: { name: "c".repeat(SHIPMENT_CARRIER_MAX + 10) },
+        tracking: {
+          url: "u".repeat(SHIPMENT_TRACKING_URL_MAX + 10),
+          number: "n".repeat(SHIPMENT_TRACKING_NUMBER_MAX + 10),
+        },
+      },
+    ],
+  });
+  assert.deepEqual(shipments, [
+    {
+      status: "s".repeat(SHIPMENT_STATUS_MAX),
+      carrier: "c".repeat(SHIPMENT_CARRIER_MAX),
+      trackingUrl: "u".repeat(SHIPMENT_TRACKING_URL_MAX),
+      trackingNumber: "n".repeat(SHIPMENT_TRACKING_NUMBER_MAX),
+    },
+  ]);
+  // A field that is not a string is absent, not the text "undefined".
+  assert.equal(
+    shipmentsFromProdigiOrder({ shipments: [{ status: 42 }] })[0]?.status,
+    "",
   );
 });

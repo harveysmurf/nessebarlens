@@ -7,6 +7,7 @@ import {
   CANVAS_BAR_DEPTH_MM,
   CLASSIC_FRAME_MOULDING_MM,
   canvasSideFace,
+  percentNumber,
   percentRect,
   previewGeometry,
   type CanvasSide,
@@ -327,4 +328,17 @@ test("percentRect formats a rect as CSS percentages of the box", () => {
       height: "100.0000%",
     },
   );
+});
+
+test("percentNumber is the same division, as a number", () => {
+  // The component positions layers by a computed ratio and appends the sign
+  // itself, so it needs the number; the rounding is the same four decimals
+  // the string form uses, so a value cannot mean two things.
+  assert.equal(percentNumber(-25.4, 406.4), -6.25);
+  assert.equal(percentNumber(0, 304.8), 0);
+  assert.equal(percentNumber(457.2, 406.4), 112.5);
+  assert.equal(percentNumber(304.8, 304.8), 100);
+  // Rounded to four decimals before it is a number: 1/3 of a box is 33.3333,
+  // not the 33.33333333333333 the division alone would give.
+  assert.equal(percentNumber(1, 3), 33.3333);
 });

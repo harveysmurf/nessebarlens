@@ -18,7 +18,7 @@ import path from "node:path";
 import test from "node:test";
 
 import { PHOTOS } from "../src/domain/catalog/photos.ts";
-import { INDEXABLE_ROUTES } from "../src/infrastructure/seo/page-metadata.ts";
+import { INDEXABLE_ROUTES, canonicalUrl } from "../src/infrastructure/seo/page-metadata.ts";
 import robots from "../src/app/robots.ts";
 import sitemap from "../src/app/sitemap.ts";
 import { GET as llmsRoute } from "../src/app/llms.txt/route.ts";
@@ -71,6 +71,42 @@ test("every public route and every photograph is listed", () => {
       urls.includes(`${SITE}/prints/${photo.slug}`),
       `sitemap is missing the print /prints/${photo.slug}`,
     );
+  }
+});
+
+test("the sitemap and llms.txt build their URLs through the canonical helper", async () => {
+  // Both surfaces used to write the rule themselves -- origin + route, with the
+  // root's trailing slash handled by hand -- while `canonicalUrl()` owned it.
+  // The copies were weaker: they did not normalise a missing leading slash, so
+  // a route added without one would have produced a URL on the origin's root.
+  // Read the owner and compare, so a second spelling cannot come back.
+  const saved = process.env.NEXT_PUBLIC_SITE_URL;
+  process.env.NEXT_PUBLIC_SITE_URL = SITE;
+  try {
+    const urls = new Set((sitemap() as MetadataRouteSitemap).map((e) => e.url));
+    for (const route of INDEXABLE_ROUTES) {
+      assert.ok(
+        urls.has(canonicalUrl(route)),
+        `sitemap is missing the canonical URL for ${route}`,
+      );
+    }
+    for (const photo of PHOTOS) {
+      assert.ok(
+        urls.has(canonicalUrl(`/prints/${photo.slug}`)),
+        `sitemap is missing the canonical URL for /prints/${photo.slug}`,
+      );
+    }
+
+    const body = await llmsRoute().text();
+    for (const route of INDEXABLE_ROUTES) {
+      assert.ok(
+        body.includes(canonicalUrl(route)),
+        `llms.txt does not mention the canonical URL for ${route}`,
+      );
+    }
+  } finally {
+    if (saved === undefined) delete process.env.NEXT_PUBLIC_SITE_URL;
+    else process.env.NEXT_PUBLIC_SITE_URL = saved;
   }
 });
 

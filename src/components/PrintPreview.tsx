@@ -29,6 +29,7 @@ import type { MasterFacts } from "@/domain/catalog/master-facts";
 import type { FrameFinish, PrintSize } from "@/domain/pricing/pricing";
 import {
   canvasSideFace,
+  percentNumber,
   percentRect,
   type CanvasSide,
   type Extent,
@@ -401,7 +402,7 @@ function CanvasSideFace({
   const { front, depthMm } = geometry;
   const { face, image } = canvasSideFace(geometry, side);
   const vertical = side === "left" || side === "right";
-  const depthPct = `${pctNumber(depthMm, vertical ? front.width : front.height)}%`;
+  const depthPct = `${percentNumber(depthMm, vertical ? front.width : front.height)}%`;
   const placement: Record<CanvasSide, CSSProperties> = {
     right: { left: "100%", top: 0, width: depthPct, height: "100%" },
     left: { right: "100%", top: 0, width: depthPct, height: "100%" },
@@ -524,8 +525,8 @@ function MouldingPiece({
   m: number;
   finish: FrameFinish;
 }) {
-  const mx = pctNumber(m, outer.width);
-  const my = pctNumber(m, outer.height);
+  const mx = percentNumber(m, outer.width);
+  const my = percentNumber(m, outer.height);
   const box: Record<CanvasSide, CSSProperties> = {
     top: { left: 0, top: 0, width: "100%", height: `${my}%` },
     bottom: { left: 0, bottom: 0, width: "100%", height: `${my}%` },
@@ -674,8 +675,4 @@ function ImageLayer({
       {children}
     </div>
   );
-}
-
-function pctNumber(value: number, total: number): number {
-  return Number(((value / total) * 100).toFixed(4));
 }
