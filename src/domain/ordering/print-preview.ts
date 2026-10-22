@@ -229,5 +229,22 @@ export function percentRect(
 }
 
 function percent(value: number, total: number): string {
-  return `${((value / total) * 100).toFixed(4)}%`;
+  return `${percentText(value, total)}%`;
+}
+
+/**
+ * A measurement as a numeric percentage of a box, four decimals.
+ *
+ * `percentRect` answers with the string form; a layer positioned by a computed
+ * ratio needs the number and appends the sign itself. The component asks this
+ * module for the number for the same reason it asks for `percentRect`: the
+ * component never does mm maths itself.
+ */
+export function percentNumber(value: number, total: number): number {
+  return Number(percentText(value, total));
+}
+
+/** The percentage text both forms are built from, so the rounding is one rule. */
+function percentText(value: number, total: number): string {
+  return ((value / total) * 100).toFixed(4);
 }
