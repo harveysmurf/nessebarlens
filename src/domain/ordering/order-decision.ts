@@ -1122,7 +1122,14 @@ function parseStoredShipments(raw: unknown): OrderShipment[] {
   return out;
 }
 
-function clipShipmentField(value: unknown, max: number): string {
+/**
+ * Clip a shipment field to its cap, treating a non-string as absent.
+ *
+ * Exported because the Prodigi callback builds the very entries this parser
+ * reads: the fetch side and the parse side must clip the same way, or a value
+ * longer than the cap would be stored and then silently truncated back on read.
+ */
+export function clipShipmentField(value: unknown, max: number): string {
   if (typeof value !== "string") return "";
   return value.slice(0, max);
 }

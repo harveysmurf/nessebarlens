@@ -44,6 +44,7 @@
 import { emailCopyFor } from "../../domain/ordering/email-copy";
 import type { EmailKind, SendEmail } from "../../domain/ordering/email";
 import {
+  clipShipmentField,
   isCheckoutSessionId,
   SHIPMENT_CARRIER_MAX,
   SHIPMENT_STATUS_MAX,
@@ -164,21 +165,22 @@ export function shipmentsFromProdigiOrder(order: unknown): OrderShipment[] {
     const tracking = isRecord(entry.tracking) ? entry.tracking : {};
     const carrier = isRecord(entry.carrier) ? entry.carrier : {};
     out.push({
-      status: clip(entry.status, SHIPMENT_STATUS_MAX),
-      carrier: clip(
+      status: clipShipmentField(entry.status, SHIPMENT_STATUS_MAX),
+      carrier: clipShipmentField(
         typeof carrier.name === "string" ? carrier.name : entry.carrier,
         SHIPMENT_CARRIER_MAX,
       ),
-      trackingUrl: clip(tracking.url, SHIPMENT_TRACKING_URL_MAX),
-      trackingNumber: clip(tracking.number, SHIPMENT_TRACKING_NUMBER_MAX),
+      trackingUrl: clipShipmentField(
+        tracking.url,
+        SHIPMENT_TRACKING_URL_MAX,
+      ),
+      trackingNumber: clipShipmentField(
+        tracking.number,
+        SHIPMENT_TRACKING_NUMBER_MAX,
+      ),
     });
   }
   return out;
-}
-
-function clip(value: unknown, max: number): string {
-  if (typeof value !== "string") return "";
-  return value.slice(0, max);
 }
 
 function stageFromProdigiOrder(order: unknown): string | null {
