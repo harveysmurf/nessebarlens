@@ -28,6 +28,7 @@ import {
 import type { MasterFacts } from "@/domain/catalog/master-facts";
 import type { FrameFinish, PrintSize } from "@/domain/pricing/pricing";
 import {
+  CANVAS_SIDES,
   canvasSideFace,
   percentNumber,
   percentRect,
@@ -355,7 +356,7 @@ function CanvasScene({
         </div>
 
         {currentSrc &&
-          (["top", "right", "bottom", "left"] as CanvasSide[]).map((side) => (
+          CANVAS_SIDES.map((side) => (
             <CanvasSideFace
               key={side}
               geometry={geometry}
@@ -452,7 +453,7 @@ function FramedLayers({
   const outer = geometry.outer;
   return (
     <>
-      {(["top", "right", "bottom", "left"] as CanvasSide[]).map((side) => (
+      {CANVAS_SIDES.map((side) => (
         <MouldingPiece
           key={side}
           side={side}

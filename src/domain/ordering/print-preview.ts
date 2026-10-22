@@ -28,8 +28,19 @@ export type Mm = number;
 export type Rect = { x: Mm; y: Mm; width: Mm; height: Mm };
 export type Extent = { width: Mm; height: Mm };
 
-/** The four faces of a stretched canvas, named for their side of the front. */
-export type CanvasSide = "top" | "right" | "bottom" | "left";
+/**
+ * The four faces of a stretched canvas, named for their side of the front.
+ *
+ * The list declares and the union derives, as `PHOTO_CATEGORIES` and
+ * `ORIENTATIONS` do: both call sites that walk the faces used to write their own
+ * array and cast it back to the union, so the cast rather than a check was what
+ * made those four strings valid, and a face added here would have been a type
+ * error at every `Record<CanvasSide, …>` while rendering as nothing. As one
+ * declaration the two cannot disagree — `tests/print-preview.test.mts` pins the
+ * order, so a duplicate or a stray value fails there.
+ */
+export const CANVAS_SIDES = ["top", "right", "bottom", "left"] as const;
+export type CanvasSide = (typeof CANVAS_SIDES)[number];
 
 export type PreviewGeometry =
   | { kind: "digital" }
