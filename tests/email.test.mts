@@ -3,7 +3,10 @@
  */
 
 import assert from "node:assert/strict";
+import fs from "node:fs";
+import path from "node:path";
 import test from "node:test";
+import ts from "typescript";
 import {
   createResendSender,
   isEmailKind,
@@ -12,7 +15,12 @@ import {
   RESEND_TIMEOUT_MS,
   sendEmailFromApiKey,
 } from "../src/domain/ordering/email.ts";
-import { emailCopyFor } from "../src/domain/ordering/email-copy.ts";
+import {
+  emailCopyFor,
+  referenceLine,
+  STUDIO_SIGNATURE,
+} from "../src/domain/ordering/email-copy.ts";
+import { buildAlertEmail } from "../src/infrastructure/alerts/email-operator-alerts.ts";
 import { orderReference } from "../src/domain/ordering/order-reference.ts";
 import { parseOrderRecord } from "../src/domain/ordering/order-decision.ts";
 import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
@@ -315,4 +323,104 @@ test("unfulfilled copy does not contradict the success page", () => {
     siteUrl: "https://nessebarlens.com",
   });
   assert.doesNotMatch(copy.text, /being produced/i);
+});
+
+test("every email the studio sends closes with one signature line", () => {
+  // The signature is one owner for four closings — three customer emails and
+  // the operator alert — so a rebrand that missed one would sign part of the
+  // studio's mail differently, and no test would have said so.
+  for (const kind of ["order-confirmation", "print-shipped", "order-unfulfilled"] as const) {
+    const copy = emailCopyFor({ kind, sessionId: SESSION, siteUrl: "https://nessebarlens.com" });
+    assert.equal(copy.text.endsWith(STUDIO_SIGNATURE), true, kind);
+    assert.equal(copy.text.split(STUDIO_SIGNATURE).length - 1, 1, `${kind} signs twice`);
+  }
+  const alert = buildAlertEmail({
+    event: "order.unfulfilled",
+    sessionId: SESSION,
+    summary: "order unfulfilled past SLA",
+    details: { attempts: 3 },
+  });
+  assert.equal(alert.text.endsWith(STUDIO_SIGNATURE), true, "operator alert");
+
+  // And the reference label in front of the shared suffix, which is the other
+  // owner: one derivation, one label.
+  assert.equal(referenceLine(SESSION), `Reference: ${orderReference(SESSION)}`);
+  for (const kind of ["order-confirmation", "print-shipped", "order-unfulfilled"] as const) {
+    const copy = emailCopyFor({ kind, sessionId: SESSION, siteUrl: "https://nessebarlens.com" });
+    assert.equal(copy.text.includes(referenceLine(SESSION)), true, kind);
+  }
+});
+
+/**
+ * The signature line and the reference label are each written down once.
+ *
+ * The assertions above read what a buyer receives, and they cannot see a
+ * second spelling of either: an alert that writes "— Nessebar Lens" itself
+ * renders exactly what the constant renders, so every email still looks right
+ * and the single owner is gone. That is the failure one owner is for, and it
+ * is invisible from the outside — so it is asserted from the source.
+ *
+ * The walk is over the AST, so a comment quoting the line and a regex matching
+ * it are not counted as copies, while a single-quoted or template-literal copy
+ * is.
+ */
+const root = path.join(import.meta.dirname, "..");
+
+function sourceFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const full = path.join(dir, entry.name);
+    if (entry.isDirectory()) {
+      out.push(...sourceFiles(full));
+    } else if (/\.(tsx?|mjs)$/.test(entry.name)) {
+      out.push(full);
+    }
+  }
+  return out;
+}
+
+/** Every string literal in src/, with the static text a template starts with. */
+function stringLiteralSites(): { file: string; line: number; text: string }[] {
+  const sites: { file: string; line: number; text: string }[] = [];
+  for (const file of sourceFiles(path.join(root, "src"))) {
+    const source = ts.createSourceFile(
+      file,
+      fs.readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const visit = (node: ts.Node): void => {
+      let text: string | undefined;
+      if (ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node)) {
+        text = node.text;
+      } else if (ts.isTemplateExpression(node)) {
+        text = node.head.text;
+      }
+      if (text !== undefined) {
+        const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+        sites.push({ file: path.relative(root, file), line: line + 1, text });
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  return sites;
+}
+
+test("the signature line and the reference label have one owner in the source", () => {
+  const sites = stringLiteralSites();
+
+  const signature = sites.filter((site) => site.text === STUDIO_SIGNATURE);
+  assert.deepEqual(
+    signature.map((site) => site.file),
+    ["src/domain/ordering/email-copy.ts"],
+    "the studio signature is written down in more than one place",
+  );
+
+  const labels = sites.filter((site) => site.text.startsWith("Reference:"));
+  assert.deepEqual(
+    labels.map((site) => site.file),
+    ["src/domain/ordering/email-copy.ts"],
+    "the reference label is written down in more than one place",
+  );
 });
