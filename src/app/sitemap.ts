@@ -27,7 +27,7 @@
 
 import type { MetadataRoute } from "next";
 import { PHOTOS } from "@/domain/catalog/photos";
-import { INDEXABLE_ROUTES, seoOrigin } from "@/infrastructure/seo/page-metadata";
+import { INDEXABLE_ROUTES, canonicalUrl } from "@/infrastructure/seo/page-metadata";
 
 /** How much each kind of page is worth to a crawler. Home first, prints last. */
 function priorityFor(route: string): number {
@@ -38,15 +38,13 @@ function priorityFor(route: string): number {
 }
 
 export default function sitemap(): MetadataRoute.Sitemap {
-  const origin = seoOrigin();
-
   const routes: MetadataRoute.Sitemap = INDEXABLE_ROUTES.map((route) => ({
-    url: route === "/" ? `${origin}/` : `${origin}${route}`,
+    url: canonicalUrl(route),
     priority: priorityFor(route),
   }));
 
   const prints: MetadataRoute.Sitemap = PHOTOS.map((photo) => ({
-    url: `${origin}/prints/${photo.slug}`,
+    url: canonicalUrl(`/prints/${photo.slug}`),
     // A print is a product page: the thing a search actually converts on.
     priority: 0.9,
   }));

@@ -1,6 +1,6 @@
 import { CATEGORY } from "@/domain/catalog/categories";
 import { PHOTO_CATEGORIES } from "@/domain/catalog/photo-schema";
-import { INDEXABLE_ROUTES, seoOrigin } from "@/infrastructure/seo/page-metadata";
+import { INDEXABLE_ROUTES, canonicalUrl, seoOrigin } from "@/infrastructure/seo/page-metadata";
 
 /**
  * `/llms.txt`, built per environment rather than shipped as a static file.
@@ -68,7 +68,7 @@ export function GET(): Response {
 
   const pages = INDEXABLE_ROUTES.map((route) => {
     const label = route === "/" ? "Home" : titleFor(route);
-    const url = route === "/" ? `${origin}/` : `${origin}${route}`;
+    const url = canonicalUrl(route);
     return `- [${label}](${url}): ${PAGE_NOTES[route]}`;
   }).join("\n");
 
