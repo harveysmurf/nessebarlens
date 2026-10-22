@@ -334,6 +334,67 @@ test("an Error thrown by fetch keeps its message; a non-Error gets a fixed label
   }
 });
 
+test("a body that cannot be read is a failure, not a throw", async () => {
+  // The read rejects when the connection drops after the headers. It used to
+  // escape a function whose contract is a ProdigiResult, so the route answered
+  // 500 for what is Prodigi's side of the wire -- and the kind that decides
+  // 502-against-503 was never reached.
+  const originalFetch = globalThis.fetch;
+  process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
+  process.env.PRODIGI_API_BASE = PRODIGI_SANDBOX_API_BASE;
+  const responding = (status: number, rejectWith: () => unknown) =>
+    (async () => ({
+      ok: status >= 200 && status < 300,
+      status,
+      text: () => Promise.reject(rejectWith()),
+    })) as unknown as typeof fetch;
+  try {
+    globalThis.fetch = responding(200, () => new TypeError("terminated"));
+    const dropped = await quotePhysical({
+      format: "canvas",
+      size: "70x100",
+      mount: null,
+      paper: null,
+    });
+    assert.equal(dropped.ok, false);
+    assert.equal(dropped.ok === false && dropped.kind, "server");
+    assert.equal(dropped.ok === false && dropped.reason, "prodigi-unavailable");
+    assert.equal(
+      dropped.ok === false && dropped.message,
+      "Prodigi quote body could not be read",
+    );
+
+    // The same read, aborted by our own deadline: a timeout, not a bad gateway.
+    const aborted = new Error("aborted");
+    aborted.name = "TimeoutError";
+    globalThis.fetch = responding(200, () => aborted);
+    const timedOut = await quotePhysical({
+      format: "canvas",
+      size: "70x100",
+      mount: null,
+      paper: null,
+    });
+    assert.equal(timedOut.ok, false);
+    assert.equal(timedOut.ok === false && timedOut.kind, "timeout");
+    assert.equal(timedOut.ok === false && timedOut.reason, "prodigi-timeout");
+
+    // A status that arrived is still the useful half, even with no body.
+    globalThis.fetch = responding(500, () => new TypeError("terminated"));
+    const failed = await quotePhysical({
+      format: "canvas",
+      size: "70x100",
+      mount: null,
+      paper: null,
+    });
+    assert.equal(failed.ok, false);
+    assert.equal(failed.ok === false && failed.message, "Prodigi quote HTTP 500");
+  } finally {
+    globalThis.fetch = originalFetch;
+    delete process.env.PRODIGI_SANDBOX_API_KEY;
+    delete process.env.PRODIGI_API_BASE;
+  }
+});
+
 test("a bad Prodigi host reads as unconfigured, not as a bad gateway", async () => {
   // A misconfigured PRODIGI_API_BASE is our fault, not Prodigi's: the quote
   // result carries kind "unconfigured" and reason "prodigi-unconfigured", so the
