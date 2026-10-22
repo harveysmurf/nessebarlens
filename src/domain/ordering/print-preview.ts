@@ -31,13 +31,14 @@ export type Extent = { width: Mm; height: Mm };
 /**
  * The four faces of a stretched canvas, named for their side of the front.
  *
- * The list declares and the union derives, as `PHOTO_CATEGORIES` and
- * `ORIENTATIONS` do: both call sites that walk the faces used to write their own
- * array and cast it back to the union, so the cast rather than a check was what
- * made those four strings valid, and a face added here would have been a type
- * error at every `Record<CanvasSide, …>` while rendering as nothing. As one
- * declaration the two cannot disagree — `tests/print-preview.test.mts` pins the
- * order, so a duplicate or a stray value fails there.
+ * The list declares and the union derives from it, as `PHOTO_CATEGORIES` and
+ * `ORIENTATIONS` do: one declaration cannot be half-updated, and a site that
+ * needs to walk the faces has a value to walk instead of a union to assert
+ * its own spelling against. Anything keyed by a face — the side transform, the
+ * moulding placement, the shading — is a `Record<CanvasSide, …>`, so a face
+ * missing from here is a compile error in the component rather than a face that
+ * renders as nothing. `tests/print-preview.test.mts` pins the order and the
+ * uniqueness, which is the half a type cannot see.
  */
 export const CANVAS_SIDES = ["top", "right", "bottom", "left"] as const;
 export type CanvasSide = (typeof CANVAS_SIDES)[number];
