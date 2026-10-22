@@ -1,7 +1,11 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { fieldControlClass, fieldLabelClass } from "./field-styles";
+import {
+  fieldControlClass,
+  fieldHintClass,
+  fieldLabelClass,
+} from "./field-styles";
 import { Button } from "@/components/Button";
 import {
   DEFAULT_SHIPPING_COUNTRY,
@@ -402,7 +406,7 @@ export function PrintConfigurator({
             </select>
             {/* The paper changes the price and the print, not the geometry, so
                 the one thing worth saying here is what the paper actually is. */}
-            <p id="print-paper-note" className="text-[10px] text-stone-500 mt-1.5">
+            <p id="print-paper-note" className={fieldHintClass()}>
               {paperNote(paper)}
             </p>
           </div>
@@ -435,7 +439,7 @@ export function PrintConfigurator({
                 and the photo behind the mount is smaller. Saying so here,
                 beside the finish the mount is fixed to, is the last point
                 before checkout where it can still change the buyer's mind. */}
-            <p id="frame-mount-note" className="text-[10px] text-stone-500 mt-1.5">
+            <p id="frame-mount-note" className={fieldHintClass()}>
               {framedMountNote(size, orientation, mount)}
             </p>
           </div>
@@ -470,7 +474,7 @@ export function PrintConfigurator({
             {/* #335: unmounted prints are a different product, so the reason a
                 size cannot go without a mount belongs beside the control that
                 offers it — never a silent swap back to the mounted version. */}
-            <p id="frame-mount-help" className="text-[10px] text-stone-500 mt-1.5">
+            <p id="frame-mount-help" className={fieldHintClass()}>
               {mount === "none"
                 ? noMountReason ??
                   "Your photo fills the frame edge to edge, with no mount."
