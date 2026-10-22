@@ -325,7 +325,7 @@ export function PrintConfigurator({
                   <div className="font-medium text-stone-900">{f.title}</div>
                   <div className="text-[10px] text-stone-500">
                     {f.sub}
-                    {f.id === "digital" ? ` · €${DIGITAL_PRICE_EUR}` : ""}
+                    {f.id === "digital" ? ` · €${DIGITAL_PRICE_EUR.toFixed(2)}` : ""}
                   </div>
                   {f.id === "digital" && (
                     <div
