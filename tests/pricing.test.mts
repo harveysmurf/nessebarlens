@@ -3,6 +3,7 @@ import test from "node:test";
 import {
   DIGITAL_PRICE_EUR,
   PRODIGI_MARGIN,
+  eurLabel,
   eurToCents,
   formatLabel,
   merchandiseFromUnitCost,
@@ -24,6 +25,20 @@ test("eurToCents rounds to whole cents", () => {
   assert.equal(eurToCents(30), 3000);
   assert.equal(eurToCents(19.995), 2000);
   assert.equal(eurToCents(DIGITAL_PRICE_EUR), 3000);
+});
+
+test("eurLabel is the one way an amount becomes text on the site", () => {
+  assert.equal(eurLabel(DIGITAL_PRICE_EUR), "€30.00");
+  assert.equal(eurLabel(0), "€0.00");
+  assert.equal(eurLabel(11.999), "€12.00");
+  // Rounded through cents, so an amount with more than two decimals cannot
+  // render three of them — which is what `toFixed` alone would have printed.
+  assert.equal(eurLabel(11.994), "€11.99");
+
+  // A quote amount that is not a number throws here rather than rendering
+  // "€NaN" to a buyer, which is what the component's own toFixed did.
+  assert.throws(() => eurLabel(Number.NaN), /invalid EUR cents/);
+  assert.throws(() => eurLabel(-1), /invalid EUR cents/);
 });
 
 test("every sellable format has a buyer-facing label", () => {

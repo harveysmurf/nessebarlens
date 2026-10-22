@@ -31,6 +31,23 @@ export const DIGITAL_PRICE_EUR = 30;
 export const PRODIGI_MARGIN = 1.2;
 
 /**
+ * An amount as the site shows it: a euro sign and two decimals.
+ *
+ * money.ts owns the decimal rule — `Eur.toFixed()` is the one place an amount
+ * becomes text — so the symbol belongs beside the call rather than at each
+ * site. It was written out four times in the configurator, across the digital
+ * price, the quote's merchandise and its shipping, and the two that had to
+ * agree most were 70 lines apart.
+ *
+ * The amount goes through `Eur`, so a non-finite or over-cap value throws here
+ * instead of rendering "€NaN" to a buyer. `isLiveQuote` is what keeps that
+ * unreachable for the quote amounts; the digital price is a literal above.
+ */
+export function eurLabel(amountEur: number): string {
+  return `€${Eur.fromCents(eurToCents(amountEur)).toFixed()}`;
+}
+
+/**
  * The margin is applied to whole cents, not to a float: the unit cost is a
  * parsed EUR amount, so it has cents already, and the only rounding left is
  * the one that folds the scaled cents back into an integer. The result goes

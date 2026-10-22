@@ -15,6 +15,7 @@ import {
 } from "@/domain/pricing/ship-to-countries";
 import {
   DIGITAL_PRICE_EUR,
+  eurLabel,
   formatLabel,
   type PrintFormat,
 } from "@/domain/pricing/pricing";
@@ -259,9 +260,9 @@ export function PrintConfigurator({
   }
 
   const priceLabel = (() => {
-    if (isDigital) return `€${DIGITAL_PRICE_EUR.toFixed(2)}`;
+    if (isDigital) return eurLabel(DIGITAL_PRICE_EUR);
     if (quoteLoading) return "…";
-    if (quote) return `€${quote.merchandiseEur.toFixed(2)}`;
+    if (quote) return eurLabel(quote.merchandiseEur);
     return "—";
   })();
 
@@ -283,7 +284,7 @@ export function PrintConfigurator({
               {quoteLoading
                 ? "…"
                 : quote
-                  ? `€${quote.shippingEur.toFixed(2)}`
+                  ? eurLabel(quote.shippingEur)
                   : "—"}
             </span>
           </div>
@@ -329,7 +330,7 @@ export function PrintConfigurator({
                   <div className="font-medium text-stone-900">{f.title}</div>
                   <div className="text-[10px] text-stone-500">
                     {f.sub}
-                    {f.id === "digital" ? ` · €${DIGITAL_PRICE_EUR.toFixed(2)}` : ""}
+                    {f.id === "digital" ? ` · ${eurLabel(DIGITAL_PRICE_EUR)}` : ""}
                   </div>
                   {f.id === "digital" && (
                     <div
