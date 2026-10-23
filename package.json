@@ -34,7 +34,7 @@
     "cf-typegen:check": "node scripts/cf-env-types.mjs --check"
   },
   "dependencies": {
-    "next": "16.3.8",
+    "next": "16.4.3",
     "react": "19.3.0",
     "react-dom": "19.3.0",
     "stripe": "^23.0.0"
@@ -42,7 +42,7 @@
   "devDependencies": {
     "@aws-sdk/client-s3": "^3.1152.0",
     "@cloudflare/workers-types": "^5.20261016.1",
-    "@opennextjs/cloudflare": "^1.20.9",
+    "@opennextjs/cloudflare": "^1.20.12",
     "@playwright/test": "^1.64.1",
     "@tailwindcss/postcss": "^4",
     "@types/node": "^24.19.2",
@@ -60,5 +60,10 @@
   },
   "engines": {
     "node": ">=24.22.1 <25"
+  },
+  "overrides": {
+    "@node-minify/core": {
+      "glob": "10.5.0"
+    }
   }
 }

@@ -76,14 +76,33 @@ updates:
     #     not supported by the Next 16 lint tree yet.
     #   * @types/node — the Worker runs Node 24 (`engines` in package.json), so
     #     the types must describe the 24.x API, not the Node 25/26 releases.
-    #   * next — Next 16.4.0 loads a new `.next/server/preview-props.json`
-    #     manifest unconditionally at server boot
-    #     (`NextNodeServer.getPreviewProps`), and @opennextjs/cloudflare inlines
-    #     `loadManifest` with a whitelist that omits it, so the Worker boots and
-    #     then 500s every request until OpenNext knows the manifest. Nothing
-    #     released does -- 1.20.9 and the latest 1.20.10 both still throw
-    #     `Unexpected loadManifest(...preview-props.json)`. Hold `next` at 16.3.x
-    #     (#367); 16.3.x security patches still land under this floor.
+    #
+    # `next` was the fourth hold and is not one any more. It was held at 16.3.x
+    # (#367) because Next 16.4 loads a new `.next/server/preview-props.json`
+    # manifest unconditionally at server boot (`NextNodeServer.getPreviewProps`),
+    # and @opennextjs/cloudflare inlines `loadManifest` with a whitelist that
+    # omits it, so the Worker boots and then 500s every request until OpenNext
+    # knows the manifest. At the time of the hold nothing released knew it —
+    # 1.20.9 through 1.20.11 all still threw
+    # `Unexpected loadManifest(...preview-props.json)`. 1.20.12 is the first
+    # release whose `load-manifest.js` inlines `server/preview-props.json`, and
+    # package.json floors it at `^1.20.12`, so the 16.4 line can move.
+    #
+    # The hold was also masking the reason to move: 16.3.8 is inside the
+    # affected range of three advisories, two of them unauthenticated remote
+    # code execution (the Image Optimization API with SVG files, and `use
+    # cache` functions returning typed arrays). npm's advisory data gives that
+    # range as 16.0.0 - 16.4.0, so every version that closes the advisories
+    # was behind the `>=16.4.0` ignore, and the line stayed on a vulnerable
+    # release. Dependabot's security update job for `next` was the visible
+    # symptom: it ran, found every candidate ignored, and reported
+    # `all_versions_ignored` as an error.
+    #
+    # The floors live in package.json, not here: `next` is pinned exactly and
+    # `@opennextjs/cloudflare` is floored at `^1.20.12`, so neither can be
+    # walked back under the hold this list used to express. A future `next`
+    # major arrives as an unheld framework-group PR, and the triage workflow
+    # holds it for a human (majors never auto-merge, in any group).
     #
     # These are version *floors*, not blanket ignores: `versions: [">=6"]` still
     # lets a 5.x security patch through, which is what keeps this from being the
@@ -95,8 +114,6 @@ updates:
         versions: [">=10"]
       - dependency-name: "@types/node"
         versions: [">=25"]
-      - dependency-name: "next"
-        versions: [">=16.4.0"]
 
 # Security updates are NOT controlled here. Dependabot alerts and security
 # updates are repository settings (Settings -> Code security and analysis), and a

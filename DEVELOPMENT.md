@@ -1310,6 +1310,45 @@ tags.
   Without the exclusions the catch-all wins and the grouping silently stops
   happening.
 
+#### The Next/OpenNext floor pair (#367)
+
+`next` and `@opennextjs/cloudflare` cannot be moved independently, and the
+coupling is invisible until the Worker boots.
+
+Next 16.4 loads `.next/server/preview-props.json` at server boot
+(`NextNodeServer.getPreviewProps`). OpenNext's Worker shim inlines
+`loadManifest` with a whitelist of manifests, because workerd has no
+`readFileSync`; a shim that does not know that manifest makes the Worker boot
+and then **500 every request**. `@opennextjs/cloudflare` 1.20.12 is the first
+release whose `load-manifest.js` inlines `server/preview-props.json`; 1.20.9
+through 1.20.11 all still throw
+`Unexpected loadManifest(...preview-props.json)`. That is why `next` was held at
+16.3.x (#367) — and 16.3.8 was inside the affected range of three advisories,
+two of them unauthenticated remote code execution, so the hold was also pinning
+the tree to a vulnerable release. npm's advisory data gives that range as
+16.0.0 - 16.4.0 and the v16.4.1 release notes are the ones naming the three
+advisories, so 16.4.1 is the first patched `next` — and it is also the lowest
+`next` the OpenNext peer range (`>=15.5.28 <16 || >=16.4.1`) admits. The two
+floors are the same version, which is why one `next` pin covers both.
+
+The floor moved with OpenNext 1.20.12, and it moved **with a cost**: 1.20.12+
+pulls `@opennextjs/aws` 4.1.11+, which pulls `@node-minify/core` 9.x, which
+pins `glob` 10.3.3 — inside the range GHSA-5j98-mcp5-4vw2 covers (glob CLI
+command injection, high). So `package.json` carries an `overrides` block pinning
+`glob` to the patched 10.x **inside `@node-minify/core` only**: a global
+`"glob"` override would drag OpenNext's own `glob` 13 down a major, and the
+scoped form keeps `globSync` — the only API `@node-minify/core` uses — on the
+line it declared.
+
+Three floors, one guard: `tests/dependency-floor.test.mts` holds `next` at or
+above the version that closes the advisories, `@opennextjs/cloudflare` at or
+above the release that inlines the manifest, and `glob` at or above the patched
+version — in `package.json` **and** in the lockfile it resolves to. That test
+holds the floors as constants; the versions named here are the ones it holds.
+The Worker only boots in the E2E Worker runtime job and `npm audit` is not a CI
+step, so without that test a downgrade of any one of the three is a green build
+and a broken site.
+
 #### Security updates are a repository setting, not the YAML (#359)
 
 `dependabot.yml` only turns on *version* updates. Dependabot **alerts** and
