@@ -47,11 +47,13 @@ Stack:
 
 ## 3. Local development
 
-The project pins its node version in `.nvmrc` (`24.21.0`, the current LTS
+The project pins its node version in `.nvmrc` (`24.22.1`, the current LTS
 line). Node 20 cannot run the suite at all — it fails on `.mts` with
 `ERR_UNKNOWN_FILE_EXTENSION`, because type stripping is the loader's job here.
 Not every 24.x works either: **24.10 fails `tests/routes.test.mts`** on a
-loader change, so `engines.node` is `>=24.21.0 <25` and every workflow pins
+loader change, and every 24.x below the pin misses the 2026-10-21 security
+release (CVE-2026-111497 brotli out-of-bounds write, the TLS certificate
+hostname bypasses), so `engines.node` is `>=24.22.1 <25` and every workflow pins
 `node-version` to the exact `.nvmrc` value. Bump all three together
 (`.nvmrc`, `engines.node`, each workflow) — `tests/node-version-pin.test.mts`
 fails if they drift.
@@ -90,7 +92,7 @@ automatic.** A shell whose `node` predates the pin will run the wrong runtime an
 report failures that are not the code's fault: on Node 20 the suite fails every
 test file with `ERR_UNKNOWN_FILE_EXTENSION` on `.mts`, which reads exactly like
 a broken rebase or a bad merge but is neither. Check with `node -v` (expect
-`v24.21.0`) before trusting a red run. If the shell is non-interactive (an agent
+`v24.22.1`) before trusting a red run. If the shell is non-interactive (an agent
 harness, a CI step, a cron job) `nvm` may not be on the path at all — source it
 first, and verify the version actually changed rather than assuming:
 
@@ -98,7 +100,7 @@ first, and verify the version actually changed rather than assuming:
 export NVM_DIR=/mnt/storage/apps/nvm   # not the default ~/.nvm, this is the 2TB drive
 . "$NVM_DIR/nvm.sh"
 cd /path/to/nessebarlens && nvm use   # reads .nvmrc; no-op + warning outside the repo
-node -v                                # must print v24.21.0
+node -v                                # must print v24.22.1
 ```
 
 `nvm use` prints `No .nvmrc file found` and changes nothing when run outside the
@@ -114,7 +116,7 @@ cd /mnt/storage/.../scratch
 curl -fsSLO "https://nodejs.org/dist/v${PIN}/node-v${PIN}-linux-x64.tar.xz"
 tar -xJf "node-v${PIN}-linux-x64.tar.xz"          # extracts node-v…-linux-x64/bin/node
 export PATH="$PWD/node-v${PIN}-linux-x64/bin:$PATH"
-node -v                                             # must print v24.21.0
+node -v                                             # must print v24.22.1
 ```
 
 `linux-x64` is this box's arch; on arm64 use `linux-arm64` in all three lines.
@@ -1029,7 +1031,7 @@ Two consequences worth knowing before you change anything here:
 
 ## 6. CI/CD
 
-GitHub Actions on `harveysmurf/nessebarlens` (Node 24.21.0, see §3):
+GitHub Actions on `harveysmurf/nessebarlens` (Node 24.22.1, see §3):
 
 | Workflow | Trigger | What it does |
 |----------|---------|--------------|
@@ -1537,8 +1539,8 @@ Debian-host symlink to `/mnt/storage/services/buzz/secrets/nessebar-lens/.env`.
 
 Simo runs this from his own box, not CI. Three prerequisites, in order:
 
-1. **Node 24.21** — `nvm use` in the repo root. `npm run publish-photos` checks
-   the pin in `.nvmrc` and stops with `publish-photos needs Node 24.21.0`
+1. **Node 24.22** — `nvm use` in the repo root. `npm run publish-photos` checks
+   the pin in `.nvmrc` and stops with `publish-photos needs Node 24.22.1`
    otherwise, because `sharp` is a native binding and a mismatch otherwise
    surfaces as an opaque `ERR_UNKNOWN_FILE_EXTENSION`.
 2. **`npm install`** — `sharp`, `@aws-sdk/client-s3` and `yaml` are
