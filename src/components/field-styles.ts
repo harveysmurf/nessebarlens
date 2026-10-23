@@ -14,6 +14,10 @@
  * visible. Collapsing the remaining 2px gap between the two densities is a design
  * call and deliberately not made here.
  *
+ * A field's error line and its note are here too, for the same reason and with
+ * no density to choose: they were the last two strings a component still
+ * spelled out itself.
+ *
  * Both class strings are built by concatenation, but every Tailwind candidate is
  * a literal in this file: `DENSITY` spells `text-xs` / `text-sm` out rather than
  * interpolating `text-${size}`, because a class Tailwind cannot see is a class
@@ -59,4 +63,31 @@ export function fieldControlClass(density: FieldDensity = "default"): string {
 /** The className for the `<label>` or `<legend>` that names a control. */
 export function fieldLabelClass(density: FieldDensity = "default"): string {
   return `${LABEL} ${DENSITY[density].label}`;
+}
+
+/**
+ * The line under a control that names what is wrong with it, and the line that
+ * says what the choice means.
+ *
+ * The two lines a field is *about* — the visitor's error and the note beside
+ * the control — were still written out at each site: the error string four
+ * times in `ContactForm`, the note three times in `PrintConfigurator`. They are
+ * declared here for the reason the control and label are: seven spellings of two
+ * values is seven chances to have one field's error a shade different from
+ * another field's, which is invisible until a visitor compares two forms.
+ *
+ * Unlike the control and the label these take no density. Nothing has needed a
+ * denser one, and a parameter with one caller shape is a knob nobody turns.
+ */
+const ERROR = "text-[11px] text-red-700 mt-1.5";
+const HINT = "text-[10px] text-stone-500 mt-1.5";
+
+/** The className for a field's error line — `role="alert"`, one per control. */
+export function fieldErrorClass(): string {
+  return ERROR;
+}
+
+/** The className for a field's note — what the control's value means. */
+export function fieldHintClass(): string {
+  return HINT;
 }

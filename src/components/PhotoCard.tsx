@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { isFilmPhoto, type Photo } from "@/domain/catalog/photos";
+import { GALLERY_GRID_SIZES } from "@/components/grid-sizes";
 import { PhotoTile } from "@/components/PhotoTile";
 
 export function PhotoCard({ photo }: { photo: Photo }) {
@@ -8,7 +9,7 @@ export function PhotoCard({ photo }: { photo: Photo }) {
       {/* The box itself is `PhotoTile` (#422). Three call sites rendered it by
           hand and two of them had already drifted into the black frame #409
           reported; the fix is one copy of the box, not another test. */}
-      <PhotoTile photo={photo} sizes="(max-width: 768px) 100vw, 33vw" duration={500} />
+      <PhotoTile photo={photo} sizes={GALLERY_GRID_SIZES} duration={500} />
       <div className="flex justify-between items-baseline text-xs gap-3">
         <div>
           <h3 className="font-serif text-base font-normal text-gallery-900">{photo.title}</h3>

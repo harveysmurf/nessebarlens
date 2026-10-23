@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { STORY_BLOCK_SIZES } from "@/components/grid-sizes";
 import { PhotoTile } from "@/components/PhotoTile";
 import { CATEGORY } from "@/domain/catalog/categories";
 import { PHOTO_CATEGORIES, type PhotoCategory } from "@/domain/catalog/photo-schema";
@@ -86,7 +87,7 @@ export default function StoryPage() {
                     drew a 4px black frame around the film blocks. The backdrop
                     itself moved into `PhotoTile` (#422). */}
                 <Link href={block.href} className="block">
-                  <PhotoTile photo={photo} ratio="3/2" sizes="(max-width: 768px) 100vw, 60vw" />
+                  <PhotoTile photo={photo} ratio="3/2" sizes={STORY_BLOCK_SIZES} />
                 </Link>
               </div>
               <div

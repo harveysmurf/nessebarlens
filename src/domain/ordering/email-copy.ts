@@ -35,6 +35,29 @@ export type EmailCopy = {
 };
 
 /**
+ * The signature every email from the studio closes with.
+ *
+ * It was written out four times — once in each of the three customer emails and
+ * once in the operator alert — so a rebrand was a four-place edit, and the first
+ * edit to miss one would have signed half the studio's mail differently. Owned
+ * here rather than in the alerts adapter because this is where the studio's
+ * wording lives; `email-operator-alerts.ts` already imports the Resend constants
+ * from its sibling in `domain/ordering/`.
+ */
+export const STUDIO_SIGNATURE = "— Nessebar Lens";
+
+/**
+ * The line that tells a customer which order the mail is about.
+ *
+ * `orderReference` is the derivation, and it is already shared with the success
+ * page; what was local to this module was the "Reference: " label in front of
+ * it, spelled three times in three different shapes.
+ */
+export function referenceLine(sessionId: string): string {
+  return `Reference: ${orderReference(sessionId)}`;
+}
+
+/**
  * Build the subject and body for one kind. Pure: no I/O, no env reads.
  * Callers pass `siteUrl` in so this module stays free of config.ts.
  */
@@ -65,9 +88,9 @@ function confirmationCopy(sessionId: string, siteOrigin: string): EmailCopy {
       "If you bought a digital copy, the download link is on that page once it is ready.",
       "If you bought a print, we will email you again when it ships.",
       "",
-      `Reference: ${orderReference(sessionId)}`,
+      referenceLine(sessionId),
       "",
-      "— Nessebar Lens",
+      STUDIO_SIGNATURE,
     ].join("\n"),
   };
 }
@@ -88,7 +111,7 @@ function shippedCopy(input: EmailCopyInput): EmailCopy {
   if (!carrier && !trackingNumber && !trackingUrl) {
     lines.push("Your carrier will provide tracking details separately.");
   }
-  lines.push("", `Reference: ${orderReference(input.sessionId)}`, "", "— Nessebar Lens");
+  lines.push("", referenceLine(input.sessionId), "", STUDIO_SIGNATURE);
   return {
     subject: "Your Nessebar Lens print has shipped",
     text: lines.join("\n"),
@@ -101,11 +124,11 @@ function unfulfilledCopy(sessionId: string): EmailCopy {
     text: [
       "We received your payment, but we could not complete your order automatically, so it has not gone into production yet. We will contact you by email about it.",
       "",
-      `Reference: ${orderReference(sessionId)}`,
+      referenceLine(sessionId),
       "",
       "Please reply to this email (or contact us via the site) and we will make it right — a refund or a fresh attempt, whichever you prefer.",
       "",
-      "— Nessebar Lens",
+      STUDIO_SIGNATURE,
     ].join("\n"),
   };
 }

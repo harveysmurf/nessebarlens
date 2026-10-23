@@ -1,5 +1,6 @@
 import type { Metadata } from "next";
 import Link from "next/link";
+import { HOME_CATEGORY_GRID_SIZES } from "@/components/grid-sizes";
 import { PhotoTile } from "@/components/PhotoTile";
 import { WebPhoto } from "@/components/WebPhoto";
 import { CATEGORY } from "@/domain/catalog/categories";
@@ -104,7 +105,7 @@ export default function HomePage() {
             const photo = photosByCategory(cat.category)[0];
             return (
               <Link key={cat.href} href={cat.href} className="group space-y-3 block">
-                <PhotoTile photo={photo} sizes="(max-width: 768px) 100vw, 33vw" />
+                <PhotoTile photo={photo} sizes={HOME_CATEGORY_GRID_SIZES} />
                 <div className="border-b border-gallery-200 pb-3 flex justify-between items-baseline gap-3">
                   <div>
                     <h3 className="font-serif text-xl font-normal">

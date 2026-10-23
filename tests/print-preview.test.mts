@@ -5,6 +5,7 @@ import type { MasterFacts } from "../src/domain/catalog/master-facts.ts";
 import { assess } from "../src/domain/catalog/print-eligibility.ts";
 import {
   CANVAS_BAR_DEPTH_MM,
+  CANVAS_SIDES,
   CLASSIC_FRAME_MOULDING_MM,
   canvasSideFace,
   percentNumber,
@@ -280,6 +281,32 @@ test("canvasSideFace matches the issue's reference table (±0.01 mm)", () => {
   }
 });
 
+test("CANVAS_SIDES carries every face of the union, once each", () => {
+  // The component iterates this list to draw the side faces and the moulding
+  // pieces, and every other structure in the preview is keyed by the union
+  // rather than by the list. So a face added to the union and missed here
+  // would type-check at every Record and render nothing.
+  //
+  // `Absent` is the check for that half: it is never for a list that covers the
+  // union. `[Absent] extends [never]` is the non-distributive spelling, so an
+  // empty union cannot distribute the conditional away to `never`, and the
+  // one-element tuple is what makes the empty literal stop being assignable —
+  // `const a: string[] = []` is legal, which would have made the obvious
+  // version of this a check that never failed. The suite's own typecheck job
+  // is what runs it.
+  type Absent = Exclude<CanvasSide, (typeof CANVAS_SIDES)[number]>;
+  const absent: [Absent] extends [never] ? [] : ["CANVAS_SIDES misses a face"] = [];
+  assert.deepEqual(absent, []);
+
+  // And this half is the one a type cannot see: a name repeated, or a value
+  // that is not a face at all, would both render as a duplicate or a blank.
+  assert.deepEqual(
+    [...CANVAS_SIDES].sort(),
+    ["bottom", "left", "right", "top"],
+  );
+  assert.equal(new Set(CANVAS_SIDES).size, CANVAS_SIDES.length);
+});
+
 test("every canvas side face is depthMm deep and its photo band abuts the front", () => {
   for (const product of PRINT_PRODUCTS) {
     if (product.format !== "canvas") continue;
@@ -287,7 +314,7 @@ test("every canvas side face is depthMm deep and its photo band abuts the front"
     assert.equal(geometry.kind, "canvas", product.sku);
     if (geometry.kind !== "canvas") continue;
 
-    for (const side of ["top", "right", "bottom", "left"] as CanvasSide[]) {
+    for (const side of CANVAS_SIDES) {
       const { face } = canvasSideFace(geometry, side);
       const upright = side === "top" || side === "bottom";
       near(face.width, upright ? geometry.front.width : geometry.depthMm);

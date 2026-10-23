@@ -28,8 +28,20 @@ export type Mm = number;
 export type Rect = { x: Mm; y: Mm; width: Mm; height: Mm };
 export type Extent = { width: Mm; height: Mm };
 
-/** The four faces of a stretched canvas, named for their side of the front. */
-export type CanvasSide = "top" | "right" | "bottom" | "left";
+/**
+ * The four faces of a stretched canvas, named for their side of the front.
+ *
+ * The list declares and the union derives from it, as `PHOTO_CATEGORIES` and
+ * `ORIENTATIONS` do: one declaration cannot be half-updated, and a site that
+ * needs to walk the faces has a value to walk instead of a union to assert
+ * its own spelling against. Anything keyed by a face — the side transform, the
+ * moulding placement, the shading — is a `Record<CanvasSide, …>`, so a face
+ * missing from here is a compile error in the component rather than a face that
+ * renders as nothing. `tests/print-preview.test.mts` pins the order and the
+ * uniqueness, which is the half a type cannot see.
+ */
+export const CANVAS_SIDES = ["top", "right", "bottom", "left"] as const;
+export type CanvasSide = (typeof CANVAS_SIDES)[number];
 
 export type PreviewGeometry =
   | { kind: "digital" }

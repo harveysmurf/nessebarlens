@@ -23,6 +23,7 @@ import {
   RESEND_FROM_ADDRESS,
   RESEND_TIMEOUT_MS,
 } from "../../domain/ordering/email";
+import { STUDIO_SIGNATURE } from "../../domain/ordering/email-copy";
 import {
   isProdigiTimeout,
   prodigiTimeoutSignal,
@@ -53,7 +54,7 @@ export function buildAlertEmail(
   if (alert.sessionId) {
     lines.push("", `Session: ${alert.sessionId}`);
   }
-  lines.push("", "— Nessebar Lens");
+  lines.push("", STUDIO_SIGNATURE);
   return {
     subject: `Operator alert: ${alert.event}`,
     text: lines.join("\n"),

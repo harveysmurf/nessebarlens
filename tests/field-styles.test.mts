@@ -20,6 +20,8 @@ import { test } from "node:test";
 
 import {
   fieldControlClass,
+  fieldErrorClass,
+  fieldHintClass,
   fieldLabelClass,
   type FieldDensity,
 } from "../src/components/field-styles";
@@ -89,6 +91,14 @@ test("the shared control style is the one both forms already rendered", () => {
   );
 });
 
+test("the error and hint lines are the ones the forms already rendered", () => {
+  // Pinned for the reason the control is: these two strings are what a
+  // visitor reads when the form refuses them, and a change to either is a
+  // change to how every field in the site reports a problem.
+  assert.equal(fieldErrorClass(), "text-[11px] text-red-700 mt-1.5");
+  assert.equal(fieldHintClass(), "text-[10px] text-stone-500 mt-1.5");
+});
+
 /**
  * The literal both forms used to inline, which no component may spell again.
  *
@@ -99,6 +109,9 @@ test("the shared control style is the one both forms already rendered", () => {
  */
 const INLINED_FIELD_STYLE = /border-stone-300 rounded p-2\.5[^\n]*focus-visible:outline-stone-900/;
 const INLINED_FIELD_LABEL = /font-semibold uppercase tracking-wider text-\[10px\] text-stone-600 mb-/;
+/** The two lines a field is about, matched on their middle for the same reason. */
+const INLINED_FIELD_ERROR = /text-\[11px\] text-red-700 mt-1\.5/;
+const INLINED_FIELD_HINT = /text-\[10px\] text-stone-500 mt-1\.5/;
 
 test("ContactForm takes its field styles from the shared module", () => {
   const source = sourceOf("../src/components/ContactForm.tsx");
@@ -112,6 +125,11 @@ test("ContactForm takes its field styles from the shared module", () => {
     INLINED_FIELD_LABEL,
     "ContactForm inlines the label style again; take it from field-styles",
   );
+  assert.doesNotMatch(
+    source,
+    INLINED_FIELD_ERROR,
+    "ContactForm inlines the field error again; take it from field-styles",
+  );
   assert.match(source, /fieldControlClass\(\)/);
   assert.match(source, /fieldLabelClass\(\)/);
 });
@@ -122,6 +140,11 @@ test("PrintConfigurator takes its compact field styles from the shared module", 
     source,
     INLINED_FIELD_STYLE,
     "PrintConfigurator inlines the control style again; take it from field-styles",
+  );
+  assert.doesNotMatch(
+    source,
+    INLINED_FIELD_HINT,
+    "PrintConfigurator inlines the field note again; take it from field-styles",
   );
   // The fieldset legend is not a field label — it names a grid of radio cards,
   // not one control, and it sits further above its content on purpose.
@@ -140,4 +163,14 @@ test("every control and label in PrintConfigurator uses the shared style", () =>
   const source = sourceOf("../src/components/PrintConfigurator.tsx");
   assert.equal(source.match(/fieldControlClass\("compact"\)/g)?.length, 5);
   assert.equal(source.match(/fieldLabelClass\("compact"\)/g)?.length, 6);
+});
+
+test("every field error and every field note comes from the shared module", () => {
+  // Counts as well as the regexes: the four errors in the contact form and the
+  // three notes in the configurator are the ones this replaced, so a fifth
+  // call site is a decision rather than an accident.
+  const form = sourceOf("../src/components/ContactForm.tsx");
+  assert.equal(form.match(/fieldErrorClass\(\)/g)?.length, 4);
+  const configurator = sourceOf("../src/components/PrintConfigurator.tsx");
+  assert.equal(configurator.match(/fieldHintClass\(\)/g)?.length, 3);
 });

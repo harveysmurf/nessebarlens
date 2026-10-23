@@ -4,7 +4,11 @@ import Script from "next/script";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { parseContactMessage } from "@/domain/contact/contact-message";
 import { track } from "@/analytics/track";
-import { fieldControlClass, fieldLabelClass } from "./field-styles";
+import {
+  fieldControlClass,
+  fieldErrorClass,
+  fieldLabelClass,
+} from "./field-styles";
 import { Button } from "@/components/Button";
 
 /**
@@ -210,7 +214,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
           className={fieldControlClass()}
         />
         {errors.name && (
-          <p id="contact-name-error" role="alert" className="text-[11px] text-red-700 mt-1.5">
+          <p id="contact-name-error" role="alert" className={fieldErrorClass()}>
             {errors.name}
           </p>
         )}
@@ -232,7 +236,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
           className={fieldControlClass()}
         />
         {errors.email && (
-          <p id="contact-email-error" role="alert" className="text-[11px] text-red-700 mt-1.5">
+          <p id="contact-email-error" role="alert" className={fieldErrorClass()}>
             {errors.email}
           </p>
         )}
@@ -253,7 +257,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
           className={fieldControlClass()}
         />
         {errors.message && (
-          <p id="contact-message-error" role="alert" className="text-[11px] text-red-700 mt-1.5">
+          <p id="contact-message-error" role="alert" className={fieldErrorClass()}>
             {errors.message}
           </p>
         )}
@@ -268,7 +272,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
       <div>
         <div ref={widgetContainer} data-testid="turnstile-widget" />
         {errors.turnstileToken && (
-          <p role="alert" className="text-[11px] text-red-700 mt-1.5">
+          <p role="alert" className={fieldErrorClass()}>
             {errors.turnstileToken}
           </p>
         )}
