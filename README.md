@@ -14,7 +14,7 @@ Checkout flow, and fulfillment through Prodigi for physical orders.
 
 ## Run it locally
 
-Node **24.21.0** exactly — pinned in `.nvmrc`, and not every 24.x works.
+Node **24.22.1** exactly — pinned in `.nvmrc`, and not every 24.x works.
 
 ```bash
 nvm use          # first, always: a wrong runtime fails the suite for unrelated-looking reasons

@@ -2,9 +2,9 @@
  * The node version is written down in three places -- .nvmrc, package.json
  * `engines`, and the setup-node step that every workflow reaches through the
  * shared composite action -- and nothing kept them in agreement. CI floated on
- * "24" while the local pin was 24.21.0, so a developer on 24.10 and CI on
- * 24.21 were both "the pinned version" by their own lights. That is how a
- * green local suite and a red CI suite coexist: 24.10 fails
+ * "24" while the local pin was a patch release, so a developer on 24.10 and
+ * CI on a newer patch were both "the pinned version" by their own lights.
+ * That is how a green local suite and a red CI suite coexist: 24.10 fails
  * tests/routes.test.mts on a loader change.
  *
  * The invariant is that .nvmrc and engines agree, that no workflow or
@@ -21,8 +21,13 @@ import test from "node:test";
 
 const root = path.join(import.meta.dirname, "..");
 
-/** The oldest 24.x that runs the suite green; 24.10 fails the route tests. */
-const KNOWN_GOOD_FLOOR = "24.21.0";
+/**
+ * The oldest 24.x that runs the suite green and carries the 2026-10-21
+ * security release: CVE-2026-111497 (brotli decoder out-of-bounds write),
+ * CVE-2026-106069 and CVE-2026-105483 (TLS certificate hostname bypasses).
+ * 24.10 fails the route tests.
+ */
+const KNOWN_GOOD_FLOOR = "24.22.1";
 
 type Version = { major: number; minor: number; patch: number };
 

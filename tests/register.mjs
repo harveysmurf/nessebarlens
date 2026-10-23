@@ -14,7 +14,7 @@ import "../scripts/register.mjs";
 register(new URL("./tsx-hooks.mjs", import.meta.url).href);
 
 // tests/sqlite-d1.mts imports `node:sqlite` (#203). The feature is stable on
-// the pinned Node 24.21.0, but some 24.x minors print an ExperimentalWarning
+// the pinned Node 24 line, but some 24.x minors print an ExperimentalWarning
 // for it; the engines range allows those, so suppress that one warning and
 // leave every other warning intact.
 const emitWarning = process.emitWarning;
