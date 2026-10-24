@@ -13,6 +13,10 @@ import {
 } from "@/domain/ordering/orders-store";
 import { classifyUrlOrigin } from "@/domain/ordering/session-origin";
 import {
+  DISPUTED_STATUS,
+  REFUNDED_STATUS,
+} from "@/domain/ordering/order-decision";
+import {
   assetUrlSigner,
   operatorAlerts,
   paymentGateway,
@@ -211,7 +215,10 @@ async function handleRevocation(event: RevocationEvent, store: OrdersStore) {
   try {
     const result = await revokeOrderByPaymentIntent({
       store,
-      status: event.kind === "charge-refunded" ? "refunded" : "disputed",
+      status:
+        event.kind === "charge-refunded"
+          ? REFUNDED_STATUS
+          : DISPUTED_STATUS,
       paymentIntent,
       now: new Date().toISOString(),
       stripe: stripeSessionLookupPort(),

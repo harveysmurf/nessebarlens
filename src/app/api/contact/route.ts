@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { readJsonBody } from "@/infrastructure/config/json-body";
+import { CONTACT_ATTEMPT_STATUSES } from "@/domain/contact/contact-status";
 import { readWorkerBindings } from "@/infrastructure/cloudflare/worker-bindings";
 import { createTurnstileVerifier } from "@/infrastructure/turnstile/cloudflare-turnstile";
 import { createContactEmailSender } from "@/infrastructure/contact/email-contact-message";
@@ -28,7 +29,11 @@ export async function POST(request: Request) {
       { error: body.error },
       { status: body.status },
     );
-    recordContactAttempt(bindings.analytics, bindings.analyticsEnv, "malformed");
+    recordContactAttempt(
+      bindings.analytics,
+      bindings.analyticsEnv,
+      CONTACT_ATTEMPT_STATUSES.malformed,
+    );
     return response;
   }
 
@@ -50,7 +55,7 @@ export async function POST(request: Request) {
     recordContactAttempt(
       bindings.analytics,
       bindings.analyticsEnv,
-      "unconfigured",
+      CONTACT_ATTEMPT_STATUSES.unconfigured,
     );
     return response;
   }
@@ -71,9 +76,9 @@ export async function POST(request: Request) {
     },
   );
 
-  if (outcome.kind === "rejected") {
+  if (outcome.kind === CONTACT_ATTEMPT_STATUSES.rejected) {
     console.error("contact.turnstile-rejected", outcome.reason);
-  } else if (outcome.kind === "delivery-failed") {
+  } else if (outcome.kind === CONTACT_ATTEMPT_STATUSES.deliveryFailed) {
     console.error("contact.delivery-failed", outcome.detail);
   }
 

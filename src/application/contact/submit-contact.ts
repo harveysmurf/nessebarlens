@@ -17,6 +17,7 @@ import {
   parseContactMessage,
   type ContactFieldError,
 } from "../../domain/contact/contact-message";
+import { CONTACT_ATTEMPT_STATUSES } from "../../domain/contact/contact-status";
 import type { ContactEmailSender } from "../ports/contact-email";
 import type { TurnstileVerifier } from "../ports/turnstile";
 
@@ -31,11 +32,14 @@ export type ContactRateLimiter = {
 };
 
 export type ContactOutcome =
-  | { kind: "ok" }
-  | { kind: "invalid"; errors: ContactFieldError[] }
-  | { kind: "rate-limited" }
-  | { kind: "rejected"; reason: string }
-  | { kind: "delivery-failed"; detail: string };
+  | { kind: typeof CONTACT_ATTEMPT_STATUSES.ok }
+  | {
+      kind: typeof CONTACT_ATTEMPT_STATUSES.invalid;
+      errors: ContactFieldError[];
+    }
+  | { kind: typeof CONTACT_ATTEMPT_STATUSES.rateLimited }
+  | { kind: typeof CONTACT_ATTEMPT_STATUSES.rejected; reason: string }
+  | { kind: typeof CONTACT_ATTEMPT_STATUSES.deliveryFailed; detail: string };
 
 export type ContactDeps = {
   verifyTurnstile: TurnstileVerifier;
@@ -61,17 +65,21 @@ export async function submitContact(
 ): Promise<ContactOutcome> {
   if (deps.rateLimit) {
     const { success } = await deps.rateLimit.limit({ key: context.rateLimitKey });
-    if (!success) return { kind: "rate-limited" };
+    if (!success) return { kind: CONTACT_ATTEMPT_STATUSES.rateLimited };
   }
 
   const parsed = parseContactMessage(raw);
-  if (!parsed.ok) return { kind: "invalid", errors: parsed.errors };
+  if (!parsed.ok) {
+    return { kind: CONTACT_ATTEMPT_STATUSES.invalid, errors: parsed.errors };
+  }
 
   const verified = await deps.verifyTurnstile.verify({
     token: parsed.value.turnstileToken,
     remoteIp: context.remoteIp,
   });
-  if (!verified.ok) return { kind: "rejected", reason: verified.reason };
+  if (!verified.ok) {
+    return { kind: CONTACT_ATTEMPT_STATUSES.rejected, reason: verified.reason };
+  }
 
   const email = buildContactEmail(parsed.value);
   const sent = await deps.sendEmail.send({
@@ -79,7 +87,9 @@ export async function submitContact(
     subject: email.subject,
     text: email.text,
   });
-  if (!sent.ok) return { kind: "delivery-failed", detail: sent.message };
+  if (!sent.ok) {
+    return { kind: CONTACT_ATTEMPT_STATUSES.deliveryFailed, detail: sent.message };
+  }
 
-  return { kind: "ok" };
+  return { kind: CONTACT_ATTEMPT_STATUSES.ok };
 }

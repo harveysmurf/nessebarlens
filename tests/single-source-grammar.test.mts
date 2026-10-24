@@ -27,6 +27,11 @@ import {
 import { ORDERS_STORE_UNAVAILABLE_ERROR } from "../src/domain/ordering/orders-store.ts";
 import { PRODIGI_FAILURE_REASONS } from "../src/domain/ordering/prodigi-policy.ts";
 import { EMAIL_KINDS } from "../src/domain/ordering/email.ts";
+import { CONTACT_ATTEMPT_STATUSES } from "../src/domain/contact/contact-status.ts";
+import {
+  DISPUTED_STATUS,
+  REFUNDED_STATUS,
+} from "../src/domain/ordering/order-decision.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
@@ -646,6 +651,66 @@ test("the orders-store rejection is spelled once, in orders-store.ts", () => {
       .join(", ")}`,
   );
   assert.equal(sites.length, 1);
+});
+
+test("the revoked statuses are spelled once, in order-decision.ts", () => {
+  // The domain owns the two statuses that take an order away from a customer
+  // for money reasons, and `isRevoked` is the predicate for that. The ops
+  // store's filter spelled the pair itself, and the D1 query bound the pair
+  // itself with a hardcoded placeholder list — so the SQL and the values it
+  // binds could disagree, and a third revoked status would have been a query
+  // that silently matched fewer rows than the filter did.
+  const OWNER = "src/domain/ordering/order-decision.ts";
+  const sites = stringLiteralSites();
+  for (const status of [REFUNDED_STATUS, DISPUTED_STATUS]) {
+    const found = sites.filter((s) => s.literal === status);
+    assert.deepEqual(
+      found.map((s) => s.file),
+      [OWNER],
+      `"${status}" spelled outside ${OWNER}: ${found
+        .map((s) => `${s.file}:${s.line}`)
+        .join(", ")}`,
+    );
+    assert.equal(found.length, 1);
+  }
+});
+
+test("the contact attempt statuses are spelled once, in contact-status.ts", () => {
+  // The second blob of a contact row is the status of the attempt, and the
+  // report queries it by exact string. The route spelled the two statuses it
+  // records itself and the submit path spelled the rest as outcome kinds, so
+  // a status written one way in one place and another way in the other
+  // produced two dataset values for one outcome — and the report's grouping
+  // showed the attempt in a bucket nobody queried.
+  //
+  // The check is scoped to the contact vocabulary, because "unconfigured" is
+  // also a Prodigi failure kind and a gateway reason: those are different
+  // vocabularies that happen to share a word, and the guard that counted
+  // every occurrence of the string would fail on them for the right reason
+  // and the wrong one.
+  const OWNER = "src/domain/contact/contact-status.ts";
+  const CONTACT_FILES = [
+    "src/application/contact/submit-contact.ts",
+    "src/application/contact/contact-response.ts",
+    "src/app/api/contact/route.ts",
+  ];
+  const sites = stringLiteralSites();
+  for (const status of Object.values(CONTACT_ATTEMPT_STATUSES)) {
+    const owned = sites.filter(
+      (s) => s.literal === status && s.file === OWNER,
+    );
+    assert.equal(owned.length, 1, `${OWNER} holds "${status}" once`);
+    const spelled = sites.filter(
+      (s) => s.literal === status && CONTACT_FILES.includes(s.file),
+    );
+    assert.deepEqual(
+      spelled.map((s) => `${s.file}:${s.line}`),
+      [],
+      `"${status}" spelled outside ${OWNER} in the contact vocabulary: ${spelled
+        .map((s) => `${s.file}:${s.line}`)
+        .join(", ")}`,
+    );
+  }
 });
 
 test("the email kinds are spelled once, in email.ts", () => {

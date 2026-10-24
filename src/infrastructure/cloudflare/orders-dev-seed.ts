@@ -35,6 +35,7 @@ import {
   type DownloadTokenRecord,
 } from "../../domain/ordering/download-token";
 import {
+  isRevoked,
   PAID_UNFULFILLED,
   parseOrderRecord,
   type OrderRecord,
@@ -207,7 +208,7 @@ function matchesFilter(order: OrderRecord, filter: OrderStatusFilter): boolean {
     return order.status === PAID_UNFULFILLED && !order.terminal;
   }
   if (filter.revoked) {
-    return order.status === "refunded" || order.status === "disputed";
+    return isRevoked(order.status);
   }
   if (filter.status && filter.status.length > 0) {
     return (filter.status as readonly OrderStatus[]).includes(order.status);

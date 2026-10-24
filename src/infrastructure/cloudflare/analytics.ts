@@ -16,19 +16,21 @@
  */
 
 import type { AnalyticsEngineDataset } from "@cloudflare/workers-types";
+import type { ContactAttemptStatus } from "../../domain/contact/contact-status";
+import type { TrackEvent } from "../../analytics/events";
 
 type Analytics = AnalyticsEngineDataset | undefined;
 
 /**
  * One point per contact submission attempt, including the ones rejected before
  * `submitContact` (malformed body, unconfigured deployment). `status` is the
- * closed set owned by the route: "malformed" | "unconfigured" | ContactOutcome
- * kind. No PII.
+ * closed set the domain owns — see `CONTACT_ATTEMPT_STATUSES` — and it is the
+ * value the dataset is keyed by. No PII.
  */
 export function recordContactAttempt(
   analytics: Analytics,
   env: string,
-  status: string,
+  status: ContactAttemptStatus,
 ): void {
   write(analytics, {
     blobs: ["contact", status, env],
@@ -44,7 +46,7 @@ export function recordContactAttempt(
 export function recordInteraction(
   analytics: Analytics,
   env: string,
-  event: string,
+  event: TrackEvent,
   path: string,
 ): void {
   write(analytics, {
