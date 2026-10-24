@@ -5,6 +5,7 @@ import { sendEmailFromApiKey } from "@/domain/ordering/email";
 import {
   paymentIntentForDispute,
   revokeOrderByPaymentIntent,
+  REVOCATION_LOOKUP_FAILED_ERROR,
 } from "@/application/fulfillment/order-revocation";
 import {
   ORDERS_STORE_UNAVAILABLE_ERROR,
@@ -119,7 +120,7 @@ export async function POST(request: Request) {
       // must not keep the master file because Stripe was briefly unreachable,
       // so this is a redelivery, not a drop.
       console.error("stripe webhook revocation lookup failed", e);
-      return NextResponse.json({ error: "revocation-lookup-failed" }, { status: 500 });
+      return NextResponse.json({ error: REVOCATION_LOOKUP_FAILED_ERROR }, { status: 500 });
     }
   }
 
