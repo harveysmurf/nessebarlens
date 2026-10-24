@@ -77,24 +77,41 @@ export const CANVAS_BAR_DEPTH_MM = 38;
 
 const MM_PER_INCH = 25.4;
 
-/** The product's print area, turned to the master's orientation (long meets long). */
-function orientedArea(product: PrintProductEntry, orientation: Orientation): Extent {
-  const area = printAreaIn(product);
-  const short = area.short * MM_PER_INCH;
-  const long = area.long * MM_PER_INCH;
+/**
+ * A product's extent in millimetres, turned to the master's orientation: the
+ * long edge meets the master's long edge.
+ *
+ * The print area and the nominal size are oriented by the same rule, so the
+ * rule lives here rather than twice, once per extent.
+ */
+function orientedExtent(
+  short: number,
+  long: number,
+  orientation: Orientation,
+): Extent {
   return orientation === "landscape"
     ? { width: long, height: short }
     : { width: short, height: long };
 }
 
+/** The product's print area, turned to the master's orientation (long meets long). */
+function orientedArea(product: PrintProductEntry, orientation: Orientation): Extent {
+  const area = printAreaIn(product);
+  return orientedExtent(
+    area.short * MM_PER_INCH,
+    area.long * MM_PER_INCH,
+    orientation,
+  );
+}
+
 /** The product's nominal size (glaze for framed, front for canvas), oriented. */
 function orientedSizeIn(product: PrintProductEntry, orientation: Orientation): Extent {
   const size = nominalSizeIn(product);
-  const short = size.short * MM_PER_INCH;
-  const long = size.long * MM_PER_INCH;
-  return orientation === "landscape"
-    ? { width: long, height: short }
-    : { width: short, height: long };
+  return orientedExtent(
+    size.short * MM_PER_INCH,
+    size.long * MM_PER_INCH,
+    orientation,
+  );
 }
 
 /**
