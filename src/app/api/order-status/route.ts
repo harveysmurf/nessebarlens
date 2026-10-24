@@ -3,6 +3,7 @@ import {
   isCheckoutSessionId,
   ORDER_VIEW_STATES,
   orderViewState,
+  SESSION_ID_PARAM,
 } from "@/domain/ordering/order-decision";
 import { readOrderRecord } from "@/domain/ordering/order-corrupt";
 import {
@@ -29,7 +30,8 @@ export const runtime = "nodejs";
  * added later, because the fallback is "keep waiting", not "show a download".
  */
 export async function GET(request: Request) {
-  const sessionId = new URL(request.url).searchParams.get("session_id") ?? "";
+  const sessionId =
+    new URL(request.url).searchParams.get(SESSION_ID_PARAM) ?? "";
   if (!isCheckoutSessionId(sessionId)) {
     return NextResponse.json(
       { error: "invalid-session-id" },

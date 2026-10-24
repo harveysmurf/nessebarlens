@@ -7,7 +7,10 @@ import {
 } from "./order-state";
 import { getConfig } from "@/infrastructure/config/config";
 import { orderReference } from "@/domain/ordering/order-reference";
-import { ORDER_VIEW_STATES } from "@/domain/ordering/order-decision";
+import {
+  ORDER_VIEW_STATES,
+  SESSION_ID_PARAM,
+} from "@/domain/ordering/order-decision";
 import { buttonClass } from "@/components/Button";
 import { PageShell } from "@/components/PageShell";
 import { BODY_COPY, eyebrowClass } from "@/components/type-styles";
@@ -25,7 +28,7 @@ export default async function CheckoutSuccessPage({
 }: {
   searchParams: Promise<{ session_id?: string }>;
 }) {
-  const { session_id: sessionId } = await searchParams;
+  const { [SESSION_ID_PARAM]: sessionId } = await searchParams;
   const state = await resolveCheckoutPageState(sessionId);
   // Only read for the one state that renders a link. A token fetched on every
   // state would be a credential read for pages that cannot use it.

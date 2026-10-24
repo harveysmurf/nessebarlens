@@ -1,7 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { ORDER_VIEW_STATES } from "@/domain/ordering/order-decision";
+import {
+  ORDER_VIEW_STATES,
+  SESSION_ID_PARAM,
+} from "@/domain/ordering/order-decision";
 
 /**
  * Polls /api/order-status until the download is ready, then reloads the page so
@@ -32,7 +35,7 @@ export default function OrderStatusPoller({ sessionId }: { sessionId: string }) 
     const tick = async () => {
       try {
         const res = await fetch(
-          `/api/order-status?session_id=${encodeURIComponent(sessionId)}`,
+          `/api/order-status?${SESSION_ID_PARAM}=${encodeURIComponent(sessionId)}`,
           { cache: "no-store" },
         );
         if (!res.ok) {

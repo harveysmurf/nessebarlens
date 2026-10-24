@@ -15,6 +15,7 @@
 
 import { EMAIL_KINDS, type EmailKind } from "./email";
 import { orderReference } from "./order-reference";
+import { SESSION_ID_PARAM } from "./order-decision";
 
 export type EmailCopyInput = {
   kind: EmailKind;
@@ -76,7 +77,7 @@ function confirmationCopy(sessionId: string, siteOrigin: string): EmailCopy {
   // Success page, not a token URL: the page is the one place that resolves
   // "is this digital-ready / physical / revoked" for a session the customer
   // already paid for.
-  const successUrl = `${siteOrigin}/checkout/success?session_id=${sessionId}`;
+  const successUrl = `${siteOrigin}/checkout/success?${SESSION_ID_PARAM}=${sessionId}`;
   return {
     subject: "Your Nessebar Lens order",
     text: [

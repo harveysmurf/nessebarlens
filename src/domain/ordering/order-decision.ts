@@ -291,6 +291,18 @@ export type FulfillmentInput = {
   now: string;
 };
 
+/**
+ * The query parameter the Checkout Session id travels in.
+ *
+ * The id reaches the success page, the order-status poller and the customer's
+ * email as a URL parameter, and the order-status route reads it back. Those
+ * four places spelled the parameter themselves, so a rename that reached the
+ * reader but not the writer left the poller asking for a parameter nobody
+ * reads: the route answers "invalid session" to a customer whose order was
+ * paid, and nothing in the build says so.
+ */
+export const SESSION_ID_PARAM = "session_id";
+
 export function isCheckoutSessionId(value: string): boolean {
   return /^cs_(test|live)_[A-Za-z0-9]{8,}$/.test(value);
 }

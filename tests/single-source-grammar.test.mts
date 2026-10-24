@@ -32,6 +32,7 @@ import {
   DISPUTED_STATUS,
   ORDER_VIEW_STATES,
   REFUNDED_STATUS,
+  SESSION_ID_PARAM,
 } from "../src/domain/ordering/order-decision.ts";
 
 const root = path.join(import.meta.dirname, "..");
@@ -685,6 +686,24 @@ test("the order view states are spelled once, in order-decision.ts", () => {
         .join(", ")}`,
     );
   }
+});
+
+test("the session id parameter is spelled once, in order-decision.ts", () => {
+  // The id reaches the success page, the order-status poller and the
+  // customer's email as a URL parameter, and the route reads it back. A rename
+  // that reached the reader but not the writer left the poller asking for a
+  // parameter nobody reads: the route answered "invalid session" to a
+  // customer whose order was paid, and nothing in the build said so.
+  const OWNER = "src/domain/ordering/order-decision.ts";
+  const sites = stringLiteralSites().filter((s) => s.literal === SESSION_ID_PARAM);
+  assert.deepEqual(
+    sites.map((s) => s.file),
+    [OWNER],
+    `"${SESSION_ID_PARAM}" spelled outside ${OWNER}: ${sites
+      .map((s) => `${s.file}:${s.line}`)
+      .join(", ")}`,
+  );
+  assert.equal(sites.length, 1);
 });
 
 test("the revoked statuses are spelled once, in order-decision.ts", () => {
