@@ -54,13 +54,17 @@ import {
  */
 export const PAID_UNFULFILLED = "paid-unfulfilled";
 
+/** Stripe money returned in full. Terminal: no download, no retry. */
+export const REFUNDED_STATUS = "refunded";
+
+/** A cardholder dispute is open. Treated exactly like a refund. */
+export const DISPUTED_STATUS = "disputed";
+
 export type OrderStatus =
   | "paid"
   | typeof PAID_UNFULFILLED
-  /** Stripe money returned in full. Terminal: no download, no retry. */
-  | "refunded"
-  /** A cardholder dispute is open. Treated exactly like a refund. */
-  | "disputed";
+  | typeof REFUNDED_STATUS
+  | typeof DISPUTED_STATUS;
 
 /**
  * The two statuses that take an order away from a customer for money reasons,
@@ -72,15 +76,14 @@ export type OrderStatus =
  * "not downloadable", so `isRevoked` — not a string comparison at each use — is
  * the single predicate for that.
  */
-export type RevokedStatus = "refunded" | "disputed";
+export const REVOKED_STATUSES = [REFUNDED_STATUS, DISPUTED_STATUS] as const;
 
-const REVOKED_STATUSES: ReadonlySet<string> = new Set<RevokedStatus>([
-  "refunded",
-  "disputed",
-]);
+export type RevokedStatus = (typeof REVOKED_STATUSES)[number];
+
+const REVOKED_STATUS_SET: ReadonlySet<string> = new Set(REVOKED_STATUSES);
 
 export function isRevoked(status: OrderStatus): status is RevokedStatus {
-  return REVOKED_STATUSES.has(status);
+  return REVOKED_STATUS_SET.has(status);
 }
 
 /**
@@ -94,7 +97,7 @@ export function isOrderStatus(value: unknown): value is OrderStatus {
     typeof value === "string" &&
     (value === "paid" ||
       value === PAID_UNFULFILLED ||
-      REVOKED_STATUSES.has(value))
+      REVOKED_STATUS_SET.has(value))
   );
 }
 

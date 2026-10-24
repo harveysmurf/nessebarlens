@@ -28,6 +28,10 @@ import { ORDERS_STORE_UNAVAILABLE_ERROR } from "../src/domain/ordering/orders-st
 import { PRODIGI_FAILURE_REASONS } from "../src/domain/ordering/prodigi-policy.ts";
 import { EMAIL_KINDS } from "../src/domain/ordering/email.ts";
 import { CONTACT_ATTEMPT_STATUSES } from "../src/domain/contact/contact-status.ts";
+import {
+  DISPUTED_STATUS,
+  REFUNDED_STATUS,
+} from "../src/domain/ordering/order-decision.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
@@ -647,6 +651,28 @@ test("the orders-store rejection is spelled once, in orders-store.ts", () => {
       .join(", ")}`,
   );
   assert.equal(sites.length, 1);
+});
+
+test("the revoked statuses are spelled once, in order-decision.ts", () => {
+  // The domain owns the two statuses that take an order away from a customer
+  // for money reasons, and `isRevoked` is the predicate for that. The ops
+  // store's filter spelled the pair itself, and the D1 query bound the pair
+  // itself with a hardcoded placeholder list — so the SQL and the values it
+  // binds could disagree, and a third revoked status would have been a query
+  // that silently matched fewer rows than the filter did.
+  const OWNER = "src/domain/ordering/order-decision.ts";
+  const sites = stringLiteralSites();
+  for (const status of [REFUNDED_STATUS, DISPUTED_STATUS]) {
+    const found = sites.filter((s) => s.literal === status);
+    assert.deepEqual(
+      found.map((s) => s.file),
+      [OWNER],
+      `"${status}" spelled outside ${OWNER}: ${found
+        .map((s) => `${s.file}:${s.line}`)
+        .join(", ")}`,
+    );
+    assert.equal(found.length, 1);
+  }
 });
 
 test("the contact attempt statuses are spelled once, in contact-status.ts", () => {
