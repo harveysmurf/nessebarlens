@@ -25,7 +25,10 @@
  */
 
 import type { CreateProdigiOrder } from "../../domain/ordering/print-provider";
-import { isRetryableProdigiReason } from "../../domain/ordering/prodigi-policy";
+import {
+  isRetryableProdigiReason,
+  PRODIGI_FAILURE_REASONS,
+} from "../../domain/ordering/prodigi-policy";
 import {
   AWAITING_PRODIGI_REASON,
   decideFulfillment,
@@ -56,7 +59,11 @@ import {
 import { getPhoto } from "../../domain/catalog/photos";
 import type { OrdersStore } from "../../domain/ordering/orders-store";
 import { emailCopyFor } from "../../domain/ordering/email-copy";
-import type { EmailKind, SendEmail } from "../../domain/ordering/email";
+import {
+  EMAIL_KINDS,
+  type EmailKind,
+  type SendEmail,
+} from "../../domain/ordering/email";
 import type { AssetUrlSigner } from "../../domain/ordering/asset-url-signer";
 import { signPrintAssetUrl } from "./print-asset";
 
@@ -128,7 +135,9 @@ function emailForOrder(
  * broke, and the cost of it is an unearned apology email, not a silent no-op.
  */
 function emailKindForWrite(record: OrderRecord): EmailKind {
-  return record.status === "paid" ? "order-confirmation" : "order-unfulfilled";
+  return record.status === "paid"
+    ? EMAIL_KINDS.orderConfirmation
+    : EMAIL_KINDS.orderUnfulfilled;
 }
 
 /** Only called once the caller has checked the kind is not already claimed. */
@@ -397,7 +406,7 @@ export async function fulfillCheckoutSession(
       );
       if (!assetUrl || !assetMd5) {
         record = withProdigiFailure(record, {
-          reason: "prodigi-asset-unconfigured",
+          reason: PRODIGI_FAILURE_REASONS.assetUnconfigured,
         });
         const message = !assetUrl
           ? "print-asset signing is not configured"
@@ -409,7 +418,7 @@ export async function fulfillCheckoutSession(
         }
         return {
           httpStatus: 500,
-          body: { error: "prodigi-asset-unconfigured", message },
+          body: { error: PRODIGI_FAILURE_REASONS.assetUnconfigured, message },
         };
       }
 

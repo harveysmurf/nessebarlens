@@ -21,6 +21,7 @@
 import { prodigiUrl } from "./prodigi-config";
 import { prodigiConfig } from "../config/config";
 import type { CancelProdigiOrder } from "../../domain/ordering/print-provider";
+import { PRODIGI_FAILURE_REASONS } from "../../domain/ordering/prodigi-policy";
 
 /** A thrown value that is not an Error still has to name the failure. */
 function errorMessage(e: unknown, fallback: string): string {
@@ -82,7 +83,7 @@ export const cancelProdigiOrder: CancelProdigiOrder = async (input) => {
       ok: false,
       status: null,
       reason: "prodigi-cancel-unconfigured",
-      message: errorMessage(e, "prodigi-unconfigured"),
+      message: errorMessage(e, PRODIGI_FAILURE_REASONS.unconfigured),
     };
   }
   const apiKey = config.key;

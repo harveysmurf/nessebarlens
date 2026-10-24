@@ -42,7 +42,11 @@
  */
 
 import { emailCopyFor } from "../../domain/ordering/email-copy";
-import type { EmailKind, SendEmail } from "../../domain/ordering/email";
+import {
+  EMAIL_KINDS,
+  type EmailKind,
+  type SendEmail,
+} from "../../domain/ordering/email";
 import {
   clipShipmentField,
   isCheckoutSessionId,
@@ -361,7 +365,7 @@ export async function handleProdigiCallback(input: {
   }
 
   const shipped = firstShipped(fetched.value.shipments);
-  const alreadySent = record.emailsSent.includes("print-shipped");
+  const alreadySent = record.emailsSent.includes(EMAIL_KINDS.printShipped);
   const to = recipientEmail(record);
   const wantsShippedMail =
     shipped !== null && !alreadySent && to !== null;
@@ -370,7 +374,7 @@ export async function handleProdigiCallback(input: {
       JSON.stringify({
         event: "email.skipped",
         reason: "resend-unconfigured",
-        kind: "print-shipped" satisfies EmailKind,
+        kind: EMAIL_KINDS.printShipped,
         sessionId: record.sessionId,
       }),
     );
@@ -379,7 +383,7 @@ export async function handleProdigiCallback(input: {
     wantsShippedMail && input.sendEmail !== undefined;
 
   const emailsSent: EmailKind[] = shouldSendShipped
-    ? [...record.emailsSent, "print-shipped"]
+    ? [...record.emailsSent, EMAIL_KINDS.printShipped]
     : record.emailsSent;
 
   const next: OrderRecord = {
@@ -404,7 +408,7 @@ export async function handleProdigiCallback(input: {
 
   if (shouldSendShipped && shipped && to && input.sendEmail) {
     const copy = emailCopyFor({
-      kind: "print-shipped",
+      kind: EMAIL_KINDS.printShipped,
       sessionId: record.sessionId,
       siteUrl: input.siteUrl ?? siteUrl(),
       trackingNumber: shipped.trackingNumber,
@@ -414,7 +418,7 @@ export async function handleProdigiCallback(input: {
     try {
       const sent = await input.sendEmail({
         to,
-        kind: "print-shipped",
+        kind: EMAIL_KINDS.printShipped,
         subject: copy.subject,
         text: copy.text,
         sessionId: record.sessionId,
@@ -423,7 +427,7 @@ export async function handleProdigiCallback(input: {
         console.error(
           JSON.stringify({
             event: "email.failed",
-            kind: "print-shipped",
+            kind: EMAIL_KINDS.printShipped,
             sessionId: record.sessionId,
             message: sent.message,
           }),
@@ -433,7 +437,7 @@ export async function handleProdigiCallback(input: {
       console.error(
         JSON.stringify({
           event: "email.failed",
-          kind: "print-shipped",
+          kind: EMAIL_KINDS.printShipped,
           sessionId: record.sessionId,
           message: e instanceof Error ? e.message : "email-threw",
         }),

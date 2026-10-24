@@ -4,6 +4,10 @@ import Script from "next/script";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { parseContactMessage } from "@/domain/contact/contact-message";
 import { postJson } from "@/infrastructure/http/post-json";
+import {
+  errorMessage,
+  readJsonResponse,
+} from "@/application/checkout/api-payloads";
 import { track } from "@/analytics/track";
 import {
   fieldControlClass,
@@ -77,6 +81,14 @@ function fieldErrors(values: {
   for (const error of parsed.errors) errors[error.field] = error.message;
   return errors;
 }
+
+/**
+ * The copy for a submission that did not go through: the request never left
+ * the browser, or the server answered with nothing we can show. One owner, so
+ * the two paths a visitor can reach it by — a failed response and a thrown
+ * request — cannot say different things.
+ */
+const CONTACT_FAILED = "Sorry, your message could not be sent. Please try again.";
 
 export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
   const [name, setName] = useState("");
@@ -158,13 +170,13 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
         message: message.trim(),
         turnstileToken: token.current,
       });
-      const data: unknown = await res.json().catch(() => null);
+      // Read the body the way the configurator reads it: a response that is
+      // not JSON is a failure to read, not a failure to parse, and the copy
+      // below is what the visitor sees either way. The server's own error
+      // string is the one we show when it sent one.
+      const data: unknown = await readJsonResponse(res);
       if (!res.ok) {
-        const copy =
-          data && typeof data === "object" && typeof (data as { error?: unknown }).error === "string"
-            ? (data as { error: string }).error
-            : "Sorry, your message could not be sent. Please try again.";
-        setFormError(copy);
+        setFormError(errorMessage(data) ?? CONTACT_FAILED);
         // The token is spent (or the submit never verified): ask for a new one.
         resetWidget();
         return;
@@ -175,7 +187,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
       setMessage("");
       resetWidget();
     } catch {
-      setFormError("Sorry, your message could not be sent. Please try again.");
+      setFormError(CONTACT_FAILED);
       resetWidget();
     } finally {
       setBusy(false);

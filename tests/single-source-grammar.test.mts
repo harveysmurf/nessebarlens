@@ -25,6 +25,8 @@ import {
   PAID_UNFULFILLED,
 } from "../src/domain/ordering/order-decision.ts";
 import { ORDERS_STORE_UNAVAILABLE_ERROR } from "../src/domain/ordering/orders-store.ts";
+import { PRODIGI_FAILURE_REASONS } from "../src/domain/ordering/prodigi-policy.ts";
+import { EMAIL_KINDS } from "../src/domain/ordering/email.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
@@ -644,6 +646,51 @@ test("the orders-store rejection is spelled once, in orders-store.ts", () => {
       .join(", ")}`,
   );
   assert.equal(sites.length, 1);
+});
+
+test("the email kinds are spelled once, in email.ts", () => {
+  // A kind is written into the order record, read back by the copy layer that
+  // renders it, and compared against when the callback decides whether the
+  // mail already went out. Spelled as literals in each of those places, a
+  // rename that reached the callback but not the copy layer would write a kind
+  // the copy layer does not recognise — and the customer would get the wrong
+  // email, or none at all.
+  const OWNER = "src/domain/ordering/email.ts";
+  const sites = stringLiteralSites();
+  for (const kind of Object.values(EMAIL_KINDS)) {
+    const found = sites.filter((s) => s.literal === kind);
+    assert.deepEqual(
+      found.map((s) => s.file),
+      [OWNER],
+      `"${kind}" spelled outside ${OWNER}: ${found
+        .map((s) => `${s.file}:${s.line}`)
+        .join(", ")}`,
+    );
+  }
+});
+
+test("the Prodigi failure reasons are spelled once, in prodigi-policy.ts", () => {
+  // A reason is written by the producer that decides it, read by the retry
+  // policy, copied to the browser and stored on the order record. Each of
+  // those spelled the literal itself, so a rename that reached the producer
+  // and the policy but not the copy left the customer reading a message that
+  // belongs to no failure — and a reason the policy no longer recognises stops
+  // being retried at all.
+  //
+  // The prose in the modules mentions the reasons in a comment; this walks the
+  // AST, so only real literals are counted.
+  const OWNER = "src/domain/ordering/prodigi-policy.ts";
+  const sites = stringLiteralSites();
+  for (const reason of Object.values(PRODIGI_FAILURE_REASONS)) {
+    const found = sites.filter((s) => s.literal === reason);
+    assert.deepEqual(
+      found.map((s) => s.file),
+      [OWNER],
+      `"${reason}" spelled outside ${OWNER}: ${found
+        .map((s) => `${s.file}:${s.line}`)
+        .join(", ")}`,
+    );
+  }
 });
 
 test("the paid-unfulfilled status is spelled once, in order-decision.ts", () => {

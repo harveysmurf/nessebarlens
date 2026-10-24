@@ -5,7 +5,10 @@ import {
 } from "../config/env";
 import type { ProdigiFailureBranch } from "../../domain/ordering/prodigi-result";
 import { isRecord } from "../../domain/json/record";
-import type { ProdigiFailureReason } from "../../domain/ordering/prodigi-policy";
+import {
+  PRODIGI_FAILURE_REASONS,
+  type ProdigiFailureReason,
+} from "../../domain/ordering/prodigi-policy";
 
 export const PRODIGI_SANDBOX_API_BASE = "https://api.sandbox.prodigi.com";
 export const PRODIGI_LIVE_API_BASE = "https://api.prodigi.com";
@@ -97,7 +100,7 @@ const UNCONFIGURED_KEY_NAMES = [
 export type ProdigiUnconfiguredFailure = {
   ok: false;
   kind: "unconfigured";
-  reason: "prodigi-unconfigured";
+  reason: typeof PRODIGI_FAILURE_REASONS.unconfigured;
   message: string;
   status: null;
 };
@@ -129,7 +132,7 @@ export function readProdigiConfig(
     return {
       ok: false,
       kind: "unconfigured",
-      reason: "prodigi-unconfigured",
+      reason: PRODIGI_FAILURE_REASONS.unconfigured,
       message: badBaseMessage(),
       status: null,
     };
@@ -142,7 +145,7 @@ export function readProdigiConfig(
     return {
       ok: false,
       kind: "unconfigured",
-      reason: "prodigi-unconfigured",
+      reason: PRODIGI_FAILURE_REASONS.unconfigured,
       message: missingKeyMessage(name),
       status: null,
     };
@@ -197,15 +200,15 @@ export function classifyProdigiStatus(status: number): {
   reason: ProdigiFailureReason;
 } {
   if (status === 401 || status === 403) {
-    return { kind: "server", reason: "prodigi-auth-error" };
+    return { kind: "server", reason: PRODIGI_FAILURE_REASONS.authError };
   }
   if (status === 429) {
-    return { kind: "server", reason: "prodigi-rate-limit" };
+    return { kind: "server", reason: PRODIGI_FAILURE_REASONS.rateLimit };
   }
   if (status >= 500) {
-    return { kind: "server", reason: "prodigi-unavailable" };
+    return { kind: "server", reason: PRODIGI_FAILURE_REASONS.unavailable };
   }
-  return { kind: "client", reason: "prodigi-validation-error" };
+  return { kind: "client", reason: PRODIGI_FAILURE_REASONS.validationError };
 }
 
 /**
@@ -216,7 +219,9 @@ export function classifyProdigiStatus(status: number): {
  * kind→status mapping draws, in a form a client can branch on without parsing
  * prose.
  */
-export type ProdigiFailureCode = "prodigi-unconfigured" | "prodigi-unavailable";
+export type ProdigiFailureCode =
+  | typeof PRODIGI_FAILURE_REASONS.unconfigured
+  | typeof PRODIGI_FAILURE_REASONS.unavailable;
 
 /**
  * What the customer reads, per code. Deliberately one sentence that says
@@ -258,14 +263,14 @@ export function prodigiFailureFrom(
 ): ProdigiFailure {
   if (result.kind === "unconfigured") {
     return {
-      code: "prodigi-unconfigured",
+      code: PRODIGI_FAILURE_REASONS.unconfigured,
       error: CUSTOMER_MESSAGE,
       status: 503,
       detail: result.message,
     };
   }
   return {
-    code: "prodigi-unavailable",
+    code: PRODIGI_FAILURE_REASONS.unavailable,
     error: CUSTOMER_MESSAGE,
     status: 502,
     detail: result.message,

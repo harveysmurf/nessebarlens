@@ -19,7 +19,10 @@ import {
   prodigiTimeoutSignal,
 } from "../../domain/ordering/prodigi-timeout";
 import { prodigiCall } from "./prodigi-request";
-import type { ProdigiFailureReason } from "../../domain/ordering/prodigi-policy";
+import {
+  PRODIGI_FAILURE_REASONS,
+  type ProdigiFailureReason,
+} from "../../domain/ordering/prodigi-policy";
 import type { ProdigiFailureKind } from "../../domain/ordering/prodigi-result";
 import {
   type ProdigiOrderResult,
@@ -395,7 +398,7 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   if (!config.ok) {
     return failure(
       "unconfigured",
-      "prodigi-unconfigured",
+      PRODIGI_FAILURE_REASONS.unconfigured,
       config.message,
       null,
     );
@@ -411,7 +414,7 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   } catch (e) {
     return failure(
       "client",
-      "prodigi-validation-error",
+      PRODIGI_FAILURE_REASONS.validationError,
       e instanceof Error ? e.message : "invalid-order-body",
       null,
     );
@@ -482,7 +485,7 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   if (isProdigiTimeout(readFailure, signal)) {
     return failure(
       "timeout",
-      "prodigi-timeout",
+      PRODIGI_FAILURE_REASONS.timeout,
       `Prodigi order timed out after ${PRODIGI_ORDER_TIMEOUT_MS}ms`,
       res.status,
     );
@@ -512,7 +515,7 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   if (typeof orderId !== "string" || !orderId) {
     return failure(
       "client",
-      "prodigi-error",
+      PRODIGI_FAILURE_REASONS.error,
       "Prodigi order missing id",
       res.status,
     );
@@ -555,7 +558,7 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
       );
       return failure(
         "client",
-        "prodigi-order-foreign",
+        PRODIGI_FAILURE_REASONS.orderForeign,
         `Prodigi already holds order ${existing.id} for this idempotency key, built on another origin`,
         res.status,
       );

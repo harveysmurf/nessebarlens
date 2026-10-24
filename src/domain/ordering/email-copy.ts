@@ -13,7 +13,7 @@
  * credential; the success page already knows how to hand over the link.
  */
 
-import type { EmailKind } from "./email";
+import { EMAIL_KINDS, type EmailKind } from "./email";
 import { orderReference } from "./order-reference";
 
 export type EmailCopyInput = {
@@ -63,11 +63,11 @@ export function referenceLine(sessionId: string): string {
  */
 export function emailCopyFor(input: EmailCopyInput): EmailCopy {
   switch (input.kind) {
-    case "order-confirmation":
+    case EMAIL_KINDS.orderConfirmation:
       return confirmationCopy(input.sessionId, input.siteUrl);
-    case "print-shipped":
+    case EMAIL_KINDS.printShipped:
       return shippedCopy(input);
-    case "order-unfulfilled":
+    case EMAIL_KINDS.orderUnfulfilled:
       return unfulfilledCopy(input.sessionId);
   }
 }

@@ -35,10 +35,13 @@ import { isProdigiTimeout, prodigiTimeoutSignal } from "./prodigi-timeout";
  * the Prodigi callback once a fetched shipment says Shipped. Never invent a
  * fourth without extending the record's `emailsSent` parser.
  */
-export type EmailKind =
-  | "order-confirmation"
-  | "print-shipped"
-  | "order-unfulfilled";
+export const EMAIL_KINDS = {
+  orderConfirmation: "order-confirmation",
+  printShipped: "print-shipped",
+  orderUnfulfilled: "order-unfulfilled",
+} as const;
+
+export type EmailKind = (typeof EMAIL_KINDS)[keyof typeof EMAIL_KINDS];
 
 export type SendEmail = (mail: {
   to: string;
@@ -149,8 +152,8 @@ export function sendEmailFromApiKey(
 /** True when a value is one of the three EmailKind literals. */
 export function isEmailKind(value: unknown): value is EmailKind {
   return (
-    value === "order-confirmation" ||
-    value === "print-shipped" ||
-    value === "order-unfulfilled"
+    value === EMAIL_KINDS.orderConfirmation ||
+    value === EMAIL_KINDS.printShipped ||
+    value === EMAIL_KINDS.orderUnfulfilled
   );
 }
