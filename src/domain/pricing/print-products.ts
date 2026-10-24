@@ -26,13 +26,32 @@ import type { PhysicalFormat } from "./sku-map";
  * until its SKUs are in the table, the same rule the format and size columns
  * follow.
  */
-export type FramedMount = "white" | "none";
+/**
+ * The mounts a framed print can have, and the words they are called by.
+ *
+ * The mount is not a label: it is part of the product key, because a mounted
+ * and an unmounted print are different SKUs at different prices. The value was
+ * spelled as a literal in the product table, in the configurator's mount
+ * switch and in the checkout route, so a mount renamed in one of them was a
+ * mount the others did not know — the configurator offering a mount that
+ * prices as another, or the route refusing the mount the buyer picked.
+ */
+export const FRAMED_MOUNT_VALUES = {
+  white: "white",
+  none: "none",
+} as const;
+
+export type FramedMount =
+  (typeof FRAMED_MOUNT_VALUES)[keyof typeof FRAMED_MOUNT_VALUES];
 
 /** The mounts we offer, in the order the configurator shows them. */
-export const FRAMED_MOUNTS: readonly FramedMount[] = ["white", "none"];
+export const FRAMED_MOUNTS: readonly FramedMount[] = [
+  FRAMED_MOUNT_VALUES.white,
+  FRAMED_MOUNT_VALUES.none,
+];
 
 /** The mount the configurator opens on and old orders without one read as. */
-export const DEFAULT_FRAMED_MOUNT: FramedMount = "white";
+export const DEFAULT_FRAMED_MOUNT: FramedMount = FRAMED_MOUNT_VALUES.white;
 
 /**
  * The paper a giclée product is printed on (#337). Like the mount, it is part
@@ -110,26 +129,26 @@ export const PRINT_PRODUCTS = [
   // mount, CFP is unmounted and the photo fills the whole glaze. The mount is
   // part of the key, so both run through the same table. Listed mounted first,
   // size by size, so `findProduct` with no mount returns the default.
-  { format: "framed", mount: "white", size: "20x30", sizeIn: "8x12", sku: "GLOBAL-CFPM-8X12", printAreaPx: { short: 1800, long: 3000 }, printAreaDpi: 300 },
-  { format: "framed", mount: "none", size: "20x30", sizeIn: "8x12", sku: "GLOBAL-CFP-8X12", printAreaPx: { short: 2400, long: 3600 }, printAreaDpi: 300 },
-  { format: "framed", mount: "white", size: "30x40", sizeIn: "12x16", sku: "GLOBAL-CFPM-12X16", printAreaPx: { short: 2400, long: 3600 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.white, size: "20x30", sizeIn: "8x12", sku: "GLOBAL-CFPM-8X12", printAreaPx: { short: 1800, long: 3000 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.none, size: "20x30", sizeIn: "8x12", sku: "GLOBAL-CFP-8X12", printAreaPx: { short: 2400, long: 3600 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.white, size: "30x40", sizeIn: "12x16", sku: "GLOBAL-CFPM-12X16", printAreaPx: { short: 2400, long: 3600 }, printAreaDpi: 300 },
   // CFPM-12X16's mount window is 2400×3600; the unmounted CFP area is the full
   // glaze. Prodigi reports 3614×4795 for black/white but 3600×4800 for the other
   // colours, so the table stores the safe minimum across colours (3600×4795):
   // the resolution maths then never over-estimates the area it is printing into.
-  { format: "framed", mount: "none", size: "30x40", sizeIn: "12x16", sku: "GLOBAL-CFP-12X16", printAreaPx: { short: 3600, long: 4795 }, printAreaDpi: 300 },
-  { format: "framed", mount: "white", size: "30x45", sizeIn: "12x18", sku: "GLOBAL-CFPM-12X18", printAreaPx: { short: 2418, long: 4218 }, printAreaDpi: 300 },
-  { format: "framed", mount: "none", size: "30x45", sizeIn: "12x18", sku: "GLOBAL-CFP-12X18", printAreaPx: { short: 3600, long: 5400 }, printAreaDpi: 300 },
-  { format: "framed", mount: "white", size: "40x60", sizeIn: "16x24", sku: "GLOBAL-CFPM-16X24", printAreaPx: { short: 3618, long: 6018 }, printAreaDpi: 300 },
-  { format: "framed", mount: "none", size: "40x60", sizeIn: "16x24", sku: "GLOBAL-CFP-16X24", printAreaPx: { short: 4800, long: 7200 }, printAreaDpi: 300 },
-  { format: "framed", mount: "white", size: "50x70", sizeIn: "20x28", sku: "GLOBAL-CFPM-20X28", printAreaPx: { short: 4800, long: 7200 }, printAreaDpi: 300 },
-  { format: "framed", mount: "none", size: "50x70", sizeIn: "20x28", sku: "GLOBAL-CFP-20X28", printAreaPx: { short: 6000, long: 8400 }, printAreaDpi: 300 },
-  { format: "framed", mount: "white", size: "50x75", sizeIn: "20x30", sku: "GLOBAL-CFPM-20X30", printAreaPx: { short: 4800, long: 7800 }, printAreaDpi: 300 },
-  { format: "framed", mount: "none", size: "50x75", sizeIn: "20x30", sku: "GLOBAL-CFP-20X30", printAreaPx: { short: 6000, long: 9000 }, printAreaDpi: 300 },
-  { format: "framed", mount: "white", size: "60x90", sizeIn: "24x36", sku: "GLOBAL-CFPM-24X36", printAreaPx: { short: 6000, long: 9600 }, printAreaDpi: 300 },
-  { format: "framed", mount: "none", size: "60x90", sizeIn: "24x36", sku: "GLOBAL-CFP-24X36", printAreaPx: { short: 7200, long: 10800 }, printAreaDpi: 300 },
-  { format: "framed", mount: "white", size: "70x100", sizeIn: "28x40", sku: "GLOBAL-CFPM-28X40", printAreaPx: { short: 7200, long: 10800 }, printAreaDpi: 300 },
-  { format: "framed", mount: "none", size: "70x100", sizeIn: "28x40", sku: "GLOBAL-CFP-28X40", printAreaPx: { short: 8400, long: 12000 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.none, size: "30x40", sizeIn: "12x16", sku: "GLOBAL-CFP-12X16", printAreaPx: { short: 3600, long: 4795 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.white, size: "30x45", sizeIn: "12x18", sku: "GLOBAL-CFPM-12X18", printAreaPx: { short: 2418, long: 4218 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.none, size: "30x45", sizeIn: "12x18", sku: "GLOBAL-CFP-12X18", printAreaPx: { short: 3600, long: 5400 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.white, size: "40x60", sizeIn: "16x24", sku: "GLOBAL-CFPM-16X24", printAreaPx: { short: 3618, long: 6018 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.none, size: "40x60", sizeIn: "16x24", sku: "GLOBAL-CFP-16X24", printAreaPx: { short: 4800, long: 7200 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.white, size: "50x70", sizeIn: "20x28", sku: "GLOBAL-CFPM-20X28", printAreaPx: { short: 4800, long: 7200 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.none, size: "50x70", sizeIn: "20x28", sku: "GLOBAL-CFP-20X28", printAreaPx: { short: 6000, long: 8400 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.white, size: "50x75", sizeIn: "20x30", sku: "GLOBAL-CFPM-20X30", printAreaPx: { short: 4800, long: 7800 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.none, size: "50x75", sizeIn: "20x30", sku: "GLOBAL-CFP-20X30", printAreaPx: { short: 6000, long: 9000 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.white, size: "60x90", sizeIn: "24x36", sku: "GLOBAL-CFPM-24X36", printAreaPx: { short: 6000, long: 9600 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.none, size: "60x90", sizeIn: "24x36", sku: "GLOBAL-CFP-24X36", printAreaPx: { short: 7200, long: 10800 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.white, size: "70x100", sizeIn: "28x40", sku: "GLOBAL-CFPM-28X40", printAreaPx: { short: 7200, long: 10800 }, printAreaDpi: 300 },
+  { format: "framed", mount: FRAMED_MOUNT_VALUES.none, size: "70x100", sizeIn: "28x40", sku: "GLOBAL-CFP-28X40", printAreaPx: { short: 8400, long: 12000 }, printAreaDpi: 300 },
   { format: "canvas", size: "20x30", sizeIn: "8x12", sku: "GLOBAL-CAN-8X12", printAreaPx: { short: 3345, long: 4545 }, printAreaDpi: 300 },
   { format: "canvas", size: "30x40", sizeIn: "12x16", sku: "GLOBAL-CAN-12X16", printAreaPx: { short: 4545, long: 5745 }, printAreaDpi: 300 },
   { format: "canvas", size: "30x45", sizeIn: "12x18", sku: "GLOBAL-CAN-12X18", printAreaPx: { short: 4545, long: 6345 }, printAreaDpi: 300 },

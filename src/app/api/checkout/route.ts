@@ -13,7 +13,10 @@ import {
 import { getPhoto } from "@/domain/catalog/photos";
 import { offers } from "@/domain/catalog/print-offer";
 import { assess } from "@/domain/catalog/print-eligibility";
-import { findProduct } from "@/domain/pricing/print-products";
+import {
+  findProduct,
+  FRAMED_MOUNT_VALUES,
+} from "@/domain/pricing/print-products";
 import {
   DIGITAL_PRICE_EUR,
   type FrameFinish,
@@ -76,8 +79,16 @@ export async function POST(request: Request) {
   // own eligibility check against this master: a size can be offered mounted
   // and not unmounted (bigger print area, different aspect). Enforced here as
   // well as in the configurator, because the body is unauthenticated input.
-  if (parsed.format === "framed" && parsed.mount === "none") {
-    const product = findProduct("framed", parsed.size, "none", null);
+  if (
+    parsed.format === "framed" &&
+    parsed.mount === FRAMED_MOUNT_VALUES.none
+  ) {
+    const product = findProduct(
+      "framed",
+      parsed.size,
+      FRAMED_MOUNT_VALUES.none,
+      null,
+    );
     if (!product || !assess(photo.master, product).verdict.eligible) {
       return NextResponse.json(
         { error: "This print option is not available for this photo" },

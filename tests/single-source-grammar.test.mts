@@ -35,6 +35,7 @@ import {
   SESSION_ID_PARAM,
 } from "../src/domain/ordering/order-decision.ts";
 import { PREVIEW_KINDS } from "../src/domain/ordering/print-preview.ts";
+import { FRAMED_MOUNT_VALUES } from "../src/domain/pricing/print-products.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
@@ -683,6 +684,42 @@ test("the order view states are spelled once, in order-decision.ts", () => {
       spelled.map((s) => `${s.file}:${s.line}`),
       [],
       `"${state}" spelled outside ${OWNER} on a state surface: ${spelled
+        .map((s) => `${s.file}:${s.line}`)
+        .join(", ")}`,
+    );
+  }
+});
+
+test("the framed mount values are spelled once, in print-products.ts", () => {
+  // The mount is not a label: it is part of the product key, because a
+  // mounted and an unmounted print are different SKUs at different prices. The
+  // value was spelled in the product table, in the configurator's mount switch
+  // and in the checkout route, so a mount renamed in one of them was a mount
+  // the others did not know — the configurator offering a mount that prices as
+  // another, or the route refusing the mount the buyer picked.
+  //
+  // The check is scoped to the three mount surfaces, because "white" is also a
+  // frame finish — a different vocabulary, with its own owner.
+  const OWNER = "src/domain/pricing/print-products.ts";
+  const MOUNT_FILES = [
+    "src/domain/pricing/print-products.ts",
+    "src/components/PrintConfigurator.tsx",
+    "src/app/api/checkout/route.ts",
+  ];
+  const sites = stringLiteralSites();
+  for (const mount of Object.values(FRAMED_MOUNT_VALUES)) {
+    const owned = sites.filter((s) => s.literal === mount && s.file === OWNER);
+    assert.equal(owned.length, 1, `${OWNER} holds "${mount}" once`);
+    const spelled = sites.filter(
+      (s) =>
+        s.literal === mount &&
+        MOUNT_FILES.includes(s.file) &&
+        s.file !== OWNER,
+    );
+    assert.deepEqual(
+      spelled.map((s) => `${s.file}:${s.line}`),
+      [],
+      `"${mount}" spelled outside ${OWNER} on a mount surface: ${spelled
         .map((s) => `${s.file}:${s.line}`)
         .join(", ")}`,
     );
