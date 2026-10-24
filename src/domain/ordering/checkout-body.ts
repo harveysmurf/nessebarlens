@@ -7,6 +7,7 @@ import type { FrameFinish, PrintSize } from "../pricing/pricing";
 import { isRecord } from "../json/record";
 import {
   parsePrintSpecification,
+  type PhysicalPrintSpecification,
   type PrintSpecificationReason,
 } from "./print-spec";
 import {
@@ -151,6 +152,48 @@ function asBody(raw: unknown): Parsed<Record<string, unknown>> {
   return { ok: true, value: raw };
 }
 
+/**
+ * The selection fields a body carries, read the way both parsers read them: a
+ * field that is absent means "not chosen", and nothing here interprets a
+ * value.
+ */
+function selectionFields(body: Record<string, unknown>): {
+  format: unknown;
+  size: unknown;
+  frame: unknown;
+  mount: unknown;
+  paper: unknown;
+} {
+  return {
+    format: body.format,
+    size: body.size ?? null,
+    frame: body.frame ?? null,
+    mount: body.mount ?? null,
+    paper: body.paper ?? null,
+  };
+}
+
+/**
+ * A physical selection's fields, read off the specification the factory built.
+ * Both parsers answer with exactly these, so the projection lives here rather
+ * than once per parser.
+ */
+function physicalFields(spec: PhysicalPrintSpecification): {
+  format: PhysicalFormat;
+  size: PrintSize;
+  frame: FrameFinish | null;
+  mount: FramedMount | null;
+  paper: PrintPaper | null;
+} {
+  return {
+    format: spec.format,
+    size: spec.size,
+    frame: spec.frame,
+    mount: spec.mount,
+    paper: spec.paper,
+  };
+}
+
 export function parseCheckoutBody(
   raw: unknown,
 ): CheckoutBody | { error: string } {
@@ -158,11 +201,7 @@ export function parseCheckoutBody(
   if (!opened.ok) return { error: opened.error };
   const body = opened.value;
   const photoSlug = body.photoSlug;
-  const format = body.format;
-  const size = body.size ?? null;
-  const frame = body.frame ?? null;
-  const mount = body.mount ?? null;
-  const paper = body.paper ?? null;
+  const { format, size, frame, mount, paper } = selectionFields(body);
   const destination = parseDestinationCountry(body.destinationCountryCode);
   if (!destination.ok) return { error: destination.error };
   const destinationCountryCode = destination.value;
@@ -186,11 +225,7 @@ export function parseCheckoutBody(
 
   return {
     photoSlug,
-    format: spec.value.format,
-    size: spec.value.size,
-    frame: spec.value.frame,
-    mount: spec.value.mount,
-    paper: spec.value.paper,
+    ...physicalFields(spec.value),
     destinationCountryCode,
   };
 }
@@ -213,11 +248,7 @@ export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {
   const opened = asBody(raw);
   if (!opened.ok) return { error: opened.error };
   const body = opened.value;
-  const format = body.format;
-  const size = body.size ?? null;
-  const frame = body.frame ?? null;
-  const mount = body.mount ?? null;
-  const paper = body.paper ?? null;
+  const { format, size, frame, mount, paper } = selectionFields(body);
   const destination = parseDestinationCountry(body.destinationCountryCode);
   if (!destination.ok) return { error: destination.error };
   const destinationCountryCode = destination.value;
@@ -233,11 +264,7 @@ export function parseQuoteBody(raw: unknown): QuoteBody | { error: string } {
   if (!spec.ok) return { error: QUOTE_SPEC_ERRORS[spec.reason] };
 
   return {
-    format: spec.value.format,
-    size: spec.value.size,
-    frame: spec.value.frame,
-    mount: spec.value.mount,
-    paper: spec.value.paper,
+    ...physicalFields(spec.value),
     destinationCountryCode,
   };
 }

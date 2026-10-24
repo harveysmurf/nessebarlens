@@ -52,6 +52,15 @@ export type RevocationOutcome =
   /** Transient dependency failure. 5xx so Stripe redelivers. */
   | { httpStatus: 500; body: Record<string, unknown> };
 
+/**
+ * The code a revocation answers when the payment could not be looked up.
+ *
+ * Owned here because the webhook route answers the same code for a revocation
+ * that threw: one wire format, one owner, so the two cannot drift into two
+ * different strings for one failure.
+ */
+export const REVOCATION_LOOKUP_FAILED_ERROR = "revocation-lookup-failed";
+
 export type RevokeInput = {
   store: OrdersStore;
   status: RevokedStatus;
@@ -103,7 +112,7 @@ export async function revokeOrderByPaymentIntent(
     );
     return {
       httpStatus: 500,
-      body: { error: "revocation-lookup-failed" },
+      body: { error: REVOCATION_LOOKUP_FAILED_ERROR },
     };
   }
 
