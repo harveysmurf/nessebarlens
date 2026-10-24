@@ -39,30 +39,34 @@ export async function hmacSha256Hex(
   return hex;
 }
 
-/** Constant-time hex compare; case-insensitive (hex is not case-sensitive). */
-export function timingSafeEqualHex(expected: string, actual: string): boolean {
-  const a = expected.toLowerCase();
-  const b = actual.toLowerCase();
-  if (a.length !== b.length) return false;
-  let mismatch = 0;
-  for (let i = 0; i < a.length; i++) {
-    mismatch |= a.charCodeAt(i) ^ b.charCodeAt(i);
-  }
-  return mismatch === 0;
-}
-
 /**
- * Constant-time string compare for non-hex secrets (reconcile shared secret).
+ * Constant-time compare of two strings, and the only rule either public
+ * compare below has: the length is compared first, which leaks length the way
+ * every compare of this shape does, and the bytes themselves run in fixed time
+ * for equal-length inputs.
  *
- * Length is still compared first — a mismatch returns false immediately, which
- * leaks length the same way `timingSafeEqualHex` does. The bytes that are
- * compared run in fixed time for equal-length inputs.
+ * Both compares are this one, so "constant-time" cannot mean two different
+ * things in one module.
  */
-export function timingSafeEqualString(expected: string, actual: string): boolean {
+function constantTimeEquals(expected: string, actual: string): boolean {
   if (expected.length !== actual.length) return false;
   let mismatch = 0;
   for (let i = 0; i < expected.length; i++) {
     mismatch |= expected.charCodeAt(i) ^ actual.charCodeAt(i);
   }
   return mismatch === 0;
+}
+
+/** Constant-time hex compare; case-insensitive (hex is not case-sensitive). */
+export function timingSafeEqualHex(expected: string, actual: string): boolean {
+  return constantTimeEquals(expected.toLowerCase(), actual.toLowerCase());
+}
+
+/**
+ * Constant-time string compare for non-hex secrets (reconcile shared secret).
+ *
+ * The length is compared first, exactly as in `timingSafeEqualHex`.
+ */
+export function timingSafeEqualString(expected: string, actual: string): boolean {
+  return constantTimeEquals(expected, actual);
 }
