@@ -35,6 +35,7 @@ import {
   type DownloadTokenRecord,
 } from "../../domain/ordering/download-token";
 import {
+  PAID_UNFULFILLED,
   parseOrderRecord,
   type OrderRecord,
   type OrderStatus,
@@ -203,7 +204,7 @@ function memoryStoreFromMaps(
 
 function matchesFilter(order: OrderRecord, filter: OrderStatusFilter): boolean {
   if (filter.retryable) {
-    return order.status === "paid-unfulfilled" && !order.terminal;
+    return order.status === PAID_UNFULFILLED && !order.terminal;
   }
   if (filter.revoked) {
     return order.status === "refunded" || order.status === "disputed";

@@ -39,9 +39,21 @@ import {
 import { isEmailKind, type EmailKind } from "./email";
 import { isRetryableProdigiReason } from "./prodigi-policy";
 
+/**
+ * The status of an order we hold money for and have not delivered yet.
+ *
+ * Declared once, here, and the union below derives from it: the status is
+ * written by the fulfillment path, read by the reconciler, listed by the ops
+ * scripts and bound by the D1 query, and those four places spelled the
+ * literal themselves. A rename that reached three of them would leave one
+ * site writing a status the others do not recognise — an order that is paid
+ * but not retryable, so nothing ever fulfils it and no log line says why.
+ */
+export const PAID_UNFULFILLED = "paid-unfulfilled";
+
 export type OrderStatus =
   | "paid"
-  | "paid-unfulfilled"
+  | typeof PAID_UNFULFILLED
   /** Stripe money returned in full. Terminal: no download, no retry. */
   | "refunded"
   /** A cardholder dispute is open. Treated exactly like a refund. */
@@ -78,7 +90,7 @@ export function isOrderStatus(value: unknown): value is OrderStatus {
   return (
     typeof value === "string" &&
     (value === "paid" ||
-      value === "paid-unfulfilled" ||
+      value === PAID_UNFULFILLED ||
       REVOKED_STATUSES.has(value))
   );
 }
@@ -354,7 +366,7 @@ export function decideFulfillment(
  */
 export function isUnfulfilledOutcome(record: OrderRecord): boolean {
   return (
-    record.status === "paid-unfulfilled" &&
+    record.status === PAID_UNFULFILLED &&
     record.reason !== AWAITING_PRODIGI_REASON
   );
 }
@@ -412,7 +424,7 @@ export function withProdigiSuccess(
  */
 export function shouldRetry(record: OrderRecord): boolean {
   return (
-    record.status === "paid-unfulfilled" &&
+    record.status === PAID_UNFULFILLED &&
     !record.terminal &&
     isRetryableProdigiReason(record.reason)
   );
@@ -643,7 +655,7 @@ export function orderViewState(order: OrderRecord): OrderViewState {
     // becomes "paid", or a failure reason, within seconds. Every other
     // unfulfilled reason is a real failure.
     const inFlight =
-      order.status === "paid-unfulfilled" &&
+      order.status === PAID_UNFULFILLED &&
       order.reason === AWAITING_PRODIGI_REASON;
     return order.status === "paid" || inFlight
       ? "physical"
@@ -765,7 +777,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       mount,
       paper,
       recipient: null,
-      status: "paid-unfulfilled",
+      status: PAID_UNFULFILLED,
       reason: "bad-metadata",
     };
   }
@@ -784,7 +796,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
         mount: "",
         paper: "",
         recipient: null,
-        status: "paid-unfulfilled",
+        status: PAID_UNFULFILLED,
         reason: "bad-metadata",
       };
     }
@@ -798,7 +810,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
         mount: "",
         paper: "",
         recipient: null,
-        status: "paid-unfulfilled",
+        status: PAID_UNFULFILLED,
         reason: "unknown-photo",
       };
     }
@@ -815,7 +827,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
         mount: "",
         paper: "",
         recipient: null,
-        status: "paid-unfulfilled",
+        status: PAID_UNFULFILLED,
         reason: "amount-mismatch",
       };
     }
@@ -845,7 +857,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       mount,
       paper,
       recipient: null,
-      status: "paid-unfulfilled",
+      status: PAID_UNFULFILLED,
       reason: "bad-metadata",
     };
   }
@@ -859,7 +871,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       mount,
       paper,
       recipient: null,
-      status: "paid-unfulfilled",
+      status: PAID_UNFULFILLED,
       reason: "unknown-photo",
     };
   }
@@ -877,7 +889,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       mount,
       paper,
       recipient: null,
-      status: "paid-unfulfilled",
+      status: PAID_UNFULFILLED,
       reason: "bad-metadata",
     };
   }
@@ -895,7 +907,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       mount,
       paper,
       recipient: null,
-      status: "paid-unfulfilled",
+      status: PAID_UNFULFILLED,
       reason: "amount-mismatch",
     };
   }
@@ -923,7 +935,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       mount,
       paper,
       recipient: null,
-      status: "paid-unfulfilled",
+      status: PAID_UNFULFILLED,
       reason: "bad-metadata",
     };
   }
@@ -937,7 +949,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       mount,
       paper,
       recipient: null,
-      status: "paid-unfulfilled",
+      status: PAID_UNFULFILLED,
       reason: "bad-metadata",
     };
   }
@@ -952,7 +964,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       mount,
       paper,
       recipient: null,
-      status: "paid-unfulfilled",
+      status: PAID_UNFULFILLED,
       reason: "missing-shipping",
     };
   }
@@ -974,7 +986,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       mount,
       paper,
       recipient,
-      status: "paid-unfulfilled",
+      status: PAID_UNFULFILLED,
       terminal: false,
       reason: "prodigi-unconfigured",
     };
@@ -990,7 +1002,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     mount,
     paper,
     recipient,
-    status: "paid-unfulfilled",
+    status: PAID_UNFULFILLED,
     reason: AWAITING_PRODIGI_REASON,
   };
 }

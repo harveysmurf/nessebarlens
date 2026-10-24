@@ -30,6 +30,7 @@ import {
   AWAITING_PRODIGI_REASON,
   decideFulfillment,
   isUnfulfilledOutcome,
+  PAID_UNFULFILLED,
   shouldRetry,
   withProdigiFailure,
   withProdigiSuccess,
@@ -326,7 +327,7 @@ export async function fulfillCheckoutSession(
   }
 
   if (
-    record.status === "paid-unfulfilled" &&
+    record.status === PAID_UNFULFILLED &&
     (record.reason === AWAITING_PRODIGI_REASON ||
       isRetryableProdigiReason(record.reason))
   ) {

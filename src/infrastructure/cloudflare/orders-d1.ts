@@ -14,9 +14,9 @@
 
 import type { D1Database, D1PreparedStatement } from "@cloudflare/workers-types";
 import {
+  PAID_UNFULFILLED,
   parseOrderRecord,
   type OrderRecord,
-  type OrderStatus,
 } from "../../domain/ordering/order-decision";
 import {
   parseDownloadTokenRecord,
@@ -292,7 +292,7 @@ export function listOrdersQuery(filter: OrderStatusFilter): {
 
   if (filter.retryable) {
     clauses.push("status = ? AND terminal = 0");
-    binds.push("paid-unfulfilled" satisfies OrderStatus);
+    binds.push(PAID_UNFULFILLED);
   } else if (filter.revoked) {
     clauses.push("status IN (?, ?)");
     binds.push("refunded", "disputed");
