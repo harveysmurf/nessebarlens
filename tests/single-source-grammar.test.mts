@@ -30,6 +30,7 @@ import { EMAIL_KINDS } from "../src/domain/ordering/email.ts";
 import { CONTACT_ATTEMPT_STATUSES } from "../src/domain/contact/contact-status.ts";
 import {
   DISPUTED_STATUS,
+  ORDER_VIEW_STATES,
   REFUNDED_STATUS,
 } from "../src/domain/ordering/order-decision.ts";
 
@@ -651,6 +652,39 @@ test("the orders-store rejection is spelled once, in orders-store.ts", () => {
       .join(", ")}`,
   );
   assert.equal(sites.length, 1);
+});
+
+test("the order view states are spelled once, in order-decision.ts", () => {
+  // The state names travel over the wire: the order-status route answers with
+  // one and the poller compares the answer against one, without a type in
+  // between — the poller reads the body as unknown. The success page and the
+  // route spelled the same names themselves.
+  //
+  // The check is scoped to the surfaces that read or render a state, because
+  // "physical" is also the order's kind, and that word belongs to a different
+  // vocabulary.
+  const OWNER = "src/domain/ordering/order-decision.ts";
+  const STATE_FILES = [
+    "src/app/api/order-status/route.ts",
+    "src/app/checkout/success/OrderStatusPoller.tsx",
+    "src/app/checkout/success/order-state.ts",
+    "src/app/checkout/success/page.tsx",
+  ];
+  const sites = stringLiteralSites();
+  for (const state of Object.values(ORDER_VIEW_STATES)) {
+    const owned = sites.filter((s) => s.literal === state && s.file === OWNER);
+    assert.ok(owned.length >= 1, `${OWNER} holds "${state}"`);
+    const spelled = sites.filter(
+      (s) => s.literal === state && STATE_FILES.includes(s.file),
+    );
+    assert.deepEqual(
+      spelled.map((s) => `${s.file}:${s.line}`),
+      [],
+      `"${state}" spelled outside ${OWNER} on a state surface: ${spelled
+        .map((s) => `${s.file}:${s.line}`)
+        .join(", ")}`,
+    );
+  }
 });
 
 test("the revoked statuses are spelled once, in order-decision.ts", () => {

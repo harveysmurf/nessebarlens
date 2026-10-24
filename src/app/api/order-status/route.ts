@@ -1,5 +1,9 @@
 import { NextResponse } from "next/server";
-import { isCheckoutSessionId, orderViewState } from "@/domain/ordering/order-decision";
+import {
+  isCheckoutSessionId,
+  ORDER_VIEW_STATES,
+  orderViewState,
+} from "@/domain/ordering/order-decision";
 import { readOrderRecord } from "@/domain/ordering/order-corrupt";
 import {
   ORDERS_STORE_UNAVAILABLE_ERROR,
@@ -56,7 +60,7 @@ export async function GET(request: Request) {
   // state rather than the 404 a missing key looks like elsewhere.
   if (raw === null) {
     return NextResponse.json(
-      { state: "digital-pending" as const },
+      { state: ORDER_VIEW_STATES.digitalPending },
       { status: 200, headers: NO_STORE_HEADERS },
     );
   }

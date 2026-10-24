@@ -636,25 +636,29 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
  * do get a status question, though: only a paid print is "being produced", and
  * a refunded or unfulfilled one must not say so.
  */
-export type OrderViewState =
+export const ORDER_VIEW_STATES = {
   /** A paid physical order that went to production: no file to hand over. */
-  | "physical"
+  physical: "physical",
   /**
    * A physical order we took payment for but did not send to production (for
    * example missing-shipping). Must never read as "being produced".
    */
-  | "physical-unfulfilled"
+  physicalUnfulfilled: "physical-unfulfilled",
   /** A digital order whose file is ready to download now. */
-  | "digital-ready"
+  digitalReady: "digital-ready",
   /** A digital order still being fulfilled — the webhook has not finished. */
-  | "digital-pending"
+  digitalPending: "digital-pending",
   /** Paid, but we could not deliver; the reason is worth showing, not the raw code. */
-  | "digital-unavailable"
+  digitalUnavailable: "digital-unavailable",
   /** Money returned or disputed: there is nothing to hand over and nothing to promise. */
-  | "revoked";
+  revoked: "revoked",
+} as const;
+
+export type OrderViewState =
+  (typeof ORDER_VIEW_STATES)[keyof typeof ORDER_VIEW_STATES];
 
 export function orderViewState(order: OrderRecord): OrderViewState {
-  if (isRevoked(order.status)) return "revoked";
+  if (isRevoked(order.status)) return ORDER_VIEW_STATES.revoked;
   if (order.kind !== "digital") {
     // paid-unfulfilled + AWAITING_PRODIGI_REASON is the ordinary in-flight
     // state between the webhook accepting the order and Prodigi answering; it
@@ -664,12 +668,14 @@ export function orderViewState(order: OrderRecord): OrderViewState {
       order.status === PAID_UNFULFILLED &&
       order.reason === AWAITING_PRODIGI_REASON;
     return order.status === "paid" || inFlight
-      ? "physical"
-      : "physical-unfulfilled";
+      ? ORDER_VIEW_STATES.physical
+      : ORDER_VIEW_STATES.physicalUnfulfilled;
   }
-  if (order.status === "paid" && order.masterKey) return "digital-ready";
-  if (!order.terminal) return "digital-pending";
-  return "digital-unavailable";
+  if (order.status === "paid" && order.masterKey) {
+    return ORDER_VIEW_STATES.digitalReady;
+  }
+  if (!order.terminal) return ORDER_VIEW_STATES.digitalPending;
+  return ORDER_VIEW_STATES.digitalUnavailable;
 }
 
 export type DownloadResolution =

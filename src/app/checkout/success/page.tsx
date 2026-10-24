@@ -7,6 +7,7 @@ import {
 } from "./order-state";
 import { getConfig } from "@/infrastructure/config/config";
 import { orderReference } from "@/domain/ordering/order-reference";
+import { ORDER_VIEW_STATES } from "@/domain/ordering/order-decision";
 import { buttonClass } from "@/components/Button";
 import { PageShell } from "@/components/PageShell";
 import { BODY_COPY, eyebrowClass } from "@/components/type-styles";
@@ -29,7 +30,7 @@ export default async function CheckoutSuccessPage({
   // Only read for the one state that renders a link. A token fetched on every
   // state would be a credential read for pages that cannot use it.
   const downloadHref =
-    state === "digital-ready"
+    state === ORDER_VIEW_STATES.digitalReady
       ? await resolveCheckoutDownloadLink(sessionId)
       : null;
   const reference = sessionId ? orderReference(sessionId) : "";
@@ -58,14 +59,14 @@ export default async function CheckoutSuccessPage({
             That order reference is not valid. Open this page from the Stripe
             receipt email.
           </p>
-        ) : state === "physical" ? (
+        ) : state === ORDER_VIEW_STATES.physical ? (
           <OrderCard reference={reference}>
             <p className={BODY_COPY}>
               Your print is being produced and will ship from our partner studio.
               You do not need to do anything else.
             </p>
           </OrderCard>
-        ) : state === "physical-unfulfilled" ? (
+        ) : state === ORDER_VIEW_STATES.physicalUnfulfilled ? (
           // Paid, but never sent to production (e.g. an address Prodigi cannot
           // accept). No poller: nothing changes until someone acts, and we must
           // not claim the print is being made.
@@ -76,7 +77,7 @@ export default async function CheckoutSuccessPage({
               order.
             </p>
           </OrderCard>
-        ) : state === "digital-ready" && downloadHref ? (
+        ) : state === ORDER_VIEW_STATES.digitalReady && downloadHref ? (
           <OrderCard reference={reference}>
             <p className={BODY_COPY}>
               Your download is ready. This link works {maxDownloads} times and
@@ -122,7 +123,7 @@ export default async function CheckoutSuccessPage({
               Please contact us and quote the reference below and we will send it.
             </p>
           </OrderCard>
-        ) : state === "revoked" ? (
+        ) : state === ORDER_VIEW_STATES.revoked ? (
           <OrderCard reference={reference}>
             <p className={BODY_COPY}>
               This order was refunded or is under dispute, so there is nothing
@@ -155,7 +156,7 @@ export default async function CheckoutSuccessPage({
               through and we will get your order to the right place.
             </p>
           </OrderCard>
-        ) : state === "digital-unavailable" ? (
+        ) : state === ORDER_VIEW_STATES.digitalUnavailable ? (
           <OrderCard reference={reference}>
             <p className={BODY_COPY}>
               Your payment went through but we could not prepare the download. Our
