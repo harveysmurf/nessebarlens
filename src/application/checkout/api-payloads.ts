@@ -20,6 +20,7 @@
  */
 import { HTTPS_URL_PATTERN } from "@/domain/pricing/url-patterns";
 import { isRecord } from "@/domain/json/record";
+import { PRODIGI_FAILURE_REASONS } from "@/domain/ordering/prodigi-policy";
 
 export type LiveQuote = {
   merchandiseEur: number;
@@ -97,8 +98,10 @@ export function errorMessage(value: unknown): string | null {
  * this map only overrides the codes it recognises.
  */
 const CODE_COPY: Readonly<Record<string, string>> = {
-  "prodigi-unconfigured": "Pricing is temporarily unavailable, please try again.",
-  "prodigi-unavailable": "Pricing is temporarily unavailable, please try again.",
+  [PRODIGI_FAILURE_REASONS.unconfigured]:
+    "Pricing is temporarily unavailable, please try again.",
+  [PRODIGI_FAILURE_REASONS.unavailable]:
+    "Pricing is temporarily unavailable, please try again.",
   "checkout-unavailable": "Checkout is temporarily unavailable, please try again.",
 };
 

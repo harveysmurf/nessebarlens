@@ -25,7 +25,10 @@
  */
 
 import type { CreateProdigiOrder } from "../../domain/ordering/print-provider";
-import { isRetryableProdigiReason } from "../../domain/ordering/prodigi-policy";
+import {
+  isRetryableProdigiReason,
+  PRODIGI_FAILURE_REASONS,
+} from "../../domain/ordering/prodigi-policy";
 import {
   AWAITING_PRODIGI_REASON,
   decideFulfillment,
@@ -397,7 +400,7 @@ export async function fulfillCheckoutSession(
       );
       if (!assetUrl || !assetMd5) {
         record = withProdigiFailure(record, {
-          reason: "prodigi-asset-unconfigured",
+          reason: PRODIGI_FAILURE_REASONS.assetUnconfigured,
         });
         const message = !assetUrl
           ? "print-asset signing is not configured"
@@ -409,7 +412,7 @@ export async function fulfillCheckoutSession(
         }
         return {
           httpStatus: 500,
-          body: { error: "prodigi-asset-unconfigured", message },
+          body: { error: PRODIGI_FAILURE_REASONS.assetUnconfigured, message },
         };
       }
 

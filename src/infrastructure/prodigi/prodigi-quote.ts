@@ -17,6 +17,7 @@ import {
   prodigiTimeoutSignal,
 } from "../../domain/ordering/prodigi-timeout";
 import { prodigiCall } from "./prodigi-request";
+import { PRODIGI_FAILURE_REASONS } from "../../domain/ordering/prodigi-policy";
 import type { ProdigiResult } from "../../domain/ordering/prodigi-result";
 import { prodigiConfig } from "../config/config";
 import {
@@ -64,7 +65,7 @@ export async function quotePhysical(opts: {
     return {
       ok: false,
       kind: "unconfigured",
-      reason: "prodigi-unconfigured",
+      reason: PRODIGI_FAILURE_REASONS.unconfigured,
       message: config.message,
       status: null,
     };
@@ -143,7 +144,7 @@ export async function quotePhysical(opts: {
     return {
       ok: false,
       kind: "timeout",
-      reason: "prodigi-timeout",
+      reason: PRODIGI_FAILURE_REASONS.timeout,
       message: "Prodigi quote timed out",
       status: res.status,
     };
@@ -167,7 +168,7 @@ export async function quotePhysical(opts: {
     return {
       ok: false,
       kind: "server",
-      reason: "prodigi-unavailable",
+      reason: PRODIGI_FAILURE_REASONS.unavailable,
       message:
         readFailure === null
           ? "Prodigi quote returned invalid JSON"
@@ -181,7 +182,7 @@ export async function quotePhysical(opts: {
     return {
       ok: false,
       kind: "server",
-      reason: "prodigi-unavailable",
+      reason: PRODIGI_FAILURE_REASONS.unavailable,
       message: "Prodigi quote missing quotes[0]",
       status: res.status,
     };
@@ -195,7 +196,7 @@ export async function quotePhysical(opts: {
     return {
       ok: false,
       kind: "server",
-      reason: "prodigi-unavailable",
+      reason: PRODIGI_FAILURE_REASONS.unavailable,
       message: "Prodigi quote missing unitCost",
       status: res.status,
     };
@@ -205,7 +206,7 @@ export async function quotePhysical(opts: {
     return {
       ok: false,
       kind: "server",
-      reason: "prodigi-unavailable",
+      reason: PRODIGI_FAILURE_REASONS.unavailable,
       message: "Prodigi quote missing shipping",
       status: res.status,
     };

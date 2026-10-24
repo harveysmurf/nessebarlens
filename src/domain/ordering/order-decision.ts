@@ -37,7 +37,10 @@ import {
   type PhysicalFormat,
 } from "../pricing/sku-map";
 import { isEmailKind, type EmailKind } from "./email";
-import { isRetryableProdigiReason } from "./prodigi-policy";
+import {
+  isRetryableProdigiReason,
+  PRODIGI_FAILURE_REASONS,
+} from "./prodigi-policy";
 
 /**
  * The status of an order we hold money for and have not delivered yet.
@@ -988,7 +991,7 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
       recipient,
       status: PAID_UNFULFILLED,
       terminal: false,
-      reason: "prodigi-unconfigured",
+      reason: PRODIGI_FAILURE_REASONS.unconfigured,
     };
   }
 

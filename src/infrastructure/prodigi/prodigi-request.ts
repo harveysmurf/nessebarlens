@@ -19,13 +19,16 @@
  */
 
 import { isProdigiTimeout } from "../../domain/ordering/prodigi-timeout";
+import { PRODIGI_FAILURE_REASONS } from "../../domain/ordering/prodigi-policy";
 
 /** What a Prodigi call that never answered means. */
 export type ProdigiCallFailure = {
   /** How the failure is retried — the same two values every call site used. */
   kind: "timeout" | "server";
   /** Why it failed, in the domain's own vocabulary. */
-  reason: "prodigi-timeout" | "prodigi-unavailable";
+  reason:
+    | typeof PRODIGI_FAILURE_REASONS.timeout
+    | typeof PRODIGI_FAILURE_REASONS.unavailable;
   /** What an operator reads. */
   message: string;
 };
@@ -52,7 +55,7 @@ export async function prodigiCall(
         ok: false,
         failure: {
           kind: "timeout",
-          reason: "prodigi-timeout",
+          reason: PRODIGI_FAILURE_REASONS.timeout,
           message: timeoutMessage,
         },
       };
@@ -61,7 +64,7 @@ export async function prodigiCall(
       ok: false,
       failure: {
         kind: "server",
-        reason: "prodigi-unavailable",
+        reason: PRODIGI_FAILURE_REASONS.unavailable,
         message: e instanceof Error ? e.message : "network-error",
       },
     };
