@@ -80,8 +80,9 @@ export function parseContactMessage(raw: unknown): ContactParseResult {
     errors.push({ field: "name", message: "That name is too long." });
   }
 
-  const emailError =
-    email === null ? "Please enter your email address." : contactEmailError(email);
+  // An absent address is the empty address: the reader owns that wording, so
+  // the message a missing field gets is the same one an empty field gets.
+  const emailError = contactEmailError(email ?? "");
   if (emailError !== null) {
     errors.push({ field: "email", message: emailError });
   }

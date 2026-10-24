@@ -61,6 +61,16 @@ test("a non-object body reports every field as missing", () => {
       ["name", "email", "message", "turnstileToken"],
     );
   }
+
+  // A missing email is worded by the one reader that owns the email rule, so
+  // the message a missing field gets is the message an empty field gets.
+  const missing = parseContactMessage(null);
+  assert.equal(missing.ok, false);
+  if (missing.ok) return;
+  assert.deepEqual(
+    missing.errors.find((e) => e.field === "email"),
+    { field: "email", message: contactEmailError("") },
+  );
 });
 
 test("each field is validated independently, and all errors are returned at once", () => {
