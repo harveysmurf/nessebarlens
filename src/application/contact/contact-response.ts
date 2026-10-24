@@ -9,6 +9,7 @@
  * by then no submission has been attempted.
  */
 
+import { CONTACT_ATTEMPT_STATUSES } from "../../domain/contact/contact-status";
 import type { ContactOutcome } from "./submit-contact";
 
 export const CONTACT_INVALID_ERROR = "Please check the highlighted fields.";
@@ -26,18 +27,18 @@ export type ContactHttpResponse = {
 
 export function contactResponse(outcome: ContactOutcome): ContactHttpResponse {
   switch (outcome.kind) {
-    case "ok":
+    case CONTACT_ATTEMPT_STATUSES.ok:
       return { status: 200, body: { ok: true } };
-    case "invalid":
+    case CONTACT_ATTEMPT_STATUSES.invalid:
       return {
         status: 400,
         body: { error: CONTACT_INVALID_ERROR, fields: outcome.errors },
       };
-    case "rate-limited":
+    case CONTACT_ATTEMPT_STATUSES.rateLimited:
       return { status: 429, body: { error: CONTACT_RATE_LIMITED_ERROR } };
-    case "rejected":
+    case CONTACT_ATTEMPT_STATUSES.rejected:
       return { status: 400, body: { error: CONTACT_REJECTED_ERROR } };
-    case "delivery-failed":
+    case CONTACT_ATTEMPT_STATUSES.deliveryFailed:
       return { status: 502, body: { error: CONTACT_DELIVERY_FAILED_ERROR } };
   }
 }
