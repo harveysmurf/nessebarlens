@@ -26,6 +26,7 @@ import {
 } from "../src/domain/ordering/order-decision.ts";
 import { ORDERS_STORE_UNAVAILABLE_ERROR } from "../src/domain/ordering/orders-store.ts";
 import { PRODIGI_FAILURE_REASONS } from "../src/domain/ordering/prodigi-policy.ts";
+import { EMAIL_KINDS } from "../src/domain/ordering/email.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
@@ -645,6 +646,27 @@ test("the orders-store rejection is spelled once, in orders-store.ts", () => {
       .join(", ")}`,
   );
   assert.equal(sites.length, 1);
+});
+
+test("the email kinds are spelled once, in email.ts", () => {
+  // A kind is written into the order record, read back by the copy layer that
+  // renders it, and compared against when the callback decides whether the
+  // mail already went out. Spelled as literals in each of those places, a
+  // rename that reached the callback but not the copy layer would write a kind
+  // the copy layer does not recognise — and the customer would get the wrong
+  // email, or none at all.
+  const OWNER = "src/domain/ordering/email.ts";
+  const sites = stringLiteralSites();
+  for (const kind of Object.values(EMAIL_KINDS)) {
+    const found = sites.filter((s) => s.literal === kind);
+    assert.deepEqual(
+      found.map((s) => s.file),
+      [OWNER],
+      `"${kind}" spelled outside ${OWNER}: ${found
+        .map((s) => `${s.file}:${s.line}`)
+        .join(", ")}`,
+    );
+  }
 });
 
 test("the Prodigi failure reasons are spelled once, in prodigi-policy.ts", () => {

@@ -59,7 +59,11 @@ import {
 import { getPhoto } from "../../domain/catalog/photos";
 import type { OrdersStore } from "../../domain/ordering/orders-store";
 import { emailCopyFor } from "../../domain/ordering/email-copy";
-import type { EmailKind, SendEmail } from "../../domain/ordering/email";
+import {
+  EMAIL_KINDS,
+  type EmailKind,
+  type SendEmail,
+} from "../../domain/ordering/email";
 import type { AssetUrlSigner } from "../../domain/ordering/asset-url-signer";
 import { signPrintAssetUrl } from "./print-asset";
 
@@ -131,7 +135,9 @@ function emailForOrder(
  * broke, and the cost of it is an unearned apology email, not a silent no-op.
  */
 function emailKindForWrite(record: OrderRecord): EmailKind {
-  return record.status === "paid" ? "order-confirmation" : "order-unfulfilled";
+  return record.status === "paid"
+    ? EMAIL_KINDS.orderConfirmation
+    : EMAIL_KINDS.orderUnfulfilled;
 }
 
 /** Only called once the caller has checked the kind is not already claimed. */
