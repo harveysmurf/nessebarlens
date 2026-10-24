@@ -45,6 +45,7 @@ import { FRAME_FINISHES, SELLABLE_FORMATS } from "../pricing/sku-map";
 import {
   CANVAS_BAR_DEPTH_MM,
   CLASSIC_FRAME_MOULDING_MM,
+  PREVIEW_KINDS,
   type PreviewGeometry,
 } from "./print-preview";
 import type { PrintSelection } from "./print-selection";
@@ -303,11 +304,12 @@ export function previewCaption(
  * because the buyer is seeing a real trim, not a decorative crop.
  */
 export function previewNote(geometry: PreviewGeometry): string | null {
-  if (geometry.kind === "canvas") {
+  if (geometry.kind === PREVIEW_KINDS.canvas) {
     return `The outer ${Math.round(geometry.wrapMm.x / 10)} cm of the photo wraps around the sides of the canvas.`;
   }
   if (
-    (geometry.kind === "paper" || geometry.kind === "framed") &&
+    (geometry.kind === PREVIEW_KINDS.paper ||
+      geometry.kind === PREVIEW_KINDS.framed) &&
     geometry.cropFraction >= 0.01
   ) {
     return "Prints fill the paper edge to edge, so the photo is trimmed slightly at this size — the preview shows exactly what is printed.";

@@ -34,6 +34,7 @@ import {
   REFUNDED_STATUS,
   SESSION_ID_PARAM,
 } from "../src/domain/ordering/order-decision.ts";
+import { PREVIEW_KINDS } from "../src/domain/ordering/print-preview.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
@@ -682,6 +683,39 @@ test("the order view states are spelled once, in order-decision.ts", () => {
       spelled.map((s) => `${s.file}:${s.line}`),
       [],
       `"${state}" spelled outside ${OWNER} on a state surface: ${spelled
+        .map((s) => `${s.file}:${s.line}`)
+        .join(", ")}`,
+    );
+  }
+});
+
+test("the preview surfaces read the preview kinds from their owner", () => {
+  // The kind is the word the preview, the copy layer and the stylesheet all
+  // read. The component re-derived the members with its own `Extract<…>` types
+  // and the style module spelled them again as the keys of a Record: a kind
+  // added to the domain and not to the stylesheet was a geometry with no
+  // shadow, and one spelled differently in the two was a comparison that
+  // never matches.
+  //
+  // The check is scoped to the two preview surfaces, because three of the four
+  // words are also print formats — "digital", "framed" and "canvas" — and the
+  // format vocabulary has its own owner.
+  const OWNER = "src/domain/ordering/print-preview.ts";
+  const SURFACES = [
+    "src/components/PrintPreview.tsx",
+    "src/components/print-preview-style.ts",
+  ];
+  const sites = stringLiteralSites();
+  for (const kind of Object.values(PREVIEW_KINDS)) {
+    const owned = sites.filter((s) => s.literal === kind && s.file === OWNER);
+    assert.ok(owned.length >= 1, `${OWNER} holds "${kind}"`);
+    const spelled = sites.filter(
+      (s) => s.literal === kind && SURFACES.includes(s.file),
+    );
+    assert.deepEqual(
+      spelled.map((s) => `${s.file}:${s.line}`),
+      [],
+      `"${kind}" spelled outside ${OWNER} on a preview surface: ${spelled
         .map((s) => `${s.file}:${s.line}`)
         .join(", ")}`,
     );
