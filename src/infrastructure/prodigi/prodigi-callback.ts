@@ -62,10 +62,10 @@ import {
   prodigiUrl,
 } from "./prodigi-config";
 import {
-  isProdigiTimeout,
   PRODIGI_ORDER_TIMEOUT_MS,
   prodigiTimeoutSignal,
 } from "../../domain/ordering/prodigi-timeout";
+import { prodigiCall } from "./prodigi-request";
 import { prodigiConfig, siteUrl } from "../config/config";
 import type { OrdersStore } from "../../domain/ordering/orders-store";
 
@@ -209,27 +209,19 @@ export const fetchProdigiOrder: FetchProdigiOrder = async (orderId) => {
   }
 
   const signal = prodigiTimeoutSignal(PRODIGI_ORDER_TIMEOUT_MS);
-  let res: Response;
-  try {
-    res = await fetch(prodigiUrl(config.base, `v4.0/orders/${orderId}`), {
+  const call = await prodigiCall(
+    prodigiUrl(config.base, `v4.0/orders/${orderId}`),
+    {
       method: "GET",
       headers: { "X-API-Key": config.key },
-      signal,
-    });
-  } catch (e) {
-    if (isProdigiTimeout(e, signal)) {
-      return {
-        ok: false,
-        message: `Prodigi fetch timed out after ${PRODIGI_ORDER_TIMEOUT_MS}ms`,
-        status: null,
-      };
-    }
-    return {
-      ok: false,
-      message: e instanceof Error ? e.message : "network-error",
-      status: null,
-    };
+    },
+    signal,
+    `Prodigi fetch timed out after ${PRODIGI_ORDER_TIMEOUT_MS}ms`,
+  );
+  if (!call.ok) {
+    return { ok: false, message: call.failure.message, status: null };
   }
+  const res = call.response;
 
   const raw = await res.text().then(
     (t) => t,

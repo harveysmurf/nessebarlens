@@ -3,6 +3,7 @@
 import Script from "next/script";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { parseContactMessage } from "@/domain/contact/contact-message";
+import { postJson } from "@/infrastructure/http/post-json";
 import { track } from "@/analytics/track";
 import {
   fieldControlClass,
@@ -151,15 +152,11 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
 
     setBusy(true);
     try {
-      const res = await fetch("/api/contact", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name: name.trim(),
-          email: email.trim(),
-          message: message.trim(),
-          turnstileToken: token.current,
-        }),
+      const res = await postJson("/api/contact", {
+        name: name.trim(),
+        email: email.trim(),
+        message: message.trim(),
+        turnstileToken: token.current,
       });
       const data: unknown = await res.json().catch(() => null);
       if (!res.ok) {

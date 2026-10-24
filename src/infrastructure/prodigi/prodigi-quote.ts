@@ -16,6 +16,7 @@ import {
   PRODIGI_QUOTE_TIMEOUT_MS,
   prodigiTimeoutSignal,
 } from "../../domain/ordering/prodigi-timeout";
+import { prodigiCall } from "./prodigi-request";
 import type { ProdigiResult } from "../../domain/ordering/prodigi-result";
 import { prodigiConfig } from "../config/config";
 import {
@@ -76,15 +77,14 @@ export async function quotePhysical(opts: {
   // page, which is the right destination here.
   const signal = prodigiTimeoutSignal(PRODIGI_QUOTE_TIMEOUT_MS);
 
-  let res: Response;
-  try {
-    res = await fetch(prodigiUrl(config.base, "v4.0/quotes"), {
+  const call = await prodigiCall(
+    prodigiUrl(config.base, "v4.0/quotes"),
+    {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-API-Key": config.key,
       },
-      signal,
       body: JSON.stringify({
         shippingMethod: PRODIGI_SHIPPING_METHOD,
         destinationCountryCode,
@@ -98,28 +98,21 @@ export async function quotePhysical(opts: {
           },
         ],
       }),
-    });
-  } catch (e) {
-    // A timeout and any other network failure both return rather than throw.
-    // "Prodigi quote timed out" tells an operator to look at Prodigi's latency
-    // while "fetch failed" tells them nothing about which deadline was hit.
-    if (isProdigiTimeout(e, signal)) {
-      return {
-        ok: false,
-        kind: "timeout",
-        reason: "prodigi-timeout",
-        message: "Prodigi quote timed out",
-        status: null,
-      };
-    }
+    },
+    signal,
+    "Prodigi quote timed out",
+  );
+  if (!call.ok) {
+    const failure = call.failure;
     return {
       ok: false,
-      kind: "server",
-      reason: "prodigi-unavailable",
-      message: e instanceof Error ? e.message : "network-error",
+      kind: failure.kind,
+      reason: failure.reason,
+      message: failure.message,
       status: null,
     };
   }
+  const res = call.response;
 
   // The body is read once, before the status is judged, because a Prodigi error
   // names the field it objected to ("SKU GLOBAL-CAN-12X16 not found") and that

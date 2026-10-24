@@ -18,6 +18,7 @@ import {
   PRODIGI_ORDER_TIMEOUT_MS,
   prodigiTimeoutSignal,
 } from "../../domain/ordering/prodigi-timeout";
+import { prodigiCall } from "./prodigi-request";
 import type { ProdigiFailureReason } from "../../domain/ordering/prodigi-policy";
 import type { ProdigiFailureKind } from "../../domain/ordering/prodigi-result";
 import {
@@ -284,34 +285,20 @@ async function fetchProdigiOrder(input: {
   | { ok: true; order: ExistingProdigiOrder }
   | { ok: false; result: ProdigiOrderResult }
 > {
-  let res: Response;
-  try {
-    res = await fetch(prodigiUrl(input.base, `v4.0/orders/${input.orderId}`), {
-      headers: { "X-API-Key": input.key },
-      signal: input.signal,
-    });
-  } catch (e) {
-    if (isProdigiTimeout(e, input.signal)) {
-      return {
-        ok: false,
-        result: failure(
-          "timeout",
-          "prodigi-timeout",
-          `Prodigi order lookup timed out after ${PRODIGI_ORDER_TIMEOUT_MS}ms`,
-          null,
-        ),
-      };
-    }
+  const call = await prodigiCall(
+    prodigiUrl(input.base, `v4.0/orders/${input.orderId}`),
+    { headers: { "X-API-Key": input.key } },
+    input.signal,
+    `Prodigi order lookup timed out after ${PRODIGI_ORDER_TIMEOUT_MS}ms`,
+  );
+  if (!call.ok) {
+    const failed = call.failure;
     return {
       ok: false,
-      result: failure(
-        "server",
-        "prodigi-unavailable",
-        e instanceof Error ? e.message : "network-error",
-        null,
-      ),
+      result: failure(failed.kind, failed.reason, failed.message, null),
     };
   }
+  const res = call.response;
 
   const raw = await res.text().catch(() => "");
   if (!res.ok) {
@@ -434,37 +421,28 @@ export const createProdigiOrder: CreateProdigiOrder = async (input) => {
   // Below the deadline rather than at it: the answer has to reach Stripe as a
   // 5xx with time to spare, not at the moment it stops listening.
   const signal = prodigiTimeoutSignal(PRODIGI_ORDER_TIMEOUT_MS);
-  let res: Response;
-  try {
-    res = await fetch(prodigiUrl(config.base, "v4.0/orders"), {
+  // A timeout is retryable and says so: the order may well have been created
+  // and the response lost, so the record keeps terminal:false and the webhook
+  // answers 5xx. Redelivery re-sends the same idempotency key, which is what
+  // makes retrying safe here rather than a way to place two prints.
+  const call = await prodigiCall(
+    prodigiUrl(config.base, "v4.0/orders"),
+    {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
         "X-API-Key": config.key,
       },
       body: JSON.stringify(body),
-      signal,
-    });
-  } catch (e) {
-    // A timeout is retryable and says so: the order may well have been created
-    // and the response lost, so the record keeps terminal:false and the webhook
-    // answers 5xx. Redelivery re-sends the same idempotency key, which is what
-    // makes retrying safe here rather than a way to place two prints.
-    if (isProdigiTimeout(e, signal)) {
-      return failure(
-        "timeout",
-        "prodigi-timeout",
-        `Prodigi order timed out after ${PRODIGI_ORDER_TIMEOUT_MS}ms`,
-        null,
-      );
-    }
-    return failure(
-      "server",
-      "prodigi-unavailable",
-      e instanceof Error ? e.message : "network-error",
-      null,
-    );
+    },
+    signal,
+    `Prodigi order timed out after ${PRODIGI_ORDER_TIMEOUT_MS}ms`,
+  );
+  if (!call.ok) {
+    const failed = call.failure;
+    return failure(failed.kind, failed.reason, failed.message, null);
   }
+  const res = call.response;
 
   // The body is read once, as text, before the status is judged, for the same
   // reason prodigi-quote.ts does it (#133): `res.json()` throws on an HTML

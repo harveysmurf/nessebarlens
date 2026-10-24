@@ -20,7 +20,10 @@ import { MASTERS_BUCKET_NAME } from "../src/domain/catalog/derivative-ladder.ts"
 import { MASTERS_BUCKET, MASTER_MARKER } from "../src/domain/catalog/master-guard.ts";
 import { FILM_LOOKS } from "../src/domain/catalog/photo-schema.ts";
 import { filmLookClass } from "../src/domain/catalog/photos.ts";
-import { AWAITING_PRODIGI_REASON } from "../src/domain/ordering/order-decision.ts";
+import {
+  AWAITING_PRODIGI_REASON,
+  PAID_UNFULFILLED,
+} from "../src/domain/ordering/order-decision.ts";
 import { ORDERS_STORE_UNAVAILABLE_ERROR } from "../src/domain/ordering/orders-store.ts";
 
 const root = path.join(import.meta.dirname, "..");
@@ -637,6 +640,28 @@ test("the orders-store rejection is spelled once, in orders-store.ts", () => {
     sites.map((s) => s.file),
     ["src/domain/ordering/orders-store.ts"],
     `"${ORDERS_STORE_UNAVAILABLE_ERROR}" spelled outside its owner: ${sites
+      .map((s) => `${s.file}:${s.line}`)
+      .join(", ")}`,
+  );
+  assert.equal(sites.length, 1);
+});
+
+test("the paid-unfulfilled status is spelled once, in order-decision.ts", () => {
+  // The status is written by the fulfillment path, read by the reconciler,
+  // listed by the ops scripts and bound by the D1 query. Four sites spelled the
+  // literal themselves, and a rename that reached three of them would leave one
+  // site writing a status the others do not recognise: an order that is paid
+  // but not retryable, so nothing fulfils it and no log line says why.
+  //
+  // The prose in the modules mentions the status in a comment; this walks the
+  // AST, so only real literals are counted.
+  const sites = stringLiteralSites().filter(
+    (s) => s.literal === PAID_UNFULFILLED,
+  );
+  assert.deepEqual(
+    sites.map((s) => s.file),
+    ["src/domain/ordering/order-decision.ts"],
+    `"${PAID_UNFULFILLED}" spelled outside its owner: ${sites
       .map((s) => `${s.file}:${s.line}`)
       .join(", ")}`,
   );

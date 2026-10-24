@@ -39,6 +39,7 @@ import {
   type PrintSelection,
 } from "@/domain/ordering/print-selection";
 import type { MasterFacts } from "@/domain/catalog/master-facts";
+import { postJson } from "@/infrastructure/http/post-json";
 import { track } from "@/analytics/track";
 import { assess } from "@/domain/catalog/print-eligibility";
 import { findProduct } from "@/domain/pricing/print-products";
@@ -133,10 +134,7 @@ export function PrintConfigurator({
           mount,
           paper,
         );
-        const res = await fetch("/api/quote", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(body),
+        const res = await postJson("/api/quote", body, {
           signal: controller.signal,
         });
         // The quote payload arrives from the network, so it is read as unknown
@@ -230,11 +228,7 @@ export function PrintConfigurator({
         paper,
       );
 
-      const res = await fetch("/api/checkout", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
+      const res = await postJson("/api/checkout", body);
       const data: unknown = await readJsonResponse(res);
       // The transport status is checked first so the server's own error string
       // is the message on every non-ok response, whatever the payload's `url`

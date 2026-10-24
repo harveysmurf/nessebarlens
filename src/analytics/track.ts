@@ -7,17 +7,17 @@
  * surface an error or run during SSR.
  */
 
+import { postJson } from "../infrastructure/http/post-json";
 import type { TrackEvent } from "./events";
 
 export function track(event: TrackEvent): void {
   if (typeof window === "undefined") return;
   try {
-    void fetch("/api/e", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ event, path: window.location.pathname }),
-      keepalive: true,
-    }).catch(() => {
+    void postJson(
+      "/api/e",
+      { event, path: window.location.pathname },
+      { keepalive: true },
+    ).catch(() => {
       // A lost beacon is not a user-facing failure.
     });
   } catch {
