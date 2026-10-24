@@ -1,5 +1,10 @@
 import { NextResponse } from "next/server";
-import { isCheckoutSessionId, orderViewState } from "@/domain/ordering/order-decision";
+import {
+  isCheckoutSessionId,
+  ORDER_VIEW_STATES,
+  orderViewState,
+  SESSION_ID_PARAM,
+} from "@/domain/ordering/order-decision";
 import { readOrderRecord } from "@/domain/ordering/order-corrupt";
 import {
   ORDERS_STORE_UNAVAILABLE_ERROR,
@@ -25,7 +30,8 @@ export const runtime = "nodejs";
  * added later, because the fallback is "keep waiting", not "show a download".
  */
 export async function GET(request: Request) {
-  const sessionId = new URL(request.url).searchParams.get("session_id") ?? "";
+  const sessionId =
+    new URL(request.url).searchParams.get(SESSION_ID_PARAM) ?? "";
   if (!isCheckoutSessionId(sessionId)) {
     return NextResponse.json(
       { error: "invalid-session-id" },
@@ -56,7 +62,7 @@ export async function GET(request: Request) {
   // state rather than the 404 a missing key looks like elsewhere.
   if (raw === null) {
     return NextResponse.json(
-      { state: "digital-pending" as const },
+      { state: ORDER_VIEW_STATES.digitalPending },
       { status: 200, headers: NO_STORE_HEADERS },
     );
   }

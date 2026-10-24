@@ -1,6 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
+import {
+  ORDER_VIEW_STATES,
+  SESSION_ID_PARAM,
+} from "@/domain/ordering/order-decision";
 
 /**
  * Polls /api/order-status until the download is ready, then reloads the page so
@@ -31,7 +35,7 @@ export default function OrderStatusPoller({ sessionId }: { sessionId: string }) 
     const tick = async () => {
       try {
         const res = await fetch(
-          `/api/order-status?session_id=${encodeURIComponent(sessionId)}`,
+          `/api/order-status?${SESSION_ID_PARAM}=${encodeURIComponent(sessionId)}`,
           { cache: "no-store" },
         );
         if (!res.ok) {
@@ -45,7 +49,7 @@ export default function OrderStatusPoller({ sessionId }: { sessionId: string }) 
           data && typeof data === "object"
             ? (data as { state?: unknown }).state
             : undefined;
-        if (state === "digital-pending") return schedule();
+        if (state === ORDER_VIEW_STATES.digitalPending) return schedule();
         // Any other known state is final: let the server render it.
         if (typeof state === "string") {
           window.location.reload();

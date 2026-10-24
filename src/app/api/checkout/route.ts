@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readJsonBody } from "@/infrastructure/config/json-body";
 import { parseCheckoutBody } from "@/domain/ordering/checkout-body";
+import { SESSION_ID_PARAM } from "@/domain/ordering/order-decision";
 import {
   physicalSpecification,
   type PrintSpecification,
@@ -198,7 +199,7 @@ export async function POST(request: Request) {
     quoteEur,
     shippingEur,
     destinationCountryCode,
-    successUrl: `${base}/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+    successUrl: `${base}/checkout/success?${SESSION_ID_PARAM}={CHECKOUT_SESSION_ID}`,
     cancelUrl: `${base}/checkout/cancel?slug=${encodeURIComponent(photo.slug)}`,
     metadata,
   };

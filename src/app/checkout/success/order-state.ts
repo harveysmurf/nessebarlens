@@ -1,5 +1,6 @@
 import {
   isCheckoutSessionId,
+  ORDER_VIEW_STATES,
   orderViewState,
   type OrderViewState,
 } from "@/domain/ordering/order-decision";
@@ -73,7 +74,7 @@ export async function resolveCheckoutPageState(
   if (!order) return "unavailable";
 
   const state = orderViewState(order);
-  if (state !== "digital-ready") return state;
+  if (state !== ORDER_VIEW_STATES.digitalReady) return state;
 
   const link = await downloadLinkForSession(bindings.ORDERS_DB, sessionId);
   return link ? state : "digital-no-token";

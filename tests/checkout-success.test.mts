@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { registerHooks } from "node:module";
 import test from "node:test";
 import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
+import { ORDER_VIEW_STATES } from "../src/domain/ordering/order-decision.ts";
 
 /* The checkout success page's decision, and the endpoint that feeds it (#103).
 
@@ -514,6 +515,20 @@ test("the download href exists in exactly one place on the page", () => {
   assert.doesNotMatch(PAGE, /\/api\/download\?/);
 });
 
+/**
+ * How the page spells a state. The view states are read from the owner now,
+ * so the guard follows the owner: the page's branch is the constant, and the
+ * constant is the state's name. The page's own states are still literals.
+ */
+const VIEW_STATE_KEYS = new Map<string, string>(
+  Object.entries(ORDER_VIEW_STATES).map(([key, value]) => [value, key]),
+);
+
+const pageSpelling = (state: string): string => {
+  const key = VIEW_STATE_KEYS.get(state);
+  return key === undefined ? `"${state}"` : `ORDER_VIEW_STATES.${key}`;
+};
+
 test("every page state has a branch, so none falls through to a bare thank-you", () => {
   for (const state of [
     "missing-session",
@@ -526,7 +541,10 @@ test("every page state has a branch, so none falls through to a bare thank-you",
     "digital-unavailable",
     "unavailable",
   ]) {
-    assert.match(PAGE, new RegExp(`"${state}"`), `no branch for ${state}`);
+    assert.ok(
+      PAGE.includes(pageSpelling(state)),
+      `no branch for ${state}`,
+    );
   }
 });
 
@@ -535,9 +553,12 @@ test("the unavailable branch tells the truth and does not poll", () => {
   // parsed. It used to fall through to the processing branch, which claimed we
   // were preparing the download and mounted a poller that then retried
   // /api/order-status -- a guaranteed 500 corrupt-order -- until its deadline.
-  const start = PAGE.indexOf('state === "unavailable"');
+  const start = PAGE.indexOf(`state === ${pageSpelling("unavailable")}`);
   assert.ok(start > 0, 'no branch for "unavailable"');
-  const branch = PAGE.slice(start, PAGE.indexOf('state === "digital-unavailable"', start));
+  const branch = PAGE.slice(
+    start,
+    PAGE.indexOf(`state === ${pageSpelling("digital-unavailable")}`, start),
+  );
 
   // No poller: nothing about a corrupt record changes on its own, so retrying
   // only spends the customer's two minutes to reach the same 500.
@@ -589,16 +610,19 @@ test("the poller stops on a terminal state instead of polling forever", () => {
   );
   // Anything other than pending is final, and the poller must not keep asking
   // about a revoked or unavailable order.
-  assert.match(POLLER, /state === "digital-pending"/);
+  assert.ok(POLLER.includes(`state === ${pageSpelling("digital-pending")}`));
   assert.match(POLLER, /typeof state === "string"/);
   // And it gives up rather than running until the tab closes.
   assert.match(POLLER, /deadline/);
 });
 
 test("the physical-unfulfilled branch promises email contact, not production", () => {
-  const start = PAGE.indexOf('state === "physical-unfulfilled"');
+  const start = PAGE.indexOf(`state === ${pageSpelling("physical-unfulfilled")}`);
   assert.ok(start > 0, 'no branch for "physical-unfulfilled"');
-  const branch = PAGE.slice(start, PAGE.indexOf('state === "digital-ready"', start));
+  const branch = PAGE.slice(
+    start,
+    PAGE.indexOf(`state === ${pageSpelling("digital-ready")}`, start),
+  );
   assert.match(branch, /payment (was|has been) received/i);
   assert.match(branch, /email/i);
   assert.doesNotMatch(branch, /produced|ship from|do not need to do anything/i);
@@ -610,13 +634,16 @@ test("the physical-unfulfilled branch promises email contact, not production", (
 test("only the paid physical branch says the print is being produced", () => {
   assert.equal(PAGE.split("being produced").length - 1, 1);
   const at = PAGE.indexOf("being produced");
-  assert.ok(at > PAGE.indexOf('state === "physical" ?'));
-  assert.ok(at < PAGE.indexOf('state === "physical-unfulfilled"'));
+  assert.ok(at > PAGE.indexOf(`state === ${pageSpelling("physical")} ?`));
+  assert.ok(at < PAGE.indexOf(`state === ${pageSpelling("physical-unfulfilled")}`));
 });
 
 test("the revoked branch does not talk about a download for a refunded print", () => {
-  const start = PAGE.indexOf('state === "revoked"');
-  const branch = PAGE.slice(start, PAGE.indexOf('state === "unavailable"', start));
+  const start = PAGE.indexOf(`state === ${pageSpelling("revoked")}`);
+  const branch = PAGE.slice(
+    start,
+    PAGE.indexOf(`state === ${pageSpelling("unavailable")}`, start),
+  );
   assert.doesNotMatch(branch, /download/i);
   assert.match(branch, /refunded|dispute/i);
 });
