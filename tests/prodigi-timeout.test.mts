@@ -384,22 +384,30 @@ test("a non-timeout network failure is still prodigi-unavailable", async () => {
   }
 });
 
-test("both Prodigi fetches actually pass a signal", () => {
+test("every Prodigi fetch actually passes a signal", () => {
   // A timeout budget nothing passes is a constant with a comment. Assert the
-  // fetch call carries one, in both callers, on the AST-visible option object.
+  // fetch call carries one — in the module that owns the call now — and that
+  // the callers that used to write their own fetch do not have one left, so a
+  // fourth copy of the rule cannot come back.
   const root = path.join(import.meta.dirname, "..", "src/infrastructure/prodigi");
-  for (const rel of ["prodigi-quote.ts", "prodigi-order.ts"]) {
+  const owner = fs.readFileSync(path.join(root, "prodigi-request.ts"), "utf8");
+  const calls = [...owner.matchAll(/await fetch\(/g)];
+  assert.ok(calls.length > 0, "the Prodigi call owner has a Prodigi fetch");
+  for (const call of calls) {
+    const window = owner.slice(call.index, call.index + 700);
+    assert.match(
+      window,
+      /signal/,
+      "the Prodigi fetch carries a signal: a timeout budget nothing passes is a constant with a comment",
+    );
+  }
+  for (const rel of ["prodigi-quote.ts", "prodigi-order.ts", "prodigi-callback.ts"]) {
     const src = fs.readFileSync(path.join(root, rel), "utf8");
-    const calls = [...src.matchAll(/await fetch\(/g)];
-    assert.ok(calls.length > 0, `${rel} has a Prodigi fetch`);
-    for (const call of calls) {
-      const window = src.slice(call.index, call.index + 700);
-      assert.match(
-        window,
-        /signal,/,
-        `${rel} fetches without a signal: a timeout budget nothing passes is a constant with a comment`,
-      );
-    }
+    assert.equal(
+      [...src.matchAll(/await fetch\(/g)].length,
+      0,
+      `${rel} writes its own Prodigi fetch: the deadline and the failure it maps to have one owner`,
+    );
   }
 });
 
