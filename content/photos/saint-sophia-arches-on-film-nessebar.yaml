@@ -1,0 +1,36 @@
+slug: saint-sophia-arches-on-film-nessebar
+title: Saint Sophia Arches on Film, Nessebar
+caption: Kentmere Pan 100 captures Saint Sophia’s arches in stark light and grain.
+description: An analog night study of the historic Church of Saint Sophia ruins
+  in Old Town Nessebar, Bulgaria. Shot on Kentmere Pan 100 black-and-white film,
+  artificial night lighting outlines the rugged brick arches with striking grain
+  and deep, high-contrast shadows. This piece merges traditional chemical
+  photography with the enduring architecture of a UNESCO World Heritage site,
+  captured entirely by hand without digital manipulation.
+alt: Grainy black-and-white photograph of the illuminated brick arches of the
+  Church of Saint Sophia at night in Nessebar.
+category: film
+film_look: grayscale
+# written by publish-photos
+master_sha256: 08dfb9f1e21a2458c9c65251495bc336fdf5ea9303940fc250627cbb0cad8a20
+image_hash: 08dfb9f1
+master_width: 4921
+master_height: 3365
+orientation: landscape
+print_asset_sha256: 226fd4bab1f3b5cc4aacb5a92bfaad1299ef1462bbd862f48391f4db95708772
+print_asset_md5: de2d3baab685bfb2929745b9c29c32f6
+print_options:
+  giclee:
+    - 20x30
+    - 30x40
+    - 30x45
+  framed:
+    - 20x30
+    - 30x40
+    - 30x45
+    - 40x60
+  canvas:
+    - 20x30
+    - 30x40
+    - 30x45
+    - 40x60
