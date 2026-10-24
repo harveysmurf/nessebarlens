@@ -42,7 +42,10 @@ import type { MasterFacts } from "@/domain/catalog/master-facts";
 import { postJson } from "@/infrastructure/http/post-json";
 import { track } from "@/analytics/track";
 import { assess } from "@/domain/catalog/print-eligibility";
-import { findProduct } from "@/domain/pricing/print-products";
+import {
+  findProduct,
+  FRAMED_MOUNT_VALUES,
+} from "@/domain/pricing/print-products";
 import type { PrintOffer } from "@/domain/catalog/print-offer";
 import {
   checkoutUrl,
@@ -104,7 +107,7 @@ export function PrintConfigurator({
   // and say why not otherwise. The offer stays mounted-based; this is the one
   // place the second mount is judged, and it never swaps the product silently.
   const noMountVerdict = isFramed
-    ? assess(master, findProduct("framed", size, "none", null)!)
+    ? assess(master, findProduct("framed", size, FRAMED_MOUNT_VALUES.none, null)!)
     : null;
   const noMountEligible = noMountVerdict?.verdict.eligible ?? false;
   const noMountReason =
@@ -198,7 +201,7 @@ export function PrintConfigurator({
   function selectMount(value: string) {
     // A disabled option cannot be chosen through the select, and the guard keeps
     // a value the selector could not produce from ever becoming the selection.
-    if (isFramedMountValue(value) && (value === "white" || noMountEligible)) {
+    if (isFramedMountValue(value) && (value === FRAMED_MOUNT_VALUES.white || noMountEligible)) {
       onSelectionChange(withMount(selection, value));
     }
   }
@@ -460,7 +463,7 @@ export function PrintConfigurator({
                 <option
                   key={m.id}
                   value={m.id}
-                  disabled={m.id === "none" && !noMountEligible}
+                  disabled={m.id === FRAMED_MOUNT_VALUES.none && !noMountEligible}
                 >
                   {m.label}
                 </option>
@@ -470,7 +473,7 @@ export function PrintConfigurator({
                 size cannot go without a mount belongs beside the control that
                 offers it — never a silent swap back to the mounted version. */}
             <p id="frame-mount-help" className={fieldHintClass()}>
-              {mount === "none"
+              {mount === FRAMED_MOUNT_VALUES.none
                 ? noMountReason ??
                   "Your photo fills the frame edge to edge, with no mount."
                 : noMountReason ??
@@ -511,7 +514,9 @@ export function PrintConfigurator({
               (!isDigital &&
                 (!quote ||
                   quoteLoading ||
-                  (isFramed && mount === "none" && !noMountEligible)))
+                  (isFramed &&
+                    mount === FRAMED_MOUNT_VALUES.none &&
+                    !noMountEligible)))
             }
             onClick={checkout}
           >
