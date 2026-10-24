@@ -33,9 +33,13 @@ import {
   percentNumber,
   percentRect,
   type CanvasSide,
+  type CanvasPreview,
   type Extent,
+  PREVIEW_KINDS,
   type PreviewGeometry,
+  type ProductPreview,
   type Rect,
+  type FramedPreview,
 } from "@/domain/ordering/print-preview";
 import type { GalleryImage } from "@/infrastructure/media/gallery-image";
 import { PictureImg } from "./PictureImg";
@@ -52,9 +56,8 @@ import {
   STAGE_BACKGROUND,
 } from "./print-preview-style";
 
-type PhysicalGeometry = Exclude<PreviewGeometry, { kind: "digital" }>;
-type ProductGeometry = Extract<PhysicalGeometry, { kind: "paper" | "framed" }>;
-type CanvasGeometry = Extract<PhysicalGeometry, { kind: "canvas" }>;
+type ProductGeometry = ProductPreview;
+type CanvasGeometry = CanvasPreview;
 type PreviewView = "angled" | "front";
 
 const FULL: CSSProperties = { left: "0%", top: "0%", width: "100%", height: "100%" };
@@ -96,8 +99,12 @@ function PreviewBody({
         role="img"
         aria-label={label}
         data-preview-kind={geometry.kind}
-        {...(geometry.kind === "canvas" ? { "data-preview-view": view } : {})}
-        {...(geometry.kind === "framed" ? { "data-frame": geometry.frame } : {})}
+        {...(geometry.kind === PREVIEW_KINDS.canvas
+          ? { "data-preview-view": view }
+          : {})}
+        {...(geometry.kind === PREVIEW_KINDS.framed
+          ? { "data-frame": geometry.frame }
+          : {})}
         {...(size ? { "data-size": size } : {})}
         className="rounded-sm overflow-hidden relative flex items-center justify-center p-6 sm:p-10 border border-stone-300/60"
         style={{
@@ -107,9 +114,9 @@ function PreviewBody({
       >
         <div className="relative w-full h-full" style={{ containerType: "size" }}>
           <div className="flex items-center justify-center w-full h-full">
-            {geometry.kind === "digital" ? (
+            {geometry.kind === PREVIEW_KINDS.digital ? (
               <DigitalImage image={image} alt={alt} filmLookClassName={filmLookClassName} />
-            ) : geometry.kind === "canvas" ? (
+            ) : geometry.kind === PREVIEW_KINDS.canvas ? (
               <CanvasScene
                 geometry={geometry}
                 image={image}
@@ -129,7 +136,7 @@ function PreviewBody({
         </div>
       </div>
 
-      {geometry.kind === "canvas" && (
+      {geometry.kind === PREVIEW_KINDS.canvas && (
         <div className="flex justify-end">
           <ViewToggle view={view} onChange={setView} />
         </div>
@@ -224,7 +231,7 @@ function ProductBox({
         boxShadow: PRODUCT_SHADOW[geometry.kind],
       }}
     >
-      {geometry.kind === "paper" && (
+      {geometry.kind === PREVIEW_KINDS.paper && (
         <>
           <ImageLayer
             containerStyle={FULL}
@@ -241,7 +248,7 @@ function ProductBox({
         </>
       )}
 
-      {geometry.kind === "framed" && (
+      {geometry.kind === PREVIEW_KINDS.framed && (
         <FramedLayers
           geometry={geometry}
           image={image}
@@ -445,7 +452,7 @@ function FramedLayers({
   alt,
   filmLookClassName,
 }: {
-  geometry: Extract<ProductGeometry, { kind: "framed" }>;
+  geometry: FramedPreview;
   image: GalleryImage | null;
   alt: string;
   filmLookClassName: string;

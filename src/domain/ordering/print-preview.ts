@@ -43,11 +43,35 @@ export type Extent = { width: Mm; height: Mm };
 export const CANVAS_SIDES = ["top", "right", "bottom", "left"] as const;
 export type CanvasSide = (typeof CANVAS_SIDES)[number];
 
+/**
+ * The geometries the preview can have, and the word each is called.
+ *
+ * The kind is the word the preview, the copy layer and the stylesheet all
+ * read: the component re-derived the members with its own `Extract<…>` types
+ * and the style module spelled them again as the keys of a Record. A kind
+ * added here and not there is a geometry with no shadow, and one spelled
+ * differently in the two is a comparison that never matches — the preview
+ * renders, and the paper print it is looking at never gets its frame.
+ */
+export const PREVIEW_KINDS = {
+  digital: "digital",
+  paper: "paper",
+  framed: "framed",
+  canvas: "canvas",
+} as const;
+
+export type PreviewKind = (typeof PREVIEW_KINDS)[keyof typeof PREVIEW_KINDS];
+
 export type PreviewGeometry =
-  | { kind: "digital" }
-  | { kind: "paper"; outer: Extent; image: Rect; cropFraction: number }
+  | { kind: typeof PREVIEW_KINDS.digital }
   | {
-      kind: "framed";
+      kind: typeof PREVIEW_KINDS.paper;
+      outer: Extent;
+      image: Rect;
+      cropFraction: number;
+    }
+  | {
+      kind: typeof PREVIEW_KINDS.framed;
       frame: FrameFinish;
       outer: Extent;
       mouldingMm: Mm;
@@ -62,13 +86,40 @@ export type PreviewGeometry =
       cropFraction: number;
     }
   | {
-      kind: "canvas";
+      kind: typeof PREVIEW_KINDS.canvas;
       front: Extent;
       wrapMm: { x: Mm; y: Mm };
       depthMm: Mm;
       image: Rect;
       cropFraction: number;
     };
+
+/** The preview of a physical print — everything but the digital download. */
+export type PhysicalPreview = Exclude<
+  PreviewGeometry,
+  { kind: typeof PREVIEW_KINDS.digital }
+>;
+
+/** The kinds a physical preview can have: the words the stylesheet keys on. */
+export type PhysicalPreviewKind = PhysicalPreview["kind"];
+
+/** A paper or framed print: the two that sit in a product box. */
+export type ProductPreview = Extract<
+  PhysicalPreview,
+  { kind: typeof PREVIEW_KINDS.paper | typeof PREVIEW_KINDS.framed }
+>;
+
+/** A stretched canvas. */
+export type CanvasPreview = Extract<
+  PhysicalPreview,
+  { kind: typeof PREVIEW_KINDS.canvas }
+>;
+
+/** A framed print. */
+export type FramedPreview = Extract<
+  ProductPreview,
+  { kind: typeof PREVIEW_KINDS.framed }
+>;
 
 /** Face width of a Classic Frame moulding (depth 22 mm). Prodigi Classic Frames range. */
 export const CLASSIC_FRAME_MOULDING_MM = 20;
@@ -142,7 +193,7 @@ export function previewGeometry(
   master: MasterFacts,
 ): PreviewGeometry {
   const { format, size } = selection;
-  if (format === "digital") return { kind: "digital" };
+  if (format === "digital") return { kind: PREVIEW_KINDS.digital };
 
   // The mount (#335) and the paper (#337) are part of the product key, so the
   // lookup has to carry them; for the other formats each is ignored. The two
@@ -153,13 +204,13 @@ export function previewGeometry(
     format === "framed" ? selection.mount : null,
     format === "giclee" ? selection.paper : null,
   );
-  if (!product) return { kind: "digital" };
+  if (!product) return { kind: PREVIEW_KINDS.digital };
 
   const area = orientedArea(product, master.orientation);
 
   if (format === "giclee") {
     const { image, cropFraction } = coverCrop(area, master);
-    return { kind: "paper", outer: area, image, cropFraction };
+    return { kind: PREVIEW_KINDS.paper, outer: area, image, cropFraction };
   }
 
   if (format === "framed") {
@@ -191,7 +242,16 @@ export function previewGeometry(
           height: area.height,
         };
     const { image, cropFraction } = coverCrop(area, master);
-    return { kind: "framed", frame: selection.frame, outer, mouldingMm, mount, window, image, cropFraction };
+    return {
+      kind: PREVIEW_KINDS.framed,
+      frame: selection.frame,
+      outer,
+      mouldingMm,
+      mount,
+      window,
+      image,
+      cropFraction,
+    };
   }
 
   // Canvas: `area` is the front plus the wrap on each side; the front is the
@@ -208,7 +268,14 @@ export function previewGeometry(
     width: cover.image.width,
     height: cover.image.height,
   };
-  return { kind: "canvas", front, wrapMm, depthMm: CANVAS_BAR_DEPTH_MM, image, cropFraction: cover.cropFraction };
+  return {
+    kind: PREVIEW_KINDS.canvas,
+    front,
+    wrapMm,
+    depthMm: CANVAS_BAR_DEPTH_MM,
+    image,
+    cropFraction: cover.cropFraction,
+  };
 }
 
 /**
@@ -222,7 +289,7 @@ export function previewGeometry(
  * never visible, which falls out of using only `depthMm` for the face.
  */
 export function canvasSideFace(
-  geometry: Extract<PreviewGeometry, { kind: "canvas" }>,
+  geometry: CanvasPreview,
   side: CanvasSide,
 ): { face: Extent; image: Rect } {
   const { front, depthMm, image } = geometry;

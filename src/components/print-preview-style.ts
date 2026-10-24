@@ -9,6 +9,10 @@
  * preview exists to show what Prodigi prints and frames.
  */
 import type { FrameFinish } from "@/domain/pricing/pricing";
+import {
+  PREVIEW_KINDS,
+  type PhysicalPreviewKind,
+} from "@/domain/ordering/print-preview";
 
 /** Moulding base colour per finish; a new finish is a compile error here. */
 export const FRAME_BASE: Record<FrameFinish, string> = {
@@ -98,13 +102,13 @@ export const STAGE_BACKGROUND =
   "radial-gradient(120% 90% at 30% 15%, #f4f0e9 0%, #e7e1d7 60%, #ddd6ca 100%)";
 
 /** Product-box shadow per physical kind. Never a `filter` (it breaks #327). */
-export const PRODUCT_SHADOW: Record<
-  "paper" | "framed" | "canvas",
-  string
-> = {
-  paper: "0 1px 2px rgba(0,0,0,.18), 0 6px 14px rgba(0,0,0,.12)",
-  framed: "0 2px 4px rgba(0,0,0,.28), 0 14px 28px rgba(0,0,0,.20)",
-  canvas: "0 3px 6px rgba(0,0,0,.28), 0 20px 40px rgba(0,0,0,.24)",
+export const PRODUCT_SHADOW: Record<PhysicalPreviewKind, string> = {
+  [PREVIEW_KINDS.paper]:
+    "0 1px 2px rgba(0,0,0,.18), 0 6px 14px rgba(0,0,0,.12)",
+  [PREVIEW_KINDS.framed]:
+    "0 2px 4px rgba(0,0,0,.28), 0 14px 28px rgba(0,0,0,.20)",
+  [PREVIEW_KINDS.canvas]:
+    "0 3px 6px rgba(0,0,0,.28), 0 20px 40px rgba(0,0,0,.24)",
 };
 
 export const CANVAS_EDGE_SHADOW =
