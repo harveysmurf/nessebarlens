@@ -41,7 +41,7 @@ import {
 import type { MasterFacts } from "@/domain/catalog/master-facts";
 import { postJson } from "@/infrastructure/http/post-json";
 import { track } from "@/analytics/track";
-import { assess } from "@/domain/catalog/print-eligibility";
+import { assess, SHAPE_MISMATCH_REASON } from "@/domain/catalog/print-eligibility";
 import {
   findProduct,
   FRAMED_MOUNT_VALUES,
@@ -112,7 +112,7 @@ export function PrintConfigurator({
   const noMountEligible = noMountVerdict?.verdict.eligible ?? false;
   const noMountReason =
     noMountVerdict && !noMountVerdict.verdict.eligible
-      ? noMountVerdict.verdict.reason === "shape-mismatch"
+      ? noMountVerdict.verdict.reason === SHAPE_MISMATCH_REASON
         ? "This photo's shape doesn't fit this frame without a mount."
         : "This photo's resolution is too low for an unmounted print at this size."
       : null;

@@ -77,7 +77,11 @@ import {
 } from "../src/domain/catalog/derivative-ladder";
 import { orientationOf, parseMasterFacts } from "../src/domain/catalog/master-facts";
 import { validatePhotoFile } from "../src/domain/catalog/photo-schema";
-import { assessAll, MIN_PRINT_PPI } from "../src/domain/catalog/print-eligibility";
+import {
+  assessAll,
+  BELOW_MIN_PPI_REASON,
+  MIN_PRINT_PPI,
+} from "../src/domain/catalog/print-eligibility";
 import {
   eligibleOffer,
   isOfferedProduct,
@@ -341,7 +345,7 @@ function sameOffer(a, b) {
  */
 function offerStatus(assessment) {
   if (assessment.verdict.eligible) return "eligible";
-  if (assessment.verdict.reason === "below-min-ppi") {
+  if (assessment.verdict.reason === BELOW_MIN_PPI_REASON) {
     return `unavailable: below ${MIN_PRINT_PPI[assessment.product.format]} PPI`;
   }
   return "unavailable: shape mismatch";

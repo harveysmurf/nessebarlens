@@ -37,8 +37,23 @@ export const MIN_PRINT_PPI: Record<PhysicalFormat, number> = {
   canvas: 150,
 };
 
-/** Why a product is not offered for a master. */
-export type IneligibleReason = "below-min-ppi" | "shape-mismatch";
+/** The master is below the product's pixels-per-inch floor. */
+export const BELOW_MIN_PPI_REASON = "below-min-ppi";
+
+/** The master's shape does not fit the product, with no crop or rotation to fix it. */
+export const SHAPE_MISMATCH_REASON = "shape-mismatch";
+
+/**
+ * Why a product is not offered for a master.
+ *
+ * Derived from the two values so that a reason is written down once. The offer
+ * layer reports these reasons too, and it must report the same ones rather
+ * than its own copy of the spelling: a rename that reached only one of the two
+ * would leave an offer problem the schema could not explain.
+ */
+export type IneligibleReason =
+  | typeof BELOW_MIN_PPI_REASON
+  | typeof SHAPE_MISMATCH_REASON;
 
 export type Assessment = {
   product: PrintProductEntry;
@@ -89,9 +104,9 @@ export function assess(
 
   const verdict: Assessment["verdict"] =
     masterSquare !== productSquare
-      ? { eligible: false, reason: "shape-mismatch" }
+      ? { eligible: false, reason: SHAPE_MISMATCH_REASON }
       : effectivePpi < MIN_PRINT_PPI[product.format]
-        ? { eligible: false, reason: "below-min-ppi" }
+        ? { eligible: false, reason: BELOW_MIN_PPI_REASON }
         : { eligible: true };
 
   return { product, effectivePpi, cropFraction, verdict };
