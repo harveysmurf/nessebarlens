@@ -41,7 +41,7 @@ import {
 import type { MasterFacts } from "@/domain/catalog/master-facts";
 import { postJson } from "@/infrastructure/http/post-json";
 import { track } from "@/analytics/track";
-import { assess } from "@/domain/catalog/print-eligibility";
+import { assess, SHAPE_MISMATCH_REASON } from "@/domain/catalog/print-eligibility";
 import {
   findProduct,
   FRAMED_MOUNT_VALUES,
@@ -49,10 +49,10 @@ import {
 import type { PrintOffer } from "@/domain/catalog/print-offer";
 import {
   checkoutUrl,
-  isLiveQuote,
+  isQuotePayload,
   readJsonResponse,
   requestErrorMessage,
-  type LiveQuote,
+  type QuotePayload,
 } from "@/application/checkout/api-payloads";
 import {
   isFrameFinishValue,
@@ -91,7 +91,7 @@ export function PrintConfigurator({
     useState<ShipToCountryCode>(DEFAULT_SHIPPING_COUNTRY);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [quote, setQuote] = useState<LiveQuote | null>(null);
+  const [quote, setQuote] = useState<QuotePayload | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
 
@@ -112,7 +112,7 @@ export function PrintConfigurator({
   const noMountEligible = noMountVerdict?.verdict.eligible ?? false;
   const noMountReason =
     noMountVerdict && !noMountVerdict.verdict.eligible
-      ? noMountVerdict.verdict.reason === "shape-mismatch"
+      ? noMountVerdict.verdict.reason === SHAPE_MISMATCH_REASON
         ? "This photo's shape doesn't fit this frame without a mount."
         : "This photo's resolution is too low for an unmounted print at this size."
       : null;
@@ -151,7 +151,7 @@ export function PrintConfigurator({
         if (!res.ok) {
           throw new Error(requestErrorMessage(data, res.status, "Quote failed"));
         }
-        if (!isLiveQuote(data)) {
+        if (!isQuotePayload(data)) {
           throw new Error("Quote failed");
         }
         setQuote({

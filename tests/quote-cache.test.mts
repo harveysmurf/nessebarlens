@@ -6,9 +6,9 @@ import {
   quoteCacheKey,
   readCachedQuote,
   writeCachedQuote,
-  type CachedQuote,
   type QuoteCache,
 } from "../src/application/checkout/quote-cache.ts";
+import { type QuotePayload } from "../src/application/checkout/api-payloads.ts";
 
 // `paper` (#337) is required by quoteCacheKey's input. `null` is what the
 // production path passes for a giclée with no explicit paper: `resolveSku`
@@ -73,7 +73,7 @@ test("a Cache API with no default cache is treated as no cache", async () => {
 test("a repeated identical quote is served from cache without a Prodigi call", async () => {
   const cache = fakeCache();
   assert.equal(await readCachedQuote(BASE, cache), null);
-  const quote: CachedQuote = { merchandiseEur: 13.48, shippingEur: 4.5 };
+  const quote: QuotePayload = { merchandiseEur: 13.48, shippingEur: 4.5 };
   await writeCachedQuote(BASE, quote, cache);
   assert.deepEqual(await readCachedQuote(BASE, cache), quote);
   assert.equal(cache.entries.size, 1);

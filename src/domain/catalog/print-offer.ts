@@ -27,7 +27,7 @@ import {
 } from "../pricing/sku-map";
 import type { PrintSpecification } from "../ordering/print-spec";
 import type { MasterFacts } from "./master-facts";
-import { assess, type Assessment } from "./print-eligibility";
+import { assess, type Assessment, type IneligibleReason } from "./print-eligibility";
 
 /**
  * Digital is always offered (#291 decision 5), so it is not a key here: the
@@ -39,6 +39,9 @@ export type PrintOffer = Readonly<Record<PhysicalFormat, readonly PrintSize[]>>;
 /**
  * Why a raw offer was refused, as a closed set. The caller maps these to its
  * own wording; this module does not own prose.
+ *
+ * The two ineligibility reasons are the assessment's, not this module's, so
+ * they are named by their owner rather than spelled again here.
  */
 export type OfferReason =
   | "not-a-map"
@@ -48,8 +51,7 @@ export type OfferReason =
   | "unknown-size"
   | "not-offered-for-format"
   | "duplicate-size"
-  | "below-min-ppi"
-  | "shape-mismatch";
+  | IneligibleReason;
 
 export type OfferProblem = {
   /** The format the problem is about; `"(offer)"` for a problem with the map itself. */

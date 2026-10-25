@@ -22,17 +22,25 @@ import { HTTPS_URL_PATTERN } from "@/domain/pricing/url-patterns";
 import { isRecord } from "@/domain/json/record";
 import { PRODIGI_FAILURE_REASONS } from "@/domain/ordering/prodigi-policy";
 
-export type LiveQuote = {
+/**
+ * The two public numbers a quote is made of.
+ *
+ * Owned here because this is the payload /api/quote puts on the wire *and* the
+ * payload the quote cache stores and hands back: the client validates it, and
+ * the cache replays it. One shape for both, so a cached entry can never be a
+ * shape the client would reject.
+ */
+export type QuotePayload = {
   merchandiseEur: number;
   shippingEur: number;
 };
 
 /**
- * A quote is usable only when both amounts are finite numbers. `typeof` alone
- * is not enough: JSON has no NaN, but a hand-built or proxied response can
- * carry one, and `NaN.toFixed(2)` renders as "NaN".
+ * A quote payload is usable only when both amounts are finite numbers.
+ * `typeof` alone is not enough: JSON has no NaN, but a hand-built or proxied
+ * response can carry one, and `NaN.toFixed(2)` renders as "NaN".
  */
-export function isLiveQuote(value: unknown): value is LiveQuote {
+export function isQuotePayload(value: unknown): value is QuotePayload {
   return (
     isRecord(value) &&
     typeof value.merchandiseEur === "number" &&

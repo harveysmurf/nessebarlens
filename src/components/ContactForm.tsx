@@ -2,7 +2,11 @@
 
 import Script from "next/script";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { parseContactMessage } from "@/domain/contact/contact-message";
+import {
+  parseContactMessage,
+  type ContactField,
+  type ContactMessage,
+} from "@/domain/contact/contact-message";
 import { postJson } from "@/infrastructure/http/post-json";
 import {
   errorMessage,
@@ -46,8 +50,7 @@ type TurnstileApi = {
   remove: (widgetId: string) => void;
 };
 
-type ContactFieldName = "name" | "email" | "message" | "turnstileToken";
-type FieldErrors = Partial<Record<ContactFieldName, string>>;
+type FieldErrors = Partial<Record<ContactField, string>>;
 
 /**
  * The widget API the Turnstile script puts on `window`, or undefined until the
@@ -69,12 +72,7 @@ function turnstileApi(): TurnstileApi | undefined {
  * inline rendering. The token is included so a missing challenge is reported
  * with the other problems rather than as a separate round-trip.
  */
-function fieldErrors(values: {
-  name: string;
-  email: string;
-  message: string;
-  turnstileToken: string;
-}): FieldErrors {
+function fieldErrors(values: ContactMessage): FieldErrors {
   const parsed = parseContactMessage(values);
   if (parsed.ok) return {};
   const errors: FieldErrors = {};

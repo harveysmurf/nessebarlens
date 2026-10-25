@@ -11,6 +11,10 @@ import {
   parsePrintOffer,
   type PrintOffer,
 } from "./print-offer";
+import {
+  BELOW_MIN_PPI_REASON,
+  SHAPE_MISMATCH_REASON,
+} from "./print-eligibility";
 
 /**
  * The one definition of a photo file, checked at build time by
@@ -338,9 +342,9 @@ function offerProblemMessage(problem: OfferProblem): string {
       return `${path}: not offered for ${problem.format}`;
     case "duplicate-size":
       return `${path}: listed more than once`;
-    case "below-min-ppi":
+    case BELOW_MIN_PPI_REASON:
       return `${path}: below the ${problem.effectivePpi} PPI minimum`;
-    case "shape-mismatch":
+    case SHAPE_MISMATCH_REASON:
       return `${path}: does not match the master's shape`;
   }
 }
