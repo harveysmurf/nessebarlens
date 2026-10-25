@@ -34,20 +34,14 @@ import type {
   PrintPaper,
 } from "../../domain/pricing/sku-map";
 import { resolveSku } from "../../domain/pricing/sku-map";
-import { isRecord } from "../../domain/json/record";
 import type { FrameFinish, PrintSize } from "../../domain/pricing/pricing";
+import { isQuotePayload, type QuotePayload } from "./api-payloads";
 
 /** 30 minutes. Long enough to absorb a burst, short enough that a real Prodigi
  *  price change reaches the configurator the same afternoon. */
 export const QUOTE_CACHE_TTL_SECONDS = 1800;
 
 const CACHE_ORIGIN = "https://quote-cache.invalid";
-
-/** The only two fields /api/quote is allowed to say out loud. */
-export type CachedQuote = {
-  merchandiseEur: number;
-  shippingEur: number;
-};
 
 /** The slice of the Workers Cache API this module uses. */
 export type QuoteCache = {
@@ -107,21 +101,17 @@ export function quoteCacheKey(input: {
 
 async function cachedQuoteFromResponse(
   response: Response | undefined,
-): Promise<CachedQuote | null> {
+): Promise<QuotePayload | null> {
   if (!response) return null;
   try {
     const parsed: unknown = await response.json();
-    if (!isRecord(parsed)) return null;
-    const { merchandiseEur, shippingEur } = parsed;
-    if (
-      typeof merchandiseEur !== "number" ||
-      typeof shippingEur !== "number" ||
-      !Number.isFinite(merchandiseEur) ||
-      !Number.isFinite(shippingEur)
-    ) {
-      return null;
-    }
-    return { merchandiseEur, shippingEur };
+    // The same guard the client applies to the live payload, so a cached
+    // entry can never be something the configurator would reject.
+    if (!isQuotePayload(parsed)) return null;
+    return {
+      merchandiseEur: parsed.merchandiseEur,
+      shippingEur: parsed.shippingEur,
+    };
   } catch {
     return null;
   }
@@ -134,7 +124,7 @@ async function cachedQuoteFromResponse(
 export async function readCachedQuote(
   input: Parameters<typeof quoteCacheKey>[0],
   cache: QuoteCache | null = defaultQuoteCache(),
-): Promise<CachedQuote | null> {
+): Promise<QuotePayload | null> {
   if (!cache) return null;
   try {
     return await cachedQuoteFromResponse(
@@ -148,7 +138,7 @@ export async function readCachedQuote(
 /** Stores the two public numbers. Failure to store is not worth reporting. */
 export async function writeCachedQuote(
   input: Parameters<typeof quoteCacheKey>[0],
-  quote: CachedQuote,
+  quote: QuotePayload,
   cache: QuoteCache | null = defaultQuoteCache(),
 ): Promise<void> {
   if (!cache) return;

@@ -40,7 +40,7 @@ export const PRODIGI_MARGIN = 1.2;
  * agree most were 70 lines apart.
  *
  * The amount goes through `Eur`, so a non-finite or over-cap value throws here
- * instead of rendering "€NaN" to a buyer. `isLiveQuote` is what keeps that
+ * instead of rendering "€NaN" to a buyer. `isQuotePayload` is what keeps that
  * unreachable for the quote amounts; the digital price is a literal above.
  */
 export function eurLabel(amountEur: number): string {

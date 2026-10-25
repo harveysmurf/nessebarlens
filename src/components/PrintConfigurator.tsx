@@ -49,10 +49,10 @@ import {
 import type { PrintOffer } from "@/domain/catalog/print-offer";
 import {
   checkoutUrl,
-  isLiveQuote,
+  isQuotePayload,
   readJsonResponse,
   requestErrorMessage,
-  type LiveQuote,
+  type QuotePayload,
 } from "@/application/checkout/api-payloads";
 import {
   isFrameFinishValue,
@@ -91,7 +91,7 @@ export function PrintConfigurator({
     useState<ShipToCountryCode>(DEFAULT_SHIPPING_COUNTRY);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [quote, setQuote] = useState<LiveQuote | null>(null);
+  const [quote, setQuote] = useState<QuotePayload | null>(null);
   const [quoteLoading, setQuoteLoading] = useState(false);
   const [quoteError, setQuoteError] = useState<string | null>(null);
 
@@ -151,7 +151,7 @@ export function PrintConfigurator({
         if (!res.ok) {
           throw new Error(requestErrorMessage(data, res.status, "Quote failed"));
         }
-        if (!isLiveQuote(data)) {
+        if (!isQuotePayload(data)) {
           throw new Error("Quote failed");
         }
         setQuote({

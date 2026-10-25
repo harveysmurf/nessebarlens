@@ -4,41 +4,41 @@ import {
   checkoutUrl,
   codeErrorMessage,
   errorMessage,
-  isLiveQuote,
+  isQuotePayload,
   isNonJsonBody,
   readJsonResponse,
   requestErrorMessage,
 } from "../src/application/checkout/api-payloads.ts";
 
-test("isLiveQuote accepts a well-formed quote", () => {
-  assert.ok(isLiveQuote({ merchandiseEur: 12.5, shippingEur: 4 }));
-  assert.ok(isLiveQuote({ merchandiseEur: 0, shippingEur: 0 }));
+test("isQuotePayload accepts a well-formed quote", () => {
+  assert.ok(isQuotePayload({ merchandiseEur: 12.5, shippingEur: 4 }));
+  assert.ok(isQuotePayload({ merchandiseEur: 0, shippingEur: 0 }));
 });
 
-test("isLiveQuote rejects non-numeric amounts instead of trusting a cast", () => {
-  assert.equal(isLiveQuote({ merchandiseEur: "12.5", shippingEur: 4 }), false);
-  assert.equal(isLiveQuote({ merchandiseEur: 12.5, shippingEur: null }), false);
-  assert.equal(isLiveQuote({ merchandiseEur: 12.5 }), false);
+test("isQuotePayload rejects non-numeric amounts instead of trusting a cast", () => {
+  assert.equal(isQuotePayload({ merchandiseEur: "12.5", shippingEur: 4 }), false);
+  assert.equal(isQuotePayload({ merchandiseEur: 12.5, shippingEur: null }), false);
+  assert.equal(isQuotePayload({ merchandiseEur: 12.5 }), false);
 });
 
-test("isLiveQuote rejects NaN, which would render as €NaN", () => {
+test("isQuotePayload rejects NaN, which would render as €NaN", () => {
   assert.equal(
-    isLiveQuote({ merchandiseEur: Number.NaN, shippingEur: 4 }),
+    isQuotePayload({ merchandiseEur: Number.NaN, shippingEur: 4 }),
     false,
   );
   assert.equal(
-    isLiveQuote({ merchandiseEur: 12.5, shippingEur: Number.NaN }),
+    isQuotePayload({ merchandiseEur: 12.5, shippingEur: Number.NaN }),
     false,
   );
   assert.equal(
-    isLiveQuote({ merchandiseEur: Infinity, shippingEur: 4 }),
+    isQuotePayload({ merchandiseEur: Infinity, shippingEur: 4 }),
     false,
   );
 });
 
-test("isLiveQuote rejects non-objects", () => {
+test("isQuotePayload rejects non-objects", () => {
   for (const value of [null, undefined, "12.5", 12.5, [], true]) {
-    assert.equal(isLiveQuote(value), false);
+    assert.equal(isQuotePayload(value), false);
   }
 });
 
