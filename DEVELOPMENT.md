@@ -1432,7 +1432,7 @@ to an hour or more. It is not Dependabot-specific.
 captures**, scrubbed of personal data. Refresh them with:
 
 ```sh
-STRIPE_SECRET_KEY=sk_test_… node scripts/capture-stripe-fixtures.mjs
+STRIPE_SECRET_KEY=sk_test_… node --import ./scripts/register.mjs scripts/capture-stripe-fixtures.mjs
 ```
 
 It needs events from the **last 30 days**: one sandbox physical purchase;

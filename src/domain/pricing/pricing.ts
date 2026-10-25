@@ -18,7 +18,18 @@ import {
  */
 export { eurToCents, parseEurAmount } from "./money";
 
-export type PrintFormat = "giclee" | "framed" | "canvas" | "digital";
+/**
+ * The formats the site sells, in catalog order.
+ *
+ * One list, so the union below and the allow-lists derived from it cannot
+ * drift. The union and the physical list were two spellings of one vocabulary:
+ * a format added to the union was a format the site could price and could not
+ * sell, because the parsers allow-listed the list rather than the union, and
+ * nothing failed until a buyer picked it.
+ */
+export const PRINT_FORMATS = ["giclee", "framed", "canvas", "digital"] as const;
+
+export type PrintFormat = (typeof PRINT_FORMATS)[number];
 // PrintSize is the print table's size column; re-exported here because that is
 // where every caller already imports it from (print-products.ts owns it).
 export type { PrintSize };

@@ -8,7 +8,7 @@ Stripe secrets: signature verification and event typing run against these.
 
 These files are **real sandbox captures**, scrubbed of personal data. Refresh:
 
-    STRIPE_SECRET_KEY=sk_test_... node scripts/capture-stripe-fixtures.mjs
+    STRIPE_SECRET_KEY=sk_test_... node --import ./scripts/register.mjs scripts/capture-stripe-fixtures.mjs
 
 The script lists recent test-mode events, scrubs PII (names, email, phone,
 address, receipt URLs, card fingerprints, idempotency keys) and rewrites the

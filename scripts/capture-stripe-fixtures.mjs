@@ -9,7 +9,7 @@
  *
  * Test-mode only: it refuses any key that is not sk_test_.
  *
- * Usage: STRIPE_SECRET_KEY=sk_test_... node scripts/capture-stripe-fixtures.mjs
+ * Usage: STRIPE_SECRET_KEY=sk_test_... node --import ./scripts/register.mjs scripts/capture-stripe-fixtures.mjs
  * Exits 0 when all three fixtures were written, 1 (writing nothing) otherwise.
  */
 
@@ -19,6 +19,7 @@ import process from "node:process";
 import { fileURLToPath } from "node:url";
 import Stripe from "stripe";
 import { testModeKey } from "./verify-stripe-integration.mjs";
+import { PHYSICAL_FORMATS } from "../src/domain/pricing/sku-map";
 
 /** Must equal STRIPE_API_VERSION in src/infrastructure/stripe/stripe.ts; the contract test checks. */
 export const STRIPE_API_VERSION = "2026-09-30.endive";
@@ -30,7 +31,6 @@ const FIXTURE_DIR = path.join(import.meta.dirname, "..", "tests", "fixtures", "s
 
 /** Metadata keys our checkout route always writes. */
 const OUR_METADATA_KEYS = ["photoSlug", "format", "size", "quoteEur"];
-const PHYSICAL_FORMATS = ["giclee", "framed", "canvas"];
 
 const FIXTURE_TYPES = [
   "checkout.session.completed",
