@@ -1,5 +1,8 @@
 import type { FrameFinish, PrintFormat, PrintSize } from "../pricing/pricing";
-import { physicalSpecification } from "./print-spec";
+import {
+  physicalSpecification,
+  type PhysicalSelectionFields,
+} from "./print-spec";
 import type {
   FramedMount,
   PhysicalFormat,
@@ -19,12 +22,7 @@ import type { ShipToCountryCode } from "../pricing/ship-to-countries";
  * than pass the selection through.
  */
 
-export type QuoteRequest = {
-  format: PhysicalFormat;
-  size: PrintSize;
-  frame: FrameFinish | null;
-  mount: FramedMount | null;
-  paper: PrintPaper | null;
+export type QuoteRequest = PhysicalSelectionFields & {
   destinationCountryCode: ShipToCountryCode;
 };
 

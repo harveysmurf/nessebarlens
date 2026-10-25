@@ -35,15 +35,41 @@ import {
 
 export type DigitalPrintSpecification = { kind: "digital" };
 
-export type PhysicalPrintSpecification = {
-  kind: "physical";
+/**
+ * The five fields a physical selection is made of: the format, the size, and
+ * the three variants only some formats carry.
+ *
+ * The owner, because every body that carries a selection spelled these five
+ * fields out again — the checkout body, the quote body, the client's quote
+ * request, the Prodigi order port and the adapter that builds the order body.
+ * A variant added to the product key (a mount, a paper) was a field those
+ * shapes did not carry until someone remembered them, so a selection could be
+ * parsed into a body that quietly dropped it.
+ *
+ * Every field is required, and a null variant is a value rather than an
+ * absence: the format's default (the mounted frame, the Matte Art paper) or
+ * the variant the format does not carry at all. A caller that left one off
+ * instead would price the default — the same order for a different product —
+ * and a caller that forgot a new variant would not compile.
+ */
+export type PhysicalSelectionFields = {
   format: PhysicalFormat;
   size: PrintSize;
   frame: FrameFinish | null;
-  /** The framed mount (#335); null for every non-framed format. */
+  /**
+   * The framed mount (#335); null for every non-framed format, and the default
+   * mount for a framed one.
+   */
   mount: FramedMount | null;
-  /** The giclée paper (#337); null for every non-giclée format. */
+  /**
+   * The giclée paper (#337); null for every non-giclée format, and the default
+   * paper for a giclée one.
+   */
   paper: PrintPaper | null;
+};
+
+export type PhysicalPrintSpecification = PhysicalSelectionFields & {
+  kind: "physical";
 };
 
 export type PrintSpecification =

@@ -3,17 +3,14 @@ import {
   isShipToCountryCode,
   type ShipToCountryCode,
 } from "../pricing/ship-to-countries";
-import type { FrameFinish, PrintSize } from "../pricing/pricing";
 import { isRecord } from "../json/record";
 import {
   parsePrintSpecification,
   type PhysicalPrintSpecification,
+  type PhysicalSelectionFields,
   type PrintSpecificationReason,
 } from "./print-spec";
 import {
-  type FramedMount,
-  type PhysicalFormat,
-  type PrintPaper,
   FRAME_FINISHES,
   FRAMED_MOUNTS,
   PHYSICAL_FORMATS,
@@ -37,13 +34,8 @@ export type DigitalCheckout = {
   destinationCountryCode: ShipToCountryCode | null;
 };
 
-export type PhysicalCheckout = {
+export type PhysicalCheckout = PhysicalSelectionFields & {
   photoSlug: string;
-  format: PhysicalFormat;
-  size: PrintSize;
-  frame: FrameFinish | null;
-  mount: FramedMount | null;
-  paper: PrintPaper | null;
   destinationCountryCode: ShipToCountryCode | null;
 };
 
@@ -178,13 +170,7 @@ function selectionFields(body: Record<string, unknown>): {
  * Both parsers answer with exactly these, so the projection lives here rather
  * than once per parser.
  */
-function physicalFields(spec: PhysicalPrintSpecification): {
-  format: PhysicalFormat;
-  size: PrintSize;
-  frame: FrameFinish | null;
-  mount: FramedMount | null;
-  paper: PrintPaper | null;
-} {
+function physicalFields(spec: PhysicalPrintSpecification): PhysicalSelectionFields {
   return {
     format: spec.format,
     size: spec.size,
@@ -235,12 +221,7 @@ export function parseCheckoutBody(
  * from the same parser pieces rather than as a union: a quote is never digital,
  * so there is no second arm to discriminate on.
  */
-export type QuoteBody = {
-  format: PhysicalFormat;
-  size: PrintSize;
-  frame: FrameFinish | null;
-  mount: FramedMount | null;
-  paper: PrintPaper | null;
+export type QuoteBody = PhysicalSelectionFields & {
   destinationCountryCode: ShipToCountryCode | null;
 };
 

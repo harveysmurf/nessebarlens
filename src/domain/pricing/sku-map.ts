@@ -7,7 +7,12 @@
  * resolving to a pinned SKU is enforced by tests/sku-map.test.mts.
  */
 
-import type { FrameFinish, PrintFormat, PrintSize } from "./pricing";
+import {
+  PRINT_FORMATS,
+  type FrameFinish,
+  type PrintFormat,
+  type PrintSize,
+} from "./pricing";
 import {
   DEFAULT_FRAMED_MOUNT,
   DEFAULT_PRINT_PAPER,
@@ -68,13 +73,20 @@ export const CANVAS_WRAP = "ImageWrap";
 // not the other.
 export const FRAME_FINISHES = Object.keys(FRAME_COLOR) as FrameFinish[];
 
-export const PHYSICAL_FORMATS: PhysicalFormat[] = ["giclee", "framed", "canvas"];
+/**
+ * The physical formats, derived from the one list of formats rather than
+ * written out again: a format the site sells but this list did not carry was a
+ * format no SKU resolved and no parser accepted.
+ */
+export const PHYSICAL_FORMATS: PhysicalFormat[] = PRINT_FORMATS.filter(
+  (format): format is PhysicalFormat => format !== "digital",
+);
 
 /**
  * Everything we can sell, including "digital" which has no Prodigi SKU.
  * Owned here so the two request parsers and fulfillment share one allow-list.
  */
-export const SELLABLE_FORMATS: PrintFormat[] = [...PHYSICAL_FORMATS, "digital"];
+export const SELLABLE_FORMATS: PrintFormat[] = [...PRINT_FORMATS];
 
 /** "30x40|50x70|70x100" — the allow-list as a human-readable label. */
 export function formatListLabel(

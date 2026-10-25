@@ -36,6 +36,11 @@ import {
 } from "../src/domain/ordering/order-decision.ts";
 import { PREVIEW_KINDS } from "../src/domain/ordering/print-preview.ts";
 import { FRAMED_MOUNT_VALUES } from "../src/domain/pricing/print-products.ts";
+import { PRINT_FORMATS } from "../src/domain/pricing/pricing.ts";
+import {
+  PHYSICAL_FORMATS,
+  SELLABLE_FORMATS,
+} from "../src/domain/pricing/sku-map.ts";
 
 const root = path.join(import.meta.dirname, "..");
 
@@ -724,6 +729,147 @@ test("the framed mount values are spelled once, in print-products.ts", () => {
         .join(", ")}`,
     );
   }
+});
+
+test("the print formats are enumerated once, in pricing.ts", () => {
+  // The formats are one vocabulary: the type the parsers accept, the physical
+  // list the SKU map resolves against, and the sellable list the offer reads.
+  // The type was a union in one module and a hand-written list in another, so a
+  // format added to the union was a format the site priced and could not sell
+  // — and nothing failed until a buyer picked it.
+  //
+  // The check is on the list, not on every spelling of a format word: "framed"
+  // is also a mount, a frame finish and a preview kind, and those are uses of
+  // the vocabulary rather than second copies of it.
+  //
+  // The e2e specs are in scope as well as src/ and scripts/: the browser flow
+  // asserted the same three formats against the configurator's buttons, so a
+  // format the configurator offered but the spec did not know about was a
+  // format the spec could not have expected.
+  const OWNER = "src/domain/pricing/pricing.ts";
+  const files = [
+    ...sourceFiles(path.join(root, "src")),
+    ...sourceFiles(path.join(root, "scripts")),
+    ...sourceFiles(path.join(root, "e2e")),
+  ];
+  const lists: string[] = [];
+  for (const file of files) {
+    const source = ts.createSourceFile(
+      file,
+      fs.readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const visit = (node: ts.Node): void => {
+      if (
+        ts.isArrayLiteralExpression(node) &&
+        node.elements.length > 1 &&
+        node.elements.every(ts.isStringLiteral)
+      ) {
+        const words = node.elements
+          .filter(ts.isStringLiteral)
+          .map((element) => element.text);
+        if (
+          words.every((word) => (PRINT_FORMATS as readonly string[]).includes(word))
+        ) {
+          const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+          lists.push(`${relative(file)}:${line + 1}`);
+        }
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  assert.equal(
+    lists.length,
+    1,
+    `the print formats are enumerated in ${lists.length} places: ${lists.join(", ")}`,
+  );
+  assert.ok(
+    lists[0]!.startsWith(`${OWNER}:`),
+    `the print formats are enumerated outside ${OWNER}: ${lists.join(", ")}`,
+  );
+});
+
+test("the physical selection fields are declared once, in print-spec.ts", () => {
+  // A physical selection is five fields: the format, the size and the three
+  // variants only some formats carry. The specification declared them, and so
+  // did the checkout body, the quote body, the client's quote request, the
+  // Prodigi order port and the adapter that builds the order body — the same
+  // five fields, six times. A variant added to the product key (a mount, a
+  // paper) was a field those shapes did not carry until someone remembered
+  // them, so a selection could be parsed into a body that quietly dropped it.
+  //
+  // The check is on the required nullable frame, because the options shapes
+  // (a frame that may be absent) and the checkout shapes (a size that may be
+  // absent, because digital carries none) are different shapes with their own
+  // meaning.
+  const OWNER = "src/domain/ordering/print-spec.ts";
+  const property = (
+    node: ts.TypeLiteralNode,
+    name: string,
+  ): ts.PropertySignature | undefined =>
+    node.members.find(
+      (member): member is ts.PropertySignature =>
+        ts.isPropertySignature(member) && member.name.getText() === name,
+    );
+  const declaresTheSelection = (node: ts.TypeLiteralNode): boolean => {
+    const fields: Array<[string, string]> = [
+      ["format", "PhysicalFormat"],
+      ["size", "PrintSize"],
+      ["frame", "FrameFinish | null"],
+      ["mount", "FramedMount | null"],
+      ["paper", "PrintPaper | null"],
+    ];
+    return fields.every(([name, type]) => {
+      const member = property(node, name);
+      return (
+        member !== undefined &&
+        member.questionToken === undefined &&
+        member.type?.getText() === type
+      );
+    });
+  };
+  const files = [
+    ...sourceFiles(path.join(root, "src")),
+    ...sourceFiles(path.join(root, "scripts")),
+    ...sourceFiles(path.join(root, "e2e")),
+  ];
+  const sites: string[] = [];
+  for (const file of files) {
+    const source = ts.createSourceFile(
+      file,
+      fs.readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const visit = (node: ts.Node): void => {
+      if (ts.isTypeLiteralNode(node) && declaresTheSelection(node)) {
+        const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+        sites.push(`${relative(file)}:${line + 1}`);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  assert.equal(
+    sites.length,
+    1,
+    `the physical selection fields are declared in ${sites.length} places: ${sites.join(", ")}`,
+  );
+  assert.ok(
+    sites[0]!.startsWith(`${OWNER}:`),
+    `the physical selection fields are declared outside ${OWNER}: ${sites.join(", ")}`,
+  );
+});
+
+test("the physical and sellable format lists agree with the format list", () => {
+  // The lists are derived from PRINT_FORMATS, so this is a statement about the
+  // derivation rather than about the words: a hand-written list that drifted
+  // from the union would pass every other test here and still sell a format
+  // the site does not offer.
+  assert.deepEqual([...PHYSICAL_FORMATS, "digital"], [...PRINT_FORMATS]);
+  assert.deepEqual([...SELLABLE_FORMATS], [...PRINT_FORMATS]);
 });
 
 test("the preview surfaces read the preview kinds from their owner", () => {

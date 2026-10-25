@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 import { getPhoto } from "@/domain/catalog/photos";
 import { sizeLabel } from "@/domain/pricing/pricing";
+import { PHYSICAL_FORMATS } from "@/domain/pricing/sku-map";
 
 /**
  * The print configurator renders a photo's committed print offer (#302): only
@@ -16,8 +17,6 @@ import { sizeLabel } from "@/domain/pricing/pricing";
 const HARBOUR = "nessebar-harbour-in-black-and-white-bulgaria";
 const GOLDEN =
   "golden-sun-flare-shining-through-stone-arch-ruins-of-saint-sophia-church-in-nessebar-bulgaria";
-
-const PHYSICAL = ["giclee", "framed", "canvas"] as const;
 
 async function sizeValues(page: Page): Promise<string[]> {
   return page
@@ -77,7 +76,7 @@ test.describe("print configurator shows only the photo's offer (#302)", () => {
       .locator('input[name="print-format"]')
       .evaluateAll((nodes) => nodes.map((n) => (n as HTMLInputElement).value));
     const expected: string[] = [
-      ...PHYSICAL.filter((f) => offer[f].length > 0),
+      ...PHYSICAL_FORMATS.filter((f) => offer[f].length > 0),
       "digital",
     ];
     expect(shown).toEqual(expected);
