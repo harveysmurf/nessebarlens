@@ -791,6 +791,78 @@ test("the print formats are enumerated once, in pricing.ts", () => {
   );
 });
 
+test("the physical selection fields are declared once, in print-spec.ts", () => {
+  // A physical selection is five fields: the format, the size and the three
+  // variants only some formats carry. The specification declared them, and so
+  // did the checkout body, the quote body, the client's quote request, the
+  // Prodigi order port and the adapter that builds the order body — the same
+  // five fields, six times. A variant added to the product key (a mount, a
+  // paper) was a field those shapes did not carry until someone remembered
+  // them, so a selection could be parsed into a body that quietly dropped it.
+  //
+  // The check is on the required nullable frame, because the options shapes
+  // (a frame that may be absent) and the checkout shapes (a size that may be
+  // absent, because digital carries none) are different shapes with their own
+  // meaning.
+  const OWNER = "src/domain/ordering/print-spec.ts";
+  const property = (
+    node: ts.TypeLiteralNode,
+    name: string,
+  ): ts.PropertySignature | undefined =>
+    node.members.find(
+      (member): member is ts.PropertySignature =>
+        ts.isPropertySignature(member) && member.name.getText() === name,
+    );
+  const declaresTheSelection = (node: ts.TypeLiteralNode): boolean => {
+    const fields: Array<[string, string]> = [
+      ["format", "PhysicalFormat"],
+      ["size", "PrintSize"],
+      ["frame", "FrameFinish | null"],
+      ["mount", "FramedMount | null"],
+      ["paper", "PrintPaper | null"],
+    ];
+    return fields.every(([name, type]) => {
+      const member = property(node, name);
+      return (
+        member !== undefined &&
+        member.questionToken === undefined &&
+        member.type?.getText() === type
+      );
+    });
+  };
+  const files = [
+    ...sourceFiles(path.join(root, "src")),
+    ...sourceFiles(path.join(root, "scripts")),
+    ...sourceFiles(path.join(root, "e2e")),
+  ];
+  const sites: string[] = [];
+  for (const file of files) {
+    const source = ts.createSourceFile(
+      file,
+      fs.readFileSync(file, "utf8"),
+      ts.ScriptTarget.Latest,
+      true,
+    );
+    const visit = (node: ts.Node): void => {
+      if (ts.isTypeLiteralNode(node) && declaresTheSelection(node)) {
+        const { line } = source.getLineAndCharacterOfPosition(node.getStart());
+        sites.push(`${relative(file)}:${line + 1}`);
+      }
+      ts.forEachChild(node, visit);
+    };
+    visit(source);
+  }
+  assert.equal(
+    sites.length,
+    1,
+    `the physical selection fields are declared in ${sites.length} places: ${sites.join(", ")}`,
+  );
+  assert.ok(
+    sites[0]!.startsWith(`${OWNER}:`),
+    `the physical selection fields are declared outside ${OWNER}: ${sites.join(", ")}`,
+  );
+});
+
 test("the physical and sellable format lists agree with the format list", () => {
   // The lists are derived from PRINT_FORMATS, so this is a statement about the
   // derivation rather than about the words: a hand-written list that drifted

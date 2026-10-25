@@ -6,7 +6,6 @@
 
 import { MASTERS_BUCKET, referencesMasters } from "../../domain/catalog/master-guard";
 import { PHOTOS } from "../../domain/catalog/photos";
-import type { FrameFinish, PrintSize } from "../../domain/pricing/pricing";
 import {
   classifyProdigiStatus,
   detailSuffix,
@@ -29,13 +28,9 @@ import {
   type CreateProdigiOrder,
 } from "../../domain/ordering/print-provider";
 import type { OrderRecipient } from "../../domain/ordering/order-recipient";
+import type { PhysicalSelectionFields } from "../../domain/ordering/print-spec";
 import { prodigiConfig, prodigiWebhookToken } from "../config/config";
-import {
-  resolveSku,
-  type FramedMount,
-  type PhysicalFormat,
-  type PrintPaper,
-} from "../../domain/pricing/sku-map";
+import { resolveSku } from "../../domain/pricing/sku-map";
 import { siteUrl } from "../config/config";
 import { HTTPS_URL_PATTERN } from "../../domain/pricing/url-patterns";
 import { HEX_32_PATTERN } from "../../domain/pricing/crypto-hex";
@@ -120,24 +115,17 @@ export function assertNoMasterLeak(value: unknown): void {
   }
 }
 
-export function buildProdigiOrderBody(input: {
+/**
+ * The Prodigi order body.
+ *
+ * The selection fields are the domain's own, required and explicit: a null
+ * mount is the default mount and a null paper the default paper — the products
+ * the orders written before mounts and papers existed shipped as (#335, #337).
+ * The SKU table resolves them; this body carries them.
+ */
+export function buildProdigiOrderBody(input: PhysicalSelectionFields & {
   sessionId: string;
   photoSlug: string;
-  format: PhysicalFormat;
-  size: PrintSize;
-  frame: FrameFinish | null;
-  /**
-   * Framed only (#335). Required, like the port: the legacy default resolves
-   * upstream at the order-record read boundary, so a caller that omits mount
-   * cannot silently price the default mounted SKU for a framed order.
-   */
-  mount: FramedMount | null;
-  /**
-   * Giclée only (#337). Required, like the port: the legacy default resolves
-   * upstream at the order-record read boundary, so a caller that omits paper
-   * cannot silently print the default Matte Art SKU for a Hahnemühle order.
-   */
-  paper: PrintPaper | null;
   recipient: OrderRecipient;
   /** The HMAC /api/print-asset URL Prodigi fetches. Required: there is no
    * public-placeholder fallback anymore (#245). */

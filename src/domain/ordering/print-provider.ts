@@ -15,6 +15,7 @@ import type {
 } from "../pricing/sku-map";
 import type { ProdigiResult } from "./prodigi-result";
 import type { OrderRecipient } from "./order-recipient";
+import type { PhysicalSelectionFields } from "./print-spec";
 
 /**
  * Price a physical print for a destination.
@@ -56,16 +57,9 @@ export type ProdigiOrderOk = {
 export type ProdigiOrderResult = ProdigiResult<ProdigiOrderOk>;
 
 /** Place a physical order. `assetUrl` is required — the signer runs in application. */
-export type CreateProdigiOrder = (input: {
+export type CreateProdigiOrder = (input: PhysicalSelectionFields & {
   sessionId: string;
   photoSlug: string;
-  format: PhysicalFormat;
-  size: PrintSize;
-  frame: FrameFinish | null;
-  /** Framed only (#335); null means the default (mounted). */
-  mount: FramedMount | null;
-  /** Giclée only (#337); null means the default (Matte Art). */
-  paper: PrintPaper | null;
   recipient: OrderRecipient;
   /**
    * The HMAC /api/print-asset URL Prodigi fetches. Required: the caller
