@@ -1,0 +1,38 @@
+slug: traditional-architecture-on-film-nessebar
+title: Traditional Architecture on Film, Nessebar
+caption: A traditional timber house in Old Town Nessebar, photographed on
+  Kentmere Pan 100.
+description: >-
+  A classic architectural study of a traditional Black Sea wooden house in Old
+  Town Nessebar, Bulgaria. Photographed on Kentmere Pan 100 black-and-white
+  film, the rich grain emphasizes the horizontal wood planks, overhanging roof
+  structure, and distinctive regional heritage of this UNESCO World Heritage
+  location through authentic analog capture.
+alt: Black-and-white photograph of a traditional timber house in Old Town
+  Nessebar, with horizontal plank siding, an overhanging tiled roof, and small
+  conifers in front.
+category: film
+film_look: grayscale
+# written by publish-photos
+master_sha256: 0912d7d4be36922dff3d2fb78cfff3728bf80cb80f0b833151ba8cca68b44e3f
+image_hash: 0912d7d4
+master_width: 4983
+master_height: 3407
+orientation: landscape
+print_asset_sha256: 1bd00bf5ed7212aff3ae23d71f40b7b9191e46251f51d76f6a9aa98c101be560
+print_asset_md5: 28f66f1e30f83668d9d7a9e636a13d87
+print_options:
+  giclee:
+    - 20x30
+    - 30x40
+    - 30x45
+  framed:
+    - 20x30
+    - 30x40
+    - 30x45
+    - 40x60
+  canvas:
+    - 20x30
+    - 30x40
+    - 30x45
+    - 40x60

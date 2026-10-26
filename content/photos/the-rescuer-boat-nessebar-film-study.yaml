@@ -1,0 +1,37 @@
+slug: the-rescuer-boat-nessebar-film-study
+title: The Rescuer Boat, Nessebar Film Study
+caption: Спасител rests on blocks beneath the trees beside Nessebar’s rugged coast.
+description: >-
+  A striking analog monochrome composition featuring a dry-docked rescue boat
+  ("Спасител" / "Rescuer", HC 180) resting beneath gnarled trees and a rugged
+  rock formation in Nessebar, Bulgaria. Captured on Kentmere Pan 100 film, this
+  photograph highlights the weathered textures of coastal life and maritime
+  heritage along the Black Sea, recorded purely through mechanical optics
+  without digital enhancement.
+alt: Black-and-white photograph of the rescue boat Спасител, marked HC 180,
+  resting on blocks beneath bare trees beside a rocky outcrop.
+category: film
+film_look: grayscale
+# written by publish-photos
+master_sha256: b38cea2e234607ea0f0a44acc1f350bb9c3696937c63abcaf7436749343d7ca5
+image_hash: b38cea2e
+master_width: 4979
+master_height: 3404
+orientation: landscape
+print_asset_sha256: a2e9cc3a780d24c4278c0dbb5559e073cba266809c831282737b75f0ba2022a3
+print_asset_md5: bc38c7be37490fb96c77cf59ba596f5d
+print_options:
+  giclee:
+    - 20x30
+    - 30x40
+    - 30x45
+  framed:
+    - 20x30
+    - 30x40
+    - 30x45
+    - 40x60
+  canvas:
+    - 20x30
+    - 30x40
+    - 30x45
+    - 40x60
