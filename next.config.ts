@@ -9,6 +9,8 @@ import {
   // tests/fixtures/next-config-init-probe.mjs able to evaluate the real config
   // under a bare `node`.
 } from "./src/infrastructure/seo/security-headers";
+import { legacyRedirects } from "./src/infrastructure/routing/legacy-redirects";
+import { PUBLIC_LOCALES } from "./src/domain/i18n/locale";
 
 // The one origin outside the site itself that the browser must be allowed to
 // load images from: the R2 custom domain behind NEXT_PUBLIC_WEB_IMAGES_BASE.
@@ -76,6 +78,21 @@ const nextConfig: NextConfig = {
         source: "/:path*",
         headers: securityHeaders(IMAGE_ORIGIN, CSP_OPTIONS),
       },
+      // The success page moved under the locale segment, so the rule that keeps
+      // a paid order's page out of shared caches follows it there. The locales
+      // come from the registry, so the rule cannot name a language the site
+      // does not serve — and it is spelled out per locale rather than as
+      // `/:locale/checkout/success`, which would also match `/api/checkout/...`.
+      //
+      // The legacy path keeps its own rule because the redirect response is a
+      // response too, and it is the one a shared cache would store.
+      ...PUBLIC_LOCALES.map((locale) => ({
+        source: `/${locale}/checkout/success`,
+        headers: [
+          { key: "Cache-Control", value: "private, no-store" },
+          { key: "Referrer-Policy", value: "no-referrer" },
+        ],
+      })),
       {
         source: "/checkout/success",
         headers: [
@@ -84,6 +101,14 @@ const nextConfig: NextConfig = {
         ],
       },
     ];
+  },
+  // Every public page moved under a locale segment, so the URLs that were
+  // already published have to keep working. The rules are one per legacy
+  // route and nothing else: the sources are exact paths, so `/api/*`, the
+  // assets, `robots.txt`, `sitemap.xml` and `llms.txt` are never caught by
+  // them, and the query string is carried over to the new path.
+  async redirects() {
+    return legacyRedirects();
   },
 };
 

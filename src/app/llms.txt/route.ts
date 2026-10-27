@@ -1,5 +1,7 @@
 import { CATEGORY } from "@/domain/catalog/categories";
 import { PHOTO_CATEGORIES } from "@/domain/catalog/photo-schema";
+import { DEFAULT_LOCALE, PUBLIC_LOCALES } from "@/domain/i18n/locale";
+import { localePath } from "@/domain/i18n/locale-path";
 import { INDEXABLE_ROUTES, canonicalUrl, seoOrigin } from "@/infrastructure/seo/page-metadata";
 
 /**
@@ -54,23 +56,25 @@ The canonical machine-readable index of this site is the sitemap:`;
 
 const FOOTER = `## Individual photographs
 
-Each photograph has its own page at \`/prints/{slug}\` carrying the title, the
+Each photograph has its own page at \`/${DEFAULT_LOCALE}/prints/{slug}\` carrying the title, the
 full description, the print sizes available, and the price. The complete list is
 in the sitemap; it is not repeated here because it changes with every publish.
 
 ## Not indexed
 
-The checkout pages (\`/checkout/success\`, \`/checkout/cancel\`) are per-session and
+The checkout pages (\`/${DEFAULT_LOCALE}/checkout/success\`, \`/${DEFAULT_LOCALE}/checkout/cancel\`) are per-session and
 carry \`noindex\`. They are not in the sitemap and should not be requested.`;
 
 export function GET(): Response {
   const origin = seoOrigin();
 
-  const pages = INDEXABLE_ROUTES.map((route) => {
-    const label = route === "/" ? "Home" : titleFor(route);
-    const url = canonicalUrl(route);
-    return `- [${label}](${url}): ${PAGE_NOTES[route]}`;
-  }).join("\n");
+  const pages = PUBLIC_LOCALES.flatMap((locale) =>
+    INDEXABLE_ROUTES.map((route) => {
+      const label = route === "/" ? "Home" : titleFor(route);
+      const url = canonicalUrl(localePath(locale, route));
+      return `- [${label}](${url}): ${PAGE_NOTES[route]}`;
+    }),
+  ).join("\n");
 
   const body = [
     HEADER,

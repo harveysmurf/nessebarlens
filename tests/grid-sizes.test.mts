@@ -50,8 +50,8 @@ test("a tile's sizes comes from a named grid, never from the call site", () => {
   let tiles = 0;
   for (const relative of [
     "../src/components/PhotoCard.tsx",
-    "../src/app/page.tsx",
-    "../src/app/story/page.tsx",
+    "../src/app/[locale]/page.tsx",
+    "../src/app/[locale]/story/page.tsx",
   ]) {
     for (const tag of sourceOf(relative).match(TILE) ?? []) {
       tiles += 1;
@@ -76,12 +76,12 @@ test("the grid each constant describes still has the columns it was written for"
     "the gallery grid changed shape; GALLERY_GRID_SIZES is stale",
   );
   assert.match(
-    sourceOf("../src/app/page.tsx"),
+    sourceOf("../src/app/[locale]/page.tsx"),
     /md:grid-cols-3/,
     "the home category grid changed shape; HOME_CATEGORY_GRID_SIZES is stale",
   );
   assert.match(
-    sourceOf("../src/app/story/page.tsx"),
+    sourceOf("../src/app/[locale]/story/page.tsx"),
     /md:col-span-7/,
     "the story block changed width; STORY_BLOCK_SIZES is stale",
   );

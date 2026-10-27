@@ -83,8 +83,18 @@
   --color-gallery-100: var(--gallery-100);
   --color-gallery-200: var(--gallery-200);
   --color-gallery-900: var(--gallery-900);
-  --font-sans: var(--font-inter);
-  --font-serif: var(--font-cormorant);
+  /*
+   * The Latin family first, the Cyrillic one after it, and the system stack
+   * last.
+   *
+   * The order is the fallback rule: a browser walks the list per character
+   * and takes the first family that has the glyph. The Latin subset has no
+   * Cyrillic at all and the Cyrillic subset has no Latin, so each character
+   * is served by the family that actually carries it, and a character neither
+   * carries falls through to the system's.
+   */
+  --font-sans: var(--font-inter), var(--font-inter-cyrillic), ui-sans-serif, system-ui, sans-serif;
+  --font-serif: var(--font-cormorant), var(--font-cormorant-cyrillic), ui-serif, Georgia, Cambria, "Times New Roman", Times, serif;
 }
 
 body {

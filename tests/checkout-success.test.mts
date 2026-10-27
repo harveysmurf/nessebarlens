@@ -45,7 +45,7 @@ registerHooks({
 });
 
 const { resolveCheckoutPageState, resolveCheckoutDownloadLink } = await import(
-  "../src/app/checkout/success/order-state.ts"
+  "../src/app/[locale]/checkout/success/order-state.ts"
 );
 const { ensureDownloadToken } = await import("../src/application/fulfillment/download-token.ts");
 const { orderViewState } = await import("../src/domain/ordering/order-decision.ts");
@@ -483,7 +483,7 @@ test("order-status never reads the masters bucket", async () => {
 // assertions below are the same shape — what must be true of the markup.
 
 const PAGE = readFileSync(
-  new URL("../src/app/checkout/success/page.tsx", import.meta.url),
+  new URL("../src/app/[locale]/checkout/success/page.tsx", import.meta.url),
   "utf8",
 );
 
@@ -605,7 +605,7 @@ test("the page degrades to a rendered state rather than throwing", async () => {
 
 test("the poller stops on a terminal state instead of polling forever", () => {
   const POLLER = readFileSync(
-    new URL("../src/app/checkout/success/OrderStatusPoller.tsx", import.meta.url),
+    new URL("../src/app/[locale]/checkout/success/OrderStatusPoller.tsx", import.meta.url),
     "utf8",
   );
   // Anything other than pending is final, and the poller must not keep asking

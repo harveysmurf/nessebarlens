@@ -30,7 +30,11 @@ test("the toggle is a labelled button wired to the panel", () => {
 
 test("the active route carries aria-current on mobile as it does on desktop", () => {
   assert.match(MOBILE, /aria-current=\{active \? "page" : undefined\}/);
-  assert.match(MOBILE, /isActive\(pathname, item\.href\)/);
+  // The active state is computed from the *localized* href, on both surfaces:
+  // the pathname carries the locale segment, so comparing it with the bare
+  // route would mark nothing current and aria-current would never appear.
+  assert.match(MOBILE, /const href = localePath\(locale, item\.href\)/);
+  assert.match(MOBILE, /isActive\(pathname, href\)/);
 });
 
 test("the mobile menu closes on Escape, route change and resize to md+", () => {

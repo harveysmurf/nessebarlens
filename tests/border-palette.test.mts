@@ -225,7 +225,7 @@ const INK_BORDERS: Record<string, string> = {
     "the selected preview view's 1px ring — a state",
   "src/components/PrintConfigurator.tsx: hover:border-stone-400":
     "hover on an unselected format. Its resting border is the surface ramp, so this one className carries both ramps on purpose: idle is a separator, hovered is a state",
-  "src/app/checkout/success/page.tsx: border-stone-800":
+  "src/app/[locale]/checkout/success/page.tsx: border-stone-800":
     "the underline of a link, not a divider between panels",
   "src/components/PrintPreview.tsx: border-stone-300":
     "the preview viewport's own frame — non-brand chrome, and the only stone border with a second edge to be measured against. As `gallery-200/60` it would measure 1.18:1 inside a card whose own edge is 1.19:1, so the two lines would collapse into one; as `stone-300/60` it measures 1.26:1 and reads as the nearer of the two",
@@ -333,7 +333,7 @@ test("the white cards are the only non-gallery surfaces, and they are declared",
   }
   assert.deepEqual(
     [...new Set(cards)].sort(),
-    ["src/app/checkout/success/page.tsx", "src/components/PrintDetail.tsx"],
+    ["src/app/[locale]/checkout/success/page.tsx", "src/components/PrintDetail.tsx"],
     `the white surfaces have moved: ${[...new Set(cards)].join(", ")}`,
   );
 });

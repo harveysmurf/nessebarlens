@@ -178,14 +178,16 @@ test("no call site spells a filled button box any more", () => {
   );
 });
 
-test("all four buttons moved, each onto its own shape", () => {
+test("every button moved, each onto its own shape", () => {
   // The two submit controls and the two checkout links, with the shape each one
   // renders. The counts are the point: a fifth button has to be added here too.
   const expected: readonly [file: string, shape: ButtonShape, count: number][] = [
     ["src/components/ContactForm.tsx", "form", 1],
     ["src/components/PrintConfigurator.tsx", "form", 1],
-    ["src/app/checkout/cancel/page.tsx", "inline", 1],
-    ["src/app/checkout/success/page.tsx", "block", 1],
+    ["src/app/[locale]/checkout/cancel/page.tsx", "inline", 1],
+    ["src/app/[locale]/checkout/success/page.tsx", "block", 1],
+    // The way back to the site from a page that does not exist.
+    ["src/app/[locale]/not-found.tsx", "inline", 1],
   ];
   for (const [file, shape, count] of expected) {
     const source = sourceOf(file);

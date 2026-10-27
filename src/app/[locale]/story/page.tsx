@@ -5,12 +5,29 @@ import { PhotoTile } from "@/components/PhotoTile";
 import { CATEGORY } from "@/domain/catalog/categories";
 import { PHOTO_CATEGORIES, type PhotoCategory } from "@/domain/catalog/photo-schema";
 import { photosByCategory } from "@/domain/catalog/photos";
+import { isLocale } from "@/domain/i18n/locale";
+import { localePath } from "@/domain/i18n/locale-path";
 import { BODY_COPY, eyebrowClass } from "@/components/type-styles";
 import { PageShell } from "@/components/PageShell";
 import { pageMetadata } from "@/infrastructure/seo/page-metadata";
+import { requireLocale } from "../locale-param";
 
-/** The route's own words, from the one table in `page-metadata.ts`. */
-export const metadata: Metadata = pageMetadata("/story");
+/**
+ * The route's own words, from the one table in `page-metadata.ts`, for the
+ * language this page is in.
+ *
+ * A function rather than a constant because the canonical now carries the
+ * locale segment.
+ */
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale } = await params;
+  if (!isLocale(locale)) return {};
+  return pageMetadata("/story", locale);
+}
 
 /**
  * The /story block's own copy. The href and the heading are the registry's
@@ -48,7 +65,13 @@ const BLOCKS = PHOTO_CATEGORIES.map((category, i) => ({
   ...BLOCK_COPY[category],
 }));
 
-export default function StoryPage() {
+export default async function StoryPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const locale = requireLocale((await params).locale);
+
   return (
     <section className="fade-in">
       <PageShell width="5xl" padding={16} className="space-y-20">
@@ -86,7 +109,7 @@ export default function StoryPage() {
                 {/* #409: no padding utility here either — that padding is what
                     drew a 4px black frame around the film blocks. The backdrop
                     itself moved into `PhotoTile` (#422). */}
-                <Link href={block.href} className="block">
+                <Link href={localePath(locale, block.href)} className="block">
                   <PhotoTile photo={photo} ratio="3/2" sizes={STORY_BLOCK_SIZES} />
                 </Link>
               </div>
@@ -103,7 +126,7 @@ export default function StoryPage() {
                   {block.body}
                 </p>
                 <Link
-                  href={block.href}
+                  href={localePath(locale, block.href)}
                   className="inline-block text-[11px] uppercase tracking-widest text-stone-900 font-medium hover:underline pt-2"
                 >
                   {block.cta}

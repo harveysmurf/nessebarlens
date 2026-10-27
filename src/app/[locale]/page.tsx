@@ -6,16 +6,31 @@ import { WebPhoto } from "@/components/WebPhoto";
 import { CATEGORY } from "@/domain/catalog/categories";
 import { PHOTO_CATEGORIES, type PhotoCategory } from "@/domain/catalog/photo-schema";
 import { featuredPhoto, photosByCategory } from "@/domain/catalog/photos";
+import { isLocale } from "@/domain/i18n/locale";
+import { localePath } from "@/domain/i18n/locale-path";
 import { eyebrowClass } from "@/components/type-styles";
 import { PageShell } from "@/components/PageShell";
 import { pageMetadata } from "@/infrastructure/seo/page-metadata";
+import { requireLocale } from "./locale-param";
 
 /**
  * The home page's own title and canonical. The layout carries the same pair for
  * the fallback case (a page that exports nothing), which is why both read from
  * `HOME_COPY` rather than one copying the other's string.
+ *
+ * A function rather than a constant because the canonical carries the locale
+ * segment: the page is served at `/en` or `/bg`, and only one of those is the
+ * URL this metadata is about.
  */
-export const metadata: Metadata = pageMetadata("/");
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale } = await params;
+  if (!isLocale(locale)) return {};
+  return pageMetadata("/", locale);
+}
 
 /** The homepage tile's own copy. The href and the heading are the registry's (#421). */
 const TILE_BLURB: Record<PhotoCategory, string> = {
@@ -41,7 +56,12 @@ const CATEGORIES = PHOTO_CATEGORIES.map((category, i) => ({
   blurb: TILE_BLURB[category],
 }));
 
-export default function HomePage() {
+export default async function HomePage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const locale = requireLocale((await params).locale);
   const hero = featuredPhoto()!;
 
   return (
@@ -56,7 +76,7 @@ export default function HomePage() {
         className="pb-16 space-y-16"
       >
         <Link
-          href={`/prints/${hero.slug}`}
+          href={localePath(locale, `/prints/${hero.slug}`)}
           className="relative aspect-[21/9] rounded-sm overflow-hidden bg-gallery-200 group block"
         >
           <WebPhoto
@@ -91,7 +111,10 @@ export default function HomePage() {
           <div className="w-12 h-[1px] bg-stone-300 mx-auto" />
           <p className="text-[10px] uppercase tracking-widest text-stone-500 pt-2">
             Prefer the story layout?{" "}
-            <Link href="/story" className="underline hover:text-stone-800">
+            <Link
+              href={localePath(locale, "/story")}
+              className="underline hover:text-stone-800"
+            >
               View Concept B
             </Link>
           </p>
@@ -104,7 +127,11 @@ export default function HomePage() {
             // rather than pointing at a placeholder that no longer exists (#245).
             const photo = photosByCategory(cat.category)[0];
             return (
-              <Link key={cat.href} href={cat.href} className="group space-y-3 block">
+              <Link
+                key={cat.href}
+                href={localePath(locale, cat.href)}
+                className="group space-y-3 block"
+              >
                 <PhotoTile photo={photo} sizes={HOME_CATEGORY_GRID_SIZES} />
                 <div className="border-b border-gallery-200 pb-3 flex justify-between items-baseline gap-3">
                   <div>

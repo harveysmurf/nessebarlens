@@ -163,8 +163,8 @@ test("each surface's own copy is keyed by category, as the compiler sees it", ()
   // property per category — rather than grepping the source.
   const TABLES: [string, string][] = [
     ["src/components/GalleryPage.tsx", "META"],
-    ["src/app/page.tsx", "TILE_BLURB"],
-    ["src/app/story/page.tsx", "BLOCK_COPY"],
+    ["src/app/[locale]/page.tsx", "TILE_BLURB"],
+    ["src/app/[locale]/story/page.tsx", "BLOCK_COPY"],
   ];
 
   const isCategoryKeyed = (type: ts.Type | undefined) => {
@@ -210,7 +210,7 @@ export const positional = [
 test("neither page hand-numbers itself any more", () => {
   // The "01" came from `PHOTO_CATEGORIES`' position, because typing it meant
   // editing two files in step to keep the homepage and /story in step.
-  for (const rel of ["src/app/page.tsx", "src/app/story/page.tsx"]) {
+  for (const rel of ["src/app/[locale]/page.tsx", "src/app/[locale]/story/page.tsx"]) {
     const text = readFileSync(path.join(ROOT, rel), "utf8");
     assert.doesNotMatch(text, /n:\s*"0\d"/, `${rel} still types its own "01"`);
   }
@@ -235,8 +235,11 @@ test("no page or component spells a category, an href, or a name", () => {
   const SLUGS = new Set<string>(PHOTO_CATEGORIES);
 
   // Route pages pass the category to GalleryPage; that is the route, not a table.
+  // The pages live under the locale segment, so the route is `/<locale>/<slug>`.
   const ROUTE_PAGES = new Set(
-    PHOTO_CATEGORIES.map((c) => path.join(ROOT, "src/app", c, "page.tsx")),
+    PHOTO_CATEGORIES.map((c) =>
+      path.join(ROOT, "src/app/[locale]", c, "page.tsx"),
+    ),
   );
 
   // An explicit list, not a `src/domain/` prefix. A prefix would wave through a
@@ -250,6 +253,16 @@ test("no page or component spells a category, an href, or a name", () => {
     ["categories.ts", "photo-schema.ts", "photos.ts"].map((name) =>
       path.join(ROOT, "src/domain/catalog", name),
     ),
+  );
+
+  // The legacy redirect table spells the old URLs by definition. It is a frozen
+  // record of the paths the site published before the locale segment — a
+  // category added tomorrow never had a legacy URL to redirect from — so it
+  // names the routes without owning them, and it is named here rather than
+  // waved through by a directory prefix.
+  const FROZEN_LEGACY_ROUTES = path.join(
+    ROOT,
+    "src/infrastructure/routing/legacy-redirects.ts",
   );
 
   // JSX text is not a string literal — it is `JsxText`, and it is how a React
@@ -282,7 +295,13 @@ test("no page or component spells a category, an href, or a name", () => {
         value = normalize(node.text);
       }
 
-      if (value && !isKey && !DECLARES.has(file) && value !== "") {
+      if (
+        value &&
+        !isKey &&
+        !DECLARES.has(file) &&
+        file !== FROZEN_LEGACY_ROUTES &&
+        value !== ""
+      ) {
         if (NAMES.has(value) || HREFS.has(value)) {
           offenders.push(`${rel}: ${JSON.stringify(value)}`);
         } else if (SLUGS.has(value) && !ROUTE_PAGES.has(file)) {
@@ -373,7 +392,9 @@ test("the names the UI renders, written out", () => {
 
 test("the gallery heading is the registry's galleryTitle", () => {
   for (const category of PHOTO_CATEGORIES) {
-    const html = renderToStaticMarkup(createElement(GalleryPage, { category }));
+    const html = renderToStaticMarkup(
+      createElement(GalleryPage, { category, locale: "en" }),
+    );
     assert.ok(
       html.includes(`>${CATEGORY[category].galleryTitle}<`),
       `${category} gallery should head with ${CATEGORY[category].galleryTitle}`,

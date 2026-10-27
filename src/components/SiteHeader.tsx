@@ -3,12 +3,24 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { CATEGORY_TAGLINE } from "@/domain/catalog/categories";
+import type { Locale } from "@/domain/i18n/locale";
+import { localePath } from "@/domain/i18n/locale-path";
+import { LanguageSwitcher } from "./i18n/LanguageSwitcher";
 import { MobileNav } from "./MobileNav";
 import { NAV, isActive } from "./nav";
 import { containerClass } from "@/components/PageShell";
 import { eyebrowClass } from "@/components/type-styles";
 
-export function SiteHeader() {
+/**
+ * The site's header: the wordmark, the desktop nav, the language switcher and
+ * the mobile menu's toggle.
+ *
+ * The locale comes from the layout as a prop rather than from the URL, because
+ * the URL is the thing being built: every link here is the route the site
+ * already knows, with the locale segment put on it by `localePath`, so the
+ * nav cannot point at a route that does not exist under this language.
+ */
+export function SiteHeader({ locale }: { locale: Locale }) {
   const pathname = usePathname();
 
   return (
@@ -16,7 +28,7 @@ export function SiteHeader() {
       <div
         className={`${containerClass("7xl")} h-20 flex items-center justify-between gap-4`}
       >
-        <Link href="/" className="group min-w-0">
+        <Link href={localePath(locale, "/")} className="group min-w-0">
           <span className="font-serif text-2xl font-light tracking-tight block whitespace-nowrap text-gallery-900">
             NESSEBAR LENS
           </span>
@@ -25,13 +37,17 @@ export function SiteHeader() {
           </span>
         </Link>
 
-        <nav className="hidden md:flex items-center space-x-4 sm:space-x-10 text-[11px] tracking-widest uppercase font-medium">
+        <nav
+          aria-label="Main"
+          className="hidden md:flex items-center space-x-4 sm:space-x-10 text-[11px] tracking-widest uppercase font-medium"
+        >
           {NAV.map((item) => {
-            const active = isActive(pathname, item.href);
+            const href = localePath(locale, item.href);
+            const active = isActive(pathname, href);
             return (
               <Link
                 key={item.href}
-                href={item.href}
+                href={href}
                 aria-current={active ? "page" : undefined}
                 className={`py-2 border-b-2 transition-all ${
                   active
@@ -45,7 +61,18 @@ export function SiteHeader() {
           })}
         </nav>
 
-        <MobileNav />
+        {/*
+          The switcher is a landmark of its own, so it is labelled in the page's
+          language rather than left as a second unnamed navigation. It sits
+          beside the desktop nav, and the panel's own copy of it lives with the
+          mobile menu, because a control the visitor cannot see is not a
+          control they can use.
+        */}
+        <div className="hidden md:block">
+          <LanguageSwitcher locale={locale} />
+        </div>
+
+        <MobileNav locale={locale} />
       </div>
     </header>
   );
