@@ -3,6 +3,7 @@ import { ContactForm } from "@/components/ContactForm";
 import { turnstileSiteKey } from "@/infrastructure/config/config";
 import { PageShell } from "@/components/PageShell";
 import { eyebrowClass } from "@/components/type-styles";
+import { isLocale } from "@/domain/i18n/locale";
 import { pageMetadata } from "@/infrastructure/seo/page-metadata";
 
 // The site key is read from the Worker's runtime environment, so the page must
@@ -14,7 +15,18 @@ export const dynamic = "force-dynamic";
 // every SERP, and carrying none of the words someone searching for a Nessebar
 // print would type. The canonical is new too: /contact had none, so the same page
 // was reachable at /contact, /contact/ and /Contact as three separate URLs.
-export const metadata: Metadata = pageMetadata("/contact");
+//
+// A function rather than a constant because the canonical now carries the
+// locale segment.
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale } = await params;
+  if (!isLocale(locale)) return {};
+  return pageMetadata("/contact", locale);
+}
 
 export default function ContactPage() {
   return (

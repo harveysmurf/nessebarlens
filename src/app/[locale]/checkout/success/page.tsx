@@ -14,20 +14,34 @@ import {
 import { buttonClass } from "@/components/Button";
 import { PageShell } from "@/components/PageShell";
 import { BODY_COPY, eyebrowClass } from "@/components/type-styles";
+import { isLocale } from "@/domain/i18n/locale";
+import { localePath } from "@/domain/i18n/locale-path";
 import { pageMetadata } from "@/infrastructure/seo/page-metadata";
+import { requireLocale } from "../../locale-param";
 
 /**
  * `noindex, nofollow`, and deliberately not a canonical to a public page: this
  * URL carries a Stripe session id, so there is nothing here to point a crawler
  * at except itself. Excluded from the sitemap by the same flag.
  */
-export const metadata: Metadata = pageMetadata("/checkout/success");
+export async function generateMetadata({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}): Promise<Metadata> {
+  const { locale } = await params;
+  if (!isLocale(locale)) return {};
+  return pageMetadata("/checkout/success", locale);
+}
 
 export default async function CheckoutSuccessPage({
+  params,
   searchParams,
 }: {
+  params: Promise<{ locale: string }>;
   searchParams: Promise<{ session_id?: string }>;
 }) {
+  const locale = requireLocale((await params).locale);
   const { [SESSION_ID_PARAM]: sessionId } = await searchParams;
   const state = await resolveCheckoutPageState(sessionId);
   // Only read for the one state that renders a link. A token fetched on every
@@ -178,7 +192,7 @@ export default async function CheckoutSuccessPage({
         )}
 
       <Link
-          href="/"
+          href={localePath(locale, "/")}
           className="inline-block text-xs uppercase tracking-widest border-b border-stone-800 pb-0.5 font-medium hover:text-stone-500"
         >
           Back to gallery

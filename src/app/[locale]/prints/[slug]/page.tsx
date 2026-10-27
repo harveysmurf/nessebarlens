@@ -6,9 +6,12 @@ import { PrintDetail } from "@/components/PrintDetail";
 import { PageShell } from "@/components/PageShell";
 import { categoryHref } from "@/domain/catalog/categories";
 import { filmLookClass, getPhoto, PHOTOS } from "@/domain/catalog/photos";
+import { isLocale } from "@/domain/i18n/locale";
+import { localePath } from "@/domain/i18n/locale-path";
 import { galleryImage } from "@/infrastructure/media/gallery-image";
 import { printJsonLd } from "@/infrastructure/seo/json-ld";
 import { printMetadata } from "@/infrastructure/seo/page-metadata";
+import { requireLocale } from "../../locale-param";
 
 export function generateStaticParams() {
   return PHOTOS.map((p) => ({ slug: p.slug }));
@@ -29,20 +32,21 @@ export function generateStaticParams() {
 export async function generateMetadata({
   params,
 }: {
-  params: Promise<{ slug: string }>;
+  params: Promise<{ locale: string; slug: string }>;
 }): Promise<Metadata> {
-  const { slug } = await params;
+  const { locale, slug } = await params;
   const photo = getPhoto(slug);
-  if (!photo) return {};
-  return printMetadata(photo);
+  if (!photo || !isLocale(locale)) return {};
+  return printMetadata(photo, locale);
 }
 
 export default async function PrintDetailPage({
   params,
 }: {
-  params: Promise<{ slug: string }>;
+  params: Promise<{ locale: string; slug: string }>;
 }) {
-  const { slug } = await params;
+  const { locale: raw, slug } = await params;
+  const locale = requireLocale(raw);
   const photo = getPhoto(slug);
   if (!photo) notFound();
 
@@ -60,7 +64,7 @@ export default async function PrintDetailPage({
             names a file that exists rather than a second, larger one. */}
         <JsonLd data={printJsonLd(photo, image)} />
         <Link
-          href={categoryHref(photo.category)}
+          href={localePath(locale, categoryHref(photo.category))}
           className="text-xs uppercase tracking-widest text-stone-500 hover:text-stone-900 mb-8 inline-flex items-center gap-2 font-medium"
         >
           ← Back to Gallery

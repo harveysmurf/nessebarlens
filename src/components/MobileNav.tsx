@@ -4,6 +4,8 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createPortal } from "react-dom";
 import { CATEGORY_TAGLINE } from "@/domain/catalog/categories";
+import type { Locale } from "@/domain/i18n/locale";
+import { localePath } from "@/domain/i18n/locale-path";
 import {
   useCallback,
   useEffect,
@@ -11,6 +13,7 @@ import {
   useState,
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
+import { LanguageSwitcher } from "./i18n/LanguageSwitcher";
 import { NAV, isActive } from "./nav";
 import { eyebrowClass } from "@/components/type-styles";
 
@@ -31,7 +34,7 @@ const DESKTOP_QUERY = "(min-width: 768px)";
  * `position: fixed` descendants, which collapsed the panel to the header's
  * 80px height when it lived inside `SiteHeader`.
  */
-export function MobileNav() {
+export function MobileNav({ locale }: { locale: Locale }) {
   const pathname = usePathname();
   const [openedAt, setOpenedAt] = useState<string | null>(null);
   const open = openedAt === pathname;
@@ -152,11 +155,12 @@ export function MobileNav() {
             <nav aria-label="Main" className="flex h-full flex-col px-6 pt-12 pb-10">
               <ul className="flex flex-col gap-6">
                 {NAV.map((item) => {
-                  const active = isActive(pathname, item.href);
+                  const href = localePath(locale, item.href);
+                  const active = isActive(pathname, href);
                   return (
                     <li key={item.href}>
                       <Link
-                        href={item.href}
+                        href={href}
                         onClick={close}
                         aria-current={active ? "page" : undefined}
                         className={`font-serif text-3xl font-light transition-colors ${
@@ -171,6 +175,14 @@ export function MobileNav() {
                   );
                 })}
               </ul>
+              {/*
+                The switcher is here as well as in the header bar: the panel is
+                the whole navigation below `md`, so a language control that
+                only existed in the bar would be unreachable on a phone.
+              */}
+              <div className="mt-8">
+                <LanguageSwitcher locale={locale} />
+              </div>
               <p className={`mt-auto ${eyebrowClass()}`}>
                 Old Town Nessebar • {CATEGORY_TAGLINE}
               </p>

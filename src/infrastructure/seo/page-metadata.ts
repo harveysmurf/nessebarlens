@@ -31,6 +31,8 @@
 import type { Metadata } from "next";
 import { CATEGORY } from "@/domain/catalog/categories";
 import type { PhotoCategory } from "@/domain/catalog/photo-schema";
+import type { Locale } from "@/domain/i18n/locale";
+import { localePath } from "@/domain/i18n/locale-path";
 import { configuredSiteUrl, type ConfigEnv } from "../config/config";
 import { NODE_ENV } from "../config/env";
 
@@ -206,6 +208,7 @@ export function isIndexable(route: string): boolean {
  */
 export function pageMetadata(
   route: string,
+  locale: Locale,
   env: ConfigEnv = NODE_ENV,
 ): Metadata {
   const copy = PAGE_COPY[route];
@@ -215,7 +218,7 @@ export function pageMetadata(
         `there, or the page ships the root layout's metadata.`,
     );
   }
-  return metadataFor(route, copy, env);
+  return metadataFor(route, copy, locale, env);
 }
 
 /**
@@ -230,9 +233,10 @@ export function pageMetadata(
  */
 export function categoryMetadata(
   category: PhotoCategory,
+  locale: Locale,
   env: ConfigEnv = NODE_ENV,
 ): Metadata {
-  return pageMetadata(CATEGORY[category].href, env);
+  return pageMetadata(CATEGORY[category].href, locale, env);
 }
 
 /**
@@ -253,6 +257,7 @@ export function categoryMetadata(
  */
 export function printMetadata(
   photo: { slug: string; title: string; description: string },
+  locale: Locale,
   env: ConfigEnv = NODE_ENV,
 ): Metadata {
   return metadataFor(
@@ -261,6 +266,7 @@ export function printMetadata(
       title: `${photo.title} — ${SITE_TITLE}`,
       description: photo.description,
     },
+    locale,
     env,
   );
 }
@@ -276,9 +282,14 @@ export function printMetadata(
 function metadataFor(
   route: string,
   copy: PageCopy,
+  locale: Locale,
   env: ConfigEnv,
 ): Metadata {
-  const canonical = canonicalUrl(route, env);
+  // The canonical is the URL the page is actually served at, locale segment
+  // and all. A canonical that pointed at the un-prefixed route would name a
+  // URL that only redirects, and a crawler that believes it would index the
+  // redirect rather than the page.
+  const canonical = canonicalUrl(localePath(locale, route), env);
   const metadata: Metadata = {
     title: copy.title,
     description: copy.description,

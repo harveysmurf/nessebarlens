@@ -255,6 +255,10 @@ test("the owned grammars are declared exactly once, in their owning module", () 
     // re-exports the parse rather than restating the grammar, so this stays
     // the only declaration of "what a EUR amount looks like on the wire".
     "/^(?:0|[1-9]\\d{0,5})(?:\\.\\d{1,2})?$/": "src/domain/pricing/money.ts",
+    // Owned by path-parts.ts, the leaf module both of its callers read: the
+    // locale path helper keeps the tail and the analytics route drops it, and
+    // two copies of "where does the tail begin" is how they would drift apart.
+    "/[?#]/": "src/domain/paths/path-parts.ts",
   };
   const found = regexLiterals();
   for (const [source, owner] of Object.entries(owners)) {
@@ -674,9 +678,9 @@ test("the order view states are spelled once, in order-decision.ts", () => {
   const OWNER = "src/domain/ordering/order-decision.ts";
   const STATE_FILES = [
     "src/app/api/order-status/route.ts",
-    "src/app/checkout/success/OrderStatusPoller.tsx",
-    "src/app/checkout/success/order-state.ts",
-    "src/app/checkout/success/page.tsx",
+    "src/app/[locale]/checkout/success/OrderStatusPoller.tsx",
+    "src/app/[locale]/checkout/success/order-state.ts",
+    "src/app/[locale]/checkout/success/page.tsx",
   ];
   const sites = stringLiteralSites();
   for (const state of Object.values(ORDER_VIEW_STATES)) {

@@ -159,7 +159,7 @@ test("the gate covers src/ source files and the api routes, and nothing else", (
   assert.equal(isGatedFile("src/domain/catalog/photos.ts"), true);
   // The page tree and the React components are out: they need a DOM, and a
   // percentage over files that never run would be a number nobody can act on.
-  assert.equal(isGatedFile("src/app/page.tsx"), false);
+  assert.equal(isGatedFile("src/app/[locale]/page.tsx"), false);
   assert.equal(isGatedFile("src/app/checkout/page.tsx"), false);
   assert.equal(isGatedFile("src/components/Header.tsx"), false);
   // route.ts counts under api/ only — a stray one in the page tree is a page.

@@ -5,7 +5,7 @@ import test from "node:test";
 const read = (path: string) =>
   fs.readFileSync(new URL(path, import.meta.url), "utf8");
 
-const LAYOUT = read("../src/app/layout.tsx");
+const LAYOUT = read("../src/app/[locale]/layout.tsx");
 
 test("the root <html> declares smooth scroll to Next, not only to the browser", () => {
   // `scroll-smooth` sets `scroll-behavior: smooth`, but Next 16 only neutralises

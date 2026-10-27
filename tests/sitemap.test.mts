@@ -18,6 +18,8 @@ import path from "node:path";
 import test from "node:test";
 
 import { PHOTOS } from "../src/domain/catalog/photos.ts";
+import { DEFAULT_LOCALE, PUBLIC_LOCALES } from "../src/domain/i18n/locale.ts";
+import { localePath } from "../src/domain/i18n/locale-path.ts";
 import { INDEXABLE_ROUTES, canonicalUrl } from "../src/infrastructure/seo/page-metadata.ts";
 import robots from "../src/app/robots.ts";
 import sitemap from "../src/app/sitemap.ts";
@@ -62,13 +64,14 @@ test("every public route and every photograph is listed", () => {
   const urls = withSiteUrl().map((entry) => entry.url);
 
   for (const route of INDEXABLE_ROUTES) {
-    const expected = route === "/" ? `${SITE}/` : `${SITE}${route}`;
+    const expected = `${SITE}${localePath(DEFAULT_LOCALE, route)}`;
     assert.ok(urls.includes(expected), `sitemap is missing ${expected}`);
   }
 
   for (const photo of PHOTOS) {
+    const expected = `${SITE}${localePath(DEFAULT_LOCALE, `/prints/${photo.slug}`)}`;
     assert.ok(
-      urls.includes(`${SITE}/prints/${photo.slug}`),
+      urls.includes(expected),
       `sitemap is missing the print /prints/${photo.slug}`,
     );
   }
@@ -86,13 +89,13 @@ test("the sitemap and llms.txt build their URLs through the canonical helper", a
     const urls = new Set((sitemap() as MetadataRouteSitemap).map((e) => e.url));
     for (const route of INDEXABLE_ROUTES) {
       assert.ok(
-        urls.has(canonicalUrl(route)),
+        urls.has(canonicalUrl(localePath(DEFAULT_LOCALE, route))),
         `sitemap is missing the canonical URL for ${route}`,
       );
     }
     for (const photo of PHOTOS) {
       assert.ok(
-        urls.has(canonicalUrl(`/prints/${photo.slug}`)),
+        urls.has(canonicalUrl(localePath(DEFAULT_LOCALE, `/prints/${photo.slug}`))),
         `sitemap is missing the canonical URL for /prints/${photo.slug}`,
       );
     }
@@ -100,7 +103,7 @@ test("the sitemap and llms.txt build their URLs through the canonical helper", a
     const body = await llmsRoute().text();
     for (const route of INDEXABLE_ROUTES) {
       assert.ok(
-        body.includes(canonicalUrl(route)),
+        body.includes(canonicalUrl(localePath(DEFAULT_LOCALE, route))),
         `llms.txt does not mention the canonical URL for ${route}`,
       );
     }
@@ -118,10 +121,21 @@ test("the checkout pages are absent, because they carry a session id", () => {
   }
 });
 
-test("the home page is listed once, with its trailing slash, and nothing else is", () => {
+test("the home page is listed once, under its locale, and nothing else is", () => {
   const urls = withSiteUrl().map((entry) => entry.url);
-  const homes = urls.filter((url) => url === `${SITE}/` || url === SITE);
-  assert.deepEqual(homes, [`${SITE}/`]);
+  // The home page is the locale root now, and it is listed once. The old,
+  // un-prefixed root is a permanent redirect, and a sitemap entry for it would
+  // offer a crawler a URL that only redirects.
+  const home = `${SITE}${localePath(DEFAULT_LOCALE, "/")}`;
+  assert.deepEqual(
+    urls.filter((url) => url === home),
+    [home],
+    "the home page is listed once, under its locale",
+  );
+  assert.ok(
+    !urls.includes(`${SITE}/`),
+    "the un-prefixed root is a redirect, not a page, and must not be listed",
+  );
 
   // No duplicates: a repeated URL is read as a soft 404 signal by some crawlers.
   assert.equal(new Set(urls).size, urls.length);
@@ -159,19 +173,27 @@ test("no invented lastModified or changeFrequency", () => {
 test("priority ranks the home page first and the prints above the prose pages", () => {
   const byUrl = new Map(withSiteUrl().map((entry) => [entry.url, entry.priority]));
 
-  assert.equal(byUrl.get(`${SITE}/`), 1);
+  assert.equal(byUrl.get(`${SITE}${localePath(DEFAULT_LOCALE, "/")}`), 1);
   // A print is a product page — the thing a search converts on.
   for (const photo of PHOTOS) {
-    assert.equal(byUrl.get(`${SITE}/prints/${photo.slug}`), 0.9);
+    assert.equal(
+      byUrl.get(`${SITE}${localePath(DEFAULT_LOCALE, `/prints/${photo.slug}`)}`),
+      0.9,
+    );
   }
-  assert.ok((byUrl.get(`${SITE}/story`) ?? 0) < 0.9);
-  assert.ok((byUrl.get(`${SITE}/contact`) ?? 0) < 0.9);
+  assert.ok(
+    (byUrl.get(`${SITE}${localePath(DEFAULT_LOCALE, "/story")}`) ?? 0) < 0.9,
+  );
+  assert.ok(
+    (byUrl.get(`${SITE}${localePath(DEFAULT_LOCALE, "/contact")}`) ?? 0) < 0.9,
+  );
 });
 
 test("the sitemap follows the route table, not a copy of it", () => {
   // If someone types a URL into sitemap.ts instead of adding a route, the two
   // lists drift silently. Comparing the counts catches that in one place.
-  const expected = INDEXABLE_ROUTES.length + PHOTOS.length;
+  const expected =
+    (INDEXABLE_ROUTES.length + PHOTOS.length) * PUBLIC_LOCALES.length;
   assert.equal(
     withSiteUrl().length,
     expected,
@@ -222,7 +244,9 @@ test("llms.txt lists the public pages and points at the sitemap", async () => {
   for (const route of INDEXABLE_ROUTES) {
     if (route === "/") continue;
     assert.ok(
-      body.includes(`https://nessebarlens.com${route}`),
+      body.includes(
+        `https://nessebarlens.com${localePath(DEFAULT_LOCALE, route)}`,
+      ),
       `llms.txt does not mention ${route}`,
     );
   }

@@ -4,6 +4,7 @@ import { CATEGORY } from "@/domain/catalog/categories";
 import type { Photo } from "@/domain/catalog/photos";
 import { photosByCategory } from "@/domain/catalog/photos";
 import type { PhotoCategory } from "@/domain/catalog/photo-schema";
+import type { Locale } from "@/domain/i18n/locale";
 
 /**
  * The gallery's own copy: the badge, its colour, and the blurb. The heading is
@@ -29,7 +30,14 @@ const META: Record<PhotoCategory, { badge: string; badgeClass: string; blurb: st
   },
 };
 
-export function GalleryPage({ category }: { category: PhotoCategory }) {
+export function GalleryPage({
+  category,
+  locale,
+}: {
+  category: PhotoCategory;
+  /** The locale of the page: every print the gallery links to carries it. */
+  locale: Locale;
+}) {
   const meta = META[category];
   const photos: Photo[] = photosByCategory(category);
 
@@ -49,7 +57,7 @@ export function GalleryPage({ category }: { category: PhotoCategory }) {
         </div>
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {photos.map((photo) => (
-            <PhotoCard key={photo.slug} photo={photo} />
+            <PhotoCard key={photo.slug} photo={photo} locale={locale} />
           ))}
         </div>
       </PageShell>
