@@ -248,12 +248,8 @@ test("lint-and-test builds the catalog once and skips the pre* hooks (#274)", ()
   }
 });
 
-test("each browser job caches the Playwright download (#275)", () => {
-  // Three jobs each ran `npx playwright install --with-deps chromium` on a
-  // fresh runner, so the same Chromium was downloaded three times per run. The
-  // cache is keyed on the runner OS and the lockfile (which pins the installed
-  // Playwright version); a version or OS change must miss it, so the key is
-  // asserted rather than the mere presence of a cache step.
+test("browser jobs use the matching Playwright image (#275)", () => {
+  // All browser jobs use the prebuilt image to avoid repeating apt work.
   const ci = workflows.find((w) => w.name === "ci.yml")!;
   for (const job of ["e2e-smoke", "e2e-hosted-checkout", "e2e-worker"]) {
     const body = ci.text.match(
@@ -261,23 +257,18 @@ test("each browser job caches the Playwright download (#275)", () => {
     )?.[1];
     assert.ok(body, `ci.yml has no ${job} job`);
     assert.ok(
-      body.includes("uses: actions/cache@"),
-      `${job} must use actions/cache, not hand-rolled caching`,
+      /image: mcr\.microsoft\.com\/playwright:v1\.64\.1-noble/.test(body),
+      `${job} must use the Playwright image matching the lockfile version`,
     );
-    assert.ok(
-      body.includes("path: ~/.cache/ms-playwright"),
-      `${job} must cache the default Playwright browser path`,
-    );
-    assert.ok(
-      body.includes(
-        "key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}",
-      ),
-      `${job}'s Playwright cache key must be the runner OS plus the lockfile, so an OS or Playwright-version change does not reuse stale browsers`,
-    );
-    assert.match(
+    assert.doesNotMatch(
       body,
-      /npx playwright install --with-deps chromium/,
-      `${job} must still install Chromium and its system deps, so a cold cache works`,
+      /playwright install --with-deps/,
+      `${job} must not reinstall Chromium and apt dependencies`,
+    );
+    assert.doesNotMatch(
+      body,
+      /path: ~\/\.cache\/ms-playwright/,
+      `${job} must not cache browser binaries when the image provides them`,
     );
   }
 });
@@ -299,7 +290,11 @@ test("the E2E flow is its own job in ci.yml, not a step in lint-and-test", () =>
     /playwright/,
     "the lint-and-test job must stay free of Playwright",
   );
-  assert.match(body, /playwright install/, "e2e-smoke must install its browser");
+  assert.match(
+    body,
+    /image: mcr\.microsoft\.com\/playwright:v1\.64\.1-noble/,
+    "e2e-smoke must provide its browser in the job image",
+  );
   assert.match(body, /npm run test:e2e/, "e2e-smoke must run the suite");
   assert.doesNotMatch(
     body,

@@ -185,6 +185,12 @@ jobs:
     name: E2E smoke flow
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
+    # This image ships the exact Playwright browser build and its Linux
+    # dependencies. `install --with-deps` repeated the apt work on every fresh
+    # GitHub runner; browser caching alone could not avoid that cost.
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --user 1001
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -194,21 +200,8 @@ jobs:
       - uses: $/.github/actions/setup
 
       # The seeded states are read through a real page render, so this job still
-      # needs a browser even though it never touches a third party.
-      # #275: restore the Chromium download from cache. The key is the runner
-      # OS plus the lockfile, which is where the installed Playwright version
-      # is pinned — a Playwright bump misses the cache and redownloads rather
-      # than rehydrating a browser built for another revision. The system
-      # packages `--with-deps` installs are not cached, so a hit only skips the
-      # browser download (the larger part) and leaves the apt work in place.
-      - name: Cache Playwright browsers
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
-
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      # needs a browser even though it never touches a third party. The job
+      # image above provides Chromium and its system dependencies.
 
       # No secret guards in this job, deliberately. Every spec it runs is
       # seeded, so there is no key whose absence could turn a spec into a skip
@@ -266,6 +259,9 @@ jobs:
     # checks out against the same sandbox the preview is built with.
     environment: staging
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --user 1001
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -275,21 +271,8 @@ jobs:
       - uses: $/.github/actions/setup
 
       # The flow drives a real Stripe sandbox checkout page, so the browser is a
-      # hard dependency rather than something to skip when it is slow.
-      # #275: restore the Chromium download from cache. The key is the runner
-      # OS plus the lockfile, which is where the installed Playwright version
-      # is pinned — a Playwright bump misses the cache and redownloads rather
-      # than rehydrating a browser built for another revision. The system
-      # packages `--with-deps` installs are not cached, so a hit only skips the
-      # browser download (the larger part) and leaves the apt work in place.
-      - name: Cache Playwright browsers
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
-
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
+      # hard dependency rather than something to skip when it is slow. The job
+      # image provides Chromium, its Linux dependencies, and Xvfb.
 
       # Without a key the Stripe specs skip themselves and the job reports
       # nothing but a skip — a partial pass that looks green. Failing here says
@@ -436,6 +419,9 @@ jobs:
   e2e-worker:
     name: E2E Worker runtime
     runs-on: ubuntu-24.04
+    container:
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+      options: --user 1001
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -453,21 +439,6 @@ jobs:
           key: ${{ runner.os }}-next-${{ hashFiles('package-lock.json', 'src/**') }}
           restore-keys: |
             ${{ runner.os }}-next-
-
-      # #275: restore the Chromium download from cache. The key is the runner
-      # OS plus the lockfile, which is where the installed Playwright version
-      # is pinned — a Playwright bump misses the cache and redownloads rather
-      # than rehydrating a browser built for another revision. The system
-      # packages `--with-deps` installs are not cached, so a hit only skips the
-      # browser download (the larger part) and leaves the apt work in place.
-      - name: Cache Playwright browsers
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
-        with:
-          path: ~/.cache/ms-playwright
-          key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}
-
-      - name: Install Chromium
-        run: npx playwright install --with-deps chromium
 
       # Everything the local Worker needs to boot, from non-secret test values.
       # `wrangler d1`/`r2` and `preview` all default to the same `.wrangler/state`
