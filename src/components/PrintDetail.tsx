@@ -33,6 +33,9 @@ import {
   selectionToParams,
 } from "@/domain/ordering/print-selection-url";
 import { PrintConfigurator } from "./PrintConfigurator";
+import type { Locale } from "@/domain/i18n/locale";
+import type { PrintPageCopy } from "./i18n/dictionaries";
+import type { ShipToCountry } from "@/domain/pricing/ship-to-countries";
 import { PrintPreview } from "./PrintPreview";
 
 /**
@@ -65,6 +68,9 @@ export function PrintDetail({
   alt,
   filmLookClassName,
   children,
+  locale,
+  copy,
+  countries,
 }: {
   photoSlug: string;
   title: string;
@@ -74,6 +80,12 @@ export function PrintDetail({
   alt: string;
   filmLookClassName: string;
   children: ReactNode;
+  /** The locale of the page: the prices and the labels are written in it. */
+  locale: Locale;
+  /** The print's and the configurator's words, in the page's language. */
+  copy: PrintPageCopy;
+  /** The destination list, already named in the page's language. */
+  countries: ShipToCountry[];
 }) {
   const search = useSyncExternalStore(
     subscribeToLocation,
@@ -94,9 +106,9 @@ export function PrintDetail({
   }
 
   const geometry = previewGeometry(selection, master);
-  const label = previewLabel(alt, selection, master.orientation);
-  const caption = previewCaption(selection, master.orientation);
-  const note = previewNote(geometry);
+  const label = previewLabel(alt, selection, master.orientation, locale);
+  const caption = previewCaption(selection, master.orientation, locale);
+  const note = previewNote(geometry, locale);
   const size = selection.format === "digital" ? undefined : selection.size;
 
   return (
@@ -110,6 +122,7 @@ export function PrintDetail({
           filmLookClassName={filmLookClassName}
           master={master}
           size={size}
+          copy={copy.print}
         />
         {/*
          * `gap-*` and not `justify-between` alone: justify-between distributes
@@ -127,7 +140,7 @@ export function PrintDetail({
           <span data-testid="preview-meta-resolution">
             {masterResolutionLabel(master)}
           </span>
-          <span>Global Delivery via Prodigi</span>
+          <span>{copy.print.globalDelivery}</span>
         </div>
         {note && (
           <p className="text-[11px] text-stone-500 normal-case tracking-normal px-1">
@@ -145,6 +158,9 @@ export function PrintDetail({
           master={master}
           selection={selection}
           onSelectionChange={changeSelection}
+          locale={locale}
+          copy={copy.configurator}
+          countries={countries}
         />
       </div>
     </div>

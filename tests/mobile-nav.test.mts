@@ -13,19 +13,27 @@ const GLOBALS = read("../src/app/globals.css");
 test("one NAV array is the source of truth for desktop and mobile", () => {
   // The desktop nav and the mobile panel must read the same list, or a new
   // destination silently appears on one and not the other (#331).
-  assert.match(NAV, /export const NAV = \[/);
-  assert.match(HEADER, /import \{ NAV, isActive \} from "\.\/nav"/);
-  assert.match(MOBILE, /import \{ NAV, isActive \} from "\.\/nav"/);
+  // The list is a function of the locale now: the category names are the
+  // locale's, and the one entry that is not a category takes its label from
+  // the dictionary, which the server hands down.
+  assert.match(NAV, /export function navFor\(/);
+  assert.match(HEADER, /import \{ navFor, isActive \} from "\.\/nav"/);
+  assert.match(MOBILE, /import \{ navFor, isActive \} from "\.\/nav"/);
   // Neither file may define its own copy.
   assert.doesNotMatch(HEADER, /const NAV = \[/);
   assert.doesNotMatch(MOBILE, /const NAV = \[/);
+  // And both build their list the same way, from the same call.
+  assert.match(HEADER, /const nav = navFor\(locale, copy\.nav\.contact\)/);
+  assert.match(MOBILE, /const nav = navFor\(locale, copy\.nav\.contact\)/);
 });
 
 test("the toggle is a labelled button wired to the panel", () => {
   assert.match(MOBILE, /aria-expanded=\{open\}/);
   assert.match(MOBILE, /aria-controls=\{PANEL_ID\}/);
-  assert.match(MOBILE, /aria-label=\{open \? "Close menu" : "Open menu"\}/);
-  assert.match(MOBILE, /<nav aria-label="Main"/);
+  // The toggle's accessible name is the page's language, so it comes from the
+  // dictionary rather than being spelled here.
+  assert.match(MOBILE, /aria-label=\{open \? copy\.nav\.closeMenu : copy\.nav\.openMenu\}/);
+  assert.match(MOBILE, /<nav aria-label=\{copy\.nav\.main\}/);
 });
 
 test("the active route carries aria-current on mobile as it does on desktop", () => {

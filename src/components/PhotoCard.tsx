@@ -8,10 +8,14 @@ import { PhotoTile } from "@/components/PhotoTile";
 export function PhotoCard({
   photo,
   locale,
+  printOptions,
 }: {
+  /** The photo as it reads on this page: the caller localizes it. */
   photo: Photo;
   /** The locale of the page the card is on: the print's URL carries it. */
   locale: Locale;
+  /** The label beside the card's price column, in the page's language. */
+  printOptions: string;
 }) {
   return (
     <Link
@@ -36,7 +40,7 @@ export function PhotoCard({
             {photo.caption}
           </p>
         </div>
-        <span className="text-stone-600 font-medium shrink-0">Print options</span>
+        <span className="text-stone-600 font-medium shrink-0">{printOptions}</span>
       </div>
     </Link>
   );

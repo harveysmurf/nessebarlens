@@ -1,7 +1,9 @@
 import { CATEGORY } from "@/domain/catalog/categories";
 import { PHOTO_CATEGORIES } from "@/domain/catalog/photo-schema";
-import { DEFAULT_LOCALE, PUBLIC_LOCALES } from "@/domain/i18n/locale";
+import { DEFAULT_LOCALE } from "@/domain/i18n/locale";
 import { localePath } from "@/domain/i18n/locale-path";
+import { NODE_ENV } from "@/infrastructure/config/env";
+import { servedLocales } from "@/infrastructure/i18n/served-locales";
 import { INDEXABLE_ROUTES, canonicalUrl, seoOrigin } from "@/infrastructure/seo/page-metadata";
 
 /**
@@ -68,7 +70,7 @@ carry \`noindex\`. They are not in the sitemap and should not be requested.`;
 export function GET(): Response {
   const origin = seoOrigin();
 
-  const pages = PUBLIC_LOCALES.flatMap((locale) =>
+  const pages = servedLocales(NODE_ENV).flatMap((locale) =>
     INDEXABLE_ROUTES.map((route) => {
       const label = route === "/" ? "Home" : titleFor(route);
       const url = canonicalUrl(localePath(locale, route));
@@ -103,7 +105,7 @@ export function GET(): Response {
  */
 function titleFor(route: string): string {
   const category = PHOTO_CATEGORIES.find((c) => CATEGORY[c].href === route);
-  if (category) return CATEGORY[category].navLabel;
+  if (category) return CATEGORY[category].names[DEFAULT_LOCALE].navLabel;
 
   const segment = route.replace(/^\//, "").replace(/-/g, " ");
   return toTitleCase(segment);

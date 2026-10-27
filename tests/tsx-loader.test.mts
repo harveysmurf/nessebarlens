@@ -98,7 +98,7 @@ function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
 /** Without a base the ladder cannot be built and WebPhoto degrades to alt text. */
 function renderCard(photo: (typeof PHOTOS)[number]): string {
   return withEnv({ [BASE]: BASE_URL }, () =>
-    renderToStaticMarkup(createElement(PhotoCard, { photo, locale: "en" })),
+    renderToStaticMarkup(createElement(PhotoCard, { photo, locale: "en", printOptions: "Print options" })),
   );
 }
 
@@ -150,7 +150,7 @@ test("the rendered image is the derivative ladder, not a bare <img>", () => {
   // The expectation is derived inside the same env as the render — the ladder
   // needs the base configured to exist at all.
   withEnv({ [BASE]: BASE_URL }, () => {
-    const html = renderToStaticMarkup(createElement(PhotoCard, { photo: plainPhoto, locale: "en" }));
+    const html = renderToStaticMarkup(createElement(PhotoCard, { photo: plainPhoto, locale: "en", printOptions: "Print options" }));
     assert.match(html, /<picture/);
     assert.match(html, /<source type="image\/webp"/);
     const expected = webDerivativeUrls(plainPhoto);
@@ -232,7 +232,7 @@ test("a component with no buildable ladder renders its alt text instead", () => 
   // WebPhoto's documented fallback, and the reason a test asserting on the
   // <img> has to set NEXT_PUBLIC_WEB_IMAGES_BASE first.
   const html = withEnv({ [BASE]: undefined }, () =>
-    renderToStaticMarkup(createElement(PhotoCard, { photo: plainPhoto, locale: "en" })),
+    renderToStaticMarkup(createElement(PhotoCard, { photo: plainPhoto, locale: "en", printOptions: "Print options" })),
   );
   assert.doesNotMatch(html, /<img/);
   assert.ok(html.includes(plainPhoto.alt), "the alt text should still be rendered");
@@ -256,7 +256,7 @@ test("the alt-text fallback is readable on whichever backdrop the tile chose", (
     ["non-film", plainPhoto],
   ] as const) {
     const html = withEnv({ [BASE]: undefined }, () =>
-      renderToStaticMarkup(createElement(PhotoCard, { photo, locale: "en" })),
+      renderToStaticMarkup(createElement(PhotoCard, { photo, locale: "en", printOptions: "Print options" })),
     );
     const backdrop = tileWrapper(html).match(/bg-(stone-\d+|gallery-\d+)$/)?.[1];
     assert.ok(backdrop, `the ${label} tile should declare a backdrop`);

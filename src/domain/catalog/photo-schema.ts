@@ -2,6 +2,11 @@ import { HEX_32_PATTERN, HEX_64_PATTERN } from "../pricing/crypto-hex";
 import { isRecord } from "../json/record";
 import { PHOTO_SLUG_PATTERN } from "./derivative-ladder";
 import {
+  isLocale,
+  TRANSLATED_LOCALES,
+  type Locale,
+} from "../i18n/locale";
+import {
   type MasterFacts,
   type MasterFactsReason,
   parseMasterFacts,
@@ -36,6 +41,26 @@ export type PhotoCategory = (typeof PHOTO_CATEGORIES)[number];
 export const FILM_LOOKS = ["contrast", "sepia", "grayscale"] as const;
 export type FilmLook = (typeof FILM_LOOKS)[number];
 
+/**
+ * One locale's copy of a photo's words.
+ *
+ * The same fields the source carries — title, caption, description, alt — plus
+ * the hero caption, which belongs to the featured photo alone and so is
+ * required there and forbidden everywhere else, exactly as the source's own
+ * `hero_caption` is.
+ *
+ * The fields are the same in every locale on purpose: a locale that could omit
+ * a field would have a fallback, and a fallback is a page in the wrong
+ * language. A locale that cannot be written is a locale that is not published.
+ */
+export type PhotoTranslation = {
+  title: string;
+  caption: string;
+  description: string;
+  alt: string;
+  heroCaption?: string | undefined;
+};
+
 /** A photo file that passed every rule, with defaults applied. */
 export type PhotoFile = {
   slug: string;
@@ -49,6 +74,16 @@ export type PhotoFile = {
   featured?: boolean | undefined;
   heroCaption?: string | undefined;
   published: boolean;
+  /**
+   * The photo's copy in every other locale it is published in.
+   *
+   * The top-level fields above are the source — the default locale's copy — and
+   * these are the translations of them. A published photo must carry one for
+   * every `TRANSLATED_LOCALES` locale, and the build fails when one is missing
+   * or partial, so a photo is never published in one language and English in
+   * another.
+   */
+  translations: Partial<Record<Locale, PhotoTranslation>>;
   masterSha256?: string | undefined;
   imageHash?: string | undefined;
   /** Oriented pixel size and orientation, measured from the master file (#295/#297). */
@@ -87,6 +122,7 @@ const KNOWN_KEYS = new Set([
   "featured",
   "hero_caption",
   "published",
+  "translations",
   "master_sha256",
   "image_hash",
   "master_width",
@@ -129,10 +165,14 @@ function readSlug(
   return slug;
 }
 
-function readAlt(value: unknown, problems: string[]): string | null {
-  const alt = requiredString("alt", value, problems);
+function readAlt(
+  name: string,
+  value: unknown,
+  problems: string[],
+): string | null {
+  const alt = requiredString(name, value, problems);
   if (alt !== null && alt.length > ALT_MAX) {
-    problems.push(`alt: must be ${ALT_MAX} characters or fewer`);
+    problems.push(`${name}: must be ${ALT_MAX} characters or fewer`);
     return null;
   }
   return alt;
@@ -195,17 +235,120 @@ function readBoolean(
 }
 
 function readHeroCaption(
+  name: string,
   value: unknown,
   featured: boolean | undefined,
   problems: string[],
 ): string | undefined {
   if (featured === true) {
-    return requiredString("hero_caption", value, problems) ?? undefined;
+    return requiredString(name, value, problems) ?? undefined;
   }
   if (value !== undefined) {
-    problems.push("hero_caption: only allowed when featured is true");
+    problems.push(`${name}: only allowed when featured is true`);
   }
   return undefined;
+}
+
+/**
+ * The fields one locale's copy may carry.
+ *
+ * The same set as the source's own words, so a translation cannot quietly
+ * carry a field the source does not have — and cannot miss one either, which
+ * the completeness check below is what catches.
+ */
+const TRANSLATION_KEYS = new Set([
+  "title",
+  "caption",
+  "description",
+  "alt",
+  "hero_caption",
+]);
+
+/**
+ * One locale's copy, read with the same rules as the source's.
+ *
+ * The field names carry the locale, so a problem in the Bulgarian copy reads
+ * `translations.bg.alt: required non-empty string` rather than `alt`, which
+ * would point at the English field and send the reader to the wrong file.
+ */
+function readTranslation(
+  locale: Locale,
+  value: unknown,
+  featured: boolean | undefined,
+  problems: string[],
+): PhotoTranslation | null {
+  if (!isRecord(value)) {
+    problems.push(`translations.${locale}: expected a mapping of copy`);
+    return null;
+  }
+  for (const key of Object.keys(value)) {
+    if (!TRANSLATION_KEYS.has(key)) {
+      problems.push(`translations.${locale}.${key}: unknown key`);
+    }
+  }
+  const title = requiredString(
+    `translations.${locale}.title`,
+    value.title,
+    problems,
+  );
+  const caption = requiredString(
+    `translations.${locale}.caption`,
+    value.caption,
+    problems,
+  );
+  const description = requiredString(
+    `translations.${locale}.description`,
+    value.description,
+    problems,
+  );
+  const alt = readAlt(`translations.${locale}.alt`, value.alt, problems);
+  const heroCaption = readHeroCaption(
+    `translations.${locale}.hero_caption`,
+    value.hero_caption,
+    featured,
+    problems,
+  );
+  if (title === null || caption === null || description === null || alt === null) {
+    return null;
+  }
+  return { title, caption, description, alt, heroCaption };
+}
+
+/**
+ * Every locale's copy, or none.
+ *
+ * An absent `translations` is allowed — a draft has no translations yet, and
+ * the rule for drafts is explicit below rather than implied. A present one is
+ * checked: a locale the site does not know is an error rather than a silently
+ * ignored block, because an ignored block is a translation nobody will ever
+ * read.
+ */
+function readTranslations(
+  value: unknown,
+  featured: boolean | undefined,
+  problems: string[],
+): {
+  translations: Partial<Record<Locale, PhotoTranslation>>;
+  /** The locales the file carried, whether or not their copy was valid. */
+  seen: Set<Locale>;
+} {
+  const translations: Partial<Record<Locale, PhotoTranslation>> = {};
+  const seen = new Set<Locale>();
+  if (value === undefined) return { translations, seen };
+  if (!isRecord(value)) {
+    problems.push("translations: expected a mapping of locale to copy");
+    return { translations, seen };
+  }
+  for (const [locale, translation] of Object.entries(value)) {
+    if (!isLocale(locale)) {
+      problems.push(`translations.${locale}: unknown locale`);
+      continue;
+    }
+    seen.add(locale);
+    const read = readTranslation(locale, translation, featured, problems);
+    if (read) translations[locale] = read;
+  }
+  return { translations, seen };
 }
 
 function readPublished(value: unknown, problems: string[]): boolean {
@@ -410,11 +553,24 @@ export function validatePhotoFile(
     requireMasterFacts = true,
     requirePrintAssets = true,
     requirePrintOffer = true,
+    requireTranslations = true,
   }: {
     requirePublishedHashes?: boolean;
     requireMasterFacts?: boolean;
     requirePrintAssets?: boolean;
     requirePrintOffer?: boolean;
+    /**
+     * Whether a published photo must carry a translation for every locale it
+     * is published in.
+     *
+     * True for the catalog build, which is where the rule bites: a published
+     * photo with no Bulgarian copy is a photo half the site is missing. False
+     * for `publish-photos`, which validates the owner's file *before* it writes
+     * the generated keys — the same reason it passes the other four flags as
+     * false. The script preserves the translations it is given; it does not
+     * write them.
+     */
+    requireTranslations?: boolean;
   } = {},
 ): PhotoValidation {
   if (!isRecord(data)) {
@@ -430,13 +586,23 @@ export function validatePhotoFile(
   const title = requiredString("title", data.title, problems);
   const caption = requiredString("caption", data.caption, problems);
   const description = requiredString("description", data.description, problems);
-  const alt = readAlt(data.alt, problems);
+  const alt = readAlt("alt", data.alt, problems);
   const category = readCategory(data.category, problems);
   const filmLook = readFilmLook(data.film_look, category, problems);
   const order = readOrder(data.order, problems);
   const featured = readBoolean("featured", data.featured, problems);
-  const heroCaption = readHeroCaption(data.hero_caption, featured, problems);
+  const heroCaption = readHeroCaption(
+    "hero_caption",
+    data.hero_caption,
+    featured,
+    problems,
+  );
   const published = readPublished(data.published, problems);
+  const { translations, seen: translatedLocales } = readTranslations(
+    data.translations,
+    featured,
+    problems,
+  );
   const masterSha256 = readHex(
     "master_sha256",
     data.master_sha256,
@@ -496,6 +662,32 @@ export function validatePhotoFile(
     problems.push("print_options: required for a published photo");
   }
 
+  // A published photo carries its own copy in every locale it is published in.
+  //
+  // The rule is on the photo, not on the file: an unpublished draft may have no
+  // translations yet, and the moment it is published it must have all of them.
+  // Publishing a photo in one language and English in another is the failure
+  // this exists to prevent — a Bulgarian page that says "Solitude at Sunrise"
+  // is a page that lies about its own language.
+  //
+  // A partial translation is the same failure: the fields are checked above, so
+  // a translation that reached this point is complete, and one that did not is
+  // already reported. What is reported here is the locale that is missing
+  // altogether.
+  if (published && requireTranslations) {
+    for (const locale of TRANSLATED_LOCALES) {
+      // A locale the file carried is not "missing" even when its copy was
+      // rejected: the field that is wrong is already named, and naming it twice
+      // — once for the field and once for the locale — would send the reader
+      // looking for a missing block that is right there.
+      if (!translatedLocales.has(locale)) {
+        problems.push(
+          `translations.${locale}: required for a published photo`,
+        );
+      }
+    }
+  }
+
   if (problems.length > 0) {
     return { ok: false, problems };
   }
@@ -516,6 +708,7 @@ export function validatePhotoFile(
       featured,
       heroCaption,
       published,
+      translations,
       masterSha256,
       imageHash,
       master,

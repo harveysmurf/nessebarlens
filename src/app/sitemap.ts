@@ -27,7 +27,8 @@
 
 import type { MetadataRoute } from "next";
 import { PHOTOS } from "@/domain/catalog/photos";
-import { PUBLIC_LOCALES } from "@/domain/i18n/locale";
+import { NODE_ENV } from "@/infrastructure/config/env";
+import { servedLocales } from "@/infrastructure/i18n/served-locales";
 import { localePath } from "@/domain/i18n/locale-path";
 import { INDEXABLE_ROUTES, canonicalUrl } from "@/infrastructure/seo/page-metadata";
 
@@ -44,14 +45,14 @@ export default function sitemap(): MetadataRoute.Sitemap {
   // registry rather than from a list of their own: a locale that is not
   // served has no pages to list, and a sitemap that listed them would offer a
   // crawler URLs that answer 404.
-  const routes: MetadataRoute.Sitemap = PUBLIC_LOCALES.flatMap((locale) =>
+  const routes: MetadataRoute.Sitemap = servedLocales(NODE_ENV).flatMap((locale) =>
     INDEXABLE_ROUTES.map((route) => ({
       url: canonicalUrl(localePath(locale, route)),
       priority: priorityFor(route),
     })),
   );
 
-  const prints: MetadataRoute.Sitemap = PUBLIC_LOCALES.flatMap((locale) =>
+  const prints: MetadataRoute.Sitemap = servedLocales(NODE_ENV).flatMap((locale) =>
     PHOTOS.map((photo) => ({
       url: canonicalUrl(localePath(locale, `/prints/${photo.slug}`)),
       // A print is a product page: the thing a search actually converts on.

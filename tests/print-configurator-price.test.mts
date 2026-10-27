@@ -17,6 +17,8 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 
 import { PrintConfigurator } from "../src/components/PrintConfigurator.tsx";
+import { shipToCountriesFor } from "../src/domain/pricing/ship-to-countries.ts";
+import { getDictionary } from "../src/components/i18n/dictionaries.ts";
 import { DIGITAL_PRICE_EUR } from "../src/domain/pricing/pricing.ts";
 import type { PrintOffer } from "../src/domain/catalog/print-offer.ts";
 import type { MasterFacts } from "../src/domain/catalog/master-facts.ts";
@@ -42,7 +44,7 @@ const DIGITAL: PrintSelection = {
   paper: "ema",
 };
 
-function markup(selection: PrintSelection): string {
+function markup(selection: PrintSelection, locale: "en" | "bg" = "en"): string {
   return renderToStaticMarkup(
     createElement(PrintConfigurator, {
       photoSlug: "a-photo",
@@ -51,6 +53,9 @@ function markup(selection: PrintSelection): string {
       master: MASTER,
       selection,
       onSelectionChange: () => {},
+      locale,
+      copy: getDictionary(locale).configurator,
+      countries: shipToCountriesFor(locale),
     }),
   );
 }

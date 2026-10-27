@@ -19,6 +19,7 @@
  */
 
 import { CATEGORY } from "../../domain/catalog/categories";
+import { DEFAULT_LOCALE } from "../../domain/i18n/locale";
 import type { Photo } from "../../domain/catalog/photos";
 import { DIGITAL_PRICE_EUR } from "../../domain/pricing/pricing";
 import { seoOrigin } from "./page-metadata";
@@ -136,7 +137,7 @@ export function printJsonLd(
           {
             "@type": "ListItem",
             position: 2,
-            name: CATEGORY[photo.category].galleryTitle,
+            name: CATEGORY[photo.category].names[DEFAULT_LOCALE].galleryTitle,
             item: categoryHref,
           },
           {

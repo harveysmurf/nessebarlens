@@ -10,7 +10,8 @@ import {
   // under a bare `node`.
 } from "./src/infrastructure/seo/security-headers";
 import { legacyRedirects } from "./src/infrastructure/routing/legacy-redirects";
-import { PUBLIC_LOCALES } from "./src/domain/i18n/locale";
+import { NODE_ENV } from "./src/infrastructure/config/env";
+import { servedLocales } from "./src/infrastructure/i18n/served-locales";
 
 // The one origin outside the site itself that the browser must be allowed to
 // load images from: the R2 custom domain behind NEXT_PUBLIC_WEB_IMAGES_BASE.
@@ -86,7 +87,7 @@ const nextConfig: NextConfig = {
       //
       // The legacy path keeps its own rule because the redirect response is a
       // response too, and it is the one a shared cache would store.
-      ...PUBLIC_LOCALES.map((locale) => ({
+      ...servedLocales(NODE_ENV).map((locale) => ({
         source: `/${locale}/checkout/success`,
         headers: [
           { key: "Cache-Control", value: "private, no-store" },

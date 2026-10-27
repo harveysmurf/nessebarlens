@@ -11,6 +11,12 @@
  * Re-generate with `node scripts/generate-ship-to-countries.mjs`; `--check`
  * compares without writing.
  */
+import {
+  DEFAULT_LOCALE,
+  LOCALE_TAGS,
+  type Locale,
+} from "../i18n/locale";
+
 // BEGIN GENERATED (scripts/generate-ship-to-countries.mjs)
 export const SHIP_TO_COUNTRIES = [
   { code: "AF", name: "Afghanistan" },
@@ -261,4 +267,58 @@ const SHIP_TO_SET = new Set<string>(SHIP_TO_COUNTRY_CODES);
 
 export function isShipToCountryCode(code: string): code is ShipToCountryCode {
   return SHIP_TO_SET.has(code);
+}
+
+/**
+ * A country as the selector shows it, in the reader's language.
+ *
+ * The names in the generated list are English, because that is the language the
+ * generator ran `Intl.DisplayNames` in. A Bulgarian reader is offered the
+ * country they are shipping to by its own name, so the name is derived from
+ * the ISO code at render time rather than stored: the code is the fact, and the
+ * name is the locale's word for it.
+ *
+ * The code is what is submitted and what reaches Prodigi and Stripe — the name
+ * never leaves the browser, and `ISO_ALPHA2_PATTERN` still validates the code
+ * the server receives.
+ *
+ * There is no fallback to the raw code, and that is a decision rather than an
+ * oversight: ICU names every ISO 3166-1 alpha-2 code the list holds, and a
+ * branch that cannot be taken is a branch nobody has ever run.
+ * `tests/i18n-storefront.test.mts` holds the invariant instead — every shipped
+ * code has a name in every locale — so a code ICU does not know is a test
+ * failure rather than a selector offering a visitor "BJ".
+ */
+export function countryName(
+  code: ShipToCountryCode,
+  locale: Locale = DEFAULT_LOCALE,
+): string {
+  const names = new Intl.DisplayNames([LOCALE_TAGS[locale]], { type: "region" });
+  // The `!` is the type saying what the runtime already knows: the code is an
+  // ISO 3166-1 alpha-2 region and ICU names every one of them. `of()` is typed
+  // as possibly undefined because it takes any string, and a code that was not
+  // a region would be one — this list holds none.
+  return names.of(code)!;
+}
+
+/** One destination, as the selector shows it. */
+export type ShipToCountry = { code: ShipToCountryCode; name: string };
+
+/**
+ * The destination list, in the reader's language.
+ *
+ * Built on the server and handed to the client, because the names come from
+ * ICU and the server's ICU and the browser's are not the same version: a name
+ * the server renders and the client re-derives can differ, and React calls
+ * that a hydration mismatch and regenerates the tree. The server decides the
+ * words and the client renders them, so the two cannot disagree — and the
+ * browser's ICU data stays out of the bundle.
+ */
+export function shipToCountriesFor(
+  locale: Locale = DEFAULT_LOCALE,
+): ShipToCountry[] {
+  return SHIP_TO_COUNTRIES.map((country) => ({
+    code: country.code,
+    name: countryName(country.code, locale),
+  }));
 }

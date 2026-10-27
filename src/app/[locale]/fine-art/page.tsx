@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { GalleryPage } from "@/components/GalleryPage";
 import { isLocale } from "@/domain/i18n/locale";
 import { categoryMetadata } from "@/infrastructure/seo/page-metadata";
+import { getDictionary } from "@/components/i18n/dictionaries";
 import { requireLocale } from "../locale-param";
 
 /**
@@ -28,5 +29,13 @@ export default async function FineArtPage({
   params: Promise<{ locale: string }>;
 }) {
   const locale = requireLocale((await params).locale);
-  return <GalleryPage category="fine-art" locale={locale} />;
+  const copy = getDictionary(locale);
+  return (
+    <GalleryPage
+      category="fine-art"
+      locale={locale}
+      copy={copy.gallery}
+      printOptions={copy.print.printOptions}
+    />
+  );
 }
