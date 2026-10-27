@@ -198,7 +198,7 @@ test("the hex above is the colour Tailwind actually ships", () => {
  */
 const OVER_DARK_SURFACE: Record<string, string> = {
   // key: `file: text-stone-N`, value: the surface it is really declared against
-  "src/app/page.tsx: text-stone-300": "--gallery-900",
+  "src/app/[locale]/page.tsx: text-stone-300": "--gallery-900",
 };
 
 test("no muted text in src/ falls below AA on the surface it is declared for", () => {

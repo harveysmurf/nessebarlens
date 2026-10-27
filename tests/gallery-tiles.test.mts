@@ -90,7 +90,7 @@ test("PhotoTile is the only fixed-ratio photo box in src/", () => {
   // component that happens to also be a fixed-ratio box. It is named here so
   // that deleting the hero does not silently widen the exemption.
   const EXEMPT: Record<string, string> = {
-    "src/app/page.tsx": "aspect-[21/9]",
+    "src/app/[locale]/page.tsx": "aspect-[21/9]",
   };
 
   const offenders: string[] = [];
@@ -166,8 +166,8 @@ test("the three former call sites all use the tile", () => {
   // would still pass everything above.
   for (const [file, count] of [
     ["src/components/PhotoCard.tsx", 1],
-    ["src/app/page.tsx", 1],
-    ["src/app/story/page.tsx", 1],
+    ["src/app/[locale]/page.tsx", 1],
+    ["src/app/[locale]/story/page.tsx", 1],
   ] as const) {
     const source = sourceOf(file);
     assert.match(source, /import \{ PhotoTile \} from "@\/components\/PhotoTile"/, `${file} should import PhotoTile`);

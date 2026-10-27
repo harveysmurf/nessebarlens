@@ -15,7 +15,7 @@
  *     production for 1.5h. The actual #120 gap is that E2E smoke flow is not a
  *     *required* check, which is #205 item 1.
  *   - two builds rather than one shared artifact. Both are defensible; the
- *     origin is baked into prerendered HTML (`src/app/layout.tsx` builds
+ *     origin is baked into prerendered HTML (`src/app/[locale]/layout.tsx` builds
  *     metadataBase at module scope), so one artifact would put nessebarlens.com
  *     on staging. Pinned below as "the build is a matrix", not as a comment.
  */

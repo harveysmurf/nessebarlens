@@ -201,7 +201,7 @@ test("the read paths call one helper, not three copies of the check", async () =
   const callers = [
     "src/app/api/download/route.ts",
     "src/app/api/order-status/route.ts",
-    "src/app/checkout/success/order-state.ts",
+    "src/app/[locale]/checkout/success/order-state.ts",
     "src/application/fulfillment/fulfillment.ts",
     "src/application/fulfillment/order-revocation.ts",
   ];

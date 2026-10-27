@@ -1,11 +1,23 @@
 import Link from "next/link";
 import { isFilmPhoto, type Photo } from "@/domain/catalog/photos";
+import type { Locale } from "@/domain/i18n/locale";
+import { localePath } from "@/domain/i18n/locale-path";
 import { GALLERY_GRID_SIZES } from "@/components/grid-sizes";
 import { PhotoTile } from "@/components/PhotoTile";
 
-export function PhotoCard({ photo }: { photo: Photo }) {
+export function PhotoCard({
+  photo,
+  locale,
+}: {
+  photo: Photo;
+  /** The locale of the page the card is on: the print's URL carries it. */
+  locale: Locale;
+}) {
   return (
-    <Link href={`/prints/${photo.slug}`} className="group cursor-pointer space-y-3 block">
+    <Link
+      href={localePath(locale, `/prints/${photo.slug}`)}
+      className="group cursor-pointer space-y-3 block"
+    >
       {/* The box itself is `PhotoTile` (#422). Three call sites rendered it by
           hand and two of them had already drifted into the black frame #409
           reported; the fix is one copy of the box, not another test. */}

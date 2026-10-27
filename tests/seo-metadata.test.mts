@@ -68,6 +68,8 @@ import test from "node:test";
 import { PHOTOS, getPhoto } from "../src/domain/catalog/photos.ts";
 import { CATEGORY } from "../src/domain/catalog/categories.ts";
 import { PHOTO_CATEGORIES } from "../src/domain/catalog/photo-schema.ts";
+import { DEFAULT_LOCALE } from "../src/domain/i18n/locale.ts";
+import { localePath } from "../src/domain/i18n/locale-path.ts";
 import {
   canonicalUrl,
   categoryMetadata,
@@ -82,6 +84,8 @@ import {
 
 const root = path.join(import.meta.dirname, "..");
 const appDir = path.join(root, "src", "app");
+/** The segment every public page lives under. */
+const LOCALE_SEGMENT = "[locale]";
 
 const SITE = "https://nessebarlens.com";
 /** The env the canonical assertions read. Passed in, never read from process.env. */
@@ -129,6 +133,10 @@ const NOINDEX_ROUTES = ["/checkout/cancel", "/checkout/success"];
  *
  * Deliberately not derived from `PAGE_COPY`: a table that named a route with no
  * page would otherwise pass every assertion below while the page did not exist.
+ *
+ * The walk starts inside the locale segment, so the routes it returns are the
+ * locale-relative ones the copy table holds: the segment is the same for every
+ * locale, and the table is about the pages, not about where the segment sits.
  */
 function routesOnDisk(): string[] {
   const found: string[] = [];
@@ -138,19 +146,20 @@ function routesOnDisk(): string[] {
     }
     for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
       if (!entry.isDirectory()) continue;
-      // The api routes are not pages and have no metadata to declare.
-      if (prefix === "" && entry.name === "api") continue;
       walk(path.join(dir, entry.name), `${prefix}/${entry.name}`);
     }
   };
-  walk(appDir, "");
+  walk(path.join(appDir, LOCALE_SEGMENT), "");
   return found.sort();
 }
 
 /** The page module's own source, for the export check. */
 function pageSource(route: string): string {
   const rel = route === "/" ? "" : route;
-  return fs.readFileSync(path.join(appDir, rel, "page.tsx"), "utf8");
+  return fs.readFileSync(
+    path.join(appDir, LOCALE_SEGMENT, rel, "page.tsx"),
+    "utf8",
+  );
 }
 
 test("every route on disk has copy in the one table, and none is orphaned", () => {
@@ -213,8 +222,8 @@ test("a gallery route's metadata resolves through its category's declared href",
   // the homepage's words or throw at module scope in a page; this says which.
   for (const category of PHOTO_CATEGORIES) {
     const href = CATEGORY[category].href;
-    const expected = pageMetadata(href, ENV);
-    const actual = categoryMetadata(category, ENV);
+    const expected = pageMetadata(href, DEFAULT_LOCALE, ENV);
+    const actual = categoryMetadata(category, DEFAULT_LOCALE, ENV);
 
     assert.deepEqual(
       actual,
@@ -223,7 +232,7 @@ test("a gallery route's metadata resolves through its category's declared href",
     );
     assert.equal(
       actual.alternates?.canonical,
-      canonicalUrl(href, ENV),
+      canonicalUrl(localePath(DEFAULT_LOCALE, href), ENV),
       `${category}'s canonical is not the category's own route`,
     );
     assert.notEqual(
@@ -335,10 +344,17 @@ test("each route's canonical is absolute and built from the configured site URL"
 
   // A relative canonical is silently resolved against whatever origin the
   // crawler guessed, which is how a preview deployment gets indexed as the site.
+  //
+  // The canonical is the URL the page is served at, locale segment and all:
+  // a canonical pointing at the un-prefixed route would name a URL that only
+  // redirects, and a crawler that believed it would index the redirect.
   for (const route of routesOnDisk()) {
     if (route === PRINT_ROUTE) continue;
-    const metadata = pageMetadata(route, ENV);
-    assert.equal(metadata.alternates?.canonical, canonicalUrl(route, ENV));
+    const metadata = pageMetadata(route, DEFAULT_LOCALE, ENV);
+    assert.equal(
+      metadata.alternates?.canonical,
+      canonicalUrl(localePath(DEFAULT_LOCALE, route), ENV),
+    );
   }
 });
 
@@ -349,7 +365,7 @@ test("every page carries the whole OG and Twitter block, not just a title", () =
   const cases = [
     ...routesOnDisk().map((route) => ({
       route,
-      metadata: route === PRINT_ROUTE ? printMetadata(PHOTOS[0], ENV) : pageMetadata(route, ENV),
+      metadata: route === PRINT_ROUTE ? printMetadata(PHOTOS[0], DEFAULT_LOCALE, ENV) : pageMetadata(route, DEFAULT_LOCALE, ENV),
       copy: route === PRINT_ROUTE
         ? { title: `${PHOTOS[0].title} — Nessebar Lens`, description: PHOTOS[0].description }
         : PAGE_COPY[route],
@@ -391,7 +407,7 @@ test("every page carries the whole OG and Twitter block, not just a title", () =
 });
 
 test("an unknown route throws instead of falling back to the homepage's words", () => {
-  assert.throws(() => pageMetadata("/about", ENV), /No PAGE_COPY entry for \/about/);
+  assert.throws(() => pageMetadata("/about", DEFAULT_LOCALE, ENV), /No PAGE_COPY entry for \/about/);
 });
 
 test("the indexable set is the table minus checkout minus the dynamic route", () => {
@@ -409,7 +425,7 @@ test("the indexable set is the table minus checkout minus the dynamic route", ()
 test("checkout pages are noindex, nofollow, and are told so in their own metadata", () => {
   for (const route of ["/checkout/cancel", "/checkout/success"]) {
     assert.deepEqual(
-      pageMetadata(route, ENV).robots,
+      pageMetadata(route, DEFAULT_LOCALE, ENV).robots,
       { index: false, follow: false },
       `${route} must not be indexed: its URL carries a Stripe session id`,
     );
@@ -417,21 +433,21 @@ test("checkout pages are noindex, nofollow, and are told so in their own metadat
   // And nothing else carries a robots key, so there is no second policy source
   // to drift from the flag that keeps them out of the sitemap.
   for (const route of INDEXABLE_ROUTES) {
-    assert.equal(pageMetadata(route, ENV).robots, undefined, `${route} is noindex`);
+    assert.equal(pageMetadata(route, DEFAULT_LOCALE, ENV).robots, undefined, `${route} is noindex`);
   }
 });
 
 test("a print's title names the photograph, and each print's title is its own", () => {
   const titles = new Set<string>();
   for (const photo of PHOTOS) {
-    const metadata = printMetadata(photo, ENV);
+    const metadata = printMetadata(photo, DEFAULT_LOCALE, ENV);
     const expected = `${photo.title} — Nessebar Lens`;
 
     assert.equal(metadata.title, expected);
     assert.equal(metadata.description, photo.description);
     assert.equal(
       metadata.alternates?.canonical,
-      `${SITE}/prints/${photo.slug}`,
+      `${SITE}${localePath(DEFAULT_LOCALE, `/prints/${photo.slug}`)}`,
     );
     titles.add(expected);
   }

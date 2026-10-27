@@ -15,6 +15,7 @@ import { readJsonBody } from "@/infrastructure/config/json-body";
 import { readWorkerBindings } from "@/infrastructure/cloudflare/worker-bindings";
 import { recordInteraction } from "@/infrastructure/cloudflare/analytics";
 import { isTrackEvent } from "@/analytics/events";
+import { splitPathParts } from "@/domain/paths/path-parts";
 
 const MAX_PATH_LENGTH = 200;
 
@@ -31,8 +32,10 @@ function normalisePath(value: unknown): string | undefined {
   if (!value.startsWith("/") || value.startsWith("//")) return undefined;
   if (value.length > MAX_PATH_LENGTH) return undefined;
   // The first character is "/", which is neither "?" nor "#", so splitting can
-  // never produce an empty first segment.
-  return value.split(/[?#]/)[0];
+  // never produce an empty first segment. The boundary itself belongs to
+  // `domain/paths/path-parts.ts`: the locale path helper keeps the tail, this
+  // one drops it, and two copies of the rule is how they would drift apart.
+  return splitPathParts(value).route;
 }
 
 export async function POST(request: Request): Promise<Response> {

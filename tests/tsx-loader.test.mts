@@ -98,7 +98,7 @@ function withEnv<T>(env: Record<string, string | undefined>, fn: () => T): T {
 /** Without a base the ladder cannot be built and WebPhoto degrades to alt text. */
 function renderCard(photo: (typeof PHOTOS)[number]): string {
   return withEnv({ [BASE]: BASE_URL }, () =>
-    renderToStaticMarkup(createElement(PhotoCard, { photo })),
+    renderToStaticMarkup(createElement(PhotoCard, { photo, locale: "en" })),
   );
 }
 
@@ -138,7 +138,9 @@ test("a .tsx component imports and renders under the test runner", () => {
   // The whole of #420. Before it, this import alone died with
   // ERR_UNKNOWN_FILE_EXTENSION ".tsx".
   const html = renderCard(plainPhoto);
-  assert.match(html, new RegExp(`href="/prints/${plainPhoto.slug}"`));
+  // The card's link carries the locale segment: every public URL is built by
+  // the one path helper, so a link without one would be a link to a redirect.
+  assert.match(html, new RegExp(`href="/en/prints/${plainPhoto.slug}"`));
   assert.match(html, new RegExp(`>${plainPhoto.title}<`));
 });
 
@@ -148,7 +150,7 @@ test("the rendered image is the derivative ladder, not a bare <img>", () => {
   // The expectation is derived inside the same env as the render — the ladder
   // needs the base configured to exist at all.
   withEnv({ [BASE]: BASE_URL }, () => {
-    const html = renderToStaticMarkup(createElement(PhotoCard, { photo: plainPhoto }));
+    const html = renderToStaticMarkup(createElement(PhotoCard, { photo: plainPhoto, locale: "en" }));
     assert.match(html, /<picture/);
     assert.match(html, /<source type="image\/webp"/);
     const expected = webDerivativeUrls(plainPhoto);
@@ -230,7 +232,7 @@ test("a component with no buildable ladder renders its alt text instead", () => 
   // WebPhoto's documented fallback, and the reason a test asserting on the
   // <img> has to set NEXT_PUBLIC_WEB_IMAGES_BASE first.
   const html = withEnv({ [BASE]: undefined }, () =>
-    renderToStaticMarkup(createElement(PhotoCard, { photo: plainPhoto })),
+    renderToStaticMarkup(createElement(PhotoCard, { photo: plainPhoto, locale: "en" })),
   );
   assert.doesNotMatch(html, /<img/);
   assert.ok(html.includes(plainPhoto.alt), "the alt text should still be rendered");
@@ -254,7 +256,7 @@ test("the alt-text fallback is readable on whichever backdrop the tile chose", (
     ["non-film", plainPhoto],
   ] as const) {
     const html = withEnv({ [BASE]: undefined }, () =>
-      renderToStaticMarkup(createElement(PhotoCard, { photo })),
+      renderToStaticMarkup(createElement(PhotoCard, { photo, locale: "en" })),
     );
     const backdrop = tileWrapper(html).match(/bg-(stone-\d+|gallery-\d+)$/)?.[1];
     assert.ok(backdrop, `the ${label} tile should declare a backdrop`);

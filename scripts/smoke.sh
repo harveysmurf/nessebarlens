@@ -67,10 +67,40 @@ origin_host() {
   printf '%s' "$o"
 }
 
+# The path of a Location header, without its origin. A redirect may be written
+# as an absolute URL or as a bare path, and the two have to compare the same:
+# a check that only understood one of them would pass on the wrong spelling.
+location_path() {
+  local l="$1" rest
+  rest="${l#*://}"
+  if [[ "$rest" == "$l" ]]; then
+    rest="${l#*/}"     # a bare path: drop its leading slash
+  else
+    rest="${rest#*/}"  # an absolute URL: drop the host and its port
+  fi
+  printf '/%s' "${rest%%[?#]*}"
+}
+
 if [[ "$BASE" == "https://nessebarlens.com" && "${SMOKE_ALLOW_PRODUCTION:-}" != "1" ]]; then
   echo "smoke: refusing to smoke $BASE without SMOKE_ALLOW_PRODUCTION=1" >&2
   exit 1
 fi
+
+# The locale segment the public pages live under. It is the site's default
+# locale and, today, the only one it serves: Bulgarian is known but not
+# published until the page, contact and checkout slices land, so `/bg` is a 404
+# rather than an English page wearing a Bulgarian URL.
+#
+# It is spelled out here because this script runs against a deployed Worker and
+# cannot import the registry that owns it. If the default locale ever changes,
+# this line is what changes with it — and until it does, the checks below fail
+# loudly rather than quietly.
+DEFAULT_LOCALE="en"
+
+# The locale the site knows but does not serve. Asserted as a 404 below, so
+# publishing Bulgarian means this line and the redirect target change together
+# rather than one of them being left behind.
+UNSERVED_LOCALE="bg"
 
 # A cold Worker and freshly-attached secrets both take a moment to serve, so
 # each check retries for ~60s before it is called a failure.
@@ -173,6 +203,27 @@ check_any() {
   dump_body
   fail=$((fail + 1))
   return 1
+}
+
+# check_redirect <name> <expected-status> <expected-target-path> <curl args...>
+# The status *and* the target. A redirect that answers 308 and points somewhere
+# else is as broken as one that answers 404: the visitor lands on a page that
+# is not the one they asked for, and no status code in this file would say so.
+check_redirect() {
+  local name="$1" expected="$2" target="$3"
+  shift 3
+  if check "$name" "$expected" "$@"; then
+    local location path
+    location="$(tr -d '\r' < "$HEADERS" | grep -i '^location:' | head -1 | cut -d' ' -f2-)"
+    path="$(location_path "$location")"
+    if [[ "$path" == "$target" ]]; then
+      echo "smoke: PASS  ${name} points at ${path}"
+      pass=$((pass + 1))
+    else
+      echo "smoke: FAIL  ${name} points at \"${location}\", expected ${target}"
+      fail=$((fail + 1))
+    fi
+  fi
 }
 
 # check_body <name> <expected-status> <expected-substring> <curl args...>
@@ -319,14 +370,38 @@ check_one_beacon() {
 echo "smoke: base=$BASE slug=$VALID_SLUG attempts=$ATTEMPTS"
 echo "smoke: canonical=$EXPECTED_ORIGIN forbidden=${FORBIDDEN_ORIGIN:-<none>}"
 
-# Public pages render.
+# Public pages render — at their locale-prefixed URLs. The legacy English URLs
+# answer 308 and point at the prefixed one, and both halves are asserted: the
+# redirect is part of the served surface now, and a check that only asked for
+# the new path would not notice a redirect that had gone missing.
 for path in / /film /archive /fine-art /story; do
-  check "GET $path" 200 "$BASE$path"
+  # The site's root is "/<locale>", not "/<locale>/": the trailing slash is
+  # dropped, so the root's target is spelled out rather than concatenated.
+  target="/$DEFAULT_LOCALE"
+  if [[ "$path" != "/" ]]; then
+    target="/$DEFAULT_LOCALE$path"
+  fi
+  check_redirect "GET $path redirects to $target" 308 "$target" "$BASE$path"
+  check "GET $target" 200 "$BASE$target"
 done
 
-# Pre-rendered print detail: real slug serves, unknown slug 404s.
-check "GET /prints/$VALID_SLUG" 200 "$BASE/prints/$VALID_SLUG"
-check "GET /prints/<bad slug>" 404 "$BASE/prints/$BAD_SLUG"
+# A locale the site knows but does not serve is a 404, never an English page
+# under a foreign URL. This is the integration guard of the localisation epic,
+# asserted against the deployed surface rather than against the source: a
+# deploy carrying a build that predates the guard would serve English at a
+# Bulgarian URL, and no other check here would notice.
+check "GET /$UNSERVED_LOCALE" 404 "$BASE/$UNSERVED_LOCALE"
+
+# Pre-rendered print detail: the legacy URL redirects to the prefixed one, a
+# real slug serves, and an unknown slug 404s.
+check_redirect "GET /prints/$VALID_SLUG redirects" 308 \
+  "/$DEFAULT_LOCALE/prints/$VALID_SLUG" "$BASE/prints/$VALID_SLUG"
+check "GET /$DEFAULT_LOCALE/prints/$VALID_SLUG" 200 \
+  "$BASE/$DEFAULT_LOCALE/prints/$VALID_SLUG"
+check_redirect "GET /prints/<bad slug> redirects" 308 \
+  "/$DEFAULT_LOCALE/prints/$BAD_SLUG" "$BASE/prints/$BAD_SLUG"
+check "GET /$DEFAULT_LOCALE/prints/<bad slug>" 404 \
+  "$BASE/$DEFAULT_LOCALE/prints/$BAD_SLUG"
 
 # Body validation runs before any Prodigi call — deterministic, no network.
 check_body "POST /api/quote invalid body" 400 "format must be" \
@@ -395,18 +470,18 @@ case "$EXPECTED_ORIGIN" in
     echo "smoke: SKIP  beacon checks (local origin $EXPECTED_ORIGIN renders none)"
     ;;
   *)
-    check_one_beacon "GET / serves exactly one Web Analytics beacon" 200 \
-      "${BROWSER_HEADERS[@]}" "$BASE/"
+    check_one_beacon "GET /$DEFAULT_LOCALE serves exactly one Web Analytics beacon" 200 \
+      "${BROWSER_HEADERS[@]}" "$BASE/$DEFAULT_LOCALE"
     # The endpoint the snippet pins, not just the script: the beacon posts to
     # /cdn-cgi/rum by default, this Worker 404s that path, and the beacon
     # swallows the error — the pageview is lost with every other check green.
-    check_body "GET / beacon reports to the apex RUM endpoint" 200 \
-      "cloudflareinsights.com/cdn-cgi/rum" "${BROWSER_HEADERS[@]}" "$BASE/"
+    check_body "GET /$DEFAULT_LOCALE beacon reports to the apex RUM endpoint" 200 \
+      "cloudflareinsights.com/cdn-cgi/rum" "${BROWSER_HEADERS[@]}" "$BASE/$DEFAULT_LOCALE"
     # The beacon is loaded from one host and reports to another. A CSP that named
     # only the script origin blocks every pageview at runtime, which no status
     # code in this script would ever show.
-    check_csp_directive "GET / CSP allows the beacon to report" 200 "connect-src" \
-      "https://cloudflareinsights.com" "${BROWSER_HEADERS[@]}" "$BASE/"
+    check_csp_directive "GET /$DEFAULT_LOCALE CSP allows the beacon to report" 200 "connect-src" \
+      "https://cloudflareinsights.com" "${BROWSER_HEADERS[@]}" "$BASE/$DEFAULT_LOCALE"
     ;;
 esac
 

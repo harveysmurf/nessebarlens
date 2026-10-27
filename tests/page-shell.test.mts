@@ -3,7 +3,7 @@
  *
  * Nine elements wrote out the site's centred column: a max width, a `mx-auto`, a
  * 24px gutter and some vertical padding. `SiteHeader` and `SiteFooter` each
- * re-spelled `max-w-7xl mx-auto px-6` — the container the other seven are all
+ * re-spelled `max-w-7xl mx-auto px-6` — the container the other page shells are all
  * reaching for — and `checkout/cancel` and `checkout/success` wrote a
  * byte-identical shell each. The widths and the padding are real variation, so
  * they are props, and the header and footer take the container alone because
@@ -70,11 +70,17 @@ function srcFiles(dir = path.join(ROOT, "src")): string[] {
 }
 
 /**
- * What each of the nine sites wrote at `f0bec3a`, and what it asks for now.
+ * What each site asks the shell for.
  *
  * The `wants` strings are the call site's own JSX, so the check is that the width
  * and the padding on it are the ones the literal had — not that a shell exists
  * somewhere in the file.
+ *
+ * The first nine are the measurement taken from `f0bec3a`, the zero-delta
+ * property for the shells: a shell that silently becomes `5xl` or `py-10` fails
+ * here rather than shipping. The not-found page joined them with the locale
+ * segment, and it is listed for the same reason every other site is — a shell
+ * that is not in this table is a width and a padding nobody decided on.
  */
 const SITES: readonly {
   file: string;
@@ -84,28 +90,34 @@ const SITES: readonly {
 }[] = [
   {
     // `fade-in max-w-lg mx-auto px-6 py-20 text-center space-y-6`
-    file: "src/app/checkout/cancel/page.tsx",
+    file: "src/app/[locale]/checkout/cancel/page.tsx",
     wants: '<PageShell width="lg" padding={20} className="text-center space-y-6">',
   },
   {
     // `fade-in max-w-lg mx-auto px-6 py-20 text-center space-y-6`, byte-identical
-    file: "src/app/checkout/success/page.tsx",
+    file: "src/app/[locale]/checkout/success/page.tsx",
     wants: '<PageShell width="lg" padding={20} className="text-center space-y-6">',
   },
-  { file: "src/app/prints/[slug]/page.tsx", wants: '<PageShell width="7xl" padding={10}>' },
+  { file: "src/app/[locale]/prints/[slug]/page.tsx", wants: '<PageShell width="7xl" padding={10}>' },
   { file: "src/components/GalleryPage.tsx", wants: '<PageShell width="7xl" padding={12}>' },
   {
     // `max-w-7xl mx-auto px-6 pt-10 pb-16 space-y-16` — the only asymmetric shell.
-    file: "src/app/page.tsx",
+    file: "src/app/[locale]/page.tsx",
     wants: '<PageShell\n        width="7xl"\n        padding={10}',
   },
-  { file: "src/app/story/page.tsx", wants: '<PageShell width="5xl" padding={16} className="space-y-20">' },
-  { file: "src/app/contact/page.tsx", wants: '<PageShell width="2xl" padding={16} className="space-y-8">' },
+  { file: "src/app/[locale]/story/page.tsx", wants: '<PageShell width="5xl" padding={16} className="space-y-20">' },
+  { file: "src/app/[locale]/contact/page.tsx", wants: '<PageShell width="2xl" padding={16} className="space-y-8">' },
+  {
+    // The page a visitor gets when the address matches nothing. It is a page,
+    // so it takes the shell like every other one.
+    file: "src/app/[locale]/not-found.tsx",
+    wants: '<PageShell width="2xl" padding={16} className="text-center space-y-6">',
+  },
   { file: "src/components/SiteHeader.tsx", wants: 'containerClass("7xl")', container: true },
   { file: "src/components/SiteFooter.tsx", wants: 'containerClass("7xl")', container: true },
 ];
 
-test("the nine sites ask for the width and padding they used to write out", () => {
+test("every site asks for the width and padding it renders with", () => {
   for (const site of SITES) {
     const source = sourceOf(site.file);
     assert.ok(
@@ -127,7 +139,7 @@ test("the nine sites ask for the width and padding they used to write out", () =
   }
 });
 
-test("the container is written once, and there are exactly nine shells", () => {
+test("the container is written once, and every shell is a listed site", () => {
   // The done-when line: `max-w-7xl mx-auto px-6` in one place. Nine copies can
   // drift; this one has nothing to drift against.
   const spelled = srcFiles().filter((file) => {
@@ -141,15 +153,25 @@ test("the container is written once, and there are exactly nine shells", () => {
     "these spell out the container; use containerClass() or <PageShell>",
   );
 
-  let shells = 0;
   let containers = 0;
+  const shellSites: string[] = [];
   for (const file of srcFiles()) {
     if (file.endsWith("PageShell.tsx")) continue;
     const source = readFileSync(file, "utf8");
-    shells += (source.match(/<PageShell\b/g) ?? []).length;
+    if (/<PageShell\b/.test(source)) {
+      shellSites.push(path.relative(ROOT, file).split(path.sep).join("/"));
+    }
     containers += (source.match(/containerClass\(/g) ?? []).length;
   }
-  assert.equal(shells, 7, "seven page shells are expected");
+  // The set, not a count: a count says how many shells there are without
+  // saying which, so a shell added to a file nobody listed would still pass.
+  // Naming the sites makes an unlisted shell — and a listed site that lost its
+  // shell — the same failure.
+  assert.deepEqual(
+    shellSites.sort(),
+    SITES.filter((site) => !site.container).map((site) => site.file).sort(),
+    "a page shell is not in the table of sites",
+  );
   assert.equal(containers, 2, "the header and the footer are the only two containers");
 });
 
@@ -187,7 +209,7 @@ test("the home page's bottom padding override wins", async () => {
   // the stylesheet decides — and Tailwind emits the single-axis utility after the
   // pair. Asserted against the built CSS rather than against the source order of
   // a class attribute, because the class attribute order is not what decides this.
-  const home = sourceOf("src/app/page.tsx");
+  const home = sourceOf("src/app/[locale]/page.tsx");
   assert.ok(
     home.includes("padding={10}") && home.includes('className="pb-16 space-y-16"'),
     "the home page should be padding 10 with pb-16 on top",
