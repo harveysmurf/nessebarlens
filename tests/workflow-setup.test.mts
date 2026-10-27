@@ -248,48 +248,27 @@ test("lint-and-test builds the catalog once and skips the pre* hooks (#274)", ()
   }
 });
 
-test("browser jobs use a matching Playwright image or cache (#275)", () => {
-  // The seeded smoke uses the prebuilt image to avoid repeating apt work.
-  // Other browser jobs keep the download cache because they run on the host.
+test("browser jobs use the matching Playwright image (#275)", () => {
+  // All browser jobs use the prebuilt image to avoid repeating apt work.
   const ci = workflows.find((w) => w.name === "ci.yml")!;
-  const smoke = ci.text.match(
-    /^ {2}e2e-smoke:\n((?:(?: {4}|\t).*\n|\n)*)/m,
-  )?.[1];
-  assert.ok(smoke, "ci.yml has no e2e-smoke job");
-  assert.match(
-    smoke,
-    /image: mcr\.microsoft\.com\/playwright:v1\.64\.1-noble/,
-    "e2e-smoke must use the Playwright image matching the lockfile version",
-  );
-  assert.doesNotMatch(
-    smoke,
-    /playwright install --with-deps/,
-    "e2e-smoke must not reinstall Chromium and apt dependencies",
-  );
-
-  for (const job of ["e2e-hosted-checkout", "e2e-worker"]) {
+  for (const job of ["e2e-smoke", "e2e-hosted-checkout", "e2e-worker"]) {
     const body = ci.text.match(
       new RegExp(String.raw`^ {2}${job}:\n((?:(?: {4}|\t).*\n|\n)*)`, "m"),
     )?.[1];
     assert.ok(body, `ci.yml has no ${job} job`);
     assert.ok(
-      body.includes("uses: actions/cache@"),
-      `${job} must use actions/cache, not hand-rolled caching`,
+      /image: mcr\.microsoft\.com\/playwright:v1\.64\.1-noble/.test(body),
+      `${job} must use the Playwright image matching the lockfile version`,
     );
-    assert.ok(
-      body.includes("path: ~/.cache/ms-playwright"),
-      `${job} must cache the default Playwright browser path`,
-    );
-    assert.ok(
-      body.includes(
-        "key: ${{ runner.os }}-playwright-${{ hashFiles('package-lock.json') }}",
-      ),
-      `${job}'s Playwright cache key must be the runner OS plus the lockfile, so an OS or Playwright-version change does not reuse stale browsers`,
-    );
-    assert.match(
+    assert.doesNotMatch(
       body,
-      /npx playwright install --with-deps chromium/,
-      `${job} must still install Chromium and its system deps, so a cold cache works`,
+      /playwright install --with-deps/,
+      `${job} must not reinstall Chromium and apt dependencies`,
+    );
+    assert.doesNotMatch(
+      body,
+      /path: ~\/\.cache\/ms-playwright/,
+      `${job} must not cache browser binaries when the image provides them`,
     );
   }
 });
