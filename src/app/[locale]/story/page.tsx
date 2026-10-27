@@ -50,7 +50,7 @@ const BLOCK_COPY: Record<
     flip: true,
   },
   film: {
-    body: "Exclusively analog medium format and 35mm captures. Unfiltered organic grain, authentic light leaks, and Kodak/Ilford film characteristics.",
+    body: "35mm film photographs shot on my Nikon F3, with the natural grain and character of Kentmere Pan 100.",
     cta: "Browse Film Gallery →",
     flip: false,
   },
@@ -84,8 +84,8 @@ export default async function StoryPage({
           </h1>
           <p className={BODY_COPY}>
             A clean, unhurried collection of prints captured over decades.
-            High-resolution medium format, historical street photojournalism, and
-            grain-textured analog film negatives.
+            High-resolution fine art, historical street photojournalism, and
+            35mm film photographs shot on a Nikon F3.
           </p>
         </div>
 

@@ -26,7 +26,7 @@ const META: Record<PhotoCategory, { badge: string; badgeClass: string; blurb: st
   film: {
     badge: "Analog Negative",
     badgeClass: "text-emerald-900 bg-emerald-100/60",
-    blurb: "Authentic 35mm & 120 format film grain captures • Kodak, Leica & Hasselblad",
+    blurb: "35mm film photographs shot on my Nikon F3 • Kentmere Pan 100",
   },
 };
 
