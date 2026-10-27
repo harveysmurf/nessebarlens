@@ -92,7 +92,20 @@ type Defect =
   /** No CSP header at all. */
   | "no-csp"
   /** The RUM origin in `script-src` only — the mistake security-headers.ts documents. */
-  | "rum-in-script-src";
+  | "rum-in-script-src"
+  /**
+   * The legacy URL answers 200 instead of redirecting. The pages still render
+   * and the new URLs still work, so nothing else in the smoke notices: the
+   * redirect is the only thing that is gone, and a check that asked only for
+   * the new page would not see it.
+   */
+  | "redirect-missing"
+  /**
+   * The legacy URL redirects, but to the wrong place. A 308 with a bad
+   * `Location` sends the visitor somewhere they did not ask for, and no status
+   * code in the smoke shows it.
+   */
+  | "redirect-wrong-target";
 
 const DEFECT_LABEL: Record<Defect, string> = {
   "route-missing": "GET /llms.txt names this origin",
@@ -102,12 +115,14 @@ const DEFECT_LABEL: Record<Defect, string> = {
   "llms-as-html": "GET /llms.txt content type",
   "sitemap-as-text": "GET /sitemap.xml content type",
   "no-sitemap-line": "GET /robots.txt points at the sitemap",
-  "no-beacon": "GET / serves exactly one Web Analytics beacon",
-  "injected-beacon": "GET / serves exactly one Web Analytics beacon",
-  "injected-script-only": "GET / serves exactly one Web Analytics beacon",
-  "injected-payload": "GET / serves exactly one Web Analytics beacon",
-  "no-csp": "GET / CSP allows the beacon to report",
-  "rum-in-script-src": "GET / CSP allows the beacon to report",
+  "no-beacon": "GET /en serves exactly one Web Analytics beacon",
+  "injected-beacon": "GET /en serves exactly one Web Analytics beacon",
+  "injected-script-only": "GET /en serves exactly one Web Analytics beacon",
+  "injected-payload": "GET /en serves exactly one Web Analytics beacon",
+  "no-csp": "GET /en CSP allows the beacon to report",
+  "rum-in-script-src": "GET /en CSP allows the beacon to report",
+  "redirect-missing": "GET / redirects to /en",
+  "redirect-wrong-target": "GET / redirects to /en",
 };
 
 /**
@@ -159,6 +174,28 @@ function cspFor(defect: Defect | undefined): string | undefined {
   return FULL_CSP;
 }
 
+/**
+ * The locale-prefixed path a legacy URL redirects to, or undefined when the
+ * path is not a legacy one.
+ *
+ * Every public page moved under a locale segment, so the URLs that existed
+ * before the move are permanent redirects to their `/en/...` equivalent. The
+ * smoke asserts both halves — the 308 and the page it points at — so the stub
+ * has to serve both, or the assertions would be unfalsifiable.
+ */
+function legacyTargetFor(path: string, defect: Defect | undefined): string | undefined {
+  if (defect === "redirect-missing") return undefined;
+  if (defect === "redirect-wrong-target") return "/en/somewhere-else";
+  if (path === "/") return "/en";
+  if (
+    ["/fine-art", "/archive", "/film", "/story", "/contact"].includes(path) ||
+    path.startsWith("/prints/")
+  ) {
+    return `/en${path}`;
+  }
+  return undefined;
+}
+
 async function withStub(
   defect: Defect | undefined,
   body: (baseUrl: string) => Promise<void>,
@@ -204,6 +241,20 @@ async function withStub(
     const origin = servedOrigin ?? baseOrigin(req) ?? "";
     const canonical = defect === "wrong-origin" ? OTHER_ORIGIN : origin;
 
+    // The legacy English URLs answer 308 and point at their locale-prefixed
+    // equivalent. A redirect that answers 308 and points at the wrong place is
+    // as broken as one that answers 404, so the target is asserted too.
+    const legacyTarget = legacyTargetFor(path, defect);
+    if (legacyTarget !== undefined) {
+      return send(308, "moved", withCsp({ location: `${origin}${legacyTarget}` }));
+    }
+
+    // A locale the site knows but does not serve is a 404, never an English
+    // page wearing a foreign URL.
+    if (path === "/bg") {
+      return send(404, "not found", withCsp({ "content-type": "text/plain" }));
+    }
+
     if (path === "/llms.txt") {
       const body = `# Nessebar Lens\n\n${canonical}/sitemap.xml\n\n- [Home](${canonical}/): entry point.\n`;
       return send(
@@ -247,7 +298,7 @@ async function withStub(
     if (path === "/api/print-asset") {
       return send(400, "invalid-exp", withCsp({ "content-type": "text/plain" }));
     }
-    if (path === "/prints/zzz-not-a-real-photo-slug") {
+    if (path === "/en/prints/zzz-not-a-real-photo-slug") {
       return send(404, "no such print", withCsp({ "content-type": "text/plain" }));
     }
     if (req.method === "POST" && path === "/api/quote") {
