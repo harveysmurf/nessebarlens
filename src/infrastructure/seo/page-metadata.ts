@@ -136,9 +136,9 @@ export const PAGE_COPY: Record<string, PageCopy> = {
       "Curated fine art photographs of Old Town Nessebar, printed museum-quality on Hahnemühle Photo Rag or delivered as a high-resolution digital file.",
   },
   "/film": {
-    title: "Film Photography — 35mm & 120 Grain from Old Town Nessebar",
+    title: "35mm Film Photography — Nikon F3 from Old Town Nessebar",
     description:
-      "Analog 35mm and 120 film negatives from Nessebar, Bulgaria — unfiltered grain, real light leaks, and Kodak and Ilford characteristics exactly as shot.",
+      "35mm black-and-white film photographs from Old Town Nessebar, Bulgaria, shot on a Nikon F3 with Kentmere Pan 100.",
   },
   "/archive": {
     title: "Archive — Everyday Street Photography from Old Town Nessebar",

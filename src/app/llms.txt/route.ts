@@ -39,7 +39,7 @@ const PAGE_NOTES: Record<string, string> = {
   "/fine-art":
     "The curated portfolio — composed architecture, atmospheric coastlines, and colour graded for print.",
   "/archive": "Photojournalistic work: everyday street life in Nessebar over thirty years.",
-  "/film": "Analog 35mm and 120 film negatives, unedited grain and light leaks included.",
+  "/film": "35mm film photographs shot on a Nikon F3, including Kentmere Pan 100 negatives.",
   "/story": "How the three bodies of work relate, and how a print is made.",
   "/contact": "Direct contact with the studio about a print, a licence, or an order.",
 };
