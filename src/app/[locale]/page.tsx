@@ -36,7 +36,7 @@ export async function generateMetadata({
 const TILE_BLURB: Record<PhotoCategory, string> = {
   "fine-art": "Best high-end portfolio gallery captures",
   archive: "Everyday street & journalistic moments",
-  film: "Authentic 35mm & 120 film stock negatives",
+  film: "35mm film photographs shot on my Nikon F3",
 };
 
 /**
