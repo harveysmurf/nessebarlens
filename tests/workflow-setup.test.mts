@@ -248,14 +248,26 @@ test("lint-and-test builds the catalog once and skips the pre* hooks (#274)", ()
   }
 });
 
-test("each browser job caches the Playwright download (#275)", () => {
-  // Three jobs each ran `npx playwright install --with-deps chromium` on a
-  // fresh runner, so the same Chromium was downloaded three times per run. The
-  // cache is keyed on the runner OS and the lockfile (which pins the installed
-  // Playwright version); a version or OS change must miss it, so the key is
-  // asserted rather than the mere presence of a cache step.
+test("browser jobs use a matching Playwright image or cache (#275)", () => {
+  // The seeded smoke uses the prebuilt image to avoid repeating apt work.
+  // Other browser jobs keep the download cache because they run on the host.
   const ci = workflows.find((w) => w.name === "ci.yml")!;
-  for (const job of ["e2e-smoke", "e2e-hosted-checkout", "e2e-worker"]) {
+  const smoke = ci.text.match(
+    /^ {2}e2e-smoke:\n((?:(?: {4}|\t).*\n|\n)*)/m,
+  )?.[1];
+  assert.ok(smoke, "ci.yml has no e2e-smoke job");
+  assert.match(
+    smoke,
+    /image: mcr\.microsoft\.com\/playwright:v1\.64\.1-noble/,
+    "e2e-smoke must use the Playwright image matching the lockfile version",
+  );
+  assert.doesNotMatch(
+    smoke,
+    /playwright install --with-deps/,
+    "e2e-smoke must not reinstall Chromium and apt dependencies",
+  );
+
+  for (const job of ["e2e-hosted-checkout", "e2e-worker"]) {
     const body = ci.text.match(
       new RegExp(String.raw`^ {2}${job}:\n((?:(?: {4}|\t).*\n|\n)*)`, "m"),
     )?.[1];
@@ -299,7 +311,11 @@ test("the E2E flow is its own job in ci.yml, not a step in lint-and-test", () =>
     /playwright/,
     "the lint-and-test job must stay free of Playwright",
   );
-  assert.match(body, /playwright install/, "e2e-smoke must install its browser");
+  assert.match(
+    body,
+    /image: mcr\.microsoft\.com\/playwright:v1\.64\.1-noble/,
+    "e2e-smoke must provide its browser in the job image",
+  );
   assert.match(body, /npm run test:e2e/, "e2e-smoke must run the suite");
   assert.doesNotMatch(
     body,
