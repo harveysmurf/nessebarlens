@@ -302,7 +302,13 @@ async function withStub(
       return send(404, "no such print", withCsp({ "content-type": "text/plain" }));
     }
     if (req.method === "POST" && path === "/api/quote") {
-      return send(400, "format must be one of", withCsp({ "content-type": "text/plain" }));
+      // The endpoint answers with a code, not with the parser's own wording:
+      // the stub mirrors that, so the smoke asserts what the wire carries.
+      return send(
+        400,
+        JSON.stringify({ code: "invalid-request" }),
+        withCsp({ "content-type": "application/json" }),
+      );
     }
 
     // Injection is browser-only, so a stub reached by curl stays healthy and the

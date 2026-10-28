@@ -7,24 +7,47 @@
  * environment, the network or the request — a route validates and then hands the
  * value to an application port.
  *
- * The field errors are user-facing copy, not codes: the form renders them
- * verbatim next to the field, and the route echoes them in its 400 body. Keep
- * them short, plain and free of anything about our internals.
+ * The field errors are codes, not copy: the form renders the sentence the
+ * dictionary holds for the code, next to the field, and the route echoes the
+ * codes in its 400 body. A sentence written here would be a sentence in one
+ * language, shown to every reader of the form.
  */
 
 import { isRecord } from "../json/record";
+import {
+  CONTACT_FIELD_ERROR_CODES,
+  isContactFieldErrorCode,
+  type ContactFieldErrorCode,
+} from "./contact-error-codes";
 
 /** Bounds the form enforces. Policy, not credentials — safe to share. */
 export const CONTACT_NAME_MAX = 100;
 export const CONTACT_EMAIL_MAX = 254;
 export const CONTACT_MESSAGE_MAX = 5_000;
 
-export type ContactField = "name" | "email" | "message" | "turnstileToken";
+/** The fields a submission carries, in the order the form shows them. */
+const CONTACT_FIELDS = [
+  "name",
+  "email",
+  "message",
+  "turnstileToken",
+] as const;
 
-/** A single field's rejection: which input and what to show the visitor. */
+/** One of the form's fields. */
+export type ContactField = (typeof CONTACT_FIELDS)[number];
+
+/** The fields as plain strings, for the guard that reads a body. */
+const CONTACT_FIELD_VALUES: readonly string[] = CONTACT_FIELDS;
+
+/** Whether a value from the wire is one of the form's fields. */
+export function isContactField(value: unknown): value is ContactField {
+  return typeof value === "string" && CONTACT_FIELD_VALUES.includes(value);
+}
+
+/** A single field's rejection: which input, and what went wrong with it. */
 export type ContactFieldError = {
   field: ContactField;
-  message: string;
+  code: ContactFieldErrorCode;
 };
 
 /**
@@ -50,11 +73,21 @@ export type ContactParseResult =
  */
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
-/** The email-format rule, exposed so the client can mirror it exactly. */
-export function contactEmailError(email: string): string | null {
-  if (email.length === 0) return "Please enter your email address.";
-  if (email.length > CONTACT_EMAIL_MAX) return "That email address is too long.";
-  if (!EMAIL_PATTERN.test(email)) return "Please enter a valid email address.";
+/**
+ * The email-format rule, exposed so the client can mirror it exactly.
+ *
+ * It answers with a code rather than a sentence: the rule is shared by the
+ * server and the client, and the words for it belong to the reader's
+ * language, not to this module.
+ */
+export function contactEmailError(email: string): ContactFieldErrorCode | null {
+  if (email.length === 0) return CONTACT_FIELD_ERROR_CODES.emailRequired;
+  if (email.length > CONTACT_EMAIL_MAX) {
+    return CONTACT_FIELD_ERROR_CODES.emailTooLong;
+  }
+  if (!EMAIL_PATTERN.test(email)) {
+    return CONTACT_FIELD_ERROR_CODES.emailInvalid;
+  }
   return null;
 }
 
@@ -75,28 +108,40 @@ export function parseContactMessage(raw: unknown): ContactParseResult {
   const errors: ContactFieldError[] = [];
 
   if (name === null || name.length === 0) {
-    errors.push({ field: "name", message: "Please enter your name." });
+    errors.push({
+      field: "name",
+      code: CONTACT_FIELD_ERROR_CODES.nameRequired,
+    });
   } else if (name.length > CONTACT_NAME_MAX) {
-    errors.push({ field: "name", message: "That name is too long." });
+    errors.push({
+      field: "name",
+      code: CONTACT_FIELD_ERROR_CODES.nameTooLong,
+    });
   }
 
   // An absent address is the empty address: the reader owns that wording, so
-  // the message a missing field gets is the same one an empty field gets.
+  // the code a missing field gets is the code an empty field gets.
   const emailError = contactEmailError(email ?? "");
   if (emailError !== null) {
-    errors.push({ field: "email", message: emailError });
+    errors.push({ field: "email", code: emailError });
   }
 
   if (message === null || message.length === 0) {
-    errors.push({ field: "message", message: "Please enter a message." });
+    errors.push({
+      field: "message",
+      code: CONTACT_FIELD_ERROR_CODES.messageRequired,
+    });
   } else if (message.length > CONTACT_MESSAGE_MAX) {
-    errors.push({ field: "message", message: "That message is too long." });
+    errors.push({
+      field: "message",
+      code: CONTACT_FIELD_ERROR_CODES.messageTooLong,
+    });
   }
 
   if (turnstileToken === null || turnstileToken.length === 0) {
     errors.push({
       field: "turnstileToken",
-      message: "Please complete the anti-spam check.",
+      code: CONTACT_FIELD_ERROR_CODES.turnstileRequired,
     });
   }
 
@@ -112,6 +157,30 @@ export function parseContactMessage(raw: unknown): ContactParseResult {
       turnstileToken: turnstileToken as string,
     },
   };
+}
+
+/**
+ * The field errors a failed response reports.
+ *
+ * The body arrives from the network, so it is read as unknown: an entry is
+ * kept only when both its field and its code are ones we know. A code the
+ * dictionary has no sentence for would render as an empty line under the
+ * field, which is worse than no line at all — so it is dropped, and the
+ * generic message above the form is what the visitor reads.
+ */
+export function readContactFieldErrors(value: unknown): ContactFieldError[] {
+  if (!isRecord(value)) return [];
+  const fields = value.fields;
+  if (!Array.isArray(fields)) return [];
+  const errors: ContactFieldError[] = [];
+  for (const entry of fields) {
+    if (!isRecord(entry)) continue;
+    const field = entry.field;
+    const code = entry.code;
+    if (!isContactField(field) || !isContactFieldErrorCode(code)) continue;
+    errors.push({ field, code });
+  }
+  return errors;
 }
 
 /**

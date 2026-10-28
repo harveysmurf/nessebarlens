@@ -119,19 +119,18 @@ test("contact: unparseable body is the canonical 400", async () => {
     new Request(`${SITE}/api/contact`, { method: "POST", body: "not json" }),
   );
   assert.equal(response.status, 400);
-  assert.deepEqual(await body(response), { error: "Invalid JSON" });
+  // A code, not a sentence: the copy for it is the dictionary's.
+  assert.deepEqual(await body(response), { code: "malformed" });
 });
 
-test("contact: invalid fields return 400 with per-field errors and call no provider", async () => {
+test("contact: invalid fields return 400 with per-field codes and call no provider", async () => {
   withBindings(CONFIGURED);
   const calls = scriptedFetch([]);
   const response = await route.POST(jsonRequest({ ...VALID, email: "nope" }));
   assert.equal(response.status, 400);
   const payload = await body(response);
-  assert.match(String(payload.error), /check the highlighted fields/i);
-  assert.deepEqual(payload.fields, [
-    { field: "email", message: "Please enter a valid email address." },
-  ]);
+  assert.equal(payload.code, "invalid");
+  assert.deepEqual(payload.fields, [{ field: "email", code: "email-invalid" }]);
   assert.equal(calls.length, 0);
 });
 
@@ -141,7 +140,7 @@ test("contact: missing Turnstile secret, recipient or Resend key each answer 503
     const calls = scriptedFetch([]);
     const response = await route.POST(jsonRequest(VALID));
     assert.equal(response.status, 503, `missing ${missing} must be 503`);
-    assert.deepEqual(await body(response), { error: "Contact is not configured" });
+    assert.deepEqual(await body(response), { code: "unconfigured" });
     assert.equal(calls.length, 0);
   }
 });
@@ -153,7 +152,7 @@ test("contact: a failed Siteverify rejects before any Resend call", async () => 
   ]);
   const response = await route.POST(jsonRequest(VALID, { "cf-connecting-ip": "203.0.113.7" }));
   assert.equal(response.status, 400);
-  assert.match(String((await body(response)).error), /couldn't verify/i);
+  assert.equal((await body(response)).code, "rejected");
   assert.equal(calls.length, 1, "only Siteverify is called");
   const params = new URLSearchParams(String(calls[0]!.init.body));
   assert.equal(params.get("remoteip"), "203.0.113.7");
@@ -178,7 +177,7 @@ test("contact: a Resend failure is reported as 502, not false success", async ()
   scriptedFetch([siteverifyOk, () => new Response("boom", { status: 500 })]);
   const response = await route.POST(jsonRequest(VALID));
   assert.equal(response.status, 502);
-  assert.match(String((await body(response)).error), /could not be sent/i);
+  assert.equal((await body(response)).code, "delivery-failed");
 });
 
 test("contact: the rate-limit binding sheds the request before any provider call", async () => {
@@ -195,6 +194,7 @@ test("contact: the rate-limit binding sheds the request before any provider call
   const calls = scriptedFetch([]);
   const response = await route.POST(jsonRequest(VALID, { "cf-connecting-ip": "203.0.113.7" }));
   assert.equal(response.status, 429);
+  assert.equal((await body(response)).code, "rate-limited");
   assert.equal(limited, true);
   assert.equal(calls.length, 0);
 });

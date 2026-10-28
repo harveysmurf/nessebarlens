@@ -310,11 +310,12 @@ test("the configurator never calls res.json() unguarded", async () => {
     /await (?:res|response)\.json\(/,
     "an unguarded response parse can reject on a non-JSON error body",
   );
-  const { readJsonResponse, requestErrorMessage } = await import(
+  const { readJsonResponse } = await import(
     "../src/application/checkout/api-payloads.ts"
   );
+  const { failureCopy } = await import("../src/domain/api/error-code.ts");
   assert.equal(typeof readJsonResponse, "function");
-  assert.equal(typeof requestErrorMessage, "function");
+  assert.equal(typeof failureCopy, "function");
   // And both fetches report through it, so neither regresses alone.
   assert.equal(
     [...source.matchAll(/readJsonResponse\(/g)].length,
@@ -322,8 +323,9 @@ test("the configurator never calls res.json() unguarded", async () => {
     "quote and checkout both need the tolerant read",
   );
   assert.equal(
-    [...source.matchAll(/requestErrorMessage\(/g)].length,
+    [...source.matchAll(/failureCopy\(/g)].length,
     2,
+    "quote and checkout both resolve their failure from the code",
   );
 });
 

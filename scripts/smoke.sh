@@ -404,7 +404,9 @@ check "GET /$DEFAULT_LOCALE/prints/<bad slug>" 404 \
   "$BASE/$DEFAULT_LOCALE/prints/$BAD_SLUG"
 
 # Body validation runs before any Prodigi call — deterministic, no network.
-check_body "POST /api/quote invalid body" 400 "format must be" \
+# The body carries a code, not a sentence: the parser's own wording is our
+# vocabulary and never reaches an unauthenticated caller.
+check_body "POST /api/quote invalid body" 400 "invalid-request" \
   -X POST -H 'Content-Type: application/json' -d '{"format":"poster","size":"30x40"}' \
   "$BASE/api/quote"
 

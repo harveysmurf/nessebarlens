@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { readJsonBody } from "@/infrastructure/config/json-body";
 import { parseCheckoutBody } from "@/domain/ordering/checkout-body";
+import { API_ERROR_CODES } from "@/domain/ordering/api-error-codes";
 import { SESSION_ID_PARAM } from "@/domain/ordering/order-decision";
 import {
   physicalSpecification,
@@ -30,21 +31,42 @@ import { isConfiguredSiteUrl, siteUrl } from "@/infrastructure/config/config";
 import { assetUrlSigner, paymentGateway, printProvider } from "@/infrastructure/container";
 import type { CheckoutIntent } from "@/application/checkout/payment-gateway";
 
+/**
+ * POST /api/checkout.
+ *
+ * The endpoint answers with a code, never with a sentence: the copy for a code
+ * lives in the dictionary and is rendered by the client, in the reader's
+ * language. This route is unauthenticated, so what it says over the wire is
+ * what anyone can read — the reason a request failed goes to the log.
+ */
 export async function POST(request: Request) {
   const body = await readJsonBody(request);
   if (!body.ok) {
-    return NextResponse.json({ error: body.error }, { status: body.status });
+    console.error("checkout.malformed-body", body.error);
+    return NextResponse.json(
+      { code: API_ERROR_CODES.invalidRequest },
+      { status: body.status },
+    );
   }
   const raw = body.value;
 
   const parsed = parseCheckoutBody(raw);
   if ("error" in parsed) {
-    return NextResponse.json({ error: parsed.error }, { status: 400 });
+    // The parser's wording is our vocabulary — slugs, sizes, formats, mounts —
+    // and none of it is the reader's business. It goes to the log.
+    console.error("checkout.rejected-body", parsed.error);
+    return NextResponse.json(
+      { code: API_ERROR_CODES.invalidRequest },
+      { status: 400 },
+    );
   }
 
   const photo = getPhoto(parsed.photoSlug);
   if (!photo) {
-    return NextResponse.json({ error: "Unknown photoSlug" }, { status: 404 });
+    return NextResponse.json(
+      { code: API_ERROR_CODES.unknownPhoto },
+      { status: 404 },
+    );
   }
 
   // Checked before anything with a cost attached — a Prodigi quote, a Stripe
@@ -53,7 +75,7 @@ export async function POST(request: Request) {
   // refusing here means the customer is never charged.
   if (!isConfiguredSiteUrl()) {
     return NextResponse.json(
-      { error: "Checkout is not configured" },
+      { code: API_ERROR_CODES.serviceUnconfigured },
       { status: 503 },
     );
   }
@@ -70,7 +92,7 @@ export async function POST(request: Request) {
         );
   if (!offers(photo.printOffer, spec)) {
     return NextResponse.json(
-      { error: "This print option is not available for this photo" },
+      { code: API_ERROR_CODES.optionUnavailable },
       { status: 400 },
     );
   }
@@ -91,7 +113,7 @@ export async function POST(request: Request) {
     );
     if (!product || !assess(photo.master, product).verdict.eligible) {
       return NextResponse.json(
-        { error: "This print option is not available for this photo" },
+        { code: API_ERROR_CODES.optionUnavailable },
         { status: 400 },
       );
     }
@@ -132,12 +154,12 @@ export async function POST(request: Request) {
       destinationCountryCode,
     });
     if (!result.ok) {
-      // Same shape as the quote route's failure: full detail to the log, code
-      // and safe copy to the caller (#107).
+      // Same shape as the quote route's failure: full detail to the log, the
+      // code to the caller (#107).
       const failure = prodigiFailureFrom(result);
       console.error("prodigi.checkout", failure.code, failure.detail);
       return NextResponse.json(
-        { error: failure.error, code: failure.code },
+        { code: API_ERROR_CODES.pricingUnavailable },
         { status: failure.status },
       );
     }
@@ -162,7 +184,7 @@ export async function POST(request: Request) {
     // never charged, so there is no refund path to build.
     if (!(await canSignMasterAsset(photo.slug, assetUrlSigner()))) {
       return NextResponse.json(
-        { error: "Print fulfillment is not configured" },
+        { code: API_ERROR_CODES.serviceUnconfigured },
         { status: 503 },
       );
     }
@@ -221,18 +243,12 @@ export async function POST(request: Request) {
     // survives in the log without ever reaching this unauthenticated body.
     if (created.reason === "unconfigured") {
       return NextResponse.json(
-        { error: "Stripe is not configured" },
+        { code: API_ERROR_CODES.serviceUnconfigured },
         { status: 503 },
       );
     }
-    if (created.reason === "no-url") {
-      return NextResponse.json(
-        { error: "Stripe session missing URL" },
-        { status: 502 },
-      );
-    }
     return NextResponse.json(
-      { error: "Could not create Checkout Session", code: "checkout-unavailable" },
+      { code: API_ERROR_CODES.checkoutUnavailable },
       { status: 502 },
     );
   }

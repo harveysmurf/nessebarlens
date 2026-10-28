@@ -4,7 +4,9 @@ import { turnstileSiteKey } from "@/infrastructure/config/config";
 import { PageShell } from "@/components/PageShell";
 import { eyebrowClass } from "@/components/type-styles";
 import { isLocale } from "@/domain/i18n/locale";
+import { getDictionary } from "@/components/i18n/dictionaries";
 import { pageMetadata } from "@/infrastructure/seo/page-metadata";
+import { requireLocale } from "../locale-param";
 
 // The site key is read from the Worker's runtime environment, so the page must
 // render per request: a static build would bake whatever the CI build happened
@@ -28,24 +30,35 @@ export async function generateMetadata({
   return pageMetadata("/contact", locale);
 }
 
-export default function ContactPage() {
+/**
+ * The contact page, in the page's language.
+ *
+ * The dictionary is read here, on the server, and the slice the form renders
+ * is handed over as a prop: the client component never sees the dictionary, so
+ * a browser that opens the contact page carries one locale's copy and not the
+ * whole site's.
+ */
+export default async function ContactPage({
+  params,
+}: {
+  params: Promise<{ locale: string }>;
+}) {
+  const { locale: raw } = await params;
+  const locale = requireLocale(raw);
+  const copy = getDictionary(locale).contact;
+
   return (
     <section className="fade-in">
       <PageShell width="2xl" padding={16} className="space-y-8">
         <div className="text-center space-y-3">
-          <span className={eyebrowClass()}>
-            Get in touch
-          </span>
+          <span className={eyebrowClass()}>{copy.eyebrow}</span>
           <h1 className="font-serif text-4xl sm:text-5xl font-light">
-            Contact the Studio
+            {copy.title}
           </h1>
-          <p className="text-sm text-stone-500 max-w-md mx-auto">
-            Questions about a print, licensing, or an order? Send a message and
-            I&apos;ll reply to you directly.
-          </p>
+          <p className="text-sm text-stone-500 max-w-md mx-auto">{copy.body}</p>
         </div>
 
-        <ContactForm siteKey={turnstileSiteKey()} />
+        <ContactForm siteKey={turnstileSiteKey()} locale={locale} copy={copy} />
       </PageShell>
     </section>
   );
