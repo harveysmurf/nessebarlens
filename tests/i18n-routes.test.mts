@@ -238,16 +238,34 @@ test("there is one document layout, and it owns the language of the page", () =>
   assert.doesNotMatch(layout, /"use client"/);
 });
 
+/**
+ * A value import of a module, matched by path fragment.
+ *
+ * A type-only import is erased at compile time and ships nothing, so the
+ * client components are allowed to name the dictionary's *types*: what must not
+ * reach a browser is the dictionary's copy.
+ */
+const valueImportOf = (fragment: string): RegExp =>
+  new RegExp(`^\\s*import\\s+(?!type\\s)[^;]*from\\s+"[^"]*${fragment}"`, "m");
+
 test("a locale segment the site does not serve is a 404", () => {
   const layout = read("src/app/[locale]/layout.tsx");
   // `dynamicParams = false` makes the router refuse a segment that was not
   // generated, before any component runs: `/de` is a page that does not exist
   // rather than an English page under a German URL.
   assert.match(layout, /export const dynamicParams = false/);
-  // And the generated segments come from the registry, so a locale cannot be
-  // served without being in it.
-  assert.match(layout, /PUBLIC_LOCALES\.map\(\(locale\) => \(\{ locale \}\)\)/);
+  // And the generated segments come from the served list, so a locale cannot
+  // be served without being in the registry. The served list is read through
+  // `servedLocales()`, which is the registry's public list outside a
+  // production build and always is inside one — so the guard cannot be lifted
+  // by an environment variable on a deploy host.
+  assert.match(layout, /servedLocales\(NODE_ENV\)\.map\(\(locale\) => \(\{ locale \}\)\)/);
   assert.deepEqual([...PUBLIC_LOCALES], ["en"]);
+  assert.match(
+    read("src/infrastructure/i18n/served-locales.ts"),
+    /envString\("NODE_ENV", env\) === "production"/,
+    "a production build must serve exactly the registry's public list",
+  );
 });
 
 test("the switcher maps a URL to the same page in another language", () => {
@@ -279,16 +297,34 @@ test("the switcher is in both navigations, and it is a link", () => {
   assert.match(switcher, /<Link/);
   assert.doesNotMatch(switcher, /onClick/);
   // The current language is named, and the switcher's own label is localized.
-  assert.match(switcher, /aria-label=\{dictionary\.language\.label\}/);
+  // The label arrives as a prop: the switcher is a client component, and
+  // reading the dictionary here would ship every locale's copy of every page
+  // to every browser that loaded the header.
+  assert.match(switcher, /aria-label=\{copy\.label\}/);
   assert.match(switcher, /LOCALE_NAMES\[locale\]/);
-  // The languages it offers are the ones the site serves, taken from the
-  // registry rather than from a list of its own.
-  assert.match(switcher, /locales = PUBLIC_LOCALES/);
+  assert.doesNotMatch(
+    switcher,
+    valueImportOf("dictionaries"),
+    "the switcher must not import the dictionary: it would ship every locale's copy",
+  );
+  // The languages it offers are the ones the site serves, handed to it by the
+  // server rather than read from a list of its own.
+  assert.match(switcher, /locales: readonly Locale\[\]/);
 
   // The switcher sits in the desktop bar and in the mobile panel: a control
   // the visitor cannot see is not a control they can use.
-  assert.match(header, /<LanguageSwitcher locale=\{locale\} \/>/);
-  assert.match(mobile, /<LanguageSwitcher locale=\{locale\} \/>/);
+  assert.match(header, /<LanguageSwitcher/);
+  assert.match(mobile, /<LanguageSwitcher/);
+  assert.doesNotMatch(
+    header,
+    valueImportOf("dictionaries"),
+    "the header is a client component and must not import the dictionary",
+  );
+  assert.doesNotMatch(
+    mobile,
+    valueImportOf("dictionaries"),
+    "the mobile nav is a client component and must not import the dictionary",
+  );
 });
 
 test("every link on a page is built by the one path helper", () => {

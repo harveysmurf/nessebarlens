@@ -35,8 +35,53 @@ const PRINT_OPTIONS = {
   print_options: { giclee: ["30x40"], framed: ["30x40"], canvas: ["30x40"] },
 };
 
+/**
+ * The Bulgarian copy a published photo must carry.
+ *
+ * The rule is "a published photo carries its own words in every locale it is
+ * published in", so the fixture has one: without it every published case in
+ * this file would fail for the translation and the rule under test would be
+ * masked.
+ */
+const TRANSLATIONS = {
+  translations: {
+    bg: {
+      title: "Заглавие",
+      caption: "Надпис",
+      description: "Описание.",
+      alt: "Едноредово описание на изображението",
+    },
+  },
+};
+
+/**
+ * The featured photo, with its hero caption in both languages.
+ *
+ * The hero caption is one photograph's line, so a featured photo's translation
+ * carries one too: a Bulgarian home page with an English hero caption is a home
+ * page in the wrong language. A translation that has one when the photo is not
+ * featured is refused for the same reason the source's is.
+ */
+function featuredPhoto() {
+  return {
+    ...VALID,
+    featured: true,
+    hero_caption: "Hero copy",
+    translations: {
+      bg: { ...VALID.translations.bg, hero_caption: "Надпис на героя" },
+    },
+  };
+}
+
 /** A valid, published photo. */
-const VALID = { ...REQUIRED, ...HASHES, ...FACTS, ...PRINT_ASSET, ...PRINT_OPTIONS };
+const VALID = {
+  ...REQUIRED,
+  ...HASHES,
+  ...FACTS,
+  ...PRINT_ASSET,
+  ...PRINT_OPTIONS,
+  ...TRANSLATIONS,
+};
 
 function validate(data: unknown, filename = "photo") {
   return validatePhotoFile(filename, data);
@@ -54,6 +99,7 @@ function validateRelaxed(data: unknown, filename = "photo") {
     requireMasterFacts: false,
     requirePrintAssets: false,
     requirePrintOffer: false,
+    requireTranslations: false,
   });
 }
 
@@ -76,6 +122,95 @@ test("an unpublished file needs no hashes and applies defaults", () => {
   assert.equal(result.photo.published, false);
 });
 
+test("a published photo must carry a translation for every locale it is published in", () => {
+  // A featured photo's translation carries its own hero caption, exactly as the
+  // source does: the hero is one photograph's line, and a Bulgarian home page
+  // with an English hero caption is a home page in the wrong language.
+  const featured = {
+    ...VALID,
+    featured: true,
+    hero_caption: "Hero copy",
+    translations: {
+      bg: { ...VALID.translations.bg, hero_caption: "Надпис на героя" },
+    },
+  };
+  assert.equal(validate(featured).ok, true);
+  assert.deepEqual(
+    problems({ ...featured, translations: { bg: { ...VALID.translations.bg } } }),
+    ["translations.bg.hero_caption: required non-empty string"],
+  );
+
+  // The rule that keeps a half-translated photo out of the catalog. The
+  // catalog build is where it bites; `publish-photos` validates the owner's
+  // file before it writes the generated keys, and the script preserves the
+  // translations it is given.
+  const { translations: _dropped, ...withoutTranslations } = VALID;
+  void _dropped;
+  assert.deepEqual(problems(withoutTranslations), [
+    "translations.bg: required for a published photo",
+  ]);
+
+  // A partial translation is the same failure: the fields are checked one by
+  // one, so a translation that reached the completeness check is complete, and
+  // one that did not is reported against the field that is missing.
+  const partial = {
+    ...VALID,
+    translations: { bg: { title: "Заглавие" } },
+  };
+  assert.deepEqual(problems(partial), [
+    "translations.bg.caption: required non-empty string",
+    "translations.bg.description: required non-empty string",
+    "translations.bg.alt: required non-empty string",
+  ]);
+
+  // A locale the site does not know is an error, not an ignored block: an
+  // ignored block is a translation nobody will ever read.
+  const unknown = {
+    ...VALID,
+    translations: { ...VALID.translations, de: { ...VALID.translations.bg } },
+  };
+  assert.deepEqual(problems(unknown), ["translations.de: unknown locale"]);
+
+  // An alt over the 200-character cap is refused in a translation too, with
+  // the same rule as the source's.
+  const longAlt = {
+    ...VALID,
+    translations: {
+      bg: { ...VALID.translations.bg, alt: "а".repeat(201) },
+    },
+  };
+  assert.deepEqual(problems(longAlt), [
+    "translations.bg.alt: must be 200 characters or fewer",
+  ]);
+
+  // A translation that is not a mapping, and a key a translation does not
+  // have: both are errors rather than a block that is quietly ignored.
+  assert.deepEqual(
+    problems({ ...VALID, translations: { bg: "not a mapping" } }),
+    ["translations.bg: expected a mapping of copy"],
+  );
+  assert.deepEqual(
+    problems({
+      ...VALID,
+      translations: { bg: { ...VALID.translations.bg, headline: "no such field" } },
+    }),
+    ["translations.bg.headline: unknown key"],
+  );
+  // And a `translations` that is not a mapping of locales at all: the block
+  // is unusable, so the locale it was meant to hold is missing as well.
+  assert.deepEqual(
+    problems({ ...VALID, translations: "bg" }),
+    [
+      "translations: expected a mapping of locale to copy",
+      "translations.bg: required for a published photo",
+    ],
+  );
+
+  // A draft may have no translations at all: the rule is on the published
+  // photo, and an unpublished file is not one.
+  assert.equal(validate({ ...REQUIRED, published: false }).ok, true);
+});
+
 test("a published photo without master_sha256 or image_hash fails", () => {
   const missingBoth = problems({ ...REQUIRED });
   assert.ok(
@@ -92,19 +227,24 @@ test("a published photo without master_sha256 or image_hash fails", () => {
     noMaster.join("; "),
   );
   assert.equal(
-    validate({ ...REQUIRED, ...HASHES, ...FACTS, ...PRINT_ASSET, ...PRINT_OPTIONS }).ok,
+    validate({
+      ...REQUIRED,
+      ...HASHES,
+      ...FACTS,
+      ...PRINT_ASSET,
+      ...PRINT_OPTIONS,
+      ...TRANSLATIONS,
+    }).ok,
     true,
   );
 });
 
 test("a fully-specified file validates and keeps every field", () => {
   const result = validate({
-    ...VALID,
+    ...featuredPhoto(),
     category: "film",
     film_look: "contrast",
     order: 3,
-    featured: true,
-    hero_caption: "Hero copy",
     published: false,
     master_sha256: "a".repeat(64),
     image_hash: "abcdef12",
@@ -245,16 +385,16 @@ test("featured is optional and must be a boolean", () => {
 });
 
 test("hero_caption is required with featured and forbidden without it", () => {
-  assert.equal(
-    validate({ ...VALID, featured: true, hero_caption: "Hero" }).ok,
-    true,
-  );
-  const missing = problems({ ...VALID, featured: true, hero_caption: undefined });
+  assert.equal(validate(featuredPhoto()).ok, true);
+  const missing = problems({
+    ...featuredPhoto(),
+    hero_caption: undefined,
+  });
   assert.ok(
     missing.some((p) => p.startsWith("hero_caption:")),
     missing.join("; "),
   );
-  const badType = problems({ ...VALID, featured: true, hero_caption: 7 });
+  const badType = problems({ ...featuredPhoto(), hero_caption: 7 });
   assert.ok(badType.some((p) => p.startsWith("hero_caption:")), badType.join("; "));
   const withoutFeatured = problems({ ...VALID, hero_caption: "Hero" });
   assert.ok(
@@ -475,7 +615,7 @@ test("requirePrintOffer: false lets a published photo pass without an offer", ()
   const result = validatePhotoFile(
     "photo",
     { ...REQUIRED, ...HASHES, ...FACTS, ...PRINT_ASSET },
-    { requirePrintOffer: false },
+    { requirePrintOffer: false, requireTranslations: false },
   );
   assert.equal(result.ok, true);
   if (result.ok) assert.equal(result.photo.printOffer, undefined);

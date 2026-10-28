@@ -2,14 +2,15 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { CATEGORY_TAGLINE } from "@/domain/catalog/categories";
+import { categoryTagline } from "@/domain/catalog/categories";
 import type { Locale } from "@/domain/i18n/locale";
 import { localePath } from "@/domain/i18n/locale-path";
 import { LanguageSwitcher } from "./i18n/LanguageSwitcher";
 import { MobileNav } from "./MobileNav";
-import { NAV, isActive } from "./nav";
+import { navFor, isActive } from "./nav";
 import { containerClass } from "@/components/PageShell";
 import { eyebrowClass } from "@/components/type-styles";
+import type { HeaderCopy } from "./i18n/dictionaries";
 
 /**
  * The site's header: the wordmark, the desktop nav, the language switcher and
@@ -19,9 +20,24 @@ import { eyebrowClass } from "@/components/type-styles";
  * the URL is the thing being built: every link here is the route the site
  * already knows, with the locale segment put on it by `localePath`, so the
  * nav cannot point at a route that does not exist under this language.
+ *
+ * The copy comes in as a prop too, and for the same reason the locale does:
+ * this is a client component, so the dictionary itself would travel to every
+ * browser. What it takes is the nav's words and the switcher's accessible
+ * names — the two slices it renders.
  */
-export function SiteHeader({ locale }: { locale: Locale }) {
+export function SiteHeader({
+  locale,
+  copy,
+  locales,
+}: {
+  locale: Locale;
+  copy: HeaderCopy;
+  /** The languages the site serves, for the switcher. */
+  locales: readonly Locale[];
+}) {
   const pathname = usePathname();
+  const nav = navFor(locale, copy.nav.contact);
 
   return (
     <header className="border-b border-gallery-200/70 bg-gallery-50/90 backdrop-blur-md sticky top-0 z-40">
@@ -33,15 +49,15 @@ export function SiteHeader({ locale }: { locale: Locale }) {
             NESSEBAR LENS
           </span>
           <span className={`hidden sm:block ${eyebrowClass('signature')}`}>
-            Old Town Nessebar • {CATEGORY_TAGLINE}
+            {copy.nav.tagline} • {categoryTagline(locale)}
           </span>
         </Link>
 
         <nav
-          aria-label="Main"
+          aria-label={copy.nav.main}
           className="hidden md:flex items-center space-x-4 sm:space-x-10 text-[11px] tracking-widest uppercase font-medium"
         >
-          {NAV.map((item) => {
+          {nav.map((item) => {
             const href = localePath(locale, item.href);
             const active = isActive(pathname, href);
             return (
@@ -69,10 +85,10 @@ export function SiteHeader({ locale }: { locale: Locale }) {
           control they can use.
         */}
         <div className="hidden md:block">
-          <LanguageSwitcher locale={locale} />
+          <LanguageSwitcher locale={locale} locales={locales} copy={copy.language} />
         </div>
 
-        <MobileNav locale={locale} />
+        <MobileNav locale={locale} copy={copy} locales={locales} />
       </div>
     </header>
   );

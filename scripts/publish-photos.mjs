@@ -264,6 +264,11 @@ export function validatePhoto({
     requireMasterFacts: false,
     requirePrintAssets: false,
     requirePrintOffer: false,
+    // The owner's file, before the script writes the generated keys: the
+    // translations are the owner's own words and the script preserves them
+    // rather than writing them, so requiring them here would reject a file
+    // the catalog build accepts once the publish has run.
+    requireTranslations: false,
   });
   if (!schema.ok) {
     for (const problem of schema.problems) errors.push(`${slug}.yaml: ${problem}`);

@@ -4,7 +4,9 @@ import { AnalyticsBeacon } from "@/components/AnalyticsBeacon";
 import { JsonLd } from "@/components/JsonLd";
 import { SiteFooter } from "@/components/SiteFooter";
 import { SiteHeader } from "@/components/SiteHeader";
-import { PUBLIC_LOCALES } from "@/domain/i18n/locale";
+import { getDictionary } from "@/components/i18n/dictionaries";
+import { NODE_ENV } from "@/infrastructure/config/env";
+import { servedLocales } from "@/infrastructure/i18n/served-locales";
 import { sitewideJsonLd } from "@/infrastructure/seo/json-ld";
 import {
   HOME_COPY,
@@ -177,13 +179,18 @@ export const metadata: Metadata = {
 /**
  * The locales this route tree is built for.
  *
- * The list is the registry's public one, so the routes that exist and the
- * locales the site serves cannot disagree. A locale that is known but not
- * served — Bulgarian, until the page, contact and checkout slices land — has
- * no route here and no page anywhere that could serve it.
+ * The list is the served one, so the routes that exist and the locales the
+ * site serves cannot disagree. A locale that is known but not served —
+ * Bulgarian, until the page, contact and checkout slices land — has no route
+ * here and no page anywhere that could serve it.
+ *
+ * The served list is read through `servedLocales(NODE_ENV)`, which outside a
+ * production build can add locales for the dev server and the e2e job. A
+ * production build serves exactly the registry's public list, whatever the
+ * environment says.
  */
 export function generateStaticParams() {
-  return PUBLIC_LOCALES.map((locale) => ({ locale }));
+  return servedLocales(NODE_ENV).map((locale) => ({ locale }));
 }
 
 /**
@@ -207,6 +214,11 @@ export default async function RootLayout({
   // unreachable: the guard is the second line of defence for a route that was
   // somehow reached with a locale the site does not have.
   const locale = requireLocale(raw);
+  // The dictionary is read here, on the server, and handed to the client
+  // components as the slices they render: the whole dictionary would travel to
+  // every browser that loaded the header.
+  const copy = getDictionary(locale);
+  const locales = servedLocales(NODE_ENV);
 
   return (
     <html lang={locale} className="scroll-smooth" data-scroll-behavior="smooth">
@@ -220,9 +232,13 @@ export default async function RootLayout({
         */}
         <JsonLd data={sitewideJsonLd()} />
         <AnalyticsBeacon />
-        <SiteHeader locale={locale} />
+        <SiteHeader
+          locale={locale}
+          copy={{ nav: copy.nav, language: copy.language }}
+          locales={locales}
+        />
         <main className="flex-1">{children}</main>
-        <SiteFooter />
+        <SiteFooter copy={copy.footer} />
       </body>
     </html>
   );

@@ -7,6 +7,17 @@ description: Sunburst shining through an arched window opening of the ancient
   wall masonry under a soft blue sky.
 alt: Sunburst shining through an arched window opening of the ancient Church of
   Saint Sophia (Old Bishopric) ruins in Old Town Nessebar, Bulgaria.
+translations:
+  bg:
+    title: Златен слънчев отблясък през каменните арки на църквата „Света София“
+    caption: Слънцето пробива през каменните арки на „Света София“ в Стария Несебър.
+    description: Слънчеви лъчи, проникващи през арочното прозоречно отверстие на руините на
+      древната църква „Света София“ (Старото епископство) в Стария Несебър,
+      България. Слънцето създава топъл звездовиден отблясък над каменните тухлени
+      арки и историческата зидария под меко синьо небе.
+    alt: Слънчеви лъчи, проникващи през арочното прозоречно отверстие на руините на
+      древната църква „Света София“ (Старото епископство) в Стария Несебър,
+      България.
 category: fine-art
 # written by publish-photos
 master_sha256: a1817960e4e4d6fb37481b0e568c50508482318fea53029b3dd11ec7f242dcad

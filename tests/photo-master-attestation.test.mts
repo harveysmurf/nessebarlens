@@ -36,6 +36,12 @@ caption: Sunrise over the sea.
 description: A quiet sunrise above the Black Sea.
 alt: Sunrise over the Black Sea.
 category: fine-art
+translations:
+  bg:
+    title: ${title}
+    caption: Изгрев над морето.
+    description: Спокоен изгрев над Черно море.
+    alt: Изгрев над Черно море.
 published: ${published}
 master_sha256: ${master}
 image_hash: aaaaaaaa

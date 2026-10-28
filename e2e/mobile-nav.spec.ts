@@ -95,7 +95,12 @@ test.describe("mobile navigation (#331)", () => {
     const close = page.getByRole("button", { name: "Close menu" });
     const panel = page.locator("#mobile-nav-panel");
     const first = panel.getByRole("link", { name: "Fine Art", exact: true });
-    const last = panel.getByRole("link", { name: "Contact", exact: true });
+    // The last focusable is the last link in the panel, whatever it is. The
+    // language switcher sits after the nav links, so a test that hardcodes
+    // "Contact" as the last one breaks the day a control is added to the
+    // panel — and the claim being tested is that the trap wraps, not that
+    // Contact is the last entry.
+    const last = panel.locator("a[href]").last();
 
     // Open moves focus to the first link.
     await expect(first).toBeFocused();

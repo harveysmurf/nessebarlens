@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { createPortal } from "react-dom";
-import { CATEGORY_TAGLINE } from "@/domain/catalog/categories";
+import { categoryTagline } from "@/domain/catalog/categories";
 import type { Locale } from "@/domain/i18n/locale";
 import { localePath } from "@/domain/i18n/locale-path";
 import {
@@ -14,7 +14,8 @@ import {
   type KeyboardEvent as ReactKeyboardEvent,
 } from "react";
 import { LanguageSwitcher } from "./i18n/LanguageSwitcher";
-import { NAV, isActive } from "./nav";
+import type { HeaderCopy } from "./i18n/dictionaries";
+import { navFor, isActive } from "./nav";
 import { eyebrowClass } from "@/components/type-styles";
 
 const PANEL_ID = "mobile-nav-panel";
@@ -34,7 +35,17 @@ const DESKTOP_QUERY = "(min-width: 768px)";
  * `position: fixed` descendants, which collapsed the panel to the header's
  * 80px height when it lived inside `SiteHeader`.
  */
-export function MobileNav({ locale }: { locale: Locale }) {
+export function MobileNav({
+  locale,
+  copy,
+  locales,
+}: {
+  locale: Locale;
+  copy: HeaderCopy;
+  /** The languages the site serves, for the switcher. */
+  locales: readonly Locale[];
+}) {
+  const nav = navFor(locale, copy.nav.contact);
   const pathname = usePathname();
   const [openedAt, setOpenedAt] = useState<string | null>(null);
   const open = openedAt === pathname;
@@ -127,7 +138,7 @@ export function MobileNav({ locale }: { locale: Locale }) {
         onKeyDown={trapTab}
         aria-expanded={open}
         aria-controls={PANEL_ID}
-        aria-label={open ? "Close menu" : "Open menu"}
+        aria-label={open ? copy.nav.closeMenu : copy.nav.openMenu}
         className="md:hidden -mr-2 flex h-11 w-11 shrink-0 items-center justify-center text-stone-900"
       >
         <span aria-hidden="true" className="relative block h-3.5 w-5">
@@ -152,9 +163,9 @@ export function MobileNav({ locale }: { locale: Locale }) {
             onKeyDown={trapTab}
             className="fade-in motion-reduce:animate-none md:hidden fixed inset-x-0 top-20 bottom-0 z-30 bg-gallery-50/95 backdrop-blur-md"
           >
-            <nav aria-label="Main" className="flex h-full flex-col px-6 pt-12 pb-10">
+            <nav aria-label={copy.nav.main} className="flex h-full flex-col px-6 pt-12 pb-10">
               <ul className="flex flex-col gap-6">
-                {NAV.map((item) => {
+                {nav.map((item) => {
                   const href = localePath(locale, item.href);
                   const active = isActive(pathname, href);
                   return (
@@ -181,10 +192,10 @@ export function MobileNav({ locale }: { locale: Locale }) {
                 only existed in the bar would be unreachable on a phone.
               */}
               <div className="mt-8">
-                <LanguageSwitcher locale={locale} />
+                <LanguageSwitcher locale={locale} locales={locales} copy={copy.language} />
               </div>
               <p className={`mt-auto ${eyebrowClass()}`}>
-                Old Town Nessebar • {CATEGORY_TAGLINE}
+                {copy.nav.tagline} • {categoryTagline(locale)}
               </p>
             </nav>
           </div>,

@@ -1,7 +1,13 @@
 import { PHOTOS as CATALOG } from "../../generated/catalog";
 import { categoryLabel } from "./categories";
+import { DEFAULT_LOCALE, type Locale } from "../i18n/locale";
 import type { MasterFacts } from "./master-facts";
-import type { FilmLook, PhotoCategory, PhotoFile } from "./photo-schema";
+import type {
+  FilmLook,
+  PhotoCategory,
+  PhotoFile,
+  PhotoTranslation,
+} from "./photo-schema";
 import type { PrintOffer } from "./print-offer";
 
 export type Photo = {
@@ -14,6 +20,14 @@ export type Photo = {
   alt: string;
   /** Homepage hero caption. Set on the featured photo only; copy lives here, not in the page. */
   heroCaption?: string | undefined;
+  /**
+   * The photo's copy in every other locale it is published in.
+   *
+   * The catalog build requires a complete translation for every published
+   * photo, so a published photo always carries one for every known locale
+   * other than the source's.
+   */
+  translations: Partial<Record<Locale, PhotoTranslation>>;
   /** Private master object key in MASTERS — never used in gallery UI. */
   imageKey: string;
   /** Film gallery uses a colour filter on the image (#409). */
@@ -52,6 +66,7 @@ function toPhoto(file: PhotoFile): Photo {
     description: file.description,
     alt: file.alt,
     heroCaption: file.heroCaption,
+    translations: file.translations,
     imageKey: `prints/${file.slug}.jpg`,
     filmLook: file.filmLook,
     featured: file.featured,
@@ -68,6 +83,44 @@ function toPhoto(file: PhotoFile): Photo {
 
 /** Compiled from `content/photos/*.yaml` by `npm run build:catalog`. */
 export const PHOTOS: Photo[] = CATALOG.map(toPhoto);
+
+/**
+ * The photo as it reads in one locale.
+ *
+ * The one way to render a photo. A caller that picked the fields it wanted —
+ * `photo.title` for the heading and `photo.alt` for the image — would read
+ * the source's words in every language, because the source's words are what
+ * the shared catalog holds. This returns the photo's own copy for the locale
+ * instead, and returns a *new* photo: the shared catalog is not mutated, so
+ * the English gallery and the Bulgarian one can be rendered from one array.
+ *
+ * There is no fallback to the source's words. A missing translation is a
+ * broken catalog, and a broken catalog that quietly renders English under a
+ * Bulgarian URL is the failure this whole slice exists to prevent — so it
+ * throws instead, naming the photo and the locale.
+ */
+export function photoForLocale(photo: Photo, locale: Locale): Photo {
+  if (locale === DEFAULT_LOCALE) {
+    return { ...photo, categoryLabel: categoryLabel(photo.category, locale) };
+  }
+  const translation = photo.translations[locale];
+  if (!translation) {
+    throw new Error(
+      `No ${locale} translation for the photo ${photo.slug}. A published photo ` +
+        `must carry one for every locale in LOCALES other than the source's, ` +
+        `and the catalog build fails when one is missing.`,
+    );
+  }
+  return {
+    ...photo,
+    title: translation.title,
+    caption: translation.caption,
+    description: translation.description,
+    alt: translation.alt,
+    heroCaption: translation.heroCaption,
+    categoryLabel: categoryLabel(photo.category, locale),
+  };
+}
 
 export function getPhoto(slug: string): Photo | undefined {
   return PHOTOS.find((p) => p.slug === slug);

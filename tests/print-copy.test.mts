@@ -3,9 +3,9 @@ import fs from "node:fs";
 import test from "node:test";
 
 import {
-  CONFIGURATOR_FORMATS,
-  CONFIGURATOR_FRAMES,
-  CONFIGURATOR_PAPERS,
+  configuratorFormats,
+  configuratorFrames,
+  configuratorPapers,
   DEFAULT_FRAME_FINISH,
   DEFAULT_PRINT_FORMAT,
   DEFAULT_PRINT_SIZE,
@@ -60,7 +60,7 @@ test("the configurator offers exactly what the catalog can sell", () => {
     PRINT_SIZES,
   );
   assert.deepEqual(
-    CONFIGURATOR_FRAMES.map((f) => f.id),
+    configuratorFrames().map((f) => f.id),
     FRAME_FINISHES,
   );
 });
@@ -122,19 +122,19 @@ test("every option carries display copy, and no copy is blank", () => {
   // FORMAT_COPY is a Record keyed by the union, so tsc already refuses a
   // missing entry. What it cannot see is an entry whose text is empty, which
   // renders as an empty button.
-  for (const format of CONFIGURATOR_FORMATS) {
+  for (const format of configuratorFormats()) {
     assert.ok(format.title.length > 0, `${format.id} has no title`);
     assert.ok(format.sub.length > 0, `${format.id} has no sub`);
   }
-  for (const frame of CONFIGURATOR_FRAMES) {
+  for (const frame of configuratorFrames()) {
     assert.ok(frame.label.length > 0, `${frame.id} has no label`);
   }
 });
 
 test("the ids are unique, so no selector renders the same option twice", () => {
   for (const list of [
-    CONFIGURATOR_FORMATS.map((f) => f.id),
-    CONFIGURATOR_FRAMES.map((f) => f.id),
+    configuratorFormats().map((f) => f.id),
+    configuratorFrames().map((f) => f.id),
   ]) {
     assert.equal(new Set(list).size, list.length);
   }
@@ -174,7 +174,7 @@ test("the component declares no option lists of its own", () => {
   // #326: the component no longer owns the selection or the opening rule; it
   // applies the pure transitions from print-selection.ts.
   assert.ok(source.includes("withFormat"));
-  assert.ok(source.includes("CONFIGURATOR_FRAMES"));
+  assert.ok(source.includes("configuratorFrames"));
   assert.equal(source.includes("CONFIGURATOR_SIZES"), false);
 });
 
@@ -514,7 +514,7 @@ test("giclée, canvas and digital keep their bare size labels (#334)", () => {
 });
 
 test("the framed format button names the mount (#334)", () => {
-  const framed = CONFIGURATOR_FORMATS.find((format) => format.id === "framed");
+  const framed = configuratorFormats().find((format) => format.id === "framed");
   assert.equal(framed?.title, "Framed Print");
   assert.match(framed?.sub ?? "", /white mount/i);
 });
@@ -561,10 +561,10 @@ test("no framed copy anywhere promises glass or Hahnemühle paper (#334)", () =>
   // Belt-and-braces over the specific strings: if a future edit reintroduces
   // either promise in any framed-facing string, this fails.
   const framedCopy = [
-    CONFIGURATOR_FORMATS.find((format) => format.id === "framed")?.sub ?? "",
+    configuratorFormats().find((format) => format.id === "framed")?.sub ?? "",
     ...PRINT_SIZES.map((size) => framedMountNote(size, "portrait")),
     ...PRINT_SIZES.map((size) => framedMountNote(size, "landscape")),
-    ...CONFIGURATOR_FRAMES.map((frame) => frame.label),
+    ...configuratorFrames().map((frame) => frame.label),
   ].join(" ");
   assert.doesNotMatch(framedCopy, /glass|hahnem/i);
 });
@@ -573,10 +573,10 @@ test("the giclée format copy names a paper we actually sell (#336/#337)", () =>
   // Before #337 every giclée SKU was GLOBAL-FAP-* — Enhanced Matte Art 200gsm —
   // so naming Hahnemühle was the #336 bug. #337 lands the HPR SKUs, so the
   // paper is a real option and the format subtitle may name either paper.
-  const giclee = CONFIGURATOR_FORMATS.find((format) => format.id === "giclee");
+  const giclee = configuratorFormats().find((format) => format.id === "giclee");
   assert.match(giclee?.sub ?? "", /matte art|hahnem/i);
 
-  const formatCopy = CONFIGURATOR_FORMATS.map(
+  const formatCopy = configuratorFormats().map(
     (format) => `${format.title} ${format.sub}`,
   ).join(" ");
   if (!HPR_OFFERED) {
@@ -586,10 +586,10 @@ test("the giclée format copy names a paper we actually sell (#336/#337)", () =>
 
 test("the paper control copy names both papers and their real weights (#337)", () => {
   assert.deepEqual(
-    CONFIGURATOR_PAPERS.map((p) => p.id),
+    configuratorPapers().map((p) => p.id),
     PRINT_PAPERS,
   );
-  const labels = CONFIGURATOR_PAPERS.map((p) => p.label).join(" | ");
+  const labels = configuratorPapers().map((p) => p.label).join(" | ");
   assert.match(labels, /Matte Art · 200gsm/);
   assert.match(labels, /Hahnemühle Photo Rag · 308gsm/);
   // The helper lines state the real material — and never claim acid-free, which
@@ -632,8 +632,8 @@ test("the configurator renders the mount control and helper beside the frame fin
     new URL("../src/components/PrintConfigurator.tsx", import.meta.url),
     "utf8",
   );
-  assert.ok(source.includes("framedMountNote(size, orientation, mount)"));
-  assert.ok(source.includes("CONFIGURATOR_MOUNTS"));
+  assert.ok(source.includes("framedMountNote(size, orientation, mount, locale)"));
+  assert.ok(source.includes("configuratorMounts"));
   assert.ok(source.includes('id="frame-mount"'));
   assert.ok(
     source.includes("text-[10px] text-stone-500"),

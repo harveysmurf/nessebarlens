@@ -52,6 +52,15 @@ const OWNER_YAML = [
   "caption: Medium Format",
   "description: First light over the bay.",
   "category: fine-art",
+  // The Bulgarian copy, which the publish run preserves: the owner's own words
+  // are the base document, and the script writes the generated keys around
+  // them.
+  "translations:",
+  "  bg:",
+  "    title: Рассвет",
+  "    alt: Рассвет над залива",
+  "    caption: Среден формат",
+  "    description: Първа светлина над залива.",
   "",
 ].join("\n");
 

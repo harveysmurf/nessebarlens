@@ -3,9 +3,9 @@
 import Link from "next/link";
 import { usePathname, useSearchParams } from "next/navigation";
 import { Suspense } from "react";
-import { LOCALE_NAMES, PUBLIC_LOCALES, type Locale } from "@/domain/i18n/locale";
+import { LOCALE_NAMES, type Locale } from "@/domain/i18n/locale";
 import { localePath } from "@/domain/i18n/locale-path";
-import { getDictionary } from "./dictionaries";
+import type { SwitcherCopy } from "./dictionaries";
 
 /**
  * The language switcher: the current language, and a link to the same page in
@@ -25,26 +25,29 @@ import { getDictionary } from "./dictionaries";
  * reference all survive the switch. That mapping is `localePath`, the same
  * helper the nav uses to build its own links, so the two cannot disagree
  * about what a localized URL looks like.
+ *
+ * The copy comes in as a prop: this is a client component, and reading the
+ * dictionary here would ship every locale's copy of every page to every
+ * browser that loaded the header. The language *names* are not copy — they are
+ * an endonym in the registry — so they are read from it.
  */
 export function LanguageSwitcher({
   locale,
-  locales = PUBLIC_LOCALES,
+  locales,
+  copy,
 }: {
   /** The locale of the page being rendered. */
   locale: Locale;
-  /**
-   * The languages to offer. The site offers the ones it serves, which is the
-   * registry's public list; a locale that is known but not served has no page
-   * to link to, and a link to it would be a 404.
-   */
-  locales?: readonly Locale[];
+  /** The languages to offer. The site offers the ones it serves. */
+  locales: readonly Locale[];
+  /** The switcher's own words, in the page's language. */
+  copy: SwitcherCopy;
 }) {
-  const dictionary = getDictionary(locale);
   const pathname = usePathname();
   const targets = locales.filter((candidate) => candidate !== locale);
 
   return (
-    <nav aria-label={dictionary.language.label}>
+    <nav aria-label={copy.label}>
       <ul className="flex items-center gap-3 text-[11px] tracking-widest uppercase font-medium">
         <li>
           <span aria-current="true" lang={locale} className="text-stone-900">
@@ -65,14 +68,14 @@ export function LanguageSwitcher({
                 <LocaleLink
                   target={target}
                   pathname={pathname}
-                  title={dictionary.language.switchTo[target]}
+                  title={copy.switchTo[target]}
                 />
               }
             >
               <LocaleLinkWithQuery
                 target={target}
                 pathname={pathname}
-                title={dictionary.language.switchTo[target]}
+                title={copy.switchTo[target]}
               />
             </Suspense>
           </li>

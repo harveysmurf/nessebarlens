@@ -36,12 +36,13 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import ts from "typescript";
 
-import { CATEGORY, CATEGORY_TAGLINE } from "../src/domain/catalog/categories.ts";
-import type { CategoryFacts } from "../src/domain/catalog/categories.ts";
+import { CATEGORY, categoryTagline } from "../src/domain/catalog/categories.ts";
+import type { CategoryNames } from "../src/domain/catalog/categories.ts";
 import { PHOTOS } from "../src/domain/catalog/photos.ts";
 import { PHOTO_CATEGORIES, type PhotoCategory } from "../src/domain/catalog/photo-schema.ts";
-import { NAV } from "../src/components/nav.ts";
+import { navFor } from "../src/components/nav.ts";
 import { GalleryPage } from "../src/components/GalleryPage.tsx";
+import { getDictionary } from "../src/components/i18n/dictionaries.ts";
 
 const ROOT = path.resolve(import.meta.dirname, "..");
 const TSCONFIG = path.join(ROOT, "tsconfig.json");
@@ -161,11 +162,33 @@ test("each surface's own copy is keyed by category, as the compiler sees it", ()
   // three renders two tiles when a category is added, and no type error. So
   // this reads the inferred type — a `Record` is a non-tuple object with a
   // property per category — rather than grepping the source.
-  const TABLES: [string, string][] = [
-    ["src/components/GalleryPage.tsx", "META"],
-    ["src/app/[locale]/page.tsx", "TILE_BLURB"],
-    ["src/app/[locale]/story/page.tsx", "BLOCK_COPY"],
+  //
+  // The tables live in the dictionary now: the gallery's badge and blurb, the
+  // home tile's blurb and the /story block's body and call to action are all
+  // copy, and the dictionary is where copy lives.
+  const DICTIONARIES = path.join(ROOT, "src/components/i18n/dictionaries.ts");
+  const TABLES: [string, string, string][] = [
+    ["home", "tileBlurb", "the home tile's blurb"],
+    ["gallery", "badge", "the gallery's badge"],
+    ["gallery", "blurb", "the gallery's blurb"],
+    ["story", "blockBody", "the /story block's body"],
+    ["story", "blockCta", "the /story block's call to action"],
   ];
+
+  const program = programWith([DICTIONARIES]);
+  const checker = program.getTypeChecker();
+
+  /** The type of `en.<namespace>.<table>`, read from the compiler. */
+  const tableType = (namespace: string, table: string): ts.Type | undefined => {
+    const dictionary = inferredTypeOfConst(program, DICTIONARIES, "en");
+    if (!dictionary) return undefined;
+    const space = checker.getPropertyOfType(dictionary, namespace);
+    if (!space) return undefined;
+    const spaceType = checker.getTypeOfSymbolAtLocation(space, space.valueDeclaration!);
+    const property = checker.getPropertyOfType(spaceType, table);
+    if (!property) return undefined;
+    return checker.getTypeOfSymbolAtLocation(property, property.valueDeclaration!);
+  };
 
   const isCategoryKeyed = (type: ts.Type | undefined) => {
     if (!type || !(type.flags & ts.TypeFlags.Object)) return false;
@@ -174,17 +197,16 @@ test("each surface's own copy is keyed by category, as the compiler sees it", ()
     return PHOTO_CATEGORIES.every((category) => keys.includes(category));
   };
 
-  const program = programWith(TABLES.map(([rel]) => path.join(ROOT, rel)));
-  for (const [rel, name] of TABLES) {
+  for (const [namespace, table, what] of TABLES) {
     assert.ok(
-      isCategoryKeyed(inferredTypeOfConst(program, path.join(ROOT, rel), name)),
-      `${rel}: ${name} must be inferred as a Record over every category, not a tuple`,
+      isCategoryKeyed(tableType(namespace, table)),
+      `${namespace}.${table} (${what}) must be keyed by every category, not a tuple`,
     );
   }
 
   // Negative control. An array of three, with the `Record` token present as a
   // decoy, is exactly what the regex version of this assertion accepted.
-  const decoy = path.join(ROOT, "src", "per-surface.probe.ts");
+  const decoy = path.join(ROOT, "src/per-surface.probe.ts");
   const decoySource = `
 import type { PhotoCategory } from "./domain/catalog/photo-schema";
 type Unused = Record<PhotoCategory, string>;
@@ -220,14 +242,7 @@ test("no page or component spells a category, an href, or a name", () => {
   const NAMES = new Set<string>();
   const HREFS = new Set<string>();
   for (const facts of Object.values(CATEGORY)) {
-    for (const field of [
-      facts.navLabel,
-      facts.galleryTitle,
-      facts.homeTitle,
-      facts.storyTitle,
-      facts.taglineName,
-      facts.printLabel,
-    ]) {
+    for (const field of Object.values(facts.names.en)) {
       NAMES.add(field);
     }
     HREFS.add(facts.href);
@@ -317,28 +332,36 @@ test("no page or component spells a category, an href, or a name", () => {
 });
 
 test("the nav takes its labels from the registry", () => {
-  for (const category of PHOTO_CATEGORIES) {
-    const link = NAV.find((item) => item.href === CATEGORY[category].href);
-    assert.ok(link, `${category} is in the nav`);
-    assert.equal(link.label, CATEGORY[category].navLabel, category);
+  for (const locale of ["en", "bg"] as const) {
+    const nav = navFor(locale, "Contact");
+    for (const category of PHOTO_CATEGORIES) {
+      const link = nav.find((item) => item.href === CATEGORY[category].href);
+      assert.ok(link, `${category} is in the nav`);
+      assert.equal(link.label, CATEGORY[category].names[locale].navLabel, category);
+    }
+    // Contact is not a category; it is still spelled by the caller, because the
+    // dictionary is the server's and the nav is the client's.
+    assert.equal(nav.at(-1)?.href, "/contact");
   }
-  // Contact is not a category; it is still spelled here.
-  assert.equal(NAV.at(-1)?.href, "/contact");
 });
 
 test("the header tagline lists every category, from the registry", () => {
   // It was JSX text in SiteHeader and again in MobileNav, which is why it is
   // the one thing here that was never a `Record` and never a compile error.
-  assert.equal(CATEGORY_TAGLINE, "Fine Art, Archive & Film");
+  assert.equal(categoryTagline("en"), "Fine Art, Archive & Film");
+  // The Bulgarian list joins with "и", not "&": the joiner is part of the
+  // localized names, and a header that says "Финиарт, Архив & Филм" is a
+  // sentence in the wrong language.
+  assert.equal(categoryTagline("bg"), "Финиарт, Архив и Филм");
   for (const category of PHOTO_CATEGORIES) {
     assert.ok(
-      CATEGORY_TAGLINE.includes(CATEGORY[category].taglineName),
+      categoryTagline("en").includes(CATEGORY[category].names.en.taglineName),
       `${category} appears in the tagline`,
     );
   }
   for (const rel of ["src/components/SiteHeader.tsx", "src/components/MobileNav.tsx"]) {
     const text = readFileSync(path.join(ROOT, rel), "utf8");
-    assert.match(text, /CATEGORY_TAGLINE/, `${rel} renders the derived tagline`);
+    assert.match(text, /categoryTagline/, `${rel} renders the derived tagline`);
     assert.doesNotMatch(
       text,
       /Old Town Nessebar •[^<{]*\b(?:Fine Art|Archive|Film)\b/,
@@ -347,41 +370,46 @@ test("the header tagline lists every category, from the registry", () => {
   }
 });
 
+/**
+ * The English names, written out.
+ *
+ * Not `photo.categoryLabel === categoryLabel(photo.category)` — photos.ts
+ * derives the first from the second, so that holds by construction and would
+ * have stayed green while a print page rendered the wrong line. The wording is
+ * what needs pinning, so it is written here.
+ */
+const EXPECTED: Record<PhotoCategory, CategoryNames> = {
+  "fine-art": {
+    navLabel: "Fine Art",
+    galleryTitle: "Fine Art Photography",
+    homeTitle: "Fine Art",
+    storyTitle: "Fine Art Collection",
+    taglineName: "Fine Art",
+    printLabel: "Fine Art Collection",
+  },
+  archive: {
+    navLabel: "Archive",
+    galleryTitle: "Everyday Archive",
+    homeTitle: "Archive",
+    storyTitle: "Everyday Archive",
+    taglineName: "Archive",
+    printLabel: "Everyday Archive • Photojournalism",
+  },
+  film: {
+    navLabel: "Film Photography",
+    galleryTitle: "Film Photography",
+    homeTitle: "Film Photography",
+    storyTitle: "Film Photography",
+    taglineName: "Film",
+    printLabel: "Film Photography",
+  },
+};
+
 test("the names the UI renders, written out", () => {
-  // Not `photo.categoryLabel === categoryLabel(photo.category)` — photos.ts
-  // derives the first from the second, so that holds by construction and would
-  // have stayed green while a print page rendered the wrong line. The wording is
-  // what needs pinning, so it is written here.
-  const EXPECTED: Record<PhotoCategory, Omit<CategoryFacts, "href">> = {
-    "fine-art": {
-      navLabel: "Fine Art",
-      galleryTitle: "Fine Art Photography",
-      homeTitle: "Fine Art",
-      storyTitle: "Fine Art Collection",
-      taglineName: "Fine Art",
-      printLabel: "Fine Art Collection",
-    },
-    archive: {
-      navLabel: "Archive",
-      galleryTitle: "Everyday Archive",
-      homeTitle: "Archive",
-      storyTitle: "Everyday Archive",
-      taglineName: "Archive",
-      printLabel: "Everyday Archive • Photojournalism",
-    },
-    film: {
-      navLabel: "Film Photography",
-      galleryTitle: "Film Photography",
-      homeTitle: "Film Photography",
-      storyTitle: "Film Photography",
-      taglineName: "Film",
-      printLabel: "Film Photography",
-    },
-  };
   for (const category of PHOTO_CATEGORIES) {
     assert.deepEqual(
-      { ...CATEGORY[category], href: undefined },
-      { ...EXPECTED[category], href: undefined },
+      CATEGORY[category].names.en,
+      EXPECTED[category],
       `${category}'s names are a decision; changing one is a copy change`,
     );
     for (const photo of PHOTOS.filter((p) => p.category === category)) {
@@ -390,14 +418,67 @@ test("the names the UI renders, written out", () => {
   }
 });
 
+test("the Bulgarian names are written out too, and they are Bulgarian", () => {
+  // The English names are a copy decision; so are the Bulgarian ones, and a
+  // translation that silently drifted would leave the Bulgarian site naming a
+  // gallery something the English one does not.
+  const EXPECTED_BG: Record<PhotoCategory, CategoryNames> = {
+    "fine-art": {
+      navLabel: "Финиарт",
+      galleryTitle: "Финиарт фотография",
+      homeTitle: "Финиарт",
+      storyTitle: "Колекция „Финиарт“",
+      taglineName: "Финиарт",
+      printLabel: "Колекция „Финиарт“",
+    },
+    archive: {
+      navLabel: "Архив",
+      galleryTitle: "Ежедневен архив",
+      homeTitle: "Архив",
+      storyTitle: "Ежедневен архив",
+      taglineName: "Архив",
+      printLabel: "Ежедневен архив • Фоторепортаж",
+    },
+    film: {
+      navLabel: "Филмова фотография",
+      galleryTitle: "Филмова фотография",
+      homeTitle: "Филмова фотография",
+      storyTitle: "Филмова фотография",
+      taglineName: "Филм",
+      printLabel: "Филмова фотография",
+    },
+  };
+  for (const category of PHOTO_CATEGORIES) {
+    assert.deepEqual(
+      CATEGORY[category].names.bg,
+      EXPECTED_BG[category],
+      `${category}'s Bulgarian names are a decision; changing one is a copy change`,
+    );
+    // And the Bulgarian name is not the English one: a locale that fell back
+    // would be a page in the wrong language wearing a URL that says otherwise.
+    for (const [field, value] of Object.entries(EXPECTED_BG[category])) {
+      assert.notEqual(
+        value,
+        EXPECTED[category][field as keyof CategoryNames],
+        `${category}.${field} is the same in both languages`,
+      );
+    }
+  }
+});
+
 test("the gallery heading is the registry's galleryTitle", () => {
   for (const category of PHOTO_CATEGORIES) {
     const html = renderToStaticMarkup(
-      createElement(GalleryPage, { category, locale: "en" }),
+      createElement(GalleryPage, {
+        category,
+        locale: "en",
+        copy: getDictionary("en").gallery,
+        printOptions: getDictionary("en").print.printOptions,
+      }),
     );
     assert.ok(
-      html.includes(`>${CATEGORY[category].galleryTitle}<`),
-      `${category} gallery should head with ${CATEGORY[category].galleryTitle}`,
+      html.includes(`>${CATEGORY[category].names.en.galleryTitle}<`),
+      `${category} gallery should head with ${CATEGORY[category].names.en.galleryTitle}`,
     );
   }
 });
@@ -428,14 +509,14 @@ test("which surfaces agree today is a fact, not an accident", () => {
       "storyTitle=printLabel": true,
     },
   };
-  const PAIRS: [keyof CategoryFacts, keyof CategoryFacts][] = [
+  const PAIRS: [keyof CategoryNames, keyof CategoryNames][] = [
     ["navLabel", "homeTitle"],
     ["navLabel", "taglineName"],
     ["galleryTitle", "storyTitle"],
     ["storyTitle", "printLabel"],
   ];
   for (const category of PHOTO_CATEGORIES) {
-    const facts = CATEGORY[category];
+    const facts = CATEGORY[category].names.en;
     for (const [a, b] of PAIRS) {
       assert.equal(
         facts[a] === facts[b],
@@ -448,11 +529,13 @@ test("which surfaces agree today is a fact, not an accident", () => {
 
 test("every category's facts are non-empty and its href is its route", () => {
   for (const category of PHOTO_CATEGORIES) {
-    const facts: CategoryFacts = CATEGORY[category];
+    const facts = CATEGORY[category];
     assert.match(facts.href, /^\/[a-z-]+$/, category);
-    for (const [field, value] of Object.entries(facts)) {
-      assert.equal(typeof value, "string", `${category}.${field}`);
-      assert.ok(value.trim().length > 0, `${category}.${field} is empty`);
+    for (const locale of ["en", "bg"] as const) {
+      for (const [field, value] of Object.entries(facts.names[locale])) {
+        assert.equal(typeof value, "string", `${category}.${locale}.${field}`);
+        assert.ok(value.trim().length > 0, `${category}.${locale}.${field} is empty`);
+      }
     }
     assert.equal(
       facts.href,

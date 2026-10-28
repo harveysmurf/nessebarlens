@@ -20,6 +20,18 @@
  * `pricing.ts` FORMAT_LABELS ("Giclée Fine Art" vs "Giclée Fine Art Print"):
  * one is a button, the other an order line. They are separate vocabularies,
  * not copies of each other, so neither is derived from the other.
+ *
+ * **The copy is per locale.** Every map here is keyed by locale first and by
+ * the product id second, so a locale that arrives without words for a new
+ * product is a compile error rather than an empty option in the selector. The
+ * product *ids* are not translated — `giclee`, `framed`, `black`, `ema` — and
+ * neither are the request values built from them: what the buyer picks is the
+ * same in every language.
+ *
+ * A product's own name is not translated either. "Matte Art" and "Hahnemühle
+ * Photo Rag" are the papers Prodigi prints on, and a Bulgarian selector that
+ * spelled them differently would be offering a paper that does not exist. What
+ * is translated is the description around them.
  */
 
 import type { MasterFacts, Orientation } from "../catalog/master-facts";
@@ -42,6 +54,7 @@ import {
   type PrintProductEntry,
 } from "../pricing/print-products";
 import { FRAME_FINISHES, SELLABLE_FORMATS } from "../pricing/sku-map";
+import { DEFAULT_LOCALE, type Locale } from "../i18n/locale";
 import {
   CANVAS_BAR_DEPTH_MM,
   CLASSIC_FRAME_MOULDING_MM,
@@ -53,38 +66,65 @@ import type { PrintSelection } from "./print-selection";
 export type FormatCopy = { title: string; sub: string };
 export type FormatOption = { id: PrintFormat } & FormatCopy;
 
-const FORMAT_COPY: Record<PrintFormat, FormatCopy> = {
-  // #337: the subtitle is now true for both papers, so it names neither. The
-  // paper is a per-size choice below, and the concrete paper is on the selected
-  // paper's own helper line and on the order line.
-  giclee: { title: "Giclée Fine Art", sub: "Matte Art or Hahnemühle" },
-  // #334: the mount is half of what ships, so the button says so. "Wood Frame",
-  // not "Solid Wood Frame" — the brown finish is an oak-effect laminate, and
-  // the mount is the fact the buyer is actually missing.
-  framed: { title: "Framed Print", sub: "Wood Frame · White Mount" },
-  canvas: { title: "Stretched Canvas", sub: "Cotton Canvas" },
-  digital: { title: "Digital Copy", sub: "Full Resolution JPG" },
+const FORMAT_COPY: Record<Locale, Record<PrintFormat, FormatCopy>> = {
+  en: {
+    // #337: the subtitle is now true for both papers, so it names neither. The
+    // paper is a per-size choice below, and the concrete paper is on the selected
+    // paper's own helper line and on the order line.
+    giclee: { title: "Giclée Fine Art", sub: "Matte Art or Hahnemühle" },
+    // #334: the mount is half of what ships, so the button says so. "Wood Frame",
+    // not "Solid Wood Frame" — the brown finish is an oak-effect laminate, and
+    // the mount is the fact the buyer is actually missing.
+    framed: { title: "Framed Print", sub: "Wood Frame · White Mount" },
+    canvas: { title: "Stretched Canvas", sub: "Cotton Canvas" },
+    digital: { title: "Digital Copy", sub: "Full Resolution JPG" },
+  },
+  bg: {
+    giclee: { title: "Финиарт giclée", sub: "Matte Art или Hahnemühle" },
+    framed: { title: "Финиарт в рамка", sub: "Дървена рамка · Бяла паспарту" },
+    canvas: { title: "Опъната канава", sub: "Памучна канава" },
+    digital: { title: "Цифров файл", sub: "JPG в пълна резолюция" },
+  },
 };
 
-const FRAME_COPY: Record<FrameFinish, string> = {
-  black: "Matte Black",
-  white: "Satin White",
-  brown: "Brown Wood",
+const FRAME_COPY: Record<Locale, Record<FrameFinish, string>> = {
+  en: {
+    black: "Matte Black",
+    white: "Satin White",
+    brown: "Brown Wood",
+  },
+  bg: {
+    black: "Матов черен",
+    white: "Бял сатен",
+    brown: "Кафяв дървес",
+  },
 };
 
 /**
  * The mount control's copy (#335), keyed by mount so a new mount is a compile
  * error until it has words — the same rule the format and frame Records follow.
  */
-const MOUNT_COPY: Record<FramedMount, string> = {
-  white: "White Mount",
-  none: "No Mount",
+const MOUNT_COPY: Record<Locale, Record<FramedMount, string>> = {
+  en: {
+    white: "White Mount",
+    none: "No Mount",
+  },
+  bg: {
+    white: "Бяла паспарту",
+    none: "Без паспарту",
+  },
 };
 
 /** The lower-case phrase for the mount, for the preview label. */
-const MOUNT_PHRASE: Record<FramedMount, string> = {
-  white: "white mount",
-  none: "no mount",
+const MOUNT_PHRASE: Record<Locale, Record<FramedMount, string>> = {
+  en: {
+    white: "white mount",
+    none: "no mount",
+  },
+  bg: {
+    white: "бяла паспарту",
+    none: "без паспарту",
+  },
 };
 
 /**
@@ -93,15 +133,29 @@ const MOUNT_PHRASE: Record<FramedMount, string> = {
  * Records follow. The weights are the verified Prodigi facts (EMA 200gsm,
  * Photo Rag 308gsm); the note under the select is one short true line each.
  */
-const PAPER_COPY: Record<PrintPaper, string> = {
-  ema: "Matte Art · 200gsm",
-  hpr: "Hahnemühle Photo Rag · 308gsm",
+const PAPER_COPY: Record<Locale, Record<PrintPaper, string>> = {
+  en: {
+    ema: "Matte Art · 200gsm",
+    hpr: "Hahnemühle Photo Rag · 308gsm",
+  },
+  bg: {
+    // The paper's own name is a product name and stays as it is written.
+    ema: "Matte Art · 200gsm",
+    hpr: "Hahnemühle Photo Rag · 308gsm",
+  },
 };
 
-const PAPER_NOTE: Record<PrintPaper, string> = {
-  ema: "Smooth heavyweight matte, natural white.",
-  // Deliberately no acid-free claim: Prodigi does not state it for Photo Rag.
-  hpr: "100% cotton rag, soft matte with a fine felt texture.",
+const PAPER_NOTE: Record<Locale, Record<PrintPaper, string>> = {
+  en: {
+    ema: "Smooth heavyweight matte, natural white.",
+    // Deliberately no acid-free claim: Prodigi does not state it for Photo Rag.
+    hpr: "100% cotton rag, soft matte with a fine felt texture.",
+  },
+  bg: {
+    ema: "Гладка плътна матова хартия с естествено бял тон.",
+    // Deliberately no acid-free claim: Prodigi does not state it for Photo Rag.
+    hpr: "100% памучна руда с мека матова повърхност и фина кадифена текстура.",
+  },
 };
 
 const CM_PER_INCH = 2.54;
@@ -176,8 +230,24 @@ export function framedMountNote(
   size: PrintSize,
   orientation: Orientation,
   mount: FramedMount = DEFAULT_FRAMED_MOUNT,
+  locale: Locale = DEFAULT_LOCALE,
 ): string {
   const moulding = Math.round(CLASSIC_FRAME_MOULDING_MM / 10);
+  if (locale === "bg") {
+    if (mount === "none") {
+      return (
+        `Акрилово стъкло, без паспарту, готово за окачване. ` +
+        `Снимката запълва рамката от край до край с размери ${imageSizeLabel(size, orientation, mount)}; ` +
+        `рамката добавя около ${moulding} см от всяка страна.`
+      );
+    }
+    return (
+      `Бяла паспарту без киселина, акрилово стъкло, готово за окачване. ` +
+      `Снимката се вижда с размери ${imageSizeLabel(size, orientation, mount)} зад паспарту; ` +
+      `рамката добавя около ${moulding} см ` +
+      `от всяка страна.`
+    );
+  }
   if (mount === "none") {
     return (
       `Acrylic glazing, no mount, ready to hang. ` +
@@ -194,9 +264,11 @@ export function framedMountNote(
 }
 
 /** One entry per sellable format, in catalog order. */
-export const CONFIGURATOR_FORMATS: FormatOption[] = SELLABLE_FORMATS.map(
-  (id) => ({ id, ...FORMAT_COPY[id] }),
-);
+export function configuratorFormats(
+  locale: Locale = DEFAULT_LOCALE,
+): FormatOption[] {
+  return SELLABLE_FORMATS.map((id) => ({ id, ...FORMAT_COPY[locale][id] }));
+}
 
 /**
  * The formats the configurator shows for a photo's offer (#302): digital, which
@@ -204,8 +276,11 @@ export const CONFIGURATOR_FORMATS: FormatOption[] = SELLABLE_FORMATS.map(
  * size. A format with nothing offered is hidden, not shown greyed out, so the
  * buyer never picks a format that cannot be bought.
  */
-export function offeredFormats(offer: PrintOffer): FormatOption[] {
-  return CONFIGURATOR_FORMATS.filter((option) =>
+export function offeredFormats(
+  offer: PrintOffer,
+  locale: Locale = DEFAULT_LOCALE,
+): FormatOption[] {
+  return configuratorFormats(locale).filter((option) =>
     option.id === "digital" ? true : offer[option.id].length > 0,
   );
 }
@@ -218,11 +293,12 @@ export function sizeOptions(
   offer: PrintOffer,
   format: PrintFormat,
   orientation: Orientation,
+  locale: Locale = DEFAULT_LOCALE,
 ): Array<{ id: PrintSize; label: string }> {
   if (format === "digital") return [];
   return offer[format].map((size) => ({
     id: size,
-    label: sizeLabel(size, orientation),
+    label: sizeLabel(size, orientation, locale),
   }));
 }
 
@@ -253,24 +329,39 @@ export function masterResolutionLabel(master: MasterFacts): string {
  * print, the finish and the white mount.
  */
 const PREVIEW_LABEL: Record<
-  PrintFormat,
-  (alt: string, selection: PrintSelection, orientation: Orientation) => string
+  Locale,
+  Record<
+    PrintFormat,
+    (alt: string, selection: PrintSelection, orientation: Orientation) => string
+  >
 > = {
-  giclee: (alt, selection, orientation) =>
-    `${alt} — giclée fine art print, ${sizeLabel(selection.size, orientation)}`,
-  framed: (alt, selection, orientation) =>
-    `${alt} — framed print, ${sizeLabel(selection.size, orientation)}, ${FRAME_COPY[selection.frame]} frame with ${MOUNT_PHRASE[selection.mount]}`,
-  canvas: (alt, selection, orientation) =>
-    `${alt} — stretched canvas, ${sizeLabel(selection.size, orientation)}, image wrapped around the ${CANVAS_BAR_DEPTH_MM} mm edges`,
-  digital: (alt) => alt,
+  en: {
+    giclee: (alt, selection, orientation) =>
+      `${alt} — giclée fine art print, ${sizeLabel(selection.size, orientation, "en")}`,
+    framed: (alt, selection, orientation) =>
+      `${alt} — framed print, ${sizeLabel(selection.size, orientation, "en")}, ${FRAME_COPY.en[selection.frame]} frame with ${MOUNT_PHRASE.en[selection.mount]}`,
+    canvas: (alt, selection, orientation) =>
+      `${alt} — stretched canvas, ${sizeLabel(selection.size, orientation, "en")}, image wrapped around the ${CANVAS_BAR_DEPTH_MM} mm edges`,
+    digital: (alt) => alt,
+  },
+  bg: {
+    giclee: (alt, selection, orientation) =>
+      `${alt} — финиарт giclée, ${sizeLabel(selection.size, orientation, "bg")}`,
+    framed: (alt, selection, orientation) =>
+      `${alt} — финиарт в рамка, ${sizeLabel(selection.size, orientation, "bg")}, рамка ${FRAME_COPY.bg[selection.frame]} с ${MOUNT_PHRASE.bg[selection.mount]}`,
+    canvas: (alt, selection, orientation) =>
+      `${alt} — опъната канава, ${sizeLabel(selection.size, orientation, "bg")}, изображението е увито около ръбовете с дебелина ${CANVAS_BAR_DEPTH_MM} мм`,
+    digital: (alt) => alt,
+  },
 };
 
 export function previewLabel(
   alt: string,
   selection: PrintSelection,
   orientation: Orientation,
+  locale: Locale = DEFAULT_LOCALE,
 ): string {
-  return PREVIEW_LABEL[selection.format](alt, selection, orientation);
+  return PREVIEW_LABEL[locale][selection.format](alt, selection, orientation);
 }
 
 /**
@@ -279,23 +370,35 @@ export function previewLabel(
  * because the whole uncropped photo is shown.
  */
 const PREVIEW_CAPTION: Record<
-  PrintFormat,
-  (selection: PrintSelection, orientation: Orientation) => string
+  Locale,
+  Record<PrintFormat, (selection: PrintSelection, orientation: Orientation) => string>
 > = {
-  giclee: (selection, orientation) =>
-    `Giclée Fine Art · ${sizeLabel(selection.size, orientation)}`,
-  framed: (selection, orientation) =>
-    `Framed Print · ${sizeLabel(selection.size, orientation)} · ${FRAME_COPY[selection.frame]} · ${MOUNT_COPY[selection.mount]}`,
-  canvas: (selection, orientation) =>
-    `Stretched Canvas · ${sizeLabel(selection.size, orientation)}`,
-  digital: () => "Digital Copy · full frame",
+  en: {
+    giclee: (selection, orientation) =>
+      `Giclée Fine Art · ${sizeLabel(selection.size, orientation, "en")}`,
+    framed: (selection, orientation) =>
+      `Framed Print · ${sizeLabel(selection.size, orientation, "en")} · ${FRAME_COPY.en[selection.frame]} · ${MOUNT_COPY.en[selection.mount]}`,
+    canvas: (selection, orientation) =>
+      `Stretched Canvas · ${sizeLabel(selection.size, orientation, "en")}`,
+    digital: () => "Digital Copy · full frame",
+  },
+  bg: {
+    giclee: (selection, orientation) =>
+      `Финиарт giclée · ${sizeLabel(selection.size, orientation, "bg")}`,
+    framed: (selection, orientation) =>
+      `Финиарт в рамка · ${sizeLabel(selection.size, orientation, "bg")} · ${FRAME_COPY.bg[selection.frame]} · ${MOUNT_COPY.bg[selection.mount]}`,
+    canvas: (selection, orientation) =>
+      `Опъната канава · ${sizeLabel(selection.size, orientation, "bg")}`,
+    digital: () => "Цифров файл · пълният кадър",
+  },
 };
 
 export function previewCaption(
   selection: PrintSelection,
   orientation: Orientation,
+  locale: Locale = DEFAULT_LOCALE,
 ): string {
-  return PREVIEW_CAPTION[selection.format](selection, orientation);
+  return PREVIEW_CAPTION[locale][selection.format](selection, orientation);
 }
 
 /**
@@ -303,16 +406,24 @@ export function previewCaption(
  * paper or framed print whose crop discards at least 1% of the photo says so,
  * because the buyer is seeing a real trim, not a decorative crop.
  */
-export function previewNote(geometry: PreviewGeometry): string | null {
+export function previewNote(
+  geometry: PreviewGeometry,
+  locale: Locale = DEFAULT_LOCALE,
+): string | null {
   if (geometry.kind === PREVIEW_KINDS.canvas) {
-    return `The outer ${Math.round(geometry.wrapMm.x / 10)} cm of the photo wraps around the sides of the canvas.`;
+    const cm = Math.round(geometry.wrapMm.x / 10);
+    return locale === "bg"
+      ? `Външните ${cm} см от снимката се увиват около страните на канавата.`
+      : `The outer ${cm} cm of the photo wraps around the sides of the canvas.`;
   }
   if (
     (geometry.kind === PREVIEW_KINDS.paper ||
       geometry.kind === PREVIEW_KINDS.framed) &&
     geometry.cropFraction >= 0.01
   ) {
-    return "Prints fill the paper edge to edge, so the photo is trimmed slightly at this size — the preview shows exactly what is printed.";
+    return locale === "bg"
+      ? "Отпечатките запълват хартията от край до край, затова снимката се изрязва леко при този размер — визуализацията показва точно какво се печата."
+      : "Prints fill the paper edge to edge, so the photo is trimmed slightly at this size — the preview shows exactly what is printed.";
   }
   return null;
 }
@@ -335,28 +446,37 @@ export const DEFAULT_FRAME_FINISH: FrameFinish = "black";
 export { DEFAULT_FRAMED_MOUNT, DEFAULT_PRINT_PAPER };
 
 /** One entry per frame finish, in catalog order. */
-export const CONFIGURATOR_FRAMES = FRAME_FINISHES.map((id) => ({
-  id,
-  label: FRAME_COPY[id],
-}));
+export function configuratorFrames(locale: Locale = DEFAULT_LOCALE) {
+  return FRAME_FINISHES.map((id) => ({
+    id,
+    label: FRAME_COPY[locale][id],
+  }));
+}
 
 /** One entry per framed mount, in catalog order (#335). */
-export const CONFIGURATOR_MOUNTS = FRAMED_MOUNTS.map((id) => ({
-  id,
-  label: MOUNT_COPY[id],
-}));
+export function configuratorMounts(locale: Locale = DEFAULT_LOCALE) {
+  return FRAMED_MOUNTS.map((id) => ({
+    id,
+    label: MOUNT_COPY[locale][id],
+  }));
+}
 
 /** One entry per giclée paper, in catalog order (#337). */
-export const CONFIGURATOR_PAPERS = PRINT_PAPERS.map((id) => ({
-  id,
-  label: PAPER_COPY[id],
-}));
+export function configuratorPapers(locale: Locale = DEFAULT_LOCALE) {
+  return PRINT_PAPERS.map((id) => ({
+    id,
+    label: PAPER_COPY[locale][id],
+  }));
+}
 
 /**
  * The helper line under the Paper select (#337). A paper is one product we
  * actually stock, so the line states its real material — and no acid-free
  * claim, which Prodigi does not make for Photo Rag.
  */
-export function paperNote(paper: PrintPaper): string {
-  return PAPER_NOTE[paper];
+export function paperNote(
+  paper: PrintPaper,
+  locale: Locale = DEFAULT_LOCALE,
+): string {
+  return PAPER_NOTE[locale][paper];
 }

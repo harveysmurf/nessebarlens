@@ -1,45 +1,45 @@
 import { PageShell } from "@/components/PageShell";
 import { PhotoCard } from "@/components/PhotoCard";
-import { CATEGORY } from "@/domain/catalog/categories";
+import { categoryNames } from "@/domain/catalog/categories";
 import type { Photo } from "@/domain/catalog/photos";
-import { photosByCategory } from "@/domain/catalog/photos";
+import { photoForLocale, photosByCategory } from "@/domain/catalog/photos";
 import type { PhotoCategory } from "@/domain/catalog/photo-schema";
 import type { Locale } from "@/domain/i18n/locale";
+import type { Dictionary } from "@/components/i18n/dictionaries";
 
 /**
- * The gallery's own copy: the badge, its colour, and the blurb. The heading is
- * not here — `CATEGORY[category].galleryTitle` owns it (#421), so the gallery and
- * the nav cannot spell the category differently by accident.
+ * The gallery's badge colour, per category.
+ *
+ * The badge's *words* are copy and live in the dictionary, with the rest of the
+ * gallery's words; the colour is not copy and stays here, because a colour has
+ * no translation and a class name is not a sentence.
  */
-const META: Record<PhotoCategory, { badge: string; badgeClass: string; blurb: string }> = {
-  "fine-art": {
-    badge: "Curated Portfolio",
-    badgeClass: "text-amber-800 bg-amber-100/60",
-    blurb:
-      "My flagship gallery captures • Museum-quality giclée prints via Prodigi • Available on Hahnemühle Photo Rag",
-  },
-  archive: {
-    badge: "Photojournalism",
-    badgeClass: "text-blue-900 bg-blue-100/60",
-    blurb: "Street life, candid moments, and historic everyday events in Old Town Nessebar",
-  },
-  film: {
-    badge: "Analog Negative",
-    badgeClass: "text-emerald-900 bg-emerald-100/60",
-    blurb: "35mm film photographs shot on my Nikon F3 • Kentmere Pan 100",
-  },
+const BADGE_CLASS: Record<PhotoCategory, { badgeClass: string }> = {
+  "fine-art": { badgeClass: "text-amber-800 bg-amber-100/60" },
+  archive: { badgeClass: "text-blue-900 bg-blue-100/60" },
+  film: { badgeClass: "text-emerald-900 bg-emerald-100/60" },
 };
 
 export function GalleryPage({
   category,
   locale,
+  copy,
+  printOptions,
 }: {
   category: PhotoCategory;
   /** The locale of the page: every print the gallery links to carries it. */
   locale: Locale;
+  /** The gallery's own words, in the page's language. */
+  copy: Dictionary["gallery"];
+  /** The gallery card's price-column label, in the page's language. */
+  printOptions: string;
 }) {
-  const meta = META[category];
-  const photos: Photo[] = photosByCategory(category);
+  const meta = BADGE_CLASS[category];
+  // The photos are the catalog's, localized for this page: the shared catalog
+  // holds the source's words, and the gallery shows the reader's.
+  const photos: Photo[] = photosByCategory(category).map((photo) =>
+    photoForLocale(photo, locale),
+  );
 
   return (
     <section className="fade-in">
@@ -48,18 +48,27 @@ export function GalleryPage({
           <span
             className={`text-[10px] uppercase tracking-[0.25em] px-2 py-0.5 rounded font-mono ${meta.badgeClass}`}
           >
-            {meta.badge}
+            {copy.badge[category]}
           </span>
           <h2 className="font-serif text-3xl font-light">
-            {CATEGORY[category].galleryTitle}
+            {categoryNames(category, locale).galleryTitle}
           </h2>
-          <p className="text-xs text-stone-500">{meta.blurb}</p>
+          <p className="text-xs text-stone-500">{copy.blurb[category]}</p>
         </div>
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
-          {photos.map((photo) => (
-            <PhotoCard key={photo.slug} photo={photo} locale={locale} />
-          ))}
-        </div>
+        {photos.length === 0 ? (
+          <p className="text-center text-sm text-stone-500">{copy.empty}</p>
+        ) : (
+          <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-8">
+            {photos.map((photo) => (
+              <PhotoCard
+                key={photo.slug}
+                photo={photo}
+                locale={locale}
+                printOptions={printOptions}
+              />
+            ))}
+          </div>
+        )}
       </PageShell>
     </section>
   );

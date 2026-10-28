@@ -8,6 +8,17 @@ description: A black and white photograph of seagulls above the calm harbour
   town.
 alt: Seagulls flying above fishing boats on the calm waters of Old Town
   Nessebar’s historic harbour in Bulgaria.
+translations:
+  bg:
+    title: Пристанището в Несебър на черно и бяло, България
+    caption: Чайки кръжат над риболовните лодки в историческото пристанище на Несебър.
+    description: Черно-бяла снимка на чайки над спокойните води на пристанището и риболовните
+      лодки в Стария Несебър, България. Сниман на 35 мм филм Kentmere Pan 100 с
+      Nikon F3, кадърът обединява износените от времето лодки на пристанището,
+      древните крайбрежни руини и тихата атмосфера на този град — обект с
+      изключителна световна стойност.
+    alt: Чайки летят над риболовните лодки в спокойните води на историческото
+      пристанище в Стария Несебър, България.
 category: film
 film_look: grayscale
 # written by publish-photos

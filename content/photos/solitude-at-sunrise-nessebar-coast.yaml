@@ -12,6 +12,20 @@ description: A solitary figure sits quietly on a stone-and-wood park bench,
   artificial intelligence generation.
 alt: A solitary figure sits on a bench facing the sunrise over the Black Sea,
   beneath autumn leaves in Nessebar.
+translations:
+  bg:
+    title: Самотност на зазоряване, несебърското крайбрежие
+    caption: Самотна фигура гледа изгрева над Черно море от пейка, посипана с листа, в
+      Несебър.
+    description: Самотна фигура седи тихо на каменно-дървена пейка в парка и се вглежда в
+      изгрева над спокойното Черно море. Сниман в историческия крайбрежен град
+      Несебър, България, този емоционален финиарт кадър разглежда темите на
+      самотата, уединението и нежното течение на времето. Топлата светлина на
+      златния час улавя есенните листа, разпръснати по каменната настилка, и
+      смесва естественото спокойствие с богат емоционален разказ. Сниман на ръка,
+      с автентична достоверност на детайла и без използване на изкуствен интелект.
+    alt: Самотна фигура седи на пейка, обърната към изгрева над Черно море, под
+      есенните листа в Несебър.
 category: fine-art
 # Recovery PR: run guarded master promotion after PR #394 merged before promotion.
 # written by publish-photos

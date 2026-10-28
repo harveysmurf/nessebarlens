@@ -43,6 +43,7 @@ import {
 } from "@/domain/ordering/print-preview";
 import type { GalleryImage } from "@/infrastructure/media/gallery-image";
 import { PictureImg } from "./PictureImg";
+import type { Dictionary } from "@/components/i18n/dictionaries";
 import {
   CANVAS_EDGE_SHADOW,
   CANVAS_WEAVE,
@@ -73,6 +74,8 @@ type PrintPreviewProps = {
   filmLookClassName: string;
   master: MasterFacts;
   size?: PrintSize | undefined;
+  /** The preview's own words, in the page's language. */
+  copy: Dictionary["print"];
 };
 
 export function PrintPreview(props: PrintPreviewProps) {
@@ -87,6 +90,7 @@ function PreviewBody({
   image,
   alt,
   label,
+  copy,
   filmLookClassName,
   master,
   size,
@@ -138,7 +142,7 @@ function PreviewBody({
 
       {geometry.kind === PREVIEW_KINDS.canvas && (
         <div className="flex justify-end">
-          <ViewToggle view={view} onChange={setView} />
+          <ViewToggle view={view} onChange={setView} copy={copy} />
         </div>
       )}
     </div>
@@ -149,12 +153,14 @@ function PreviewBody({
 function ViewToggle({
   view,
   onChange,
+  copy,
 }: {
   view: PreviewView;
   onChange: (view: PreviewView) => void;
+  copy: Dictionary["print"];
 }) {
   return (
-    <div role="radiogroup" aria-label="Preview view" className="flex items-center gap-1">
+    <div role="radiogroup" aria-label={copy.previewView} className="flex items-center gap-1">
       {(["angled", "front"] as const).map((option) => {
         const active = view === option;
         return (
@@ -174,7 +180,7 @@ function ViewToggle({
               onChange={() => onChange(option)}
               className="sr-only"
             />
-            {option === "angled" ? "Angled" : "Front"}
+            {option === "angled" ? copy.angled : copy.front}
           </label>
         );
       })}

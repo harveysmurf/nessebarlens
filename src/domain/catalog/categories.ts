@@ -1,3 +1,4 @@
+import { DEFAULT_LOCALE, type Locale } from "../i18n/locale";
 import { PHOTO_CATEGORIES, type PhotoCategory } from "./photo-schema";
 
 /**
@@ -28,10 +29,15 @@ import { PHOTO_CATEGORIES, type PhotoCategory } from "./photo-schema";
  * homepage tile blurb, the story block body and CTA, the gallery badge and its
  * colour — stays at the caller that renders it. This record holds what is the
  * same everywhere, not everything anyone ever wrote about a category.
+ *
+ * **The names are per locale, and the route is not.** The href is a route, so
+ * it is one string for every language: `/fine-art` is `/fine-art` in Bulgarian
+ * too, and a second href per language is a second source of truth about where
+ * a page lives. The *names* are copy, so they are declared per locale, and a
+ * locale added without them is a compile error here rather than an `undefined`
+ * in the nav.
  */
-export type CategoryFacts = {
-  /** The gallery route. The one href a category has. */
-  href: string;
+export type CategoryNames = {
   /** What the desktop and mobile nav call it. */
   navLabel: string;
   /** The gallery page's heading. */
@@ -51,36 +57,88 @@ export type CategoryFacts = {
   printLabel: string;
 };
 
+export type CategoryFacts = {
+  /** The gallery route. The one href a category has, in every locale. */
+  href: string;
+  /** The names, per locale. */
+  names: Record<Locale, CategoryNames>;
+};
+
 /** Every category fact, keyed by the category the facts are about. */
 export const CATEGORY: Record<PhotoCategory, CategoryFacts> = {
   "fine-art": {
     href: "/fine-art",
-    navLabel: "Fine Art",
-    galleryTitle: "Fine Art Photography",
-    homeTitle: "Fine Art",
-    storyTitle: "Fine Art Collection",
-    taglineName: "Fine Art",
-    printLabel: "Fine Art Collection",
+    names: {
+      en: {
+        navLabel: "Fine Art",
+        galleryTitle: "Fine Art Photography",
+        homeTitle: "Fine Art",
+        storyTitle: "Fine Art Collection",
+        taglineName: "Fine Art",
+        printLabel: "Fine Art Collection",
+      },
+      bg: {
+        navLabel: "Финиарт",
+        galleryTitle: "Финиарт фотография",
+        homeTitle: "Финиарт",
+        storyTitle: "Колекция „Финиарт“",
+        taglineName: "Финиарт",
+        printLabel: "Колекция „Финиарт“",
+      },
+    },
   },
   archive: {
     href: "/archive",
-    navLabel: "Archive",
-    galleryTitle: "Everyday Archive",
-    homeTitle: "Archive",
-    storyTitle: "Everyday Archive",
-    taglineName: "Archive",
-    printLabel: "Everyday Archive • Photojournalism",
+    names: {
+      en: {
+        navLabel: "Archive",
+        galleryTitle: "Everyday Archive",
+        homeTitle: "Archive",
+        storyTitle: "Everyday Archive",
+        taglineName: "Archive",
+        printLabel: "Everyday Archive • Photojournalism",
+      },
+      bg: {
+        navLabel: "Архив",
+        galleryTitle: "Ежедневен архив",
+        homeTitle: "Архив",
+        storyTitle: "Ежедневен архив",
+        taglineName: "Архив",
+        printLabel: "Ежедневен архив • Фоторепортаж",
+      },
+    },
   },
   film: {
     href: "/film",
-    navLabel: "Film Photography",
-    galleryTitle: "Film Photography",
-    homeTitle: "Film Photography",
-    storyTitle: "Film Photography",
-    taglineName: "Film",
-    printLabel: "Film Photography",
+    names: {
+      en: {
+        navLabel: "Film Photography",
+        galleryTitle: "Film Photography",
+        homeTitle: "Film Photography",
+        storyTitle: "Film Photography",
+        taglineName: "Film",
+        printLabel: "Film Photography",
+      },
+      bg: {
+        navLabel: "Филмова фотография",
+        galleryTitle: "Филмова фотография",
+        homeTitle: "Филмова фотография",
+        storyTitle: "Филмова фотография",
+        taglineName: "Филм",
+        printLabel: "Филмова фотография",
+      },
+    },
   },
 };
+
+/**
+ * The word that joins the last two names in the header's tagline.
+ *
+ * Bulgarian joins a list with "и", English with "&". The list format is the
+ * site's, and the two languages do not spell it the same way, so the joiner is
+ * part of the localized names rather than a constant in the code.
+ */
+const TAGLINE_JOIN: Record<Locale, string> = { en: " & ", bg: " и " };
 
 /**
  * The categories as the header's tagline lists them: `Fine Art, Archive & Film`.
@@ -94,17 +152,31 @@ export const CATEGORY: Record<PhotoCategory, CategoryFacts> = {
  * `Old Town Nessebar •` stays at the call sites: that is the town, not a
  * category, and the domain is not where the site's address lives.
  */
-export const CATEGORY_TAGLINE = (() => {
-  const names = PHOTO_CATEGORIES.map((category) => CATEGORY[category].taglineName);
-  // A, B & C — the site's list format, and the reason this cannot just be
+export function categoryTagline(locale: Locale = DEFAULT_LOCALE): string {
+  const names = PHOTO_CATEGORIES.map(
+    (category) => CATEGORY[category].names[locale].taglineName,
+  );
+  // A, B and C — the site's list format, and the reason this cannot just be
   // `names.join(", ")`.
-  return `${names.slice(0, -1).join(", ")} & ${names[names.length - 1]}`;
-})();
+  return `${names.slice(0, -1).join(", ")}${TAGLINE_JOIN[locale]}${names[names.length - 1]}`;
+}
 
 export function categoryHref(category: PhotoCategory): string {
   return CATEGORY[category].href;
 }
 
-export function categoryLabel(category: PhotoCategory): string {
-  return CATEGORY[category].printLabel;
+/** A category's names in one locale. */
+export function categoryNames(
+  category: PhotoCategory,
+  locale: Locale = DEFAULT_LOCALE,
+): CategoryNames {
+  return CATEGORY[category].names[locale];
+}
+
+/** A print's category line, in one locale. */
+export function categoryLabel(
+  category: PhotoCategory,
+  locale: Locale = DEFAULT_LOCALE,
+): string {
+  return CATEGORY[category].names[locale].printLabel;
 }

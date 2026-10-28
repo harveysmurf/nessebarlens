@@ -10,7 +10,7 @@ import { Button } from "@/components/Button";
 import {
   DEFAULT_SHIPPING_COUNTRY,
   isShipToCountryCode,
-  SHIP_TO_COUNTRIES,
+  type ShipToCountry,
   type ShipToCountryCode,
 } from "@/domain/pricing/ship-to-countries";
 import {
@@ -19,11 +19,13 @@ import {
   formatLabel,
   type PrintFormat,
 } from "@/domain/pricing/pricing";
+import type { Locale } from "@/domain/i18n/locale";
+import type { ConfiguratorCopy } from "@/components/i18n/dictionaries";
 import { checkoutRequest, quoteRequest } from "@/domain/ordering/request-bodies";
 import {
-  CONFIGURATOR_FRAMES,
-  CONFIGURATOR_MOUNTS,
-  CONFIGURATOR_PAPERS,
+  configuratorFrames,
+  configuratorMounts,
+  configuratorPapers,
   framedMountNote,
   masterResolutionLabel,
   offeredFormats,
@@ -68,6 +70,9 @@ export function PrintConfigurator({
   master,
   selection,
   onSelectionChange,
+  locale,
+  copy,
+  countries,
 }: {
   photoSlug: string;
   title: string;
@@ -75,6 +80,19 @@ export function PrintConfigurator({
   master: MasterFacts;
   selection: PrintSelection;
   onSelectionChange: (next: PrintSelection) => void;
+  /** The locale of the page: the prices and the country names are written in it. */
+  locale: Locale;
+  /** The configurator's own words, in the page's language. */
+  copy: ConfiguratorCopy;
+  /**
+   * The destination list, already named in the page's language.
+   *
+   * The server builds it: the names come from ICU, and the server's ICU and
+   * the browser's are not the same version, so a name the client re-derived
+   * could differ from the one the server sent and React would regenerate the
+   * tree.
+   */
+  countries: ShipToCountry[];
 }) {
   // The whole MasterFacts is passed in (#295/#325): the size labels read its
   // orientation and the Digital Copy reads its dimensions, both from the one
@@ -83,7 +101,7 @@ export function PrintConfigurator({
   const resolutionLabel = masterResolutionLabel(master);
   // #302: only the formats this photo offers, digital always. The list is never
   // empty — digital is in it — so the opening selection always exists.
-  const formats = offeredFormats(offer);
+  const formats = offeredFormats(offer, locale);
   // #326: the selection is owned by the parent (PrintDetail), so the preview
   // and the configurator read the same value. These are views of it.
   const { format, size, frame, mount, paper } = selection;
@@ -100,7 +118,7 @@ export function PrintConfigurator({
   const isGiclee = format === "giclee";
   // #302: sizes come from the photo's offer, in table order, labelled for its
   // orientation. The component no longer names the size list itself.
-  const sizes = sizeOptions(offer, format, orientation);
+  const sizes = sizeOptions(offer, format, orientation, locale);
 
   // #335: the unmounted product is assessed against this master at the selected
   // size, so the configurator can offer No Mount exactly where it can be printed
@@ -113,8 +131,8 @@ export function PrintConfigurator({
   const noMountReason =
     noMountVerdict && !noMountVerdict.verdict.eligible
       ? noMountVerdict.verdict.reason === SHAPE_MISMATCH_REASON
-        ? "This photo's shape doesn't fit this frame without a mount."
-        : "This photo's resolution is too low for an unmounted print at this size."
+        ? copy.noMountShape
+        : copy.noMountResolution
       : null;
 
   useEffect(() => {
@@ -149,10 +167,10 @@ export function PrintConfigurator({
         // surfaced to the customer as "Unexpected token '<'".
         const data: unknown = await readJsonResponse(res);
         if (!res.ok) {
-          throw new Error(requestErrorMessage(data, res.status, "Quote failed"));
+          throw new Error(requestErrorMessage(data, res.status, copy.quoteFailed));
         }
         if (!isQuotePayload(data)) {
-          throw new Error("Quote failed");
+          throw new Error(copy.quoteFailed);
         }
         setQuote({
           merchandiseEur: data.merchandiseEur,
@@ -161,7 +179,7 @@ export function PrintConfigurator({
       } catch (e) {
         if (controller.signal.aborted) return;
         setQuote(null);
-        setQuoteError(e instanceof Error ? e.message : "Quote failed");
+        setQuoteError(e instanceof Error ? e.message : copy.quoteFailed);
       } finally {
         if (!controller.signal.aborted) setQuoteLoading(false);
       }
@@ -171,7 +189,16 @@ export function PrintConfigurator({
       controller.abort();
       clearTimeout(timer);
     };
-  }, [format, size, frame, mount, paper, destinationCountry, isDigital]);
+  }, [
+    format,
+    size,
+    frame,
+    mount,
+    paper,
+    destinationCountry,
+    isDigital,
+    copy.quoteFailed,
+  ]);
 
   // The three selects validate with `isPrintSize` / `isFrameFinish` /
   // `isShipToCountryCode` rather than narrowing with `as`. A cast asserts; it
@@ -238,12 +265,12 @@ export function PrintConfigurator({
       // happens to be.
       if (!res.ok) {
         throw new Error(
-          requestErrorMessage(data, res.status, "Checkout failed"),
+          requestErrorMessage(data, res.status, copy.checkoutFailed),
         );
       }
       const url = checkoutUrl(data);
       if (!url) {
-        throw new Error("Checkout failed");
+        throw new Error(copy.checkoutFailed);
       }
       // The redirect target arrives from the API response, so it is treated as
       // untrusted: `checkoutUrl` has already refused anything that is not an
@@ -251,15 +278,15 @@ export function PrintConfigurator({
       // synchronous path, before the navigation happens.
       window.location.href = url;
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Checkout failed");
+      setError(e instanceof Error ? e.message : copy.checkoutFailed);
       setBusy(false);
     }
   }
 
   const priceLabel = (() => {
-    if (isDigital) return eurLabel(DIGITAL_PRICE_EUR);
+    if (isDigital) return eurLabel(DIGITAL_PRICE_EUR, locale);
     if (quoteLoading) return "…";
-    if (quote) return eurLabel(quote.merchandiseEur);
+    if (quote) return eurLabel(quote.merchandiseEur, locale);
     return "—";
   })();
 
@@ -268,7 +295,7 @@ export function PrintConfigurator({
       <div className="border-y border-gallery-100 py-4 space-y-1">
         <div className="flex justify-between items-baseline">
           <span className="text-xs uppercase tracking-wider text-stone-500">
-            {isDigital ? "Price" : "Print"}
+            {isDigital ? copy.price : copy.print}
           </span>
           <span className="text-2xl font-serif text-stone-900 font-semibold">
             {priceLabel}
@@ -276,12 +303,12 @@ export function PrintConfigurator({
         </div>
         {!isDigital && (
           <div className="flex justify-between items-baseline text-xs text-stone-500">
-            <span>Shipping estimate</span>
+            <span>{copy.shippingEstimate}</span>
             <span>
               {quoteLoading
                 ? "…"
                 : quote
-                  ? eurLabel(quote.shippingEur)
+                  ? eurLabel(quote.shippingEur, locale)
                   : "—"}
             </span>
           </div>
@@ -296,7 +323,7 @@ export function PrintConfigurator({
       <div className="space-y-4 text-xs">
         <fieldset>
           <legend className="block font-semibold uppercase tracking-wider text-[10px] text-stone-600 mb-2">
-            Supported Prodigi Option
+            {copy.supportedOption}
           </legend>
           <div className="grid grid-cols-2 gap-2">
             {formats.map((f) => {
@@ -327,7 +354,7 @@ export function PrintConfigurator({
                   <div className="font-medium text-stone-900">{f.title}</div>
                   <div className="text-[10px] text-stone-500">
                     {f.sub}
-                    {f.id === "digital" ? ` · ${eurLabel(DIGITAL_PRICE_EUR)}` : ""}
+                    {f.id === "digital" ? ` · ${eurLabel(DIGITAL_PRICE_EUR, locale)}` : ""}
                   </div>
                   {f.id === "digital" && (
                     <div
@@ -349,7 +376,7 @@ export function PrintConfigurator({
           // (#325). Physical formats are unchanged below.
           <div>
             <span className={fieldLabelClass("compact")}>
-              Resolution
+              {copy.resolution}
             </span>
             <p
               className="text-xs text-stone-700"
@@ -364,7 +391,7 @@ export function PrintConfigurator({
               htmlFor="print-size"
               className={fieldLabelClass("compact")}
             >
-              Dimensions
+              {copy.dimensions}
             </label>
             <select
               id="print-size"
@@ -387,7 +414,7 @@ export function PrintConfigurator({
               htmlFor="print-paper"
               className={fieldLabelClass("compact")}
             >
-              Paper
+              {copy.paper}
             </label>
             <select
               id="print-paper"
@@ -396,7 +423,7 @@ export function PrintConfigurator({
               aria-describedby="print-paper-note"
               className={fieldControlClass("compact")}
             >
-              {CONFIGURATOR_PAPERS.map((p) => (
+              {configuratorPapers(locale).map((p) => (
                 <option key={p.id} value={p.id}>
                   {p.label}
                 </option>
@@ -405,7 +432,7 @@ export function PrintConfigurator({
             {/* The paper changes the price and the print, not the geometry, so
                 the one thing worth saying here is what the paper actually is. */}
             <p id="print-paper-note" className={fieldHintClass()}>
-              {paperNote(paper)}
+              {paperNote(paper, locale)}
             </p>
           </div>
         )}
@@ -416,7 +443,7 @@ export function PrintConfigurator({
               htmlFor="frame-finish"
               className={fieldLabelClass("compact")}
             >
-              Frame Finish
+              {copy.frameFinish}
             </label>
             <select
               id="frame-finish"
@@ -427,7 +454,7 @@ export function PrintConfigurator({
               aria-describedby="frame-mount-note"
               className={fieldControlClass("compact")}
             >
-              {CONFIGURATOR_FRAMES.map((f) => (
+              {configuratorFrames(locale).map((f) => (
                 <option key={f.id} value={f.id}>
                   {f.label}
                 </option>
@@ -438,7 +465,7 @@ export function PrintConfigurator({
                 beside the finish the mount is fixed to, is the last point
                 before checkout where it can still change the buyer's mind. */}
             <p id="frame-mount-note" className={fieldHintClass()}>
-              {framedMountNote(size, orientation, mount)}
+              {framedMountNote(size, orientation, mount, locale)}
             </p>
           </div>
         )}
@@ -449,7 +476,7 @@ export function PrintConfigurator({
               htmlFor="frame-mount"
               className={fieldLabelClass("compact")}
             >
-              Mount
+              {copy.mount}
             </label>
             <select
               id="frame-mount"
@@ -459,7 +486,7 @@ export function PrintConfigurator({
               data-mount-select
               className={fieldControlClass("compact")}
             >
-              {CONFIGURATOR_MOUNTS.map((m) => (
+              {configuratorMounts(locale).map((m) => (
                 <option
                   key={m.id}
                   value={m.id}
@@ -474,10 +501,8 @@ export function PrintConfigurator({
                 offers it — never a silent swap back to the mounted version. */}
             <p id="frame-mount-help" className={fieldHintClass()}>
               {mount === FRAMED_MOUNT_VALUES.none
-                ? noMountReason ??
-                  "Your photo fills the frame edge to edge, with no mount."
-                : noMountReason ??
-                  "The photo sits behind a snow-white mount."}
+                ? noMountReason ?? copy.mountHelpNone
+                : noMountReason ?? copy.mountHelpWhite}
             </p>
           </div>
         )}
@@ -488,7 +513,7 @@ export function PrintConfigurator({
               htmlFor="shipping-country"
               className={fieldLabelClass("compact")}
             >
-              Ship to
+              {copy.shipTo}
             </label>
             <select
               id="shipping-country"
@@ -496,7 +521,7 @@ export function PrintConfigurator({
               onChange={(e) => selectDestination(e.target.value)}
               className={fieldControlClass("compact")}
             >
-              {SHIP_TO_COUNTRIES.map((c) => (
+              {countries.map((c) => (
                 <option key={c.code} value={c.code}>
                   {c.name}
                 </option>
@@ -520,12 +545,10 @@ export function PrintConfigurator({
             }
             onClick={checkout}
           >
-            {busy ? "Opening Checkout…" : "Checkout with Stripe"}
+            {busy ? copy.openingCheckout : copy.checkout}
           </Button>
           <p className="text-[10px] text-center text-stone-500 mt-2">
-            {isDigital
-              ? "Secure payment · Download link after fulfillment"
-              : "Secure payment · Live Prodigi shipping · Prodigi fulfillment"}
+            {isDigital ? copy.footnoteDigital : copy.footnotePhysical}
           </p>
           {error && (
             <p className="text-[11px] text-center text-red-700 mt-2" role="alert">
@@ -533,7 +556,7 @@ export function PrintConfigurator({
             </p>
           )}
           <p className="sr-only">
-            {title} — {formatLabel(format, mount, paper)}
+            {title} — {formatLabel(format, mount, paper, locale)}
           </p>
         </div>
       </div>

@@ -5,12 +5,14 @@ import { JsonLd } from "@/components/JsonLd";
 import { PrintDetail } from "@/components/PrintDetail";
 import { PageShell } from "@/components/PageShell";
 import { categoryHref } from "@/domain/catalog/categories";
-import { filmLookClass, getPhoto, PHOTOS } from "@/domain/catalog/photos";
+import { shipToCountriesFor } from "@/domain/pricing/ship-to-countries";
+import { filmLookClass, getPhoto, PHOTOS, photoForLocale } from "@/domain/catalog/photos";
 import { isLocale } from "@/domain/i18n/locale";
 import { localePath } from "@/domain/i18n/locale-path";
 import { galleryImage } from "@/infrastructure/media/gallery-image";
 import { printJsonLd } from "@/infrastructure/seo/json-ld";
 import { printMetadata } from "@/infrastructure/seo/page-metadata";
+import { getDictionary } from "@/components/i18n/dictionaries";
 import { requireLocale } from "../../locale-param";
 
 export function generateStaticParams() {
@@ -49,6 +51,15 @@ export default async function PrintDetailPage({
   const locale = requireLocale(raw);
   const photo = getPhoto(slug);
   if (!photo) notFound();
+  // The photo as it reads in this page's language: the shared catalog holds the
+  // source's words, and the print page shows the reader's.
+  const localized = photoForLocale(photo, locale);
+  const copy = getDictionary(locale);
+  // The destination list, named here on the server: the names come from ICU,
+  // and the server's ICU and the browser's are not the same version, so a name
+  // the client re-derived could differ from this one and React would call it a
+  // hydration mismatch.
+  const countries = shipToCountriesFor(locale);
 
   // Resolved on the server: `galleryImage()` reads `process.env`, which a
   // client component does not see, so the ladder URL must be computed here and
@@ -67,27 +78,30 @@ export default async function PrintDetailPage({
           href={localePath(locale, categoryHref(photo.category))}
           className="text-xs uppercase tracking-widest text-stone-500 hover:text-stone-900 mb-8 inline-flex items-center gap-2 font-medium"
         >
-          ← Back to Gallery
+          {copy.print.backToGallery}
         </Link>
 
         <PrintDetail
-          photoSlug={photo.slug}
-          title={photo.title}
-          offer={photo.printOffer}
-          master={photo.master}
+          photoSlug={localized.slug}
+          title={localized.title}
+          offer={localized.printOffer}
+          master={localized.master}
           image={image}
-          alt={photo.alt}
+          alt={localized.alt}
           filmLookClassName={filmLookClassName}
+          locale={locale}
+          copy={{ print: copy.print, configurator: copy.configurator }}
+          countries={countries}
         >
           <div>
             <span className="text-[10px] uppercase tracking-[0.2em] font-mono font-medium text-amber-800">
-              {photo.categoryLabel}
+              {localized.categoryLabel}
             </span>
             <h1 className="font-serif text-3xl font-normal text-stone-900 mt-1">
-              {photo.title}
+              {localized.title}
             </h1>
             <p className="text-xs text-stone-500 mt-2 leading-relaxed">
-              {photo.description}
+              {localized.description}
             </p>
           </div>
         </PrintDetail>

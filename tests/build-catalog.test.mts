@@ -29,6 +29,16 @@ const BASE = {
   print_asset_md5: "c".repeat(32),
   // The print offer (#300), required for a published photo.
   print_options: { giclee: ["30x40"], framed: ["30x40"], canvas: ["30x40"] },
+  // The Bulgarian copy, required for a published photo: a photo published in
+  // one language and English in another is a photo the site is missing.
+  translations: {
+    bg: {
+      title: "Заглавие",
+      caption: "Надпис",
+      description: "Описание.",
+      alt: "Едноредово описание на изображението",
+    },
+  },
 };
 
 function withTmpDir(fn: (dir: string) => void) {
@@ -100,11 +110,17 @@ test("more than one published featured photo is refused", () => {
       ...BASE,
       featured: true,
       hero_caption: "One",
+      translations: {
+        bg: { ...BASE.translations.bg, hero_caption: "Едно" },
+      },
     });
     writePhoto(photosDir, "second", {
       ...BASE,
       featured: true,
       hero_caption: "Two",
+      translations: {
+        bg: { ...BASE.translations.bg, hero_caption: "Две" },
+      },
     });
 
     const result = buildCatalog({ photosDir, outFile });

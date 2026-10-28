@@ -38,6 +38,22 @@ export type Locale = (typeof LOCALES)[number];
 export const DEFAULT_LOCALE: Locale = "en";
 
 /**
+ * The locales that need their own copy of everything.
+ *
+ * The default locale's copy is the source — the top-level fields of a photo's
+ * YAML, the English dictionary — so it is not a translation and is not listed
+ * here. Every other known locale is: a published photo carries a translation
+ * for each of them, and the catalog build fails when one is missing, so a
+ * half-translated photo cannot be published.
+ *
+ * Being known is not being served. A locale is served only when
+ * `PUBLIC_LOCALES` says so, and that list is the integration guard.
+ */
+export const TRANSLATED_LOCALES = LOCALES.filter(
+  (locale) => locale !== DEFAULT_LOCALE,
+) as readonly Exclude<Locale, typeof DEFAULT_LOCALE>[];
+
+/**
  * The locales the site serves.
  *
  * English only, until the page, contact and checkout slices land: a Bulgarian
