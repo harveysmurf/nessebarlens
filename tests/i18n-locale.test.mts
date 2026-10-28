@@ -41,6 +41,7 @@ import {
   LOCALE_NAMES,
   LOCALE_TAGS,
   PUBLIC_LOCALES,
+  TURNSTILE_LANGUAGES,
   isLocale,
   type Locale,
 } from "../src/domain/i18n/locale.ts";
@@ -49,6 +50,9 @@ import {
   DICTIONARIES,
   getDictionary,
 } from "../src/components/i18n/dictionaries.ts";
+import { API_ERROR_CODES } from "../src/domain/ordering/api-error-codes.ts";
+import { CONTACT_FIELD_ERROR_CODES } from "../src/domain/contact/contact-error-codes.ts";
+import { CONTACT_ATTEMPT_STATUSES } from "../src/domain/contact/contact-status.ts";
 
 const REPO = path.join(import.meta.dirname, "..");
 const DICTIONARIES_SOURCE = fs.readFileSync(
@@ -204,6 +208,47 @@ test("every locale's dictionary has the same keys as English's", () => {
       reference,
       `${locale} must have exactly the keys ${DEFAULT_LOCALE} has`,
     );
+  }
+});
+
+test("every failure code has a sentence in every locale", () => {
+  // The copy for a code is keyed by the code, so a code with no sentence
+  // would render as an empty line — and a sentence with no code is a sentence
+  // nothing can ask for. The compiler holds the shape; this holds the set.
+  const apiCodes = Object.values(API_ERROR_CODES).sort();
+  const contactCodes = Object.values(CONTACT_ATTEMPT_STATUSES)
+    .filter((status) => status !== CONTACT_ATTEMPT_STATUSES.ok)
+    .sort();
+  const fieldCodes = Object.values(CONTACT_FIELD_ERROR_CODES).sort();
+  for (const locale of LOCALES) {
+    const copy = DICTIONARIES[locale];
+    assert.deepEqual(
+      Object.keys(copy.configurator.apiErrors).sort(),
+      apiCodes,
+      `${locale} must have a sentence for every api failure code`,
+    );
+    assert.deepEqual(
+      Object.keys(copy.contact.errors).sort(),
+      contactCodes,
+      `${locale} must have a sentence for every failed attempt`,
+    );
+    assert.deepEqual(
+      Object.keys(copy.contact.fieldErrors).sort(),
+      fieldCodes,
+      `${locale} must have a sentence for every field rejection`,
+    );
+  }
+});
+
+test("the Turnstile widget speaks a plain language code", () => {
+  for (const locale of LOCALES) {
+    const language = TURNSTILE_LANGUAGES[locale];
+    assert.ok(language, `${locale} needs a widget language`);
+    // Not a BCP 47 tag: the widget takes "bg", and a tag it does not know
+    // ("bg-BG") leaves the challenge in English — an English anti-spam check
+    // on a Bulgarian page.
+    assert.equal(language.includes("-"), false, language);
+    assert.equal(language.split("-")[0], locale);
   }
 });
 

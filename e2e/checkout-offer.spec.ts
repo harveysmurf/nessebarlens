@@ -29,10 +29,9 @@ test.describe("checkout offer enforcement (#301)", () => {
       },
     });
     expect(res.status()).toBe(400);
-    expect(await res.json()).toHaveProperty(
-      "error",
-      "This print option is not available for this photo",
-    );
+    // A code, not a sentence: the body carries no prose for the browser to
+    // translate, and the copy for the code lives in the dictionary.
+    expect(await res.json()).toEqual({ code: "option-unavailable" });
   });
 
   test("a digital spec passes the offer gate and is never refused as non-offered", async ({
@@ -46,8 +45,8 @@ test.describe("checkout offer enforcement (#301)", () => {
     });
     expect(res.status()).not.toBe(400);
     expect(await res.json()).not.toHaveProperty(
-      "error",
-      "This print option is not available for this photo",
+      "code",
+      "option-unavailable",
     );
   });
 });

@@ -53,9 +53,10 @@ import {
   checkoutUrl,
   isQuotePayload,
   readJsonResponse,
-  requestErrorMessage,
   type QuotePayload,
 } from "@/application/checkout/api-payloads";
+import { failureCopy } from "@/domain/api/error-code";
+import { isApiErrorCode } from "@/domain/ordering/api-error-codes";
 import {
   isFrameFinishValue,
   isFramedMountValue,
@@ -167,7 +168,15 @@ export function PrintConfigurator({
         // surfaced to the customer as "Unexpected token '<'".
         const data: unknown = await readJsonResponse(res);
         if (!res.ok) {
-          throw new Error(requestErrorMessage(data, res.status, copy.quoteFailed));
+          // The body carries a code; the copy for it is this page's, and a
+          // body we cannot read falls back to the generic sentence.
+          throw new Error(
+            failureCopy(
+              data,
+              { isCode: isApiErrorCode, copy: copy.apiErrors },
+              copy.quoteFailed,
+            ),
+          );
         }
         if (!isQuotePayload(data)) {
           throw new Error(copy.quoteFailed);
@@ -198,6 +207,7 @@ export function PrintConfigurator({
     destinationCountry,
     isDigital,
     copy.quoteFailed,
+    copy.apiErrors,
   ]);
 
   // The three selects validate with `isPrintSize` / `isFrameFinish` /
@@ -260,12 +270,16 @@ export function PrintConfigurator({
 
       const res = await postJson("/api/checkout", body);
       const data: unknown = await readJsonResponse(res);
-      // The transport status is checked first so the server's own error string
-      // is the message on every non-ok response, whatever the payload's `url`
+      // The transport status is checked first so the failure's code is the
+      // message on every non-ok response, whatever the payload's `url`
       // happens to be.
       if (!res.ok) {
         throw new Error(
-          requestErrorMessage(data, res.status, copy.checkoutFailed),
+          failureCopy(
+            data,
+            { isCode: isApiErrorCode, copy: copy.apiErrors },
+            copy.checkoutFailed,
+          ),
         );
       }
       const url = checkoutUrl(data);

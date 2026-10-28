@@ -5,6 +5,7 @@
  */
 
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 import {
   buildContactEmail,
@@ -14,19 +15,14 @@ import {
   CONTACT_MESSAGE_MAX,
   CONTACT_NAME_MAX,
 } from "../src/domain/contact/contact-message.ts";
+import { CONTACT_FIELD_ERROR_CODES } from "../src/domain/contact/contact-error-codes.ts";
 import {
   createTurnstileVerifier,
   TURNSTILE_SITEVERIFY_URL,
 } from "../src/infrastructure/turnstile/cloudflare-turnstile.ts";
 import { createContactEmailSender } from "../src/infrastructure/contact/email-contact-message.ts";
 import { submitContact } from "../src/application/contact/submit-contact.ts";
-import {
-  contactResponse,
-  CONTACT_DELIVERY_FAILED_ERROR,
-  CONTACT_INVALID_ERROR,
-  CONTACT_RATE_LIMITED_ERROR,
-  CONTACT_REJECTED_ERROR,
-} from "../src/application/contact/contact-response.ts";
+import { contactResponse } from "../src/application/contact/contact-response.ts";
 import { RESEND_EMAILS_URL, RESEND_FROM_ADDRESS, RESEND_TIMEOUT_MS } from "../src/domain/ordering/email.ts";
 import { turnstileSiteKey } from "../src/infrastructure/config/config.ts";
 import { isContactRateLimiter } from "../src/infrastructure/cloudflare/worker-bindings.ts";
@@ -63,13 +59,13 @@ test("a non-object body reports every field as missing", () => {
   }
 
   // A missing email is worded by the one reader that owns the email rule, so
-  // the message a missing field gets is the message an empty field gets.
+  // the code a missing field gets is the code an empty field gets.
   const missing = parseContactMessage(null);
   assert.equal(missing.ok, false);
   if (missing.ok) return;
   assert.deepEqual(
     missing.errors.find((e) => e.field === "email"),
-    { field: "email", message: contactEmailError("") },
+    { field: "email", code: contactEmailError("") },
   );
 });
 
@@ -85,10 +81,13 @@ test("each field is validated independently, and all errors are returned at once
   assert.deepEqual(
     result.errors,
     [
-      { field: "name", message: "Please enter your name." },
-      { field: "email", message: "Please enter a valid email address." },
-      { field: "message", message: "Please enter a message." },
-      { field: "turnstileToken", message: "Please complete the anti-spam check." },
+      { field: "name", code: CONTACT_FIELD_ERROR_CODES.nameRequired },
+      { field: "email", code: CONTACT_FIELD_ERROR_CODES.emailInvalid },
+      { field: "message", code: CONTACT_FIELD_ERROR_CODES.messageRequired },
+      {
+        field: "turnstileToken",
+        code: CONTACT_FIELD_ERROR_CODES.turnstileRequired,
+      },
     ],
   );
 });
@@ -98,14 +97,14 @@ test("length limits are enforced on name, email and message", () => {
   const nameResult = parseContactMessage({ ...VALID, name: long });
   assert.deepEqual(nameResult, {
     ok: false,
-    errors: [{ field: "name", message: "That name is too long." }],
+    errors: [{ field: "name", code: CONTACT_FIELD_ERROR_CODES.nameTooLong }],
   });
 
   const emailLocal = "x".repeat(CONTACT_EMAIL_MAX + 5);
   const emailResult = parseContactMessage({ ...VALID, email: `${emailLocal}@example.com` });
   assert.deepEqual(emailResult, {
     ok: false,
-    errors: [{ field: "email", message: "That email address is too long." }],
+    errors: [{ field: "email", code: CONTACT_FIELD_ERROR_CODES.emailTooLong }],
   });
 
   const messageResult = parseContactMessage({
@@ -114,19 +113,19 @@ test("length limits are enforced on name, email and message", () => {
   });
   assert.deepEqual(messageResult, {
     ok: false,
-    errors: [{ field: "message", message: "That message is too long." }],
+    errors: [{ field: "message", code: CONTACT_FIELD_ERROR_CODES.messageTooLong }],
   });
 });
 
 test("contactEmailError mirrors the server's email rule", () => {
-  assert.equal(contactEmailError(""), "Please enter your email address.");
+  assert.equal(contactEmailError(""), CONTACT_FIELD_ERROR_CODES.emailRequired);
   assert.equal(
     contactEmailError(`${"x".repeat(CONTACT_EMAIL_MAX + 1)}@e.com`),
-    "That email address is too long.",
+    CONTACT_FIELD_ERROR_CODES.emailTooLong,
   );
-  assert.equal(contactEmailError("no-at-sign"), "Please enter a valid email address.");
-  assert.equal(contactEmailError("a@b"), "Please enter a valid email address.");
-  assert.equal(contactEmailError("a b@example.com"), "Please enter a valid email address.");
+  assert.equal(contactEmailError("no-at-sign"), CONTACT_FIELD_ERROR_CODES.emailInvalid);
+  assert.equal(contactEmailError("a@b"), CONTACT_FIELD_ERROR_CODES.emailInvalid);
+  assert.equal(contactEmailError("a b@example.com"), CONTACT_FIELD_ERROR_CODES.emailInvalid);
   assert.equal(contactEmailError("ok@example.com"), null);
 });
 
@@ -474,27 +473,46 @@ test("submitContact proceeds when the limiter allows", async () => {
   assert.equal(calls, 1);
 });
 
-test("contactResponse maps every outcome to status and copy", () => {
+test("contactResponse maps every outcome to a status and a code", () => {
+  // No sentence: the copy for a code is the dictionary's, and it is rendered
+  // by the client, in the reader's language.
   assert.deepEqual(contactResponse({ kind: "ok" }), { status: 200, body: { ok: true } });
   assert.deepEqual(
-    contactResponse({ kind: "invalid", errors: [{ field: "name", message: "nope" }] }),
+    contactResponse({
+      kind: "invalid",
+      errors: [{ field: "name", code: "name-required" }],
+    }),
     {
       status: 400,
-      body: { error: CONTACT_INVALID_ERROR, fields: [{ field: "name", message: "nope" }] },
+      body: {
+        code: "invalid",
+        fields: [{ field: "name", code: "name-required" }],
+      },
     },
   );
   assert.deepEqual(contactResponse({ kind: "rate-limited" }), {
     status: 429,
-    body: { error: CONTACT_RATE_LIMITED_ERROR },
+    body: { code: "rate-limited" },
   });
   assert.deepEqual(contactResponse({ kind: "rejected", reason: "x" }), {
     status: 400,
-    body: { error: CONTACT_REJECTED_ERROR },
+    body: { code: "rejected" },
   });
   assert.deepEqual(contactResponse({ kind: "delivery-failed", detail: "x" }), {
     status: 502,
-    body: { error: CONTACT_DELIVERY_FAILED_ERROR },
+    body: { code: "delivery-failed" },
   });
+});
+
+test("the response carries no sentence of its own", () => {
+  // The one thing a browser-facing failure body must not carry: prose. A
+  // sentence in the body is a sentence in one language, and the browser has no
+  // way to translate it.
+  const source = fs.readFileSync(
+    new URL("../src/application/contact/contact-response.ts", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(source, /error:/);
 });
 
 test("turnstileSiteKey reads the public key from the given env", () => {

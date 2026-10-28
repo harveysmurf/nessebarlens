@@ -1,24 +1,18 @@
 /**
  * Contact outcome → HTTP response (#293).
  *
- * One place decides the status code and the copy a visitor sees, so the route
- * cannot improvise a different message and the mapping is testable as data. No
- * branch ever echoes an internal detail: validation errors name fields (which
- * the visitor already knows they filled), and everything else gets one generic
- * sentence. A 503 for "not configured" is emitted by the route itself, because
- * by then no submission has been attempted.
+ * One place decides the status code and the code the browser reads, so the
+ * route cannot improvise a different answer and the mapping is testable as
+ * data. No branch ever echoes an internal detail, and no branch carries a
+ * sentence: the copy for a code lives in the dictionary and is rendered by the
+ * client, in the reader's language. Validation errors name the fields (which
+ * the visitor already knows they filled) and the code of each. A 503 for "not
+ * configured" is emitted by the route itself, because by then no submission has
+ * been attempted.
  */
 
 import { CONTACT_ATTEMPT_STATUSES } from "../../domain/contact/contact-status";
 import type { ContactOutcome } from "./submit-contact";
-
-export const CONTACT_INVALID_ERROR = "Please check the highlighted fields.";
-export const CONTACT_RATE_LIMITED_ERROR =
-  "Too many messages from here. Please try again a little later.";
-export const CONTACT_REJECTED_ERROR =
-  "We couldn't verify that you're human. Please refresh the page and try again.";
-export const CONTACT_DELIVERY_FAILED_ERROR =
-  "Sorry, your message could not be sent. Please try again.";
 
 export type ContactHttpResponse = {
   status: number;
@@ -32,13 +26,19 @@ export function contactResponse(outcome: ContactOutcome): ContactHttpResponse {
     case CONTACT_ATTEMPT_STATUSES.invalid:
       return {
         status: 400,
-        body: { error: CONTACT_INVALID_ERROR, fields: outcome.errors },
+        body: {
+          code: CONTACT_ATTEMPT_STATUSES.invalid,
+          fields: outcome.errors,
+        },
       };
     case CONTACT_ATTEMPT_STATUSES.rateLimited:
-      return { status: 429, body: { error: CONTACT_RATE_LIMITED_ERROR } };
+      return { status: 429, body: { code: CONTACT_ATTEMPT_STATUSES.rateLimited } };
     case CONTACT_ATTEMPT_STATUSES.rejected:
-      return { status: 400, body: { error: CONTACT_REJECTED_ERROR } };
+      return { status: 400, body: { code: CONTACT_ATTEMPT_STATUSES.rejected } };
     case CONTACT_ATTEMPT_STATUSES.deliveryFailed:
-      return { status: 502, body: { error: CONTACT_DELIVERY_FAILED_ERROR } };
+      return {
+        status: 502,
+        body: { code: CONTACT_ATTEMPT_STATUSES.deliveryFailed },
+      };
   }
 }

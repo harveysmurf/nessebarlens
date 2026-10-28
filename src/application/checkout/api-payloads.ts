@@ -17,10 +17,13 @@
  * well, and the failure mode of a mismatched-but-usable payload is covered by
  * the generic error message rather than a second, near-duplicate validation
  * grammar.
+ *
+ * There is no reader for the server's own words here, and that is the point:
+ * a failure body carries a code, the copy for the code lives in the
+ * dictionary, and the client renders it in the reader's language.
  */
 import { HTTPS_URL_PATTERN } from "@/domain/pricing/url-patterns";
 import { isRecord } from "@/domain/json/record";
-import { PRODIGI_FAILURE_REASONS } from "@/domain/ordering/prodigi-policy";
 
 /**
  * The two public numbers a quote is made of.
@@ -83,44 +86,6 @@ export function checkoutUrl(value: unknown): string | null {
 }
 
 /**
- * The server's own error string, when it sent a usable one. Read from
- * `unknown` with its own guard so the error path cannot itself throw — an
- * unreadable payload falls back to the caller's generic message.
- */
-export function errorMessage(value: unknown): string | null {
-  if (!isRecord(value)) return null;
-  const message = value.error;
-  return typeof message === "string" && message !== "" ? message : null;
-}
-
-/**
- * The copy the configurator shows for a failure code, keyed by the code the
- * routes now send instead of an internal message (#107).
- *
- * The routes' own `error` string is already customer-safe, so this map is not
- * the only thing standing between the customer and a leak — it is the one that
- * survives a route being changed, or an older/newer deploy being in front of
- * this bundle, where the string in the body is not the string this map knows.
- * An unknown code therefore falls through to the server's message rather than
- * being swallowed: the routes are the authority on what is safe to say, and
- * this map only overrides the codes it recognises.
- */
-const CODE_COPY: Readonly<Record<string, string>> = {
-  [PRODIGI_FAILURE_REASONS.unconfigured]:
-    "Pricing is temporarily unavailable, please try again.",
-  [PRODIGI_FAILURE_REASONS.unavailable]:
-    "Pricing is temporarily unavailable, please try again.",
-  "checkout-unavailable": "Checkout is temporarily unavailable, please try again.",
-};
-
-/** The copy for a failure `code`, or null when the body carries none we know. */
-export function codeErrorMessage(value: unknown): string | null {
-  if (!isRecord(value)) return null;
-  const code = value.code;
-  return typeof code === "string" ? CODE_COPY[code] ?? null : null;
-}
-
-/**
  * A body that arrived and was not JSON. A distinct value rather than null,
  * because `null` is a legitimate JSON payload and "the server sent HTML" is a
  * different failure from "the server sent JSON null" — the caller reports them
@@ -151,7 +116,7 @@ export async function readJsonResponse(res: Response): Promise<unknown | NonJson
     return NOT_JSON;
   }
   // An empty body is a valid response to some failures and parses to nothing;
-  // treating it as "no payload" keeps `errorMessage` on the fallback path
+  // treating it as "no payload" keeps the failure on the generic path
   // instead of reporting a parse failure that never happened.
   if (text === "") return null;
   try {
@@ -164,25 +129,4 @@ export async function readJsonResponse(res: Response): Promise<unknown | NonJson
 /** Whether a body from readJsonResponse arrived as something other than JSON. */
 export function isNonJsonBody(value: unknown): value is NonJsonBody {
   return value === NOT_JSON;
-}
-
-/**
- * The message to show for a failed request: the server's own string when it
- * sent one, and the transport status otherwise.
- *
- * Both call sites need this and both got it wrong independently before — one
- * could echo nothing, the other nothing but a parser error — so the fallback
- * carries the status on purpose. "Checkout failed (502)" tells a customer what
- * happened and a developer which request to look for; "Checkout failed" tells
- * neither.
- */
-export function requestErrorMessage(
-  value: unknown,
-  status: number,
-  fallback: string,
-): string {
-  if (isNonJsonBody(value)) return `${fallback} (${status})`;
-  return (
-    codeErrorMessage(value) ?? errorMessage(value) ?? `${fallback} (${status})`
-  );
 }

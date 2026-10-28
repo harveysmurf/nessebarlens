@@ -135,7 +135,7 @@ test.describe("framed mount choice (#335)", () => {
       await route.fulfill({
         status: 502,
         contentType: "application/json",
-        body: JSON.stringify({ error: "stubbed" }),
+        body: JSON.stringify({ code: "checkout-unavailable" }),
       });
     });
 

@@ -176,9 +176,10 @@ test("prodigiFailureFrom maps kind to code and status in one place", () => {
     message: detail,
     status: null,
   });
+  // No sentence any more: the browser-facing answer is a code from the site's
+  // own set, and the copy for it is the dictionary's.
   assert.deepEqual(unconfigured, {
     code: "prodigi-unconfigured",
-    error: "Pricing is temporarily unavailable, please try again.",
     status: 503,
     detail,
   });
@@ -226,9 +227,10 @@ test("prodigiFailureFrom never puts the internal detail in the customer fields (
         message,
         status: kind === "unconfigured" ? null : 502,
       });
-      assert.equal(failure.error.includes(failure.detail), false, message);
       assert.equal(failure.code.includes(failure.detail), false, message);
-      assert.match(failure.error, /^Pricing is temporarily unavailable/);
+      // And there is no customer-facing field left to leak into: the body
+      // carries a code, and the copy for a code is the dictionary's.
+      assert.equal(Object.keys(failure).sort().join(","), "code,detail,status");
     }
   }
 });

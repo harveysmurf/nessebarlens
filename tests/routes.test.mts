@@ -207,13 +207,15 @@ test("quote: unparseable body, then a body the parser rejects", async () => {
     }),
   );
   assert.equal(broken.status, 400);
-  assert.deepEqual(await body(broken), { error: "Invalid JSON" });
+  // A code, not a sentence: the copy for it is the dictionary's, and the
+  // parser's own wording never reaches an unauthenticated caller.
+  assert.deepEqual(await body(broken), { code: "invalid-request" });
 
   const rejected = await quote.POST(
     jsonRequest(`${SITE}/api/quote`, { format: "nope", size: "30x40" }),
   );
   assert.equal(rejected.status, 400);
-  assert.match(String((await body(rejected)).error), /format/);
+  assert.deepEqual(await body(rejected), { code: "invalid-request" });
 });
 
 test("both routes: a body that will not parse is the same 400 on both", async () => {
@@ -238,7 +240,7 @@ test("both routes: a body that will not parse is the same 400 on both", async ()
         assert.equal(response.status, 400, `${path} ${JSON.stringify(payload)}`);
         assert.deepEqual(
           await body(response),
-          { error: "Invalid JSON" },
+          { code: "invalid-request" },
           `${path} ${JSON.stringify(payload)}`,
         );
       }
@@ -257,7 +259,7 @@ test("both routes: a body that will not parse is the same 400 on both", async ()
         assert.equal(response.status, 400, `${path} ${payload}`);
         assert.deepEqual(
           await body(response),
-          { error: "Invalid JSON body" },
+          { code: "invalid-request" },
           `${path} ${payload}`,
         );
       }
@@ -279,7 +281,7 @@ test("quote: a digital quote is not a thing, and Prodigi decides the status", as
       jsonRequest(`${SITE}/api/quote`, { format: "digital" }),
     );
     assert.equal(digital.status, 400);
-    assert.equal((await body(digital)).error, "digital has no Prodigi quote");
+    assert.equal((await body(digital)).code, "invalid-request");
 
     globalThis.fetch = (async () => {
       throw new Error("fetch must not be called without an API key");
@@ -294,11 +296,17 @@ test("quote: a digital quote is not a thing, and Prodigi decides the status", as
     );
     assert.equal(unconfigured.status, 503, "no key is 503, a Prodigi failure is 502");
     // The env var name is what made this a leak: an unauthenticated caller
-    // could read our deployment state off the error string (#107).
-    assert.deepEqual(await body(unconfigured), {
-      error: "Pricing is temporarily unavailable, please try again.",
-      code: "prodigi-unconfigured",
+    // could read our deployment state off the error string (#107). The body
+    // carries a code from our own set and nothing else.
+    const unconfiguredBody = await body(unconfigured);
+    assert.deepEqual(unconfiguredBody, {
+      code: "pricing-unavailable",
     });
+    assert.equal(
+      JSON.stringify(unconfiguredBody).includes("PRODIGI"),
+      false,
+      "the vendor's name and the env var's name must not reach the wire",
+    );
 
     process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
     globalThis.fetch = (async () => new Response("nope", { status: 500 })) as typeof fetch;
@@ -602,13 +610,13 @@ test("checkout: a bad body is a 400 and a missing slug never reaches Stripe", as
       new Request(`${SITE}/api/checkout`, { method: "POST", body: "{" }),
     );
     assert.equal(broken.status, 400);
-    assert.equal((await body(broken)).error, "Invalid JSON");
+    assert.equal((await body(broken)).code, "invalid-request");
 
     const noSlug = await checkout.POST(
       jsonRequest(`${SITE}/api/checkout`, { format: "digital" }),
     );
     assert.equal(noSlug.status, 400);
-    assert.equal((await body(noSlug)).error, "photoSlug required");
+    assert.equal((await body(noSlug)).code, "invalid-request");
 
     const unconfigured = await checkout.POST(
       jsonRequest(`${SITE}/api/checkout`, { photoSlug: SAMPLE_SLUG, format: "digital" }),
@@ -618,7 +626,7 @@ test("checkout: a bad body is a 400 and a missing slug never reaches Stripe", as
       jsonRequest(`${SITE}/api/checkout`, { photoSlug: "no-such-photo", format: "digital" }),
     );
     assert.equal(unknown.status, 404);
-    assert.equal((await body(unknown)).error, "Unknown photoSlug");
+    assert.equal((await body(unknown)).code, "unknown-photo");
   } finally {
     globalThis.fetch = originalFetch;
     if (saved.STRIPE_SECRET_KEY !== undefined) {
@@ -645,7 +653,7 @@ test("checkout: an unset site url is a 503 before Stripe or Prodigi is called", 
       assert.equal(res.status, 503, JSON.stringify(payload));
       // Generic: the customer must not learn which env var is missing.
       const parsed = await body(res);
-      assert.equal(parsed.error, "Checkout is not configured");
+      assert.equal(parsed.code, "service-unconfigured");
       assert.ok(!JSON.stringify(parsed).includes("NEXT_PUBLIC_SITE_URL"));
     }
   } finally {
@@ -678,10 +686,7 @@ test("checkout: a physical size the photo does not sell is a 400 before Prodigi 
       }),
     );
     assert.equal(response.status, 400);
-    assert.equal(
-      (await body(response)).error,
-      "This print option is not available for this photo",
-    );
+    assert.equal((await body(response)).code, "option-unavailable");
     assert.equal(gatewayCalled, false, "no gateway call for a refused size");
   } finally {
     globalThis.fetch = originalFetch;
@@ -726,10 +731,7 @@ test("checkout: an offered framed size whose no-mount variant is ineligible is a
       }),
     );
     assert.equal(response.status, 400);
-    assert.equal(
-      (await body(response)).error,
-      "This print option is not available for this photo",
-    );
+    assert.equal((await body(response)).code, "option-unavailable");
     assert.equal(gatewayCalled, false, "no gateway call for an ineligible no-mount size");
   } finally {
     globalThis.fetch = originalFetch;
@@ -1429,10 +1431,7 @@ test("checkout: a Stripe rejection is a 502 that names Stripe's own code", async
     const failed = await body(response);
     // Stripe's own code identifies the cause in the log, not in the body this
     // unauthenticated caller reads (#107).
-    assert.deepEqual(failed, {
-      error: "Could not create Checkout Session",
-      code: "checkout-unavailable",
-    });
+    assert.deepEqual(failed, { code: "checkout-unavailable" });
     assert.equal(
       JSON.stringify(failed).includes("api_key_invalid"),
       false,
@@ -1467,10 +1466,7 @@ test("checkout: a transport failure with no Stripe code still logs one", async (
       jsonRequest(`${SITE}/api/checkout`, { photoSlug: SAMPLE_SLUG, format: "digital" }),
     );
     assert.equal(response.status, 502);
-    assert.deepEqual(await body(response), {
-      error: "Could not create Checkout Session",
-      code: "checkout-unavailable",
-    });
+    assert.deepEqual(await body(response), { code: "checkout-unavailable" });
     // The error is logged whole, so the SDK's code survives for the causes that
     // have one and the message survives for the ones that do not.
     assert.ok(
@@ -2190,7 +2186,7 @@ test("checkout: a physical order with no signing secret is refused before paymen
         }),
       );
       assert.equal(response.status, 503, JSON.stringify(secret));
-      assert.equal((await body(response)).error, "Print fulfillment is not configured");
+      assert.equal((await body(response)).code, "service-unconfigured");
       assert.equal(stripeCalled, false, "no Stripe session may be created");
     } finally {
       globalThis.fetch = originalFetch;
@@ -2368,7 +2364,7 @@ test("checkout: an unconfigured quote, a Stripe failure and a session with no UR
       }),
     );
     assert.equal(failed.status, 502);
-    assert.equal((await body(failed)).error, "Could not create Checkout Session");
+    assert.equal((await body(failed)).code, "checkout-unavailable");
 
     globalThis.fetch = (async (url: unknown) => {
       if (String(url).includes("stripe.com")) {
@@ -2387,7 +2383,7 @@ test("checkout: an unconfigured quote, a Stripe failure and a session with no UR
       }),
     );
     assert.equal(noUrl.status, 502);
-    assert.equal((await body(noUrl)).error, "Stripe session missing URL");
+    assert.equal((await body(noUrl)).code, "checkout-unavailable");
   } finally {
     globalThis.fetch = originalFetch;
     restore();
@@ -2466,10 +2462,7 @@ test("quote: an omitted destination country defaults, and a non-Error throw is a
       jsonRequest(`${SITE}/api/quote`, { format: "giclee", size: "30x40" }),
     );
     assert.equal(broken.status, 502);
-    assert.deepEqual(await body(broken), {
-      error: "Pricing is temporarily unavailable, please try again.",
-      code: "prodigi-unavailable",
-    });
+    assert.deepEqual(await body(broken), { code: "pricing-unavailable" });
   } finally {
     globalThis.fetch = originalFetch;
     for (const key of ["PRODIGI_API_BASE", "PRODIGI_SANDBOX_API_KEY"] as const) {
@@ -2498,10 +2491,7 @@ test("checkout: a non-Error throw from the quote layer is a 502", async () => {
       }),
     );
     assert.equal(response.status, 502);
-    assert.deepEqual(await body(response), {
-      error: "Pricing is temporarily unavailable, please try again.",
-      code: "prodigi-unavailable",
-    });
+    assert.deepEqual(await body(response), { code: "pricing-unavailable" });
   } finally {
     globalThis.fetch = originalFetch;
     restore();

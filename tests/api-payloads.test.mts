@@ -1,13 +1,11 @@
 import assert from "node:assert/strict";
+import fs from "node:fs";
 import test from "node:test";
 import {
   checkoutUrl,
-  codeErrorMessage,
-  errorMessage,
   isQuotePayload,
   isNonJsonBody,
   readJsonResponse,
-  requestErrorMessage,
 } from "../src/application/checkout/api-payloads.ts";
 
 test("isQuotePayload accepts a well-formed quote", () => {
@@ -82,13 +80,17 @@ test("checkoutUrl rejects missing or non-string urls", () => {
   assert.equal(checkoutUrl("https://example.com"), null);
 });
 
-test("errorMessage reads only a usable string, so the error path cannot throw", () => {
-  assert.equal(errorMessage({ error: "Quote failed upstream" }), "Quote failed upstream");
-  assert.equal(errorMessage({ error: "" }), null);
-  assert.equal(errorMessage({ error: { message: "nested" } }), null);
-  assert.equal(errorMessage({}), null);
-  assert.equal(errorMessage(null), null);
-  assert.equal(errorMessage("plain string"), null);
+test("the payload reader never hands the server's own words to the page", () => {
+  // The module that reads a response body has no reader for a message: a
+  // failure body carries a code, and the copy for a code is the dictionary's,
+  // in the reader's language. A reader here would be a second place where a
+  // sentence written by the server reaches the customer.
+  const source = fs.readFileSync(
+    new URL("../src/application/checkout/api-payloads.ts", import.meta.url),
+    "utf8",
+  );
+  assert.doesNotMatch(source, /\.error\b/);
+  assert.doesNotMatch(source, /requestErrorMessage|codeErrorMessage/);
 });
 
 /**
@@ -123,53 +125,4 @@ test("a body that cannot be read at all is still reportable by status", async ()
     },
   } as unknown as Response;
   assert.equal(isNonJsonBody(await readJsonResponse(broken)), true);
-});
-
-test("the error message names the status when the server sent no usable string", async () => {
-  assert.equal(
-    requestErrorMessage({ error: "Unknown photoSlug" }, 404, "Quote failed"),
-    "Unknown photoSlug",
-  );
-  // The reported failure: an HTML 502 page has no `error` field to read. The
-  // sentinel is the module's own, obtained the way the component gets it.
-  const notJson = await readJsonResponse(
-    new Response("<!DOCTYPE html>", { status: 502 }),
-  );
-  assert.equal(
-    requestErrorMessage(notJson, 502, "Quote failed"),
-    "Quote failed (502)",
-  );
-  assert.equal(requestErrorMessage(null, 400, "Checkout failed"), "Checkout failed (400)");
-  assert.equal(requestErrorMessage({}, 503, "Checkout failed"), "Checkout failed (503)");
-  assert.equal(
-    requestErrorMessage({ error: "Checkout is not configured" }, 503, "Checkout failed"),
-    "Checkout is not configured",
-  );
-});
-
-test("a known failure code wins over the string in the body (#107)", () => {
-  // The routes now send a code plus a safe message; the map is what the UI
-  // actually shows, so a body whose `error` is anything else cannot reach the
-  // customer through a code we recognise.
-  assert.equal(
-    requestErrorMessage(
-      { code: "prodigi-unavailable", error: "Prodigi quote HTTP 429" },
-      502,
-      "Quote failed",
-    ),
-    "Pricing is temporarily unavailable, please try again.",
-  );
-  assert.equal(
-    codeErrorMessage({ code: "checkout-unavailable" }),
-    "Checkout is temporarily unavailable, please try again.",
-  );
-  // An unknown code is not swallowed: the server owns what is safe to say, and
-  // a code from a newer deploy still shows its own message.
-  assert.equal(codeErrorMessage({ code: "something-new" }), null);
-  assert.equal(
-    requestErrorMessage({ code: "something-new", error: "Upstream said no" }, 502, "Quote failed"),
-    "Upstream said no",
-  );
-  assert.equal(codeErrorMessage("not-an-object"), null);
-  assert.equal(codeErrorMessage({ code: 7 }), null);
 });

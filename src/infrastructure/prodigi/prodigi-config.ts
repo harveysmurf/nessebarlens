@@ -216,7 +216,7 @@ export function classifyProdigiStatus(status: number): {
  *
  * `prodigi-unconfigured` is this deployment missing something (503) and
  * `prodigi-unavailable` is Prodigi itself failing (502) — the same split the
- * kind→status mapping draws, in a form a client can branch on without parsing
+ * kind→status mapping draws, in a form a caller can branch on without parsing
  * prose.
  */
 export type ProdigiFailureCode =
@@ -224,20 +224,17 @@ export type ProdigiFailureCode =
   | typeof PRODIGI_FAILURE_REASONS.unavailable;
 
 /**
- * What the customer reads, per code. Deliberately one sentence that says
- * nothing about our configuration or Prodigi's: both routes are unauthenticated
- * endpoints, so "PRODIGI_API_KEY is not set" or "Prodigi quote HTTP 429" told
- * an unauthenticated caller our deploy state and our upstream's behaviour for
- * free (#107).
+ * What a caller has to put in a failed Prodigi response, minus next/server.
+ *
+ * There is no customer-facing sentence here any more: the browser-facing
+ * answer is a code from the site's own set, and the copy for it lives in the
+ * dictionary and is rendered by the client, in the reader's language. What
+ * this layer owns is the classification — which failure it was, what status
+ * it deserves, and the internal detail for the log.
  */
-const CUSTOMER_MESSAGE = "Pricing is temporarily unavailable, please try again.";
-
-/** What a caller has to put in a failed Prodigi response, minus next/server. */
 export type ProdigiFailure = {
-  /** The stable code to put in the response body. */
+  /** The stable code for the log and for the site's own classification. */
   code: ProdigiFailureCode;
-  /** The customer-safe message to put in the response body. */
-  error: string;
   status: 502 | 503;
   /**
    * The full internal message — env var names, upstream status text — for the
@@ -252,7 +249,7 @@ export type ProdigiFailure = {
  * The envelope both Prodigi routes hand back from a failed result. The kind is
  * the one signal that decides the code and status: an unconfigured deployment
  * is our fault (503), and a timeout, a client error or a server error are all
- * Prodigi being unreachable (502) — with the same customer-safe copy either
+ * Prodigi being unreachable (502) — with the same browser-facing code either
  * way, so nothing observable changes for the caller.
  *
  * Stays free of `next/server` for the same reason json-body.ts does: the caller
@@ -264,14 +261,12 @@ export function prodigiFailureFrom(
   if (result.kind === "unconfigured") {
     return {
       code: PRODIGI_FAILURE_REASONS.unconfigured,
-      error: CUSTOMER_MESSAGE,
       status: 503,
       detail: result.message,
     };
   }
   return {
     code: PRODIGI_FAILURE_REASONS.unavailable,
-    error: CUSTOMER_MESSAGE,
     status: 502,
     detail: result.message,
   };

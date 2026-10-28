@@ -134,6 +134,39 @@ test("the Bulgarian configurator is Bulgarian, and prices in Bulgarian", async (
   await expect(bulgaria).toHaveAttribute("value", "BG");
 });
 
+test("the Bulgarian contact page is Bulgarian, and so are its field errors", async ({
+  page,
+}) => {
+  await page.goto("/bg/contact");
+
+  await expect(page.locator("html")).toHaveAttribute("lang", "bg");
+
+  // The page's own words.
+  await expect(
+    page.getByRole("heading", { name: "Контакт с ателието" }),
+  ).toBeVisible();
+  await expect(page.getByText("Свържете се с нас")).toBeVisible();
+  await expect(page.getByText("Въпроси за отпечатък")).toBeVisible();
+
+  // The form's labels, and the button.
+  await expect(page.getByLabel("Име", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Имейл", { exact: true })).toBeVisible();
+  await expect(page.getByLabel("Съобщение", { exact: true })).toBeVisible();
+  await expect(
+    page.getByRole("button", { name: "Изпрати съобщение" }),
+  ).toBeVisible();
+
+  // And the rejections: the form renders the dictionary's Bulgarian sentence
+  // for each code, so an empty submission reads in Bulgarian too.
+  await page.getByRole("button", { name: "Изпрати съобщение" }).click();
+  await expect(page.getByText("Моля, въведете вашето име.")).toBeVisible();
+  await expect(page.getByText("Моля, въведете вашия имейл адрес.")).toBeVisible();
+  await expect(page.getByText("Моля, въведете съобщение.")).toBeVisible();
+  // The English sentences are nowhere on the page.
+  await expect(page.getByText("Please enter your name.")).toHaveCount(0);
+  await expect(page.getByText("Send Message")).toHaveCount(0);
+});
+
 test("the switcher carries the reader from Bulgarian to English and back", async ({
   page,
 }) => {

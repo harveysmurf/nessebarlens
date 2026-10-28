@@ -25,8 +25,11 @@ export async function POST(request: Request) {
   const bindings = await readWorkerBindings();
   const body = await readJsonBody(request);
   if (!body.ok) {
+    // The reason goes to the log; the browser gets the code, and the copy for
+    // the code is the reader's language.
+    console.error("contact.malformed-body", body.error);
     const response = NextResponse.json(
-      { error: body.error },
+      { code: CONTACT_ATTEMPT_STATUSES.malformed },
       { status: body.status },
     );
     recordContactAttempt(
@@ -49,7 +52,7 @@ export async function POST(request: Request) {
       "contact unconfigured: TURNSTILE_SECRET_KEY, CONTACT_TO_EMAIL or RESEND_API_KEY is missing",
     );
     const response = NextResponse.json(
-      { error: "Contact is not configured" },
+      { code: CONTACT_ATTEMPT_STATUSES.unconfigured },
       { status: 503 },
     );
     recordContactAttempt(

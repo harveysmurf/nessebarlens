@@ -56,6 +56,7 @@ import {
   sizeOptions,
 } from "../src/domain/ordering/print-copy.ts";
 import { PrintConfigurator } from "../src/components/PrintConfigurator.tsx";
+import { ContactForm } from "../src/components/ContactForm.tsx";
 import type { PrintOffer } from "../src/domain/catalog/print-offer.ts";
 import type { MasterFacts } from "../src/domain/catalog/master-facts.ts";
 import type { PrintSelection } from "../src/domain/ordering/print-selection.ts";
@@ -336,6 +337,34 @@ test("the configurator's copy is Bulgarian in every branch", () => {
   assert.match(markup(base, "bg"), /Плащане през Stripe/);
   assert.match(markup(base, "bg"), /Сигурно плащане · Доставка на живо през Prodigi/);
   assert.doesNotMatch(markup(base, "bg"), /Checkout with Stripe/);
+});
+
+test("the contact form's words are Bulgarian, and its errors are codes", () => {
+  // The form is a client component, so it takes the slice it renders as a
+  // prop. Everything a visitor reads on it — the labels, the button — comes
+  // from the dictionary, and every rejection is a code the dictionary holds
+  // the sentence for.
+  const markup = (locale: "en" | "bg"): string =>
+    renderToStaticMarkup(
+      createElement(ContactForm, {
+        siteKey: "1x00000000000000000000AA",
+        locale,
+        copy: getDictionary(locale).contact,
+      }),
+    );
+
+  const bulgarian = markup("bg");
+  assert.match(bulgarian, /Име/);
+  assert.match(bulgarian, /Имейл/);
+  assert.match(bulgarian, /Съобщение/);
+  assert.match(bulgarian, /Изпрати съобщение/);
+  // And the English words are nowhere on the Bulgarian form.
+  assert.doesNotMatch(bulgarian, /Send Message/);
+  assert.doesNotMatch(bulgarian, /Please enter your name/);
+
+  const english = markup("en");
+  assert.match(english, /Name/);
+  assert.match(english, /Send Message/);
 });
 
 test("the preview's label, caption and note are Bulgarian", () => {

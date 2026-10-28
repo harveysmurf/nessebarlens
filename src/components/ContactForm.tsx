@@ -4,15 +4,20 @@ import Script from "next/script";
 import { useCallback, useEffect, useRef, useState } from "react";
 import {
   parseContactMessage,
+  readContactFieldErrors,
   type ContactField,
   type ContactMessage,
 } from "@/domain/contact/contact-message";
-import { postJson } from "@/infrastructure/http/post-json";
 import {
-  errorMessage,
-  readJsonResponse,
-} from "@/application/checkout/api-payloads";
+  isContactErrorCode,
+  type ContactFieldErrorCode,
+} from "@/domain/contact/contact-error-codes";
+import { failureCopy } from "@/domain/api/error-code";
+import { postJson } from "@/infrastructure/http/post-json";
+import { readJsonResponse } from "@/application/checkout/api-payloads";
 import { track } from "@/analytics/track";
+import { TURNSTILE_LANGUAGES, type Locale } from "@/domain/i18n/locale";
+import type { ContactCopy } from "@/components/i18n/dictionaries";
 import {
   fieldControlClass,
   fieldErrorClass,
@@ -29,6 +34,12 @@ import { Button } from "@/components/Button";
  * email rule stays single-sourced. The server still re-validates — the client
  * copy is UX, not a trust boundary.
  *
+ * Everything the visitor reads comes from the dictionary, handed over by the
+ * server page as a prop: the labels, the field errors, the messages under the
+ * form. Nothing here is written in one language, and nothing here is a
+ * sentence the server sent — the server sends codes, and the copy for a code
+ * is rendered here, in the page's language.
+ *
  * Turnstile is rendered explicitly so React owns its lifecycle: the script is
  * loaded once, the widget is rendered into a ref'd div, and it is reset after
  * every failed submit because a token is single-use. When no site key is
@@ -41,6 +52,8 @@ type TurnstileApi = {
     container: HTMLElement,
     options: {
       sitekey: string;
+      /** The language the challenge is shown in. */
+      language: string;
       callback: (token: string) => void;
       "expired-callback": () => void;
       "error-callback": () => void;
@@ -50,7 +63,8 @@ type TurnstileApi = {
   remove: (widgetId: string) => void;
 };
 
-type FieldErrors = Partial<Record<ContactField, string>>;
+/** The rejection of each field, as the code the dictionary holds words for. */
+type FieldErrors = Partial<Record<ContactField, ContactFieldErrorCode>>;
 
 /**
  * The widget API the Turnstile script puts on `window`, or undefined until the
@@ -76,19 +90,21 @@ function fieldErrors(values: ContactMessage): FieldErrors {
   const parsed = parseContactMessage(values);
   if (parsed.ok) return {};
   const errors: FieldErrors = {};
-  for (const error of parsed.errors) errors[error.field] = error.message;
+  for (const error of parsed.errors) errors[error.field] = error.code;
   return errors;
 }
 
-/**
- * The copy for a submission that did not go through: the request never left
- * the browser, or the server answered with nothing we can show. One owner, so
- * the two paths a visitor can reach it by — a failed response and a thrown
- * request — cannot say different things.
- */
-const CONTACT_FAILED = "Sorry, your message could not be sent. Please try again.";
-
-export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
+export function ContactForm({
+  siteKey,
+  locale,
+  copy,
+}: {
+  siteKey?: string | undefined;
+  /** The locale of the page: the widget speaks it, and the copy is in it. */
+  locale: Locale;
+  /** The contact form's own words, in the page's language. */
+  copy: ContactCopy;
+}) {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [message, setMessage] = useState("");
@@ -107,6 +123,9 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
     if (!siteKey || !turnstile || !widgetContainer.current || widgetId.current) return;
     widgetId.current = turnstile.render(widgetContainer.current, {
       sitekey: siteKey,
+      // The challenge is shown in the page's language: a Bulgarian reader is
+      // asked to pass an English check otherwise.
+      language: TURNSTILE_LANGUAGES[locale],
       callback: (value) => {
         token.current = value;
       },
@@ -117,7 +136,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
         token.current = "";
       },
     });
-  }, [siteKey]);
+  }, [siteKey, locale]);
 
   useEffect(() => {
     if (scriptReady) renderWidget();
@@ -170,11 +189,25 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
       });
       // Read the body the way the configurator reads it: a response that is
       // not JSON is a failure to read, not a failure to parse, and the copy
-      // below is what the visitor sees either way. The server's own error
-      // string is the one we show when it sent one.
+      // below is what the visitor sees either way. The body carries a code,
+      // and the copy for the code is this page's.
       const data: unknown = await readJsonResponse(res);
       if (!res.ok) {
-        setFormError(errorMessage(data) ?? CONTACT_FAILED);
+        // The server's field rejections are the authority on what was wrong
+        // with the message, so they replace the local ones.
+        const reported = readContactFieldErrors(data);
+        if (reported.length > 0) {
+          const mapped: FieldErrors = {};
+          for (const error of reported) mapped[error.field] = error.code;
+          setErrors(mapped);
+        }
+        setFormError(
+          failureCopy(
+            data,
+            { isCode: isContactErrorCode, copy: copy.errors },
+            copy.failed,
+          ),
+        );
         // The token is spent (or the submit never verified): ask for a new one.
         resetWidget();
         return;
@@ -185,7 +218,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
       setMessage("");
       resetWidget();
     } catch {
-      setFormError(CONTACT_FAILED);
+      setFormError(copy.failed);
       resetWidget();
     } finally {
       setBusy(false);
@@ -201,13 +234,13 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
           className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded p-3"
           role="status"
         >
-          The contact form is temporarily unavailable. Please try again later.
+          {copy.unavailable}
         </p>
       )}
 
       <div>
         <label htmlFor="contact-name" className={fieldLabelClass()}>
-          Name
+          {copy.labels.name}
         </label>
         <input
           id="contact-name"
@@ -222,14 +255,14 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
         />
         {errors.name && (
           <p id="contact-name-error" role="alert" className={fieldErrorClass()}>
-            {errors.name}
+            {copy.fieldErrors[errors.name]}
           </p>
         )}
       </div>
 
       <div>
         <label htmlFor="contact-email" className={fieldLabelClass()}>
-          Email
+          {copy.labels.email}
         </label>
         <input
           id="contact-email"
@@ -244,14 +277,14 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
         />
         {errors.email && (
           <p id="contact-email-error" role="alert" className={fieldErrorClass()}>
-            {errors.email}
+            {copy.fieldErrors[errors.email]}
           </p>
         )}
       </div>
 
       <div>
         <label htmlFor="contact-message" className={fieldLabelClass()}>
-          Message
+          {copy.labels.message}
         </label>
         <textarea
           id="contact-message"
@@ -265,7 +298,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
         />
         {errors.message && (
           <p id="contact-message-error" role="alert" className={fieldErrorClass()}>
-            {errors.message}
+            {copy.fieldErrors[errors.message]}
           </p>
         )}
       </div>
@@ -280,14 +313,14 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
         <div ref={widgetContainer} data-testid="turnstile-widget" />
         {errors.turnstileToken && (
           <p role="alert" className={fieldErrorClass()}>
-            {errors.turnstileToken}
+            {copy.fieldErrors[errors.turnstileToken]}
           </p>
         )}
       </div>
 
       {sent && (
         <p className="text-xs text-stone-700 bg-gallery-100 border border-gallery-200 rounded p-3" role="status">
-          Thank you — your message has been sent. I&apos;ll be in touch soon.
+          {copy.sent}
         </p>
       )}
       {formError && (
@@ -297,7 +330,7 @@ export function ContactForm({ siteKey }: { siteKey?: string | undefined }) {
       )}
 
       <Button type="submit" shape="form" disabled={disabled}>
-        {busy ? "Sending…" : "Send Message"}
+        {busy ? copy.sending : copy.send}
       </Button>
     </form>
   );

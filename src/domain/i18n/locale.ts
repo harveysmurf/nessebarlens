@@ -90,6 +90,19 @@ export const LOCALE_NAMES: Record<Locale, string> = {
 };
 
 /**
+ * The language each locale's Turnstile widget speaks.
+ *
+ * Plain language codes, not BCP 47 tags: the widget takes "en" and "bg", and a
+ * tag it does not know ("bg-BG") leaves it on its default — an English
+ * anti-spam challenge on a Bulgarian page, asking a Bulgarian reader to pass a
+ * check in a language they did not choose.
+ */
+export const TURNSTILE_LANGUAGES: Record<Locale, string> = {
+  en: "en",
+  bg: "bg",
+};
+
+/**
  * Whether a string is one of the site's locales.
  *
  * A runtime guard, because the locale arrives from the URL: a segment that is
