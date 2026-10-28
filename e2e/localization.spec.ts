@@ -25,6 +25,28 @@ import { PHOTOS, photoForLocale } from "@/domain/catalog/photos";
 const SAMPLE = PHOTOS[0]!;
 const BULGARIAN = photoForLocale(SAMPLE, "bg");
 
+/**
+ * The Bulgarian tree is not served by a production build.
+ *
+ * The served set is the registry's public one — English, until the contact and
+ * checkout slices land — and a production build serves exactly that whatever
+ * the environment says. The dev server is the one place the guard is lifted
+ * (`SERVE_LOCALES=bg` in playwright.config.ts), so this spec runs there and
+ * skips against a deployed environment, where `/bg` is a 404 by design.
+ *
+ * The skip carries its reason: a spec that skips itself silently would look
+ * like a pass.
+ */
+const againstDeployed = Boolean(process.env.E2E_BASE_URL);
+
+/** The reason the skip carries, so a skipped spec does not look like a pass. */
+const AGAINST_DEPLOYED_REASON =
+  "the Bulgarian tree is not served by a production build yet";
+
+// One skip for the file, not one per test: the whole spec is about the
+// Bulgarian tree, and it is either served or it is not.
+test.skip(againstDeployed, AGAINST_DEPLOYED_REASON);
+
 /** The price in Bulgarian conventions: the symbol after the amount. */
 const BULGARIAN_DIGITAL_PRICE = "30,00 €";
 
