@@ -4,6 +4,7 @@ import { registerHooks } from "node:module";
 import test from "node:test";
 import { SAMPLE_SLUG, SAMPLE_MASTER_KEY } from "./fixtures/sample-photo.mts";
 import { ORDER_VIEW_STATES } from "../src/domain/ordering/order-decision.ts";
+import { getDictionary } from "../src/components/i18n/dictionaries.ts";
 
 /* The checkout success page's decision, and the endpoint that feeds it (#103).
 
@@ -487,6 +488,16 @@ const PAGE = readFileSync(
   "utf8",
 );
 
+/**
+ * The sentences the success page renders, in English.
+ *
+ * The copy moved into the dictionary when the page was localized, so the
+ * guards that read what the customer is told read it from there rather than
+ * from the markup. The page source still says *which* sentence each branch
+ * renders, and that is what the branch assertions below check.
+ */
+const COPY = getDictionary("en").checkout.success.states;
+
 test("the download link is a plain <a>, never a <Link>", () => {
   // The load-bearing acceptance criterion from #103. <Link> to a Route Handler
   // prefetches on scroll, so merely rendering the page used to run the KV lookup
@@ -587,8 +598,13 @@ test("the page prints a short reference, never the raw session id", () => {
     /encodeURIComponent\(sessionId\)/,
     "the session id must not reach the download href or any attribute",
   );
-  // Visible copy takes the truncated reference, never the id itself.
-  assert.match(PAGE, /Order reference <span className="font-medium">\{props\.reference\}<\/span>/);
+  // Visible copy takes the truncated reference, never the id itself. The label
+  // in front of it is the dictionary's — it is a word, and the word changes
+  // with the language the page is in.
+  assert.match(
+    PAGE,
+    /referenceLabel\}\{" "\}\s*<span className="font-medium">\{props\.reference\}<\/span>/,
+  );
   // And no <code> block renders the id, which is how the page used to leak it.
   assert.doesNotMatch(PAGE, /\{sessionId\}\s*<\/code>/);
 });
@@ -623,19 +639,34 @@ test("the physical-unfulfilled branch promises email contact, not production", (
     start,
     PAGE.indexOf(`state === ${pageSpelling("digital-ready")}`, start),
   );
-  assert.match(branch, /payment (was|has been) received/i);
-  assert.match(branch, /email/i);
-  assert.doesNotMatch(branch, /produced|ship from|do not need to do anything/i);
+  // The branch renders the dictionary's sentence for that state, and the
+  // sentence says what the customer must be told: the payment went through,
+  // we will write, and the print is not in production.
+  assert.match(branch, /copy\.states\[ORDER_VIEW_STATES\.physicalUnfulfilled\]/);
+  const sentence = COPY["physical-unfulfilled"];
+  assert.match(sentence, /payment (was|has been) received/i);
+  assert.match(sentence, /email/i);
+  assert.doesNotMatch(sentence, /produced|ship from|do not need to do anything/i);
   assert.match(branch, /reference=\{reference\}/);
   // Nothing changes on its own, so no poller.
   assert.doesNotMatch(branch, /sessionId=\{sessionId\}/);
 });
 
 test("only the paid physical branch says the print is being produced", () => {
-  assert.equal(PAGE.split("being produced").length - 1, 1);
-  const at = PAGE.indexOf("being produced");
-  assert.ok(at > PAGE.indexOf(`state === ${pageSpelling("physical")} ?`));
-  assert.ok(at < PAGE.indexOf(`state === ${pageSpelling("physical-unfulfilled")}`));
+  // The claim is about the copy: exactly one state promises a print that is
+  // being made, and it is the state the paid-physical branch renders. A
+  // second promise would be a customer told their unfulfilled print is on a
+  // press.
+  const promising = Object.entries(COPY)
+    .filter(([, sentence]) => /being produced/.test(sentence))
+    .map(([state]) => state);
+  assert.deepEqual(promising, ["physical"]);
+  // And the physical branch is the one that renders it.
+  assert.ok(PAGE.includes("copy.states.physical"));
+  assert.ok(
+    PAGE.indexOf(`state === ${pageSpelling("physical")} ?`) <
+      PAGE.indexOf(`state === ${pageSpelling("physical-unfulfilled")}`),
+  );
 });
 
 test("the revoked branch does not talk about a download for a refunded print", () => {
@@ -644,6 +675,7 @@ test("the revoked branch does not talk about a download for a refunded print", (
     start,
     PAGE.indexOf(`state === ${pageSpelling("unavailable")}`, start),
   );
-  assert.doesNotMatch(branch, /download/i);
-  assert.match(branch, /refunded|dispute/i);
+  assert.match(branch, /copy\.states\.revoked/);
+  assert.doesNotMatch(COPY.revoked, /download/i);
+  assert.match(COPY.revoked, /refunded|dispute/i);
 });
