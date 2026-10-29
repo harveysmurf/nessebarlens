@@ -11,7 +11,7 @@ import {
   DEFAULT_SHIPPING_COUNTRY,
   type ShipToCountryCode,
 } from "@/domain/pricing/ship-to-countries";
-import { getPhoto } from "@/domain/catalog/photos";
+import { getPhoto, photoForLocale } from "@/domain/catalog/photos";
 import { offers } from "@/domain/catalog/print-offer";
 import { assess } from "@/domain/catalog/print-eligibility";
 import {
@@ -24,6 +24,7 @@ import {
   type PrintSize,
 } from "@/domain/pricing/pricing";
 import type { FramedMount, PrintPaper } from "@/domain/pricing/sku-map";
+import { localePath } from "@/domain/i18n/locale-path";
 import { webDerivativeUrls } from "@/infrastructure/media/derivatives";
 import { prodigiFailureFrom } from "@/infrastructure/prodigi/prodigi-config";
 import { canSignMasterAsset } from "@/application/fulfillment/print-asset";
@@ -68,6 +69,11 @@ export async function POST(request: Request) {
       { status: 404 },
     );
   }
+
+  // The buyer's language, from the body. It decides three things: the copy on
+  // the hosted checkout page, the locale the customer comes back to, and the
+  // language of the emails this order gets. A body without one is English.
+  const locale = parsed.locale;
 
   // Checked before anything with a cost attached — a Prodigi quote, a Stripe
   // session. Without the site url we cannot build the success_url or the signed
@@ -206,6 +212,11 @@ export async function POST(request: Request) {
     mount,
     paper,
     quoteEur: String(quoteEur),
+    // The language the buyer ordered in. It travels with the order because the
+    // emails may be sent long after the customer left the page — a print that
+    // ships weeks later must be announced in the language they ordered in, not
+    // the one the deployment happens to default to.
+    locale,
   };
   // No merchandiseEur here. quoteEur is written unconditionally above and
   // holds the same number, so the second key was a duplicate that only ever
@@ -222,7 +233,10 @@ export async function POST(request: Request) {
   // (line items, adaptive pricing, shipping options) is the adapter's job —
   // this route no longer names a `Stripe.*` type or builds a session inline.
   const intent: CheckoutIntent = {
-    title: photo.title,
+    // The photo's own title, in the buyer's language. The slug, the master and
+    // the print offer are the same in every language; the title is the words
+    // the customer reads on the hosted page.
+    title: photoForLocale(photo, locale).title,
     format: parsed.format,
     size: intentSize,
     frame: intentFrame,
@@ -232,8 +246,12 @@ export async function POST(request: Request) {
     quoteEur,
     shippingEur,
     destinationCountryCode,
-    successUrl: `${base}/checkout/success?${SESSION_ID_PARAM}={CHECKOUT_SESSION_ID}`,
-    cancelUrl: `${base}/checkout/cancel?slug=${encodeURIComponent(photo.slug)}`,
+    locale,
+    // The customer comes back to the page they left, in the language they left
+    // it in. `localePath` is the one helper that knows the shape of a
+    // localized path, so the segment is added here and nowhere else.
+    successUrl: `${base}${localePath(locale, `/checkout/success?${SESSION_ID_PARAM}={CHECKOUT_SESSION_ID}`)}`,
+    cancelUrl: `${base}${localePath(locale, `/checkout/cancel?slug=${encodeURIComponent(photo.slug)}`)}`,
     metadata,
   };
 

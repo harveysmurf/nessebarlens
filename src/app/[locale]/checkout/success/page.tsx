@@ -11,11 +11,20 @@ import {
   ORDER_VIEW_STATES,
   SESSION_ID_PARAM,
 } from "@/domain/ordering/order-decision";
+import {
+  fillDownloadSentence,
+  ttlPhrase,
+} from "@/domain/ordering/checkout-copy";
+import { pluralUnit } from "@/domain/i18n/plurals";
 import { buttonClass } from "@/components/Button";
 import { PageShell } from "@/components/PageShell";
 import { BODY_COPY, eyebrowClass } from "@/components/type-styles";
 import { isLocale } from "@/domain/i18n/locale";
 import { localePath } from "@/domain/i18n/locale-path";
+import {
+  getDictionary,
+  type CheckoutSuccessCopy,
+} from "@/components/i18n/dictionaries";
 import { pageMetadata } from "@/infrastructure/seo/page-metadata";
 import { requireLocale } from "../../locale-param";
 
@@ -34,6 +43,19 @@ export async function generateMetadata({
   return pageMetadata("/checkout/success", locale);
 }
 
+/**
+ * The success page, in the page's language.
+ *
+ * Every sentence the customer reads comes from the dictionary, keyed by the
+ * state the page is in — so a state the page can reach and the dictionary has
+ * no sentence for is a type error rather than an English paragraph on a
+ * Bulgarian page.
+ *
+ * The page's language is the URL's, not the order's. The order carries the
+ * language of the *email* it triggers, and those are two different things: a
+ * customer who switches the page's language to read the page must not change
+ * the language their receipt arrives in.
+ */
 export default async function CheckoutSuccessPage({
   params,
   searchParams,
@@ -42,6 +64,7 @@ export default async function CheckoutSuccessPage({
   searchParams: Promise<{ session_id?: string }>;
 }) {
   const locale = requireLocale((await params).locale);
+  const copy = getDictionary(locale).checkout.success;
   const { [SESSION_ID_PARAM]: sessionId } = await searchParams;
   const state = await resolveCheckoutPageState(sessionId);
   // Only read for the one state that renders a link. A token fetched on every
@@ -54,51 +77,42 @@ export default async function CheckoutSuccessPage({
   // Stated from the config the token was actually issued under, so the copy
   // cannot claim 5 downloads on a deployment configured for 3.
   const { maxDownloads, tokenTtlSeconds } = getConfig().download;
-  const ttlCopy = ttlCopyOf(tokenTtlSeconds);
+  const ttlCopy = ttlPhrase(tokenTtlSeconds, copy.units, locale);
 
   return (
     <section className="fade-in">
       <PageShell width="lg" padding={20} className="text-center space-y-6">
-        <span className={eyebrowClass()}>
-          Payment received
-        </span>
+        <span className={eyebrowClass()}>{copy.eyebrow}</span>
         <h1 className="font-serif text-3xl font-light text-stone-900">
-          Thank you
+          {copy.title}
         </h1>
 
         {state === "missing-session" ? (
           <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded p-3">
-            We could not read your order reference from this link. Open it from the
-            Stripe receipt email if you need your download.
+            {copy.states["missing-session"]}
           </p>
         ) : state === "invalid-session" ? (
           <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded p-3">
-            That order reference is not valid. Open this page from the Stripe
-            receipt email.
+            {copy.states["invalid-session"]}
           </p>
         ) : state === ORDER_VIEW_STATES.physical ? (
-          <OrderCard reference={reference}>
-            <p className={BODY_COPY}>
-              Your print is being produced and will ship from our partner studio.
-              You do not need to do anything else.
-            </p>
+          <OrderCard copy={copy} reference={reference}>
+            <p className={BODY_COPY}>{copy.states.physical}</p>
           </OrderCard>
         ) : state === ORDER_VIEW_STATES.physicalUnfulfilled ? (
           // Paid, but never sent to production (e.g. an address Prodigi cannot
           // accept). No poller: nothing changes until someone acts, and we must
           // not claim the print is being made.
-          <OrderCard reference={reference}>
-            <p className={BODY_COPY}>
-              Your payment was received, but we could not send your order to
-              production automatically. We will contact you by email about your
-              order.
-            </p>
+          <OrderCard copy={copy} reference={reference}>
+            <p className={BODY_COPY}>{copy.states[ORDER_VIEW_STATES.physicalUnfulfilled]}</p>
           </OrderCard>
         ) : state === ORDER_VIEW_STATES.digitalReady && downloadHref ? (
-          <OrderCard reference={reference}>
+          <OrderCard copy={copy} reference={reference}>
             <p className={BODY_COPY}>
-              Your download is ready. This link works {maxDownloads} times and
-              expires {ttlCopy}.
+              {fillDownloadSentence(copy.states[ORDER_VIEW_STATES.digitalReady], {
+                uses: pluralUnit(maxDownloads, copy.units.time, locale),
+                ttl: ttlCopy,
+              })}
             </p>
             {/*
               A plain <a>, deliberately not <Link>.
@@ -108,8 +122,8 @@ export default async function CheckoutSuccessPage({
               the KV lookup and starting to stream the full-resolution master before
               any click (#103). <Link> gains nothing here: a file download has no
               client navigation to preserve, and the route's response is not RSC,
-              so Next fell back to a hard navigation regardless. `download` tells
-              the browser to save rather than navigate, which is what this is.
+              so Next fell back to a hard navigation regardless. `download` tells the
+              browser to save rather than navigate, which is what this is.
 
               Which now also costs a download if it ever were prefetched: the link
               carries a token, and each redemption spends one (#111). A stray
@@ -121,7 +135,7 @@ export default async function CheckoutSuccessPage({
               download
               className={buttonClass("block")}
             >
-              Download your file
+              {copy.download}
             </a>
           </OrderCard>
         ) : state === "digital-no-token" ? (
@@ -134,18 +148,12 @@ export default async function CheckoutSuccessPage({
             credential tokens replaced. Ask for the link by email instead, which is
             what #117 is for.
           */
-          <OrderCard reference={reference}>
-            <p className={BODY_COPY}>
-              Your payment went through, but we cannot show a download link here.
-              Please contact us and quote the reference below and we will send it.
-            </p>
+          <OrderCard copy={copy} reference={reference}>
+            <p className={BODY_COPY}>{copy.states["digital-no-token"]}</p>
           </OrderCard>
         ) : state === ORDER_VIEW_STATES.revoked ? (
-          <OrderCard reference={reference}>
-            <p className={BODY_COPY}>
-              This order was refunded or is under dispute, so there is nothing
-              further to send you.
-            </p>
+          <OrderCard copy={copy} reference={reference}>
+            <p className={BODY_COPY}>{copy.states.revoked}</p>
           </OrderCard>
         ) : state === "unavailable" ? (
           /*
@@ -166,28 +174,17 @@ export default async function CheckoutSuccessPage({
             which is the one thing we can honour without a human having seen the
             alert yet.
           */
-          <OrderCard reference={reference}>
-            <p className={BODY_COPY}>
-              We could not read this order, so we cannot show you its status here.
-              Please contact us and quote the reference below — your payment went
-              through and we will get your order to the right place.
-            </p>
+          <OrderCard copy={copy} reference={reference}>
+            <p className={BODY_COPY}>{copy.states.unavailable}</p>
           </OrderCard>
         ) : state === ORDER_VIEW_STATES.digitalUnavailable ? (
-          <OrderCard reference={reference}>
-            <p className={BODY_COPY}>
-              Your payment went through but we could not prepare the download. Our
-              team has been notified — quote the reference below and we will sort it
-              out.
-            </p>
+          <OrderCard copy={copy} reference={reference}>
+            <p className={BODY_COPY}>{copy.states[ORDER_VIEW_STATES.digitalUnavailable]}</p>
           </OrderCard>
         ) : (
           // processing, and the degraded cases that cannot assert anything yet.
-          <OrderCard reference={reference} sessionId={sessionId}>
-            <p className={BODY_COPY}>
-              We are preparing your download. This page updates on its own — no need
-              to refresh.
-            </p>
+          <OrderCard copy={copy} reference={reference} sessionId={sessionId}>
+            <p className={BODY_COPY}>{copy.states.processing}</p>
           </OrderCard>
         )}
 
@@ -195,24 +192,16 @@ export default async function CheckoutSuccessPage({
           href={localePath(locale, "/")}
           className="inline-block text-xs uppercase tracking-widest border-b border-stone-800 pb-0.5 font-medium hover:text-stone-500"
         >
-          Back to gallery
+          {copy.backToGallery}
         </Link>
       </PageShell>
     </section>
   );
 }
 
-/** "30 days", "12 hours" — never a raw seconds count at the customer. */
-function ttlCopyOf(seconds: number): string {
-  if (seconds % 86_400 === 0) {
-    const days = seconds / 86_400;
-    return days === 1 ? "1 day" : `${days} days`;
-  }
-  if (seconds % 3_600 === 0) return `${seconds / 3_600} hours`;
-  return `${Math.round(seconds / 60)} minutes`;
-}
-
 function OrderCard(props: {
+  /** The page's own copy, so the card and the poller speak one language. */
+  copy: CheckoutSuccessCopy;
   reference: string;
   sessionId?: string | undefined;
   children: React.ReactNode;
@@ -222,10 +211,16 @@ function OrderCard(props: {
       {props.children}
       {props.reference ? (
         <p className="text-[10px] text-stone-500 text-center">
-          Order reference <span className="font-medium">{props.reference}</span>
+          {props.copy.referenceLabel}{" "}
+          <span className="font-medium">{props.reference}</span>
         </p>
       ) : null}
-      {props.sessionId ? <OrderStatusPoller sessionId={props.sessionId} /> : null}
+      {props.sessionId ? (
+        <OrderStatusPoller
+          sessionId={props.sessionId}
+          timedOut={props.copy.timedOut}
+        />
+      ) : null}
     </div>
   );
 }

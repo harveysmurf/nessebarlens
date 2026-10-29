@@ -4,6 +4,7 @@ import {
   type ShipToCountryCode,
 } from "../pricing/ship-to-countries";
 import { isRecord } from "../json/record";
+import { DEFAULT_LOCALE, isLocale, type Locale } from "../i18n/locale";
 import {
   parsePrintSpecification,
   type PhysicalPrintSpecification,
@@ -32,11 +33,14 @@ export type DigitalCheckout = {
   photoSlug: string;
   format: "digital";
   destinationCountryCode: ShipToCountryCode | null;
+  /** The language the buyer is reading in. */
+  locale: Locale;
 };
 
 export type PhysicalCheckout = PhysicalSelectionFields & {
   photoSlug: string;
   destinationCountryCode: ShipToCountryCode | null;
+  locale: Locale;
 };
 
 export type CheckoutBody = DigitalCheckout | PhysicalCheckout;
@@ -128,6 +132,28 @@ function parseDestinationCountry(raw: unknown): Parsed<ShipToCountryCode | null>
 }
 
 /**
+ * The locale a checkout body carries.
+ *
+ * Two different rules, and the difference matters:
+ *
+ * - **Absent** means English. The body predates the locale segment, and a
+ *   request from an older client must still buy a print — refusing it would
+ *   take the site down for every client that has not been updated.
+ * - **Present and not a locale we serve** is refused. The client said which
+ *   language it is and we do not have that language, and continuing would
+ *   produce a receipt, a return page and an email in a language nobody
+ *   asked for. It is refused here, before any quote and before any Stripe
+ *   session, so a bad locale costs no provider call.
+ */
+function parseLocale(raw: unknown): Parsed<Locale> {
+  if (raw === undefined) return { ok: true, value: DEFAULT_LOCALE };
+  if (typeof raw !== "string" || !isLocale(raw)) {
+    return { ok: false, error: "locale must be a supported locale" };
+  }
+  return { ok: true, value: raw };
+}
+
+/**
  * A checkout/quote body has to be an object, and the rejection is a named
  * constant rather than json-body.ts's "Invalid JSON": that one is a body that
  * would not parse at all, this one parsed to a number, a string or null. The
@@ -186,6 +212,11 @@ export function parseCheckoutBody(
   const opened = asBody(raw);
   if (!opened.ok) return { error: opened.error };
   const body = opened.value;
+  // First, because it is the one field a client can get wrong without getting
+  // anything else wrong: a body that names a language we do not serve is
+  // refused before it can cost a Prodigi quote.
+  const locale = parseLocale(body.locale);
+  if (!locale.ok) return { error: locale.error };
   const photoSlug = body.photoSlug;
   const { format, size, frame, mount, paper } = selectionFields(body);
   const destination = parseDestinationCountry(body.destinationCountryCode);
@@ -206,6 +237,7 @@ export function parseCheckoutBody(
       photoSlug,
       format: "digital",
       destinationCountryCode,
+      locale: locale.value,
     };
   }
 
@@ -213,6 +245,7 @@ export function parseCheckoutBody(
     photoSlug,
     ...physicalFields(spec.value),
     destinationCountryCode,
+    locale: locale.value,
   };
 }
 

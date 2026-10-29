@@ -27,6 +27,7 @@ test("checkout accepts every format×size the SKU table can build", () => {
         // The body carries no paper, so giclée reads as the default (Matte Art).
         paper: format === "giclee" ? "ema" : null,
         destinationCountryCode: null,
+        locale: "en",
       });
       // Guard the SKU table itself so validation coverage is meaningful.
       assert.ok(allPhysicalSkus().some((e) => e.sizeCm === size));
@@ -36,7 +37,12 @@ test("checkout accepts every format×size the SKU table can build", () => {
 
 test("checkout accepts digital and rejects size/frame for it", () => {
   const ok = parseCheckoutBody({ ...SLUG, format: "digital" });
-  assert.deepEqual(ok, { ...SLUG, format: "digital", destinationCountryCode: null });
+  assert.deepEqual(ok, {
+    ...SLUG,
+    format: "digital",
+    destinationCountryCode: null,
+    locale: "en",
+  });
   assert.match(
     JSON.stringify(parseCheckoutBody({ ...SLUG, format: "digital", size: "30x40" })),
     /digital rejects size/,

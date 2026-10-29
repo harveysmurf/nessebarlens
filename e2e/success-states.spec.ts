@@ -22,6 +22,24 @@ const PHYSICAL = "cs_test_e2ephysicalawaitingprodigi03";
 const successUrl = (sessionId: string) =>
   `/checkout/success?session_id=${sessionId}`;
 
+/**
+ * The Bulgarian tree is served by the dev server and not by a production build.
+ *
+ * The served set is the registry's public one — English, until the last slice
+ * publishes Bulgarian — and a production build serves exactly that whatever the
+ * environment says. The dev server is the one place the override applies
+ * (`SERVE_LOCALES=bg` in playwright.config.ts), so these specs run there and
+ * skip against a deployed environment, where `/bg` is a 404 by design.
+ *
+ * The skip carries its reason: a spec that skipped itself silently would look
+ * like a pass.
+ */
+const againstDeployed = Boolean(process.env.E2E_BASE_URL);
+
+/** The reason the skip carries, so a skipped spec does not look like a pass. */
+const AGAINST_DEPLOYED_REASON =
+  "the Bulgarian tree is not served by a production build yet";
+
 test.describe("success page states", () => {
   test("a paid digital order offers the download and the short reference", async ({
     page,
@@ -106,6 +124,89 @@ test.describe("success page states", () => {
 
     await expect(page.getByText(/order reference is not valid/i)).toBeVisible();
     await expect(page.getByRole("link", { name: /download your file/i })).toHaveCount(
+      0,
+    );
+  });
+});
+
+/**
+ * The same states, in the other language.
+ *
+ * The success page is where a customer finds out what happened to their money,
+ * so it has to say it in the language they were buying in. What must NOT change
+ * with the language is the credential: the download endpoint is unprefixed and
+ * the token is the credential, so a localized href would be a broken one.
+ *
+ * The page's language is the URL's, not the order's — a customer who switches
+ * the page's language to read the page must not change the language their
+ * receipt arrives in — so these specs drive the URL, not the record.
+ */
+test.describe("success page states in Bulgarian", () => {
+  test.skip(againstDeployed, AGAINST_DEPLOYED_REASON);
+
+  const bgUrl = (sessionId: string) =>
+    `/bg/checkout/success?session_id=${sessionId}`;
+
+  test("a paid digital order is told in Bulgarian and offers the same download", async ({
+    page,
+  }) => {
+    await page.goto(bgUrl(DIGITAL_PAID));
+
+    // The language is in the document, not set by an effect: a crawler reads
+    // the HTML, and an effect runs after it.
+    await expect(page.locator("html")).toHaveAttribute("lang", "bg");
+
+    await expect(page.getByText(/вашият файл е готов/i)).toBeVisible();
+
+    // The same href as in English: the token endpoint is not localized, and a
+    // localized one would be a link to nothing.
+    const download = page.getByRole("link", { name: /изтеглете файла/i });
+    await expect(download).toHaveAttribute(
+      "href",
+      `/api/download?token=${DIGITAL_PAID_TOKEN}`,
+    );
+    await expect(download).toHaveAttribute("download", "");
+
+    // The limits are stated in the reader's language, with the language's own
+    // plural words: "5 пъти" and "30 дни", not "5 times" and "30 days".
+    await expect(
+      page.getByText(/работи 5 пъти и изтича след 30 дни/i),
+    ).toBeVisible();
+  });
+
+  test("a digital order mid-fulfilment says preparing in Bulgarian", async ({
+    page,
+  }) => {
+    await page.goto(bgUrl(DIGITAL_PENDING));
+
+    await expect(page.getByText(/подготвяме вашия файл/i)).toBeVisible();
+
+    // The load-bearing assertion, in this language too: a link here would be
+    // the page promising something /api/download refuses.
+    await expect(page.getByRole("link", { name: /изтеглете файла/i })).toHaveCount(
+      0,
+    );
+  });
+
+  test("a physical order is told it is shipping, in Bulgarian", async ({
+    page,
+  }) => {
+    await page.goto(bgUrl(PHYSICAL));
+
+    await expect(page.getByText(/изработва и ще бъде изпратен/i)).toBeVisible();
+
+    await expect(page.getByRole("link", { name: /изтеглете файла/i })).toHaveCount(
+      0,
+    );
+  });
+
+  test("a reference that is not a Checkout Session is refused, in Bulgarian", async ({
+    page,
+  }) => {
+    await page.goto("/bg/checkout/success?session_id=not-a-session");
+
+    await expect(page.getByText(/номер на поръчка не е валиден/i)).toBeVisible();
+    await expect(page.getByRole("link", { name: /изтеглете файла/i })).toHaveCount(
       0,
     );
   });

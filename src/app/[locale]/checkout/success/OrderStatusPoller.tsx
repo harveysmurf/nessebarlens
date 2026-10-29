@@ -7,27 +7,25 @@ import {
 } from "@/domain/ordering/order-decision";
 
 /**
- * Polls /api/order-status until the download is ready, then reloads the page so
- * the server renders the real link (#103).
+ * Polls the order-status endpoint until the order reaches a final state, then
+ * reloads the page so the server renders it.
  *
- * A reload rather than a client-side swap on purpose. The download link is
- * deliberately a plain <a> pointing at a Route Handler, and the only way to
- * render it correctly is for the server to do it — a client that started
- * building the href itself would be re-creating the format/status decision this
- * whole change exists to stop the page from guessing.
- *
- * Stops on any non-pending terminal state, so a revoked or unavailable order
- * stops polling immediately instead of hammering the endpoint until the tab
- * closes.
+ * The sentence it gives up with is handed over as a prop: this is a client
+ * component, and a copy it imported itself would carry every locale's words
+ * to every browser that opened the page.
  */
-export default function OrderStatusPoller({ sessionId }: { sessionId: string }) {
+export default function OrderStatusPoller({
+  sessionId,
+  timedOut,
+}: {
+  sessionId: string;
+  /** The sentence shown when the deadline passes. */
+  timedOut: string;
+}) {
   const [gaveUp, setGaveUp] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
-    // Backs off from 2s to 10s so a slow fulfillment does not keep the browser
-    // asking, and stops entirely after ~2 minutes rather than polling forever
-    // for an order that will never become ready.
     let delay = 2000;
     const deadline = Date.now() + 120_000;
     let timer: ReturnType<typeof setTimeout>;
@@ -49,6 +47,9 @@ export default function OrderStatusPoller({ sessionId }: { sessionId: string }) 
           data && typeof data === "object"
             ? (data as { state?: unknown }).state
             : undefined;
+        // The pending state is named by the owner of the vocabulary, not
+        // spelled here: the endpoint answers with a bare string, and a second
+        // spelling of a state name is a second owner of it.
         if (state === ORDER_VIEW_STATES.digitalPending) return schedule();
         // Any other known state is final: let the server render it.
         if (typeof state === "string") {
@@ -81,8 +82,7 @@ export default function OrderStatusPoller({ sessionId }: { sessionId: string }) 
   if (gaveUp) {
     return (
       <p className="text-xs text-amber-800 bg-amber-50 border border-amber-100 rounded p-3">
-        This is taking longer than usual. Refresh the page, or open the link in
-        your Stripe receipt email.
+        {timedOut}
       </p>
     );
   }

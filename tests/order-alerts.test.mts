@@ -288,6 +288,7 @@ test("the internal awaiting-prodigi marker is not an alert", () => {
     v: 1,
     sessionId: SESSION,
     merchantReference: SESSION,
+    locale: "en",
     terminal: true,
     status: "paid-unfulfilled",
     photoSlug: SAMPLE_SLUG,

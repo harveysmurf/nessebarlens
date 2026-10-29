@@ -197,8 +197,12 @@ test("confirmation copy links the success page, never a token or Prodigi id", ()
     kind: "order-confirmation",
     sessionId: SESSION,
     siteUrl: "https://nessebarlens.com",
+    locale: "en",
   });
-  assert.match(copy.text, /https:\/\/nessebarlens\.com\/checkout\/success\?session_id=cs_test_abcdefgh/);
+  // The success page lives under a locale segment, and the link carries the
+  // order's language — so an English order links to /en/checkout/success and a
+  // Bulgarian one to /bg/checkout/success.
+  assert.match(copy.text, /https:\/\/nessebarlens\.com\/en\/checkout\/success\?session_id=cs_test_abcdefgh/);
   assert.equal(copy.text.includes("prints/"), false);
   assert.equal(copy.text.includes("ord_"), false);
   assert.equal(copy.text.includes("token="), false);
@@ -209,6 +213,7 @@ test("shipped copy includes the tracking number", () => {
     kind: "print-shipped",
     sessionId: SESSION,
     siteUrl: "https://nessebarlens.com",
+    locale: "en",
     trackingNumber: "1Z999",
     carrier: "DHL",
     trackingUrl: "https://track.example/1Z999",
@@ -223,6 +228,7 @@ test("unfulfilled copy names the session as a reference and no internal id", () 
     kind: "order-unfulfilled",
     sessionId: SESSION,
     siteUrl: "https://nessebarlens.com",
+    locale: "en",
   });
   assert.equal(copy.subject, "We could not complete your Nessebar Lens order");
   assert.match(copy.text, /Reference: ABCDEFGH\b/);
@@ -239,6 +245,7 @@ test("shipped copy with no tracking details says so instead of empty lines", () 
     kind: "print-shipped",
     sessionId: SESSION,
     siteUrl: "https://nessebarlens.com",
+    locale: "en",
     trackingNumber: "   ",
     carrier: "",
     trackingUrl: undefined,
@@ -311,7 +318,12 @@ test("every email prints the same short reference the success page prints", () =
   assert.equal(ref, "ABCDEFGH");
   assert.equal(orderReference("cs_test_a1Zh499zOjUOk1s1"), "OJUOK1S1");
   for (const kind of ["order-confirmation", "print-shipped", "order-unfulfilled"] as const) {
-    const copy = emailCopyFor({ kind, sessionId: SESSION, siteUrl: "https://nessebarlens.com" });
+    const copy = emailCopyFor({
+      kind,
+      sessionId: SESSION,
+      siteUrl: "https://nessebarlens.com",
+      locale: "en",
+    });
     assert.match(copy.text, new RegExp(`Order reference: ${ref}\\b|Reference: ${ref}\\b`), kind);
   }
 });
@@ -321,6 +333,7 @@ test("unfulfilled copy does not contradict the success page", () => {
     kind: "order-unfulfilled",
     sessionId: SESSION,
     siteUrl: "https://nessebarlens.com",
+    locale: "en",
   });
   assert.doesNotMatch(copy.text, /being produced/i);
 });
@@ -330,7 +343,12 @@ test("every email the studio sends closes with one signature line", () => {
   // the operator alert — so a rebrand that missed one would sign part of the
   // studio's mail differently, and no test would have said so.
   for (const kind of ["order-confirmation", "print-shipped", "order-unfulfilled"] as const) {
-    const copy = emailCopyFor({ kind, sessionId: SESSION, siteUrl: "https://nessebarlens.com" });
+    const copy = emailCopyFor({
+      kind,
+      sessionId: SESSION,
+      siteUrl: "https://nessebarlens.com",
+      locale: "en",
+    });
     assert.equal(copy.text.endsWith(STUDIO_SIGNATURE), true, kind);
     assert.equal(copy.text.split(STUDIO_SIGNATURE).length - 1, 1, `${kind} signs twice`);
   }
@@ -344,10 +362,15 @@ test("every email the studio sends closes with one signature line", () => {
 
   // And the reference label in front of the shared suffix, which is the other
   // owner: one derivation, one label.
-  assert.equal(referenceLine(SESSION), `Reference: ${orderReference(SESSION)}`);
+  assert.equal(referenceLine(SESSION, "en"), `Reference: ${orderReference(SESSION)}`);
   for (const kind of ["order-confirmation", "print-shipped", "order-unfulfilled"] as const) {
-    const copy = emailCopyFor({ kind, sessionId: SESSION, siteUrl: "https://nessebarlens.com" });
-    assert.equal(copy.text.includes(referenceLine(SESSION)), true, kind);
+    const copy = emailCopyFor({
+      kind,
+      sessionId: SESSION,
+      siteUrl: "https://nessebarlens.com",
+      locale: "en",
+    });
+    assert.equal(copy.text.includes(referenceLine(SESSION, "en")), true, kind);
   }
 });
 
@@ -417,10 +440,15 @@ test("the signature line and the reference label have one owner in the source", 
     "the studio signature is written down in more than one place",
   );
 
-  const labels = sites.filter((site) => site.text.startsWith("Reference:"));
-  assert.deepEqual(
-    labels.map((site) => site.file),
-    ["src/domain/ordering/email-copy.ts"],
-    "the reference label is written down in more than one place",
-  );
+  // One per locale, and each of them in one place. The guard is the same for
+  // both: a second spelling of the label would be a second owner of the line
+  // the customer reads, and the test above cannot see it.
+  for (const label of ["Reference:", "Референция:"]) {
+    const labels = sites.filter((site) => site.text.startsWith(label));
+    assert.deepEqual(
+      labels.map((site) => site.file),
+      ["src/domain/ordering/email-copy.ts"],
+      `the reference label "${label}" is written down in more than one place`,
+    );
+  }
 });

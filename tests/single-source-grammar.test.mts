@@ -1313,6 +1313,7 @@ test("the pure half is importable with no bindings, KV or Prodigi available", as
           v: 1,
           sessionId: "cs_test_abcdefgh",
           merchantReference: "cs_test_abcdefgh",
+          locale: "en",
           terminal: true,
           status: "paid",
           photoSlug: "dawn",

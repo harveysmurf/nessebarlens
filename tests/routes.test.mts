@@ -2321,6 +2321,284 @@ test("checkout: a physical order quotes, locks the country, and ships a rate", a
   }
 });
 
+test("checkout: a Bulgarian order gets the Bulgarian URLs, the Bulgarian line item and the locale in its metadata", async () => {
+  // The endpoint cannot know the browser's language, so the body says it, and
+  // everything that follows from it — where the customer comes back to, what
+  // the hosted page says, and the language of the emails this order triggers —
+  // follows from the body.
+  const saved = { ...process.env };
+  const originalFetch = globalThis.fetch;
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  let sessionParams: Record<string, string> | null = null;
+  globalThis.fetch = (async (url: unknown, init?: { body?: string }) => {
+    if (String(url).includes("stripe.com")) {
+      // Stripe posts form-encoded, not JSON.
+      sessionParams = Object.fromEntries(new URLSearchParams(init!.body!));
+      return new Response(
+        JSON.stringify({ id: "cs_test_abcdefgh", url: "https://checkout.stripe.com/pay" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    throw new Error("a digital order must not reach Prodigi");
+  }) as typeof fetch;
+  try {
+    const response = await checkout.POST(
+      jsonRequest(`${SITE}/api/checkout`, {
+        photoSlug: SAMPLE_SLUG,
+        format: "digital",
+        locale: "bg",
+      }),
+    );
+    assert.equal(response.status, 200);
+    const params = sessionParams as unknown as Record<string, string>;
+    // The customer comes back to the page they left, in the language they left
+    // it in, and the Stripe placeholder survives byte for byte.
+    assert.equal(
+      params["success_url"],
+      `${SITE}/bg/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+    );
+    assert.equal(
+      params["cancel_url"],
+      `${SITE}/bg/checkout/cancel?slug=${encodeURIComponent(SAMPLE_SLUG)}`,
+    );
+    // The locale travels with the order, because the mail it triggers can be
+    // sent weeks later and nothing else remembers which language it was.
+    assert.equal(params["metadata[locale]"], "bg");
+    // The line item is ours, so it is in the buyer's language.
+    assert.equal(
+      params["line_items[0][price_data][product_data][description]"],
+      "Цифров лиценз с висока резолюция",
+    );
+    assert.match(
+      params["line_items[0][price_data][product_data][name]"],
+      /Цифров файл с висока резолюция/,
+    );
+    // And the payment invariants are untouched by the language.
+    assert.equal(params["line_items[0][price_data][currency]"], "eur");
+    assert.equal(params["mode"], "payment");
+    assert.equal(params["adaptive_pricing[enabled]"], "false");
+    assert.equal(params["line_items[0][quantity]"], "1");
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const key of ["STRIPE_SECRET_KEY"] as const) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+});
+
+test("checkout: a Bulgarian print carries a Bulgarian line item, frame and shipping option", async () => {
+  // The words on the hosted page that are ours: the product name, the
+  // description and the shipping option's name. The provider's shell around
+  // them is not ours and is not claimed to be.
+  const saved = { ...process.env };
+  const originalFetch = globalThis.fetch;
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
+  process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
+  let sessionParams: Record<string, string> | null = null;
+  globalThis.fetch = (async (url: unknown, init?: { body?: string }) => {
+    if (String(url).includes("stripe.com")) {
+      sessionParams = Object.fromEntries(new URLSearchParams(init!.body!));
+      return new Response(
+        JSON.stringify({ id: "cs_test_abcdefgh", url: "https://checkout.stripe.com/pay" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    return new Response(
+      JSON.stringify({
+        quotes: [
+          {
+            items: [{ unitCost: { amount: "9.5" } }],
+            costSummary: { shipping: { amount: "4.99" } },
+          },
+        ],
+      }),
+      { status: 200, headers: { "content-type": "application/json" } },
+    );
+  }) as typeof fetch;
+  const restore = withBindings({ prodigiKeyConfigured: true });
+  try {
+    const response = await checkout.POST(
+      jsonRequest(`${SITE}/api/checkout`, {
+        photoSlug: SAMPLE_SLUG,
+        format: "framed",
+        size: "30x40",
+        frame: "black",
+        mount: "white",
+        destinationCountryCode: "BG",
+        locale: "bg",
+      }),
+    );
+    assert.equal(response.status, 200);
+    const params = sessionParams as unknown as Record<string, string>;
+    // The frame is a noun phrase in Bulgarian — "рамка" is feminine, so the
+    // adjective agrees with it: "черна рамка", not "матов черен рамка".
+    assert.equal(
+      params["line_items[0][price_data][product_data][description]"],
+      "30x40 · черна рамка",
+    );
+    // The format label is the configurator's own, in the buyer's language.
+    assert.match(
+      params["line_items[0][price_data][product_data][name]"],
+      /в рамка/,
+    );
+    // And the shipping option is named in the same language.
+    assert.equal(
+      params["shipping_options[0][shipping_rate_data][display_name]"],
+      "Доставка",
+    );
+    // The payment invariants are the same in every language.
+    assert.equal(params["line_items[0][price_data][currency]"], "eur");
+    assert.equal(params["adaptive_pricing[enabled]"], "false");
+    assert.equal(
+      params["shipping_options[0][shipping_rate_data][fixed_amount][amount]"],
+      "499",
+    );
+    assert.equal(
+      params["shipping_address_collection[allowed_countries][0]"],
+      "BG",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+    for (const key of [
+      "STRIPE_SECRET_KEY",
+      "PRODIGI_API_BASE",
+      "PRODIGI_SANDBOX_API_KEY",
+    ] as const) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+});
+
+test("checkout: an English order gets the English URLs", async () => {
+  const saved = { ...process.env };
+  const originalFetch = globalThis.fetch;
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  let sessionParams: Record<string, string> | null = null;
+  globalThis.fetch = (async (url: unknown, init?: { body?: string }) => {
+    if (String(url).includes("stripe.com")) {
+      sessionParams = Object.fromEntries(new URLSearchParams(init!.body!));
+      return new Response(
+        JSON.stringify({ id: "cs_test_abcdefgh", url: "https://checkout.stripe.com/pay" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    throw new Error("a digital order must not reach Prodigi");
+  }) as typeof fetch;
+  try {
+    const response = await checkout.POST(
+      jsonRequest(`${SITE}/api/checkout`, {
+        photoSlug: SAMPLE_SLUG,
+        format: "digital",
+        locale: "en",
+      }),
+    );
+    assert.equal(response.status, 200);
+    const params = sessionParams as unknown as Record<string, string>;
+    assert.equal(
+      params["success_url"],
+      `${SITE}/en/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+    );
+    assert.equal(params["metadata[locale]"], "en");
+    assert.equal(
+      params["line_items[0][price_data][product_data][description]"],
+      "Digital high-resolution license",
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const key of ["STRIPE_SECRET_KEY"] as const) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+});
+
+test("checkout: a body without a locale is an English order", async () => {
+  // The body predates the locale segment, and a client that has not been
+  // updated must still be able to buy a print.
+  const saved = { ...process.env };
+  const originalFetch = globalThis.fetch;
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  let sessionParams: Record<string, string> | null = null;
+  globalThis.fetch = (async (url: unknown, init?: { body?: string }) => {
+    if (String(url).includes("stripe.com")) {
+      sessionParams = Object.fromEntries(new URLSearchParams(init!.body!));
+      return new Response(
+        JSON.stringify({ id: "cs_test_abcdefgh", url: "https://checkout.stripe.com/pay" }),
+        { status: 200, headers: { "content-type": "application/json" } },
+      );
+    }
+    throw new Error("a digital order must not reach Prodigi");
+  }) as typeof fetch;
+  try {
+    const response = await checkout.POST(
+      jsonRequest(`${SITE}/api/checkout`, {
+        photoSlug: SAMPLE_SLUG,
+        format: "digital",
+      }),
+    );
+    assert.equal(response.status, 200);
+    const params = sessionParams as unknown as Record<string, string>;
+    assert.equal(params["metadata[locale]"], "en");
+    assert.equal(
+      params["success_url"],
+      `${SITE}/en/checkout/success?session_id={CHECKOUT_SESSION_ID}`,
+    );
+  } finally {
+    globalThis.fetch = originalFetch;
+    for (const key of ["STRIPE_SECRET_KEY"] as const) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+});
+
+test("checkout: a locale the site does not serve is refused before any provider is called", async () => {
+  // Refused, not defaulted: the client named a language and we do not have it,
+  // and a quote or a Stripe session for a language nobody asked for would cost
+  // a provider call and produce a receipt in that language.
+  const saved = { ...process.env };
+  const originalFetch = globalThis.fetch;
+  process.env.STRIPE_SECRET_KEY = "sk_test_route_key";
+  process.env.PRODIGI_API_BASE = "https://api.sandbox.prodigi.com";
+  process.env.PRODIGI_SANDBOX_API_KEY = "sandbox-key";
+  let providerCalled = false;
+  globalThis.fetch = (async () => {
+    providerCalled = true;
+    return new Response("{}", {
+      status: 200,
+      headers: { "content-type": "application/json" },
+    });
+  }) as typeof fetch;
+  const restore = withBindings({ prodigiKeyConfigured: true });
+  try {
+    const response = await checkout.POST(
+      jsonRequest(`${SITE}/api/checkout`, {
+        photoSlug: SAMPLE_SLUG,
+        format: "digital",
+        locale: "de",
+      }),
+    );
+    assert.equal(response.status, 400);
+    assert.equal((await body(response)).code, "invalid-request");
+    assert.equal(providerCalled, false, "no provider may be called");
+  } finally {
+    globalThis.fetch = originalFetch;
+    restore();
+    for (const key of [
+      "STRIPE_SECRET_KEY",
+      "PRODIGI_API_BASE",
+      "PRODIGI_SANDBOX_API_KEY",
+    ] as const) {
+      if (saved[key] === undefined) delete process.env[key];
+      else process.env[key] = saved[key];
+    }
+  }
+});
+
 test("checkout: an unconfigured quote, a Stripe failure and a session with no URL", async () => {
   const saved = { ...process.env };
   const originalFetch = globalThis.fetch;

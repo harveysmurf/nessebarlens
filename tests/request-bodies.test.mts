@@ -64,7 +64,7 @@ test("quoteRequest has no digital case: the parser rejects it", () => {
 
 test("checkoutRequest round-trips through parseCheckoutBody for every sellable format", () => {
   for (const format of PHYSICAL_FORMATS) {
-    const body = checkoutRequest(SLUG, format, SIZE, FRAME, COUNTRY, MOUNT, PAPER);
+    const body = checkoutRequest(SLUG, format, SIZE, FRAME, COUNTRY, MOUNT, PAPER, "en");
     assert.deepEqual(parseCheckoutBody(body), {
       photoSlug: SLUG,
       format,
@@ -73,22 +73,24 @@ test("checkoutRequest round-trips through parseCheckoutBody for every sellable f
       mount: format === "framed" ? MOUNT : null,
       paper: format === "giclee" ? PAPER : null,
       destinationCountryCode: COUNTRY,
+      locale: "en",
     });
   }
   // Digital has no size or frame, so the parser drops both — the parsed shape
   // is the narrower DigitalCheckout, not the physical shape with nulls.
   const digital = parseCheckoutBody(
-    checkoutRequest(SLUG, "digital", SIZE, FRAME, COUNTRY, MOUNT, PAPER),
+    checkoutRequest(SLUG, "digital", SIZE, FRAME, COUNTRY, MOUNT, PAPER, "en"),
   );
   assert.deepEqual(digital, {
     photoSlug: SLUG,
     format: "digital",
     destinationCountryCode: null,
+    locale: "en",
   });
 });
 
 test("checkoutRequest nulls size, frame, mount, paper and country for digital", () => {
-  const body = checkoutRequest(SLUG, "digital", SIZE, FRAME, COUNTRY, MOUNT, PAPER);
+  const body = checkoutRequest(SLUG, "digital", SIZE, FRAME, COUNTRY, MOUNT, PAPER, "en");
   assert.deepEqual(body, {
     photoSlug: SLUG,
     format: "digital",
@@ -97,6 +99,7 @@ test("checkoutRequest nulls size, frame, mount, paper and country for digital", 
     mount: null,
     paper: null,
     destinationCountryCode: null,
+    locale: "en",
   });
 });
 
@@ -106,7 +109,7 @@ test("checkoutRequest nulls size, frame, mount, paper and country for digital", 
 test("forwarding a stale frame on a physical format fails the parser", () => {
   const format = "giclee" as const;
   const stale = {
-    ...checkoutRequest(SLUG, format, SIZE, FRAME, COUNTRY, MOUNT, PAPER),
+    ...checkoutRequest(SLUG, format, SIZE, FRAME, COUNTRY, MOUNT, PAPER, "en"),
     frame: FRAME,
   };
   assert.match(
