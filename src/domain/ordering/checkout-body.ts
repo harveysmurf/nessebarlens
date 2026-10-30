@@ -43,7 +43,15 @@ export type PhysicalCheckout = PhysicalSelectionFields & {
   locale: Locale;
 };
 
-export type CheckoutBody = DigitalCheckout | PhysicalCheckout;
+/**
+ * The body a checkout parsed to, spelled as the union of its two arms.
+ *
+ * Module-local: no consumer names this type. The routes call
+ * `parseCheckoutBody` and let inference give them the shape, so exporting the
+ * name advertised a surface nothing imports — the same dead export class as
+ * the un-exported `ParsedJsonBody` in `src/infrastructure/config/json-body.ts`.
+ */
+type CheckoutBody = DigitalCheckout | PhysicalCheckout;
 
 // Allow-lists and their error labels are owned by sku-map, so SKU coverage
 // and the message we show on rejection cannot drift from each other.
@@ -253,8 +261,11 @@ export function parseCheckoutBody(
  * A quote body is the physical checkout shape without the photo slug. Defined
  * from the same parser pieces rather than as a union: a quote is never digital,
  * so there is no second arm to discriminate on.
+ *
+ * Module-local for the same reason as `CheckoutBody`: the quote route calls
+ * `parseQuoteBody` and never names the type.
  */
-export type QuoteBody = PhysicalSelectionFields & {
+type QuoteBody = PhysicalSelectionFields & {
   destinationCountryCode: ShipToCountryCode | null;
 };
 
