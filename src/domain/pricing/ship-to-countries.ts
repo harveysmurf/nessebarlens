@@ -345,7 +345,5 @@ export function shipToCountriesFor(
   if (locale !== "bg") return countries;
 
   const collator = new Intl.Collator("bg");
-  return countries.sort(
-    (a, b) => collator.compare(a.name, b.name) || a.code.localeCompare(b.code),
-  );
+  return countries.sort((a, b) => collator.compare(a.name, b.name));
 }

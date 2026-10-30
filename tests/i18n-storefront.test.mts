@@ -229,8 +229,7 @@ test("the destination list is built on the server, in the reader's language", ()
     bg.map((country) => country.name),
     [...bg]
       .sort(
-        (a, b) =>
-          bgCollator.compare(a.name, b.name) || a.code.localeCompare(b.code),
+        (a, b) => bgCollator.compare(a.name, b.name),
       )
       .map((country) => country.name),
   );
