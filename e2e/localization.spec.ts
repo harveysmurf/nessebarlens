@@ -63,20 +63,30 @@ test("the Bulgarian home page is Bulgarian, and says so in the document", async 
   // Scoped to the nav: the tile and the hero carry the same words, and a
   // locator that matches three things asserts nothing.
   const nav = page.getByRole("navigation", { name: "Основна навигация" });
-  await expect(nav.getByRole("link", { name: "Финиарт", exact: true })).toBeVisible();
+  await expect(
+    nav.getByRole("link", { name: "Художествена фотография", exact: true }),
+  ).toBeVisible();
   await expect(nav.getByRole("link", { name: "Архив", exact: true })).toBeVisible();
   await expect(
-    nav.getByRole("link", { name: "Филмова фотография", exact: true }),
+    nav.getByRole("link", { name: "Аналогова фотография", exact: true }),
   ).toBeVisible();
 
   // The header's tagline joins the categories the Bulgarian way.
-  await expect(page.getByText("Стария Несебър • Финиарт, Архив и Филм")).toBeVisible();
+  await expect(
+    page.getByText(
+      "Старият Несебър • Художествена фотография, Архив и Аналогова фотография",
+    ),
+  ).toBeVisible();
 
   // And the page's own words are Bulgarian: the hero's eyebrow, the line under
   // it and the tile blurbs.
-  await expect(page.getByText("Избран финиарт")).toBeVisible();
-  await expect(page.getByText("Предпочитате разказателната версия?")).toBeVisible();
-  await expect(page.getByText("Най-силните кадри от портфолиото")).toBeVisible();
+  await expect(page.getByText("Избрана художествена фотография")).toBeVisible();
+  await expect(
+    page.getByText("Научете повече за историите зад снимките:"),
+  ).toBeVisible();
+  await expect(
+    page.getByText("Най-добрите ми художествени фотографии"),
+  ).toBeVisible();
 });
 
 test("the Bulgarian gallery and print page are Bulgarian", async ({ page }) => {
@@ -84,14 +94,16 @@ test("the Bulgarian gallery and print page are Bulgarian", async ({ page }) => {
 
   // The gallery's heading is the registry's Bulgarian name, and the badge and
   // blurb are the dictionary's.
-  await expect(page.getByRole("heading", { name: "Финиарт фотография" })).toBeVisible();
+  await expect(
+    page.getByRole("heading", { name: "Художествена фотография" }),
+  ).toBeVisible();
   await expect(page.getByText("Подбрано портфолио")).toBeVisible();
 
   // A card carries the photo's Bulgarian title and caption, not the source's.
   const card = page.locator(`a[href="/bg/prints/${SAMPLE.slug}"]`).first();
   await expect(card).toBeVisible();
   await expect(card.getByText(BULGARIAN.title)).toBeVisible();
-  await expect(card.getByText("Опции за отпечатък")).toBeVisible();
+  await expect(card.getByText("Изберете вариант за печат")).toBeVisible();
 
   // And the image's alt text is the Bulgarian one: the card's own picture
   // carries it, and the source's words are nowhere on the page.
@@ -105,7 +117,7 @@ test("the Bulgarian gallery and print page are Bulgarian", async ({ page }) => {
   // The print page: the photo's own words, its category line and the way back.
   await expect(page.getByRole("heading", { name: BULGARIAN.title })).toBeVisible();
   await expect(page.getByText(BULGARIAN.description)).toBeVisible();
-  await expect(page.getByText("← Обратно към галерията")).toBeVisible();
+  await expect(page.getByText("← Назад към галерията")).toBeVisible();
 
 });
 
@@ -117,9 +129,13 @@ test("the Bulgarian configurator is Bulgarian, and prices in Bulgarian", async (
   // The format names, the field labels and the button. The format card's
   // title is also in the screen-reader line under the button, so the
   // assertion is on the first of them.
-  await expect(page.getByText("Финиарт giclée").first()).toBeVisible();
-  await expect(page.getByText("Цифров файл").first()).toBeVisible();
-  await expect(page.getByText("Поддържана опция на Prodigi").first()).toBeVisible();
+  await expect(
+    page.getByText("Художествен отпечатък (giclée)").first(),
+  ).toBeVisible();
+  await expect(page.getByText("Дигитален файл").first()).toBeVisible();
+  await expect(
+    page.getByText("Изберете вариант за печат").first(),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Плащане през Stripe" })).toBeVisible();
 
   // The price is in the locale's conventions: the symbol after the amount and
@@ -204,6 +220,11 @@ test("the Bulgarian mobile menu is Bulgarian at 320px", async ({ page }) => {
 
   const panel = page.getByRole("navigation", { name: "Основна навигация" });
   await expect(panel).toBeVisible();
-  await expect(panel.getByRole("link", { name: "Финиарт", exact: true })).toBeVisible();
+  await expect(
+    panel.getByRole("link", {
+      name: "Художествена фотография",
+      exact: true,
+    }),
+  ).toBeVisible();
   await expect(page.getByRole("button", { name: "Затвори менюто" })).toBeVisible();
 });
