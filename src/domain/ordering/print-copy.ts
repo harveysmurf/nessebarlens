@@ -80,10 +80,10 @@ const FORMAT_COPY: Record<Locale, Record<PrintFormat, FormatCopy>> = {
     digital: { title: "Digital Copy", sub: "Full Resolution JPG" },
   },
   bg: {
-    giclee: { title: "Финиарт giclée", sub: "Matte Art или Hahnemühle" },
-    framed: { title: "Финиарт в рамка", sub: "Дървена рамка · Бяла паспарту" },
-    canvas: { title: "Опъната канава", sub: "Памучна канава" },
-    digital: { title: "Цифров файл", sub: "JPG в пълна резолюция" },
+    giclee: { title: "Художествен отпечатък (giclée)", sub: "Matte Art или Hahnemühle" },
+    framed: { title: "Художествен отпечатък с рамка", sub: "Дървена рамка · Бяло паспарту" },
+    canvas: { title: "Печат върху платно", sub: "Памучно платно" },
+    digital: { title: "Дигитален файл", sub: "JPG файл с пълна резолюция" },
   },
 };
 
@@ -94,9 +94,19 @@ const FRAME_COPY: Record<Locale, Record<FrameFinish, string>> = {
     brown: "Brown Wood",
   },
   bg: {
-    black: "Матов черен",
-    white: "Бял сатен",
-    brown: "Кафяв дървес",
+    black: "Матово черно",
+    white: "Сатенено бяло",
+    brown: "Кафяво дърво",
+  },
+};
+
+/** Frame finishes as phrases before "frame" in a Bulgarian sentence. */
+const FRAME_PHRASE: Record<Locale, Record<FrameFinish, string>> = {
+  en: FRAME_COPY.en,
+  bg: {
+    black: "черна матова",
+    white: "бяла сатенена",
+    brown: "кафява",
   },
 };
 
@@ -110,7 +120,7 @@ const MOUNT_COPY: Record<Locale, Record<FramedMount, string>> = {
     none: "No Mount",
   },
   bg: {
-    white: "Бяла паспарту",
+    white: "Бяло паспарту",
     none: "Без паспарту",
   },
 };
@@ -122,7 +132,7 @@ const MOUNT_PHRASE: Record<Locale, Record<FramedMount, string>> = {
     none: "no mount",
   },
   bg: {
-    white: "бяла паспарту",
+    white: "бяло паспарту",
     none: "без паспарту",
   },
 };
@@ -154,7 +164,7 @@ const PAPER_NOTE: Record<Locale, Record<PrintPaper, string>> = {
   bg: {
     ema: "Гладка плътна матова хартия с естествено бял тон.",
     // Deliberately no acid-free claim: Prodigi does not state it for Photo Rag.
-    hpr: "100% памучна руда с мека матова повърхност и фина кадифена текстура.",
+    hpr: "100% памучна хартия с мека матова повърхност и фина текстура.",
   },
 };
 
@@ -236,13 +246,13 @@ export function framedMountNote(
   if (locale === "bg") {
     if (mount === "none") {
       return (
-        `Акрилово стъкло, без паспарту, готово за окачване. ` +
+        `Акрилно стъкло, без паспарту, готово за окачване. ` +
         `Снимката запълва рамката от край до край с размери ${imageSizeLabel(size, orientation, mount)}; ` +
         `рамката добавя около ${moulding} см от всяка страна.`
       );
     }
     return (
-      `Бяла паспарту без киселина, акрилово стъкло, готово за окачване. ` +
+      `Бяло паспарту, акрилно стъкло, готово за окачване. ` +
       `Снимката се вижда с размери ${imageSizeLabel(size, orientation, mount)} зад паспарту; ` +
       `рамката добавя около ${moulding} см ` +
       `от всяка страна.`
@@ -346,11 +356,11 @@ const PREVIEW_LABEL: Record<
   },
   bg: {
     giclee: (alt, selection, orientation) =>
-      `${alt} — финиарт giclée, ${sizeLabel(selection.size, orientation, "bg")}`,
+      `${alt} — художествен фотографски отпечатък giclée, ${sizeLabel(selection.size, orientation, "bg")}`,
     framed: (alt, selection, orientation) =>
-      `${alt} — финиарт в рамка, ${sizeLabel(selection.size, orientation, "bg")}, рамка ${FRAME_COPY.bg[selection.frame]} с ${MOUNT_PHRASE.bg[selection.mount]}`,
+      `${alt} — художествен отпечатък в ${FRAME_PHRASE.bg[selection.frame]} рамка, ${sizeLabel(selection.size, orientation, "bg")}, ${MOUNT_PHRASE.bg[selection.mount]}`,
     canvas: (alt, selection, orientation) =>
-      `${alt} — опъната канава, ${sizeLabel(selection.size, orientation, "bg")}, изображението е увито около ръбовете с дебелина ${CANVAS_BAR_DEPTH_MM} мм`,
+      `${alt} — печат върху платно, ${sizeLabel(selection.size, orientation, "bg")}, изображението се прегъва около ръбовете с дебелина ${CANVAS_BAR_DEPTH_MM} мм`,
     digital: (alt) => alt,
   },
 };
@@ -384,11 +394,11 @@ const PREVIEW_CAPTION: Record<
   },
   bg: {
     giclee: (selection, orientation) =>
-      `Финиарт giclée · ${sizeLabel(selection.size, orientation, "bg")}`,
+      `Художествен отпечатък giclée · ${sizeLabel(selection.size, orientation, "bg")}`,
     framed: (selection, orientation) =>
-      `Финиарт в рамка · ${sizeLabel(selection.size, orientation, "bg")} · ${FRAME_COPY.bg[selection.frame]} · ${MOUNT_COPY.bg[selection.mount]}`,
+      `Художествен отпечатък · ${sizeLabel(selection.size, orientation, "bg")} · ${FRAME_PHRASE.bg[selection.frame]} рамка · ${MOUNT_COPY.bg[selection.mount]}`,
     canvas: (selection, orientation) =>
-      `Опъната канава · ${sizeLabel(selection.size, orientation, "bg")}`,
+      `Печат върху платно · ${sizeLabel(selection.size, orientation, "bg")}`,
     digital: () => "Цифров файл · пълният кадър",
   },
 };

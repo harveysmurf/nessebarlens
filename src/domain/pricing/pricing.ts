@@ -106,10 +106,10 @@ const FORMAT_LABELS: Record<Locale, Record<PrintFormat, string>> = {
     digital: "High-Res Digital Download",
   },
   bg: {
-    giclee: "Финиарт giclée",
-    framed: "Финиарт в рамка",
-    canvas: "Опъната канава",
-    digital: "Цифров файл с висока резолюция",
+    giclee: "Художествен фотографски отпечатък (giclée)",
+    framed: "Художествен отпечатък с рамка",
+    canvas: "Печат върху платно",
+    digital: "JPG файл с пълна резолюция",
   },
 };
 
@@ -121,7 +121,7 @@ const MOUNT_LABELS: Record<Locale, Record<FramedMount, string>> = {
     none: "No Mount",
   },
   bg: {
-    white: "Бяла паспарту",
+    white: "Бяло паспарту",
     none: "Без паспарту",
   },
 };

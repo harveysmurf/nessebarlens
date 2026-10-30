@@ -14,7 +14,7 @@ import type { Locale } from "@/domain/i18n/locale";
  * sentences, and this change did not merge them.
  *
  * The label is the locale's: the registry declares a name per locale, so the
- * nav says "Финиарт" under a Bulgarian URL without a second table here.
+ * nav uses the translated category name under a Bulgarian URL.
  *
  * `Contact` is not a category, so it has no entry in the registry, and its
  * label is copy: it comes from the dictionary and is passed in, because this
