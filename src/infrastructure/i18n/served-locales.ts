@@ -9,10 +9,11 @@ import { envString, type EnvReader } from "../config/env";
 /**
  * The locales this build serves.
  *
- * The site's served set is `PUBLIC_LOCALES` — English, until the contact and
- * checkout slices land. A Bulgarian URL that served English copy would be
- * worse than no Bulgarian URL at all: a crawler would index it, a visitor
- * would be told the site is in Bulgarian and find it is not.
+ * The site's served set is `PUBLIC_LOCALES` — now English and Bulgarian, once
+ * every slice of the localisation epic had landed. A locale that served English
+ * copy under its own URL would be worse than no URL at all: a crawler would
+ * index it, a visitor would be told the site is in that language and find it is
+ * not.
  *
  * **The guard cannot be lifted by an environment variable.** A production build
  * serves exactly `PUBLIC_LOCALES`, whatever the environment says, so a stray
@@ -51,10 +52,10 @@ export function servedLocales(env: EnvReader): readonly Locale[] {
           `(${LOCALES.join(", ")}).`,
       );
     }
-    const served: readonly Locale[] = PUBLIC_LOCALES;
-    if (!served.includes(locale) && !extra.includes(locale)) {
-      extra.push(locale);
-    }
+    extra.push(locale);
   }
-  return [...PUBLIC_LOCALES, ...extra];
+  // A `Set` removes both a repeated name and a name that is already public, and
+  // it keeps the public list first: the switcher and the hreflang cluster read
+  // the order, and the default language should lead.
+  return [...new Set<Locale>([...PUBLIC_LOCALES, ...extra])];
 }

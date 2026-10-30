@@ -18,11 +18,24 @@
  * cannot become an XSS bug without anyone revisiting this file.
  */
 
-import { CATEGORY } from "../../domain/catalog/categories";
-import { DEFAULT_LOCALE } from "../../domain/i18n/locale";
-import type { Photo } from "../../domain/catalog/photos";
+import { CATEGORY, categoryNames } from "../../domain/catalog/categories";
+import { photoForLocale, type Photo } from "../../domain/catalog/photos";
+import { DEFAULT_LOCALE, LOCALE_TAGS, type Locale } from "../../domain/i18n/locale";
+import { localePath } from "../../domain/i18n/locale-path";
 import { DIGITAL_PRICE_EUR } from "../../domain/pricing/pricing";
 import { seoOrigin } from "./page-metadata";
+
+/**
+ * The breadcrumb's first crumb, in each language.
+ *
+ * "Home" is copy, not a route, so it is translated here beside the payload that
+ * uses it. The category crumb comes from `CATEGORY[...].names[locale]`, the same
+ * registry the nav reads, so a category rename cannot leave the markup behind.
+ */
+const BREADCRUMB_HOME: Record<Locale, string> = {
+  en: "Home",
+  bg: "Начало",
+};
 
 export type JsonLdValue =
   | string
@@ -56,9 +69,13 @@ export function serializeJsonLd(value: JsonLdValue): string {
  * description, and the `WebSite`'s `publisher` can then point at the
  * `Organization` by `@id` instead of repeating the name.
  */
-export function sitewideJsonLd(): JsonLdValue {
+export function sitewideJsonLd(locale: Locale = DEFAULT_LOCALE): JsonLdValue {
   const origin = seoOrigin();
   const organizationId = `${origin}/#organization`;
+  // The page's own language, not the site's default: the document below it is
+  // the Bulgarian document on `/bg`, and a WebSite that claimed `en` there
+  // would contradict the `<html lang>` and the `hreflang` cluster.
+  const siteUrl = `${origin}${localePath(locale, "/")}`;
   return {
     "@context": SCHEMA_CONTEXT,
     "@graph": [
@@ -72,7 +89,8 @@ export function sitewideJsonLd(): JsonLdValue {
         "@type": "WebSite",
         "@id": `${origin}/#website`,
         name: "Nessebar Lens",
-        url: `${origin}/`,
+        url: siteUrl,
+        inLanguage: LOCALE_TAGS[locale],
         publisher: { "@id": organizationId },
       },
     ],
@@ -96,18 +114,28 @@ export function sitewideJsonLd(): JsonLdValue {
 export function printJsonLd(
   photo: Photo,
   image: { src: string } | null,
+  locale: Locale = DEFAULT_LOCALE,
 ): JsonLdValue {
   const origin = seoOrigin();
-  const url = `${origin}/prints/${photo.slug}`;
-  const categoryHref = `${origin}${CATEGORY[photo.category].href}`;
+  // The markup describes the page that carries it, so every URL and every word
+  // in it is the page's own language. A `url` on the un-prefixed route would
+  // name a redirect, and an English `name` on `/bg` would tell a crawler the
+  // Bulgarian page is an English duplicate.
+  const localized = photoForLocale(photo, locale);
+  const url = `${origin}${localePath(locale, `/prints/${photo.slug}`)}`;
+  const categoryHref = `${origin}${localePath(
+    locale,
+    CATEGORY[photo.category].href,
+  )}`;
   const printId = `${url}/#product`;
 
   const product: JsonLdValue = {
     "@type": "Product",
     "@id": printId,
-    name: photo.title,
-    description: photo.description,
+    name: localized.title,
+    description: localized.description,
     url,
+    inLanguage: LOCALE_TAGS[locale],
     image: image ? [image.src] : [],
     brand: { "@type": "Brand", name: "Nessebar Lens" },
     offers: {
@@ -131,19 +159,19 @@ export function printJsonLd(
           {
             "@type": "ListItem",
             position: 1,
-            name: "Home",
-            item: `${origin}/`,
+            name: BREADCRUMB_HOME[locale],
+            item: `${origin}${localePath(locale, "/")}`,
           },
           {
             "@type": "ListItem",
             position: 2,
-            name: CATEGORY[photo.category].names[DEFAULT_LOCALE].galleryTitle,
+            name: categoryNames(photo.category, locale).galleryTitle,
             item: categoryHref,
           },
           {
             "@type": "ListItem",
             position: 3,
-            name: photo.title,
+            name: localized.title,
             item: url,
           },
         ],

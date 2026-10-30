@@ -230,7 +230,7 @@ export default async function RootLayout({
           JSON-LD belongs to the document, not to the page's content, and this
           is the only place a crawler can be sure to find it.
         */}
-        <JsonLd data={sitewideJsonLd()} />
+        <JsonLd data={sitewideJsonLd(locale)} />
         <AnalyticsBeacon />
         <SiteHeader
           locale={locale}

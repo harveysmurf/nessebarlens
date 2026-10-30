@@ -62,6 +62,8 @@ type Defect =
   | "route-missing"
   | "sitemap-missing"
   | "robots-missing"
+  /** A published locale tree that answers 404, as a build that lost it would. */
+  | "locale-missing"
   /** Both generated files naming the other environment's origin. */
   | "wrong-origin"
   /** A route answering 200 with the wrong content type. */
@@ -111,6 +113,7 @@ const DEFECT_LABEL: Record<Defect, string> = {
   "route-missing": "GET /llms.txt names this origin",
   "sitemap-missing": "GET /sitemap.xml names this origin",
   "robots-missing": "GET /robots.txt points at the sitemap",
+  "locale-missing": "GET /bg",
   "wrong-origin": "GET /llms.txt omits the other origin",
   "llms-as-html": "GET /llms.txt content type",
   "sitemap-as-text": "GET /sitemap.xml content type",
@@ -249,9 +252,9 @@ async function withStub(
       return send(308, "moved", withCsp({ location: `${origin}${legacyTarget}` }));
     }
 
-    // A locale the site knows but does not serve is a 404, never an English
-    // page wearing a foreign URL.
-    if (path === "/bg") {
+    // A published locale tree that answers 404 is a deploy that lost a
+    // language. Every other path falls through to the healthy page below.
+    if (defect === "locale-missing" && path === "/bg") {
       return send(404, "not found", withCsp({ "content-type": "text/plain" }));
     }
 

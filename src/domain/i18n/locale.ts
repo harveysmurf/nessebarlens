@@ -16,11 +16,11 @@
  *     `LOCALES` but not here has no route: `/bg` is a 404, never an English
  *     page under a Bulgarian URL.
  *
- * The second list is the integration guard of the localisation epic. The page,
- * contact and checkout slices have to land before Bulgarian is exposed, or the
- * site would serve a half-English `/bg` to anyone who found the URL. Flipping
- * it is one line, and the route tree, the sitemap, the language switcher and
- * the legacy redirects all follow it.
+ * The second list is the integration guard of the localisation epic. It held
+ * English alone until the page, contact and checkout slices landed; a locale
+ * is published by adding it here, and the route tree, the sitemap, the
+ * language switcher, the hreflang cluster and the legacy redirects all follow
+ * this list rather than keeping one of their own.
  */
 
 /** Every locale the site knows, in the order the switcher lists them. */
@@ -56,13 +56,14 @@ export const TRANSLATED_LOCALES = LOCALES.filter(
 /**
  * The locales the site serves.
  *
- * English only, until the page, contact and checkout slices land: a Bulgarian
- * URL that served English copy would be worse than no Bulgarian URL at all —
- * a crawler would index it, a visitor would be told the site is in Bulgarian
- * and find it is not. Adding `"bg"` here is the one-line change that publishes
- * it, and nothing else has to move.
+ * Both languages, now that the page, contact, checkout and SEO slices are
+ * complete: a Bulgarian URL that served English copy would be worse than no
+ * Bulgarian URL at all — a crawler would index it, a visitor would be told the
+ * site is in Bulgarian and find it is not. This list is the one-line change
+ * that publishes a locale, and the route tree, the sitemap, the switcher,
+ * `hreflang` and the legacy redirects all read it.
  */
-export const PUBLIC_LOCALES = ["en"] as const satisfies readonly Locale[];
+export const PUBLIC_LOCALES = ["en", "bg"] as const satisfies readonly Locale[];
 
 /**
  * The BCP 47 tag each locale is formatted with.

@@ -480,13 +480,15 @@ test("the served set is the registry's, and only a dev build may widen it", () =
   // A production build serves exactly the registry's public list, whatever the
   // environment says: the integration guard cannot be lifted by a stray
   // variable on a deploy host.
+  // Both known locales are public now, so a production build serves both, and
+  // the override cannot add anything it does not already have.
   assert.deepEqual(
     servedLocales({ NODE_ENV: "production", SERVE_LOCALES: "bg" }),
-    ["en"],
+    ["en", "bg"],
   );
-  // Outside a production build the override reaches the Bulgarian tree, which
-  // is how the e2e can open a page the site does not publish yet.
-  assert.deepEqual(servedLocales({ NODE_ENV: "development" }), ["en"]);
+  // Outside a production build the override still adds an unpublished locale,
+  // which is how a future translation is reached before it is published.
+  assert.deepEqual(servedLocales({ NODE_ENV: "development" }), ["en", "bg"]);
   assert.deepEqual(
     servedLocales({ NODE_ENV: "development", SERVE_LOCALES: "bg" }),
     ["en", "bg"],

@@ -260,7 +260,7 @@ test("a locale segment the site does not serve is a 404", () => {
   // production build and always is inside one — so the guard cannot be lifted
   // by an environment variable on a deploy host.
   assert.match(layout, /servedLocales\(NODE_ENV\)\.map\(\(locale\) => \(\{ locale \}\)\)/);
-  assert.deepEqual([...PUBLIC_LOCALES], ["en"]);
+  assert.deepEqual([...PUBLIC_LOCALES], ["en", "bg"]);
   assert.match(
     read("src/infrastructure/i18n/served-locales.ts"),
     /envString\("NODE_ENV", env\) === "production"/,
