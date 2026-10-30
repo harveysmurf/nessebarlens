@@ -166,7 +166,7 @@ const TEMPLATES: Record<Locale, Templates> = {
   bg: {
     subjects: {
       [EMAIL_KINDS.orderConfirmation]: "Вашата поръчка за Nessebar Lens",
-      [EMAIL_KINDS.printShipped]: "Вашият отпечатък от Nessebar Lens е изпратен",
+      [EMAIL_KINDS.printShipped]: "Вашият печат от Nessebar Lens е изпратен",
       [EMAIL_KINDS.orderUnfulfilled]: "Не можем да завършим поръчката ви за Nessebar Lens",
     },
     bodies: {
@@ -177,14 +177,14 @@ const TEMPLATES: Record<Locale, Templates> = {
         v.successUrl,
         "",
         "Ако сте поръчали цифров файл, връзката за изтегляне ще бъде на тази страница, когато е готова.",
-        "Ако сте поръчали отпечатък, ще ви изпратим имейл, когато бъде изпратен.",
+        "Ако сте поръчали печат, ще ви изпратим имейл, когато бъде изпратен.",
         "",
         v.reference,
         "",
         STUDIO_SIGNATURE,
       ],
       [EMAIL_KINDS.printShipped]: (v) => {
-        const lines = ["Отпечатъкът ви е изпратен.", ""];
+        const lines = ["Печатът ви е изпратен.", ""];
         if (v.carrier) lines.push(`Куриер: ${v.carrier}`);
         if (v.trackingNumber) {
           lines.push(`Номер за проследяване: ${v.trackingNumber}`);
