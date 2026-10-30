@@ -300,7 +300,7 @@ test("the configurator's copy is Bulgarian in every branch", () => {
   const digital = markup({ ...base, format: "digital" }, "bg");
   assert.match(digital, /Резолюция/);
   assert.match(digital, /30,00\s€/);
-  assert.match(digital, /Сигурно плащане · Линк за изтегляне след изпълнение/);
+  assert.match(digital, /Сигурно плащане · Линк за изтегляне след обработка на поръчката/);
 
   // Giclée: the paper field and the paper's own note.
   const giclee = markup(base, "bg");
