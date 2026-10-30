@@ -159,9 +159,36 @@ Environment variables (names only — values live in the `.env.local` symlink):
 (`tests/register.mjs` → `scripts/register.mjs` → `scripts/resolve-hooks.mjs`) for extensionless relative
 imports. Tests are **Node-native, no test runner framework**.
 
-`npm run coverage` enforces the floors in `scripts/coverage.mjs` (lines 99.95%,
-branches 99.9%, functions 100%) and is a **separate CI step** — a green
+`npm run coverage` enforces the floors and is a **separate CI step** — a green
 `npm test` says nothing about coverage, and CI runs both.
+
+Two sets are measured, each against its own floor:
+
+| Set | Files | Floor |
+|---|---|---|
+| `src/` | the bounded-context tree (`src/domain`, `src/application`, `src/infrastructure`) plus the `src/app/api/**/route.ts` handlers | `SRC_FLOOR` |
+| `scripts/` | every `scripts/*.mjs` | `SCRIPT_FLOOR` |
+
+Both floors live in `scripts/coverage-gate.mjs` and are ratchets: never
+lowered, raised as tests land. The scripts floor is the lower of the two
+because the ops scripts are a different kind of code — a uploader, a
+migration, a CLI — and pooling the two sets into one mean would make the `src/`
+floor a statement about the scripts.
+
+Every `scripts/*.mjs` is measured **by default**. The exceptions are named in
+the allow-list in `scripts/coverage-gate.mjs`, each with the reason it cannot
+be measured. Two things follow from that default:
+
+- node's report lists loaded modules only, so a script no test imports is
+  simply absent from it. The gate fails with `scripts/<name>.mjs is not in the
+  coverage report: no test loads it` — a new script cannot slip in untested.
+- an allow-list entry naming a script that no longer exists fails the gate
+  too, so an exception cannot outlive the file it excused.
+
+The gate's decisions are a pure function — `gate()` in
+`scripts/coverage-gate.mjs` — unit-tested against captured reports in
+`tests/coverage-gate.test.mts`. The runner (`scripts/coverage.mjs`) only spawns
+node, reads the report and prints.
 
 Because stripping happens in place, `src/` must stay erasable-syntax only — no
 `enum`, `namespace`, or `declare module`. `tests/resolve-hooks.test.mts` fails
