@@ -23,6 +23,9 @@ import {
 import { CANVAS_BAR_DEPTH_MM, type PreviewGeometry } from "../src/domain/ordering/print-preview.ts";
 import type { PrintSelection } from "../src/domain/ordering/print-selection.ts";
 import type { MasterFacts } from "../src/domain/catalog/master-facts.ts";
+import { PHOTO_CATEGORIES } from "../src/domain/catalog/photo-schema.ts";
+import { LOCALES } from "../src/domain/i18n/locale.ts";
+import { getDictionary } from "../src/components/i18n/dictionaries.ts";
 import { sizeLabel } from "../src/domain/pricing/pricing.ts";
 import { PRINT_PRODUCTS } from "../src/domain/pricing/print-products.ts";
 import {
@@ -40,12 +43,22 @@ const FULL_OFFER = {
 } as const;
 
 /**
- * True once a Hahnemühle (Prodigi `GLOBAL-HPR`) SKU is in the table (#337).
- * Until then the site sells no Hahnemühle, so naming it anywhere is the #336
- * bug; both paper guards below key off this, so an HPR launch — not a literal —
- * is what re-allows the name.
+ * The papers we have withdrawn: a name here is a promise the catalogue cannot
+ * back. #336 was the fine-art blurb promising "Hahnemühle Museum Rag", a
+ * paper we do not sell; the catalogue says which papers we do sell, and this
+ * says which promise came back out.
+ *
+ * A paper we never sold is not in this list and no list can hold every paper
+ * in the world — so the guard below is the promise we made and withdrew, not
+ * every paper that exists.
  */
-const HPR_OFFERED = PRINT_PRODUCTS.some((product) => product.sku.includes("HPR"));
+const WITHDRAWN_PAPERS = ["Museum Rag"];
+
+/** The withdrawn paper names a copy carries, if it carries any. */
+function withdrawnPaperNames(copy: string): string[] {
+  const lower = copy.toLowerCase();
+  return WITHDRAWN_PAPERS.filter((name) => lower.includes(name.toLowerCase()));
+}
 
 test("the configurator offers exactly what the catalog can sell", () => {
   // The component used to declare its own arrays. A format added to the
@@ -577,13 +590,6 @@ test("the giclée format copy names a paper we actually sell (#336/#337)", () =>
   // paper is a real option and the format subtitle may name either paper.
   const giclee = configuratorFormats().find((format) => format.id === "giclee");
   assert.match(giclee?.sub ?? "", /matte art|hahnem/i);
-
-  const formatCopy = configuratorFormats().map(
-    (format) => `${format.title} ${format.sub}`,
-  ).join(" ");
-  if (!HPR_OFFERED) {
-    assert.doesNotMatch(formatCopy, /hahnem|museum rag|308gsm/i);
-  }
 });
 
 test("the paper control copy names both papers and their real weights (#337)", () => {
@@ -603,18 +609,35 @@ test("the paper control copy names both papers and their real weights (#337)", (
   }
 });
 
-test("the fine-art gallery blurb makes no paper material claim (#336)", () => {
-  // Component copy is not importable from node --test, so it is read from the
-  // source: it used to promise "Hahnemühle Museum Rag", a paper we do not sell.
-  // Gated on the same HPR flag as the format copy above, so a legitimate
-  // Hahnemühle reintroduction after #337 is allowed here too.
-  const source = fs.readFileSync(
-    new URL("../src/components/GalleryPage.tsx", import.meta.url),
-    "utf8",
-  );
-  if (!HPR_OFFERED) {
-    assert.doesNotMatch(source, /hahnem|museum rag|308gsm/i);
+test("no print copy carries a paper we have withdrawn (#336)", () => {
+  // The surfaces that can name a paper: the configurator's format copy and the
+  // gallery blurbs. #336 was the fine-art blurb promising "Hahnemühle Museum
+  // Rag", a paper we do not sell — so the promise is withdrawn, and a copy that
+  // carries it again is a promise we cannot keep.
+  //
+  // The gallery's words live in the dictionary: the page renders them and the
+  // component holds no copy of its own, so the copy is read where it lives —
+  // in every locale, in every gallery — and not out of a file's text.
+  const formatCopy = configuratorFormats()
+    .map((format) => `${format.title} ${format.sub}`)
+    .join(" ");
+  assert.deepEqual(withdrawnPaperNames(formatCopy), [], formatCopy);
+
+  let checked = 0;
+  for (const locale of LOCALES) {
+    for (const category of PHOTO_CATEGORIES) {
+      const blurb = getDictionary(locale).gallery.blurb[category];
+      assert.ok(blurb.length > 0, `${locale}/${category}: the blurb is empty`);
+      assert.deepEqual(
+        withdrawnPaperNames(blurb),
+        [],
+        `${locale}/${category}: ${blurb}`,
+      );
+      checked += 1;
+    }
   }
+  // The walk is not vacuous: every locale's every gallery was read.
+  assert.equal(checked, LOCALES.length * PHOTO_CATEGORIES.length);
 });
 
 test("the no-mount helper states the full-glaze size, not the window (#335)", () => {
