@@ -16,6 +16,11 @@ import Stripe from "stripe";
 import { getStripe } from "./stripe";
 import { readStripeEvent, type StripeCheckoutSession } from "./stripe-event";
 import { eurToCents, formatLabel } from "../../domain/pricing/pricing";
+import {
+  digitalDescription,
+  physicalDescription,
+  shippingDisplayName,
+} from "../../domain/ordering/checkout-copy";
 import type { StripeShippingDetails } from "../../domain/ordering/order-decision";
 import type { ReconcileSession, ReconcileStripe } from "../../application/fulfillment/reconcile";
 import type { StripeSessionLookup } from "../../domain/ordering/stripe-session-lookup";
@@ -33,6 +38,11 @@ import type {
  * The hosted-checkout request, built from a domain intent. Kept as its own
  * function so the route's old inline `Parameters<typeof stripe.checkout...>`
  * object lives in the adapter, typed by the SDK it belongs to.
+ *
+ * The line item's words are in the buyer's language: the product name, the
+ * description and the shipping option's name are ours, and we own their
+ * translation. The provider's shell around them is not ours, and nothing here
+ * pretends to localize it.
  */
 function buildSessionParams(
   intent: CheckoutIntent,
@@ -58,10 +68,14 @@ function buildSessionParams(
           currency: "eur",
           unit_amount: eurToCents(intent.quoteEur),
           product_data: {
-            name: `${intent.title} — ${formatLabel(intent.format, intent.mount ?? undefined, intent.paper ?? undefined)}`,
+            name: `${intent.title} — ${formatLabel(intent.format, intent.mount ?? undefined, intent.paper ?? undefined, intent.locale)}`,
             description: isPhysical
-              ? `${intent.size}${intent.frame ? ` · ${intent.frame} frame` : ""}`
-              : "Digital high-resolution license",
+              ? physicalDescription(
+                  intent.size ?? "",
+                  intent.frame,
+                  intent.locale,
+                )
+              : digitalDescription(intent.locale),
             ...(intent.previewImage ? { images: [intent.previewImage] } : {}),
           },
         },
@@ -84,7 +98,7 @@ function buildSessionParams(
             amount: eurToCents(intent.shippingEur),
             currency: "eur",
           },
-          display_name: "Shipping",
+          display_name: shippingDisplayName(intent.locale),
         },
       },
     ];

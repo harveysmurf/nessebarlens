@@ -411,6 +411,10 @@ export async function handleProdigiCallback(input: {
       kind: EMAIL_KINDS.printShipped,
       sessionId: record.sessionId,
       siteUrl: input.siteUrl ?? siteUrl(),
+      // The order's own language. This callback can fire weeks after the
+      // order was placed, so the language of the request that triggered it
+      // says nothing about the language the customer reads.
+      locale: record.locale,
       trackingNumber: shipped.trackingNumber,
       carrier: shipped.carrier,
       trackingUrl: shipped.trackingUrl,

@@ -2,37 +2,11 @@ import {
   isCheckoutSessionId,
   ORDER_VIEW_STATES,
   orderViewState,
-  type OrderViewState,
+  type CheckoutPageState,
 } from "@/domain/ordering/order-decision";
 import { readOrderRecord } from "@/domain/ordering/order-corrupt";
 import { downloadLinkForSession } from "@/application/fulfillment/download-token";
 import { readWorkerBindings } from "@/infrastructure/cloudflare/worker-bindings";
-
-/**
- * The order state the success page renders from, widened with the two cases
- * that exist before any store lookup can answer: no reference in the URL at all,
- * and a reference that is not shaped like a Checkout Session.
- *
- * "processing" covers every case where we cannot yet assert anything about the
- * order — including a missing ORDERS_DB binding or a throwing getOrder(). The
- * page says "we are preparing your download" there, which is a claim we can
- * actually make, where a 500 would tell a customer with money already taken
- * that their payment failed.
- */
-export type CheckoutPageState =
-  | "missing-session"
-  | "invalid-session"
-  | "unavailable"
-  | "processing"
-  | OrderViewState
-  /**
-   * The order is paid and ready, but there is no download token for it — the
-   * page cannot hand over a link, because the only credential that grants the
-   * file is the token (#111). Reachable for records stored before tokens
-   * existed; never minted lazily here, because the session id in this URL must
-   * not be able to mint itself a download.
-   */
-  | "digital-no-token";
 
 /**
  * Read the order behind a Checkout Session for the success page.

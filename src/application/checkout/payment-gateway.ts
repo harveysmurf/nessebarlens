@@ -15,6 +15,7 @@ import type { FrameFinish, PrintFormat, PrintSize } from "../../domain/pricing/p
 import type { FramedMount, PrintPaper } from "../../domain/pricing/sku-map";
 import type { ShipToCountryCode } from "../../domain/pricing/ship-to-countries";
 import type { StripeShippingDetails } from "../../domain/ordering/order-decision";
+import type { Locale } from "../../domain/i18n/locale";
 
 /**
  * What the customer is buying, in domain terms. The adapter is responsible for
@@ -39,6 +40,15 @@ export type CheckoutIntent = {
   shippingEur: number;
   /** Lock the provider's address collection to the quoted destination. */
   destinationCountryCode: ShipToCountryCode | null;
+  /**
+   * The buyer's language.
+   *
+   * It is here because the provider's page shows our line item, and our line
+   * item is written in the buyer's language. The provider's own shell is not
+   * ours to localize, and this does not try: it localizes the words we hand
+   * it — the product name, the description, the shipping option's name.
+   */
+  locale: Locale;
   successUrl: string;
   cancelUrl: string;
   metadata: Record<string, string>;

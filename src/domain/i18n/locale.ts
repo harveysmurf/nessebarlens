@@ -111,3 +111,19 @@ export const TURNSTILE_LANGUAGES: Record<Locale, string> = {
 export function isLocale(value: string): value is Locale {
   return (LOCALES as readonly string[]).includes(value);
 }
+
+/**
+ * The locale a stored value names, or the default.
+ *
+ * For values that arrive from storage and cannot be refused: a record written
+ * before the locale existed, a record written by a version we do not know, a
+ * metadata key that was never set. English is the answer in every one of those
+ * cases, because English is the language those records were written in.
+ *
+ * This is deliberately **not** the rule the checkout body follows. A body that
+ * says "de" is a client asking for a language we do not serve, and it is
+ * refused; a record that says "de" is history, and history is read.
+ */
+export function localeOrDefault(value: unknown): Locale {
+  return typeof value === "string" && isLocale(value) ? value : DEFAULT_LOCALE;
+}

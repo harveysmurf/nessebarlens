@@ -18,6 +18,7 @@ const PENDING: OrderRecord = {
   v: 1,
   sessionId: SESSION,
   merchantReference: SESSION,
+  locale: "en",
   terminal: false,
   status: "paid-unfulfilled",
   photoSlug: SAMPLE_SLUG,

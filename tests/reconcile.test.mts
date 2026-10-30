@@ -55,6 +55,7 @@ function retryable(sessionId: string, createdAt: string): OrderRecord {
     v: 1,
     sessionId,
     merchantReference: sessionId,
+    locale: "en",
     terminal: false,
     status: "paid-unfulfilled",
     photoSlug: SAMPLE_SLUG,

@@ -1,6 +1,8 @@
 import { LOCALES, type Locale } from "@/domain/i18n/locale";
 import type { PhotoCategory } from "@/domain/catalog/photo-schema";
 import type { ApiErrorCode } from "@/domain/ordering/api-error-codes";
+import type { CheckoutPageState } from "@/domain/ordering/order-decision";
+import type { CountUnits } from "@/domain/ordering/checkout-copy";
 import type {
   ContactErrorCode,
   ContactFieldErrorCode,
@@ -199,6 +201,66 @@ export type Dictionary = {
     /** The copy for each failed attempt, above the form. */
     errors: Record<ContactErrorCode, string>;
   };
+  checkout: {
+    success: {
+      /** The small line above the heading. */
+      eyebrow: string;
+      /** The heading. */
+      title: string;
+      /**
+       * The sentence for each state the page can be in.
+       *
+       * Keyed by the page's own state, so a state the page can reach and the
+       * dictionary has no sentence for is a type error. It is a Record and not
+       * a lookup in the page, so the page cannot render a state in English by
+       * forgetting to pass it.
+       *
+       * The ready-download sentence carries two `{…}` holes — the download
+       * count and the link's lifetime — because both come from the
+       * deployment's configuration, and a sentence that cannot be filled would
+       * have to state a number the deployment might not have.
+       */
+      states: Record<CheckoutPageState, string>;
+      /** The download button's label. */
+      download: string;
+      /** The label in front of the order reference. */
+      referenceLabel: string;
+      /** The link back to the gallery. */
+      backToGallery: string;
+      /** The poller's sentence when it has given up waiting. */
+      timedOut: string;
+      /** The unit words for the counts the page states, per plural category. */
+      units: CountUnits;
+    };
+    cancel: {
+      /** The small line above the heading. */
+      eyebrow: string;
+      /** The heading. */
+      title: string;
+      /** The sentence under the heading. */
+      body: string;
+      /** The link back to the print the customer was buying. */
+      returnToPrint: string;
+      /** The link back to the gallery, for a cancellation with no print. */
+      backToGallery: string;
+    };
+  };
+};
+
+/**
+ * The one sentence both "we have no order yet" and "the order is not ready
+ * yet" render.
+ *
+ * The two states are different facts — one is before the webhook has written
+ * anything, the other is a record that says the file is not ready — and the
+ * customer is told the same thing either way, because it is the same thing
+ * from where they are sitting: we are preparing it and the page will update
+ * itself. Written down once so the two cannot drift into two sentences that
+ * say the same thing.
+ */
+const PREPARING = {
+  en: "We are preparing your download. This page updates on its own — no need to refresh.",
+  bg: "Подготвяме вашия файл. Тази страница се обновява сама — няма нужда да я презареждате.",
 };
 
 const en: Dictionary = {
@@ -351,6 +413,57 @@ const en: Dictionary = {
         "We couldn't verify that you're human. Please refresh the page and try again.",
       "delivery-failed":
         "Sorry, your message could not be sent. Please try again.",
+    },
+  },
+  checkout: {
+    success: {
+      eyebrow: "Payment received",
+      title: "Thank you",
+      states: {
+        "missing-session":
+          "We could not read your order reference from this link. Open it from the Stripe receipt email if you need your download.",
+        "invalid-session":
+          "That order reference is not valid. Open this page from the Stripe receipt email.",
+        unavailable:
+          "We could not read this order, so we cannot show you its status here. Please contact us and quote the reference below — your payment went through and we will get your order to the right place.",
+        processing: PREPARING.en,
+        physical:
+          "Your print is being produced and will ship from our partner studio. You do not need to do anything else.",
+        "physical-unfulfilled":
+          "Your payment was received, but we could not send your order to production automatically. We will contact you by email about your order.",
+        "digital-ready":
+          "Your download is ready. This link works {uses} and expires {ttl}.",
+        "digital-pending": PREPARING.en,
+        "digital-unavailable":
+          "Your payment went through but we could not prepare the download. Our team has been notified — quote the reference below and we will sort it out.",
+        revoked:
+          "This order was refunded or is under dispute, so there is nothing further to send you.",
+        "digital-no-token":
+          "Your payment went through, but we cannot show a download link here. Please contact us and quote the reference below and we will send it.",
+      },
+      download: "Download your file",
+      referenceLabel: "Order reference",
+      backToGallery: "Back to gallery",
+      timedOut:
+        "This is taking longer than usual. Refresh the page, or open the link in your Stripe receipt email.",
+      units: {
+        day: { one: "day", few: "days", many: "days", other: "days" },
+        hour: { one: "hour", few: "hours", many: "hours", other: "hours" },
+        minute: {
+          one: "minute",
+          few: "minutes",
+          many: "minutes",
+          other: "minutes",
+        },
+        time: { one: "time", few: "times", many: "times", other: "times" },
+      },
+    },
+    cancel: {
+      eyebrow: "Checkout cancelled",
+      title: "No charge was made",
+      body: "You left Stripe Checkout before paying. Your selection is still on the print page if you want to try again.",
+      returnToPrint: "Return to print",
+      backToGallery: "Back to gallery",
     },
   },
 };
@@ -512,6 +625,57 @@ const bg: Dictionary = {
         "Съжаляваме, съобщението ви не можа да бъде изпратено. Моля, опитайте отново.",
     },
   },
+  checkout: {
+    success: {
+      eyebrow: "Плащането е получено",
+      title: "Благодарим ви",
+      states: {
+        "missing-session":
+          "Не можем да прочетем номера на поръчката от тази връзка. Отворете го от имейла с потвърждение от Stripe, ако ви трябва файлът.",
+        "invalid-session":
+          "Този номер на поръчка не е валиден. Отворете страницата от имейла с потвърждение от Stripe.",
+        unavailable:
+          "Не можем да прочетем тази поръчка, така че не можем да ви покажем статуса ѝ тук. Моля, свържете се с нас и посочете номера по-долу — плащането ви мина и ще доведем поръчката до правилното място.",
+        processing: PREPARING.bg,
+        physical:
+          "Отпечатъкът ви се изработва и ще бъде изпратен от нашата партньорска ателие. Не е нужно да правите нищо друго.",
+        "physical-unfulfilled":
+          "Получихме плащането ви, но не можем автоматично да изпратим поръчката в производство. Ще се свържем с вас по имейл за нея.",
+        "digital-ready":
+          "Вашият файл е готов. Връзката работи {uses} и изтича след {ttl}.",
+        "digital-pending": PREPARING.bg,
+        "digital-unavailable":
+          "Плащането ви мина, но не можем да подготвим файла. Екипът ни е уведомен — посочете номера по-долу и ще го уредим.",
+        revoked:
+          "Тази поръчка е възстановена или е в спор, така че няма какво още да ви изпратим.",
+        "digital-no-token":
+          "Плащането ви мина, но тук не можем да покажем връзка за изтегляне. Моля, свържете се с нас и посочете номера по-долу и ще ви я изпратим.",
+      },
+      download: "Изтеглете файла",
+      referenceLabel: "Номер на поръчката",
+      backToGallery: "Обратно към галерията",
+      timedOut:
+        "Това отнема повече време от обичайното. Презарежете страницата или отворете връзката от имейла с потвърждение от Stripe.",
+      units: {
+        day: { one: "ден", few: "дни", many: "дни", other: "дни" },
+        hour: { one: "час", few: "часа", many: "часа", other: "часа" },
+        minute: {
+          one: "минута",
+          few: "минути",
+          many: "минути",
+          other: "минути",
+        },
+        time: { one: "път", few: "пъти", many: "пъти", other: "пъти" },
+      },
+    },
+    cancel: {
+      eyebrow: "Плащането е отменено",
+      title: "Не е начислено нищо",
+      body: "Напуснахте плащането в Stripe, преди да платите. Изборът ви още е на страницата на отпечатъка, ако искате да опитате отново.",
+      returnToPrint: "Обратно към отпечатъка",
+      backToGallery: "Обратно към галерията",
+    },
+  },
 };
 
 /** Every locale's dictionary. The `satisfies` is the missing/extra-key guard. */
@@ -537,6 +701,7 @@ export function getDictionary(locale: Locale): Dictionary {
 
 /** The copy a client component takes as a prop, narrowed to what it renders. */
 export type ConfiguratorCopy = Dictionary["configurator"];
+export type CheckoutSuccessCopy = Dictionary["checkout"]["success"];
 export type ContactCopy = Dictionary["contact"];
 export type NavCopy = Dictionary["nav"];
 export type PrintCopy = Dictionary["print"];

@@ -5,6 +5,7 @@ import { PageShell } from "@/components/PageShell";
 import { BODY_COPY, eyebrowClass } from "@/components/type-styles";
 import { isLocale } from "@/domain/i18n/locale";
 import { localePath } from "@/domain/i18n/locale-path";
+import { getDictionary } from "@/components/i18n/dictionaries";
 import { pageMetadata } from "@/infrastructure/seo/page-metadata";
 import { requireLocale } from "../../locale-param";
 
@@ -31,6 +32,7 @@ export default async function CheckoutCancelPage({
   searchParams: Promise<{ slug?: string }>;
 }) {
   const locale = requireLocale((await params).locale);
+  const copy = getDictionary(locale).checkout.cancel;
   const { slug } = await searchParams;
   const backHref = localePath(
     locale,
@@ -40,18 +42,13 @@ export default async function CheckoutCancelPage({
   return (
     <section className="fade-in">
       <PageShell width="lg" padding={20} className="text-center space-y-6">
-        <span className={eyebrowClass()}>
-          Checkout cancelled
-        </span>
+        <span className={eyebrowClass()}>{copy.eyebrow}</span>
         <h1 className="font-serif text-3xl font-light text-stone-900">
-          No charge was made
+          {copy.title}
         </h1>
-        <p className={BODY_COPY}>
-          You left Stripe Checkout before paying. Your selection is still on the
-          print page if you want to try again.
-        </p>
+        <p className={BODY_COPY}>{copy.body}</p>
         <Link href={backHref} className={buttonClass("inline")}>
-          {slug ? "Return to print" : "Back to gallery"}
+          {slug ? copy.returnToPrint : copy.backToGallery}
         </Link>
       </PageShell>
     </section>

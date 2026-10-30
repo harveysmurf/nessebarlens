@@ -328,6 +328,59 @@ test("shipped email sent once; tracking number appears; second callback does not
   assert.equal(mails.length, 1, "emailsSent claim must block a second send");
 });
 
+test("the shipped mail is in the order's language, not the callback's", async () => {
+  // This callback can fire weeks after the order was placed, so nothing about
+  // it says which language the customer reads: the stored record does. A
+  // Bulgarian order must be announced in Bulgarian, and a second callback must
+  // not announce it again.
+  const store = memoryOrdersStore();
+  await store.putOrder(paidPhysical({ locale: "bg" }));
+  const mails: Array<{ kind: string; subject: string; text: string }> = [];
+  const sendEmail: SendEmail = async (mail) => {
+    mails.push({ kind: mail.kind, subject: mail.subject, text: mail.text });
+    return { ok: true, message: "sent" };
+  };
+  const fetchOrder = fetchOk("Complete", [
+    {
+      status: "Shipped",
+      carrier: { name: "DHL" },
+      tracking: { number: "1Z999ABC", url: "https://track.example/1Z999ABC" },
+    },
+  ]);
+
+  await handleProdigiCallback({
+    rawBody: cloudEvent({ id: "evt_ship_bg_1" }),
+    store,
+    sendEmail,
+    fetchOrder,
+    now: NOW,
+  });
+  assert.equal(mails.length, 1);
+  assert.equal(mails[0]!.kind, "print-shipped");
+  assert.equal(
+    mails[0]!.subject,
+    "Вашият отпечатък от Nessebar Lens е изпратен",
+  );
+  assert.match(mails[0]!.text, /Отпечатъкът ви е изпратен/);
+  assert.match(mails[0]!.text, /Куриер: DHL/);
+  // The carrier's details are values, not words: a carrier has one name.
+  assert.match(mails[0]!.text, /Номер за проследяване: 1Z999ABC/);
+  assert.equal(mails[0]!.text.includes("Carrier:"), false);
+
+  const record = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  assert.equal(record.locale, "bg");
+  assert.ok(record.emailsSent.includes("print-shipped"));
+
+  await handleProdigiCallback({
+    rawBody: cloudEvent({ id: "evt_ship_bg_2" }),
+    store,
+    sendEmail,
+    fetchOrder,
+    now: "2026-10-03T14:00:00.000Z",
+  });
+  assert.equal(mails.length, 1, "emailsSent claim must block a second send");
+});
+
 test("Prodigi fetch failure ⇒ 5xx and no partial write", async () => {
   const store = memoryOrdersStore();
   await store.putOrder(paidPhysical());

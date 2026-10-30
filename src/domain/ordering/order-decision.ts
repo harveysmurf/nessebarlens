@@ -37,6 +37,7 @@ import {
   type PhysicalFormat,
 } from "../pricing/sku-map";
 import { isEmailKind, type EmailKind } from "./email";
+import { localeOrDefault, type Locale } from "../i18n/locale";
 import {
   isRetryableProdigiReason,
   PRODIGI_FAILURE_REASONS,
@@ -172,6 +173,18 @@ export type OrderRecordCommon = {
   v: 1;
   sessionId: string;
   merchantReference: string;
+  /**
+   * The language the customer ordered in.
+   *
+   * It is stored rather than inferred, because the mail this order triggers may
+   * be sent long after the customer left the page: a print that ships weeks
+   * later has to be announced in the language they ordered in, and neither the
+   * customer address nor the deployment's default locale says which that was.
+   *
+   * A record written before this field existed reads as English — see
+   * `localeOrDefault`.
+   */
+  locale: Locale;
   /**
    * True when this delivery attempt is finished (the webhook answered 200, so
    * Stripe will not redeliver this session). False only for the retryable
@@ -577,6 +590,12 @@ export function parseOrderRecord(raw: string): OrderRecord | null {
     v: 1,
     sessionId: row.sessionId,
     merchantReference: row.sessionId,
+    // A record written before the locale existed has no such field, and one
+    // written by a version we do not know may carry a value that is not a
+    // locale. Neither is a rejection: refusing the record would turn a paid
+    // order into "corrupt" over a field that decides nothing but the language
+    // of an email. English is the answer for both.
+    locale: localeOrDefault(row.locale),
     terminal: row.terminal,
     status: row.status,
     photoSlug: row.photoSlug,
@@ -690,6 +709,37 @@ export function orderViewState(order: OrderRecord): OrderViewState {
   return ORDER_VIEW_STATES.digitalUnavailable;
 }
 
+/**
+ * The state the checkout success page renders from, widened with the cases
+ * that exist before any store lookup can answer: no reference in the URL at
+ * all, and a reference that is not shaped like a Checkout Session.
+ *
+ * "processing" covers every case where we cannot yet assert anything about the
+ * order — including a missing ORDERS_DB binding or a throwing getOrder(). The
+ * page says "we are preparing your download" there, which is a claim we can
+ * actually make, where a 500 would tell a customer with money already taken
+ * that their payment failed.
+ *
+ * It lives here, beside `OrderViewState`, because the page's copy is keyed by
+ * it: a dictionary that cannot name every state the page can be in is a
+ * dictionary with a hole in it, and the hole would be a state the page renders
+ * in English.
+ */
+export type CheckoutPageState =
+  | "missing-session"
+  | "invalid-session"
+  | "unavailable"
+  | "processing"
+  | OrderViewState
+  /**
+   * The order is paid and ready, but there is no download token for it — the
+   * page cannot hand over a link, because the only credential that grants the
+   * file is the token (#111). Reachable for records stored before tokens
+   * existed; never minted lazily here, because the session id in this URL must
+   * not be able to mint itself a download.
+   */
+  | "digital-no-token";
+
 export type DownloadResolution =
   | { kind: "json"; status: number; body: Record<string, string> }
   | {
@@ -770,6 +820,11 @@ function buildRecord(input: FulfillmentInput): OrderRecord {
     v: 1,
     sessionId: input.sessionId,
     merchantReference: input.sessionId,
+    // From the Stripe metadata the checkout route wrote. A session created
+    // before the locale existed has no such key, and a key naming a locale we
+    // do not serve is not a language this order can be served in — both read as
+    // English, which is what those orders were.
+    locale: localeOrDefault(meta.locale),
     terminal: true,
     photoSlug,
     quoteEur: quoteEur ?? 0,

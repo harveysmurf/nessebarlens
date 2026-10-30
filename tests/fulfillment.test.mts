@@ -322,6 +322,80 @@ test("a paid digital order with an email sends confirmation once (#117)", async 
   assert.equal(sent.length, 1, "redelivery must not re-send confirmation");
 });
 
+test("the confirmation email is in the order's language, and the idempotency key does not change with it", async () => {
+  // The language is stored with the order, so the mail it triggers is in that
+  // language however long afterwards it is sent — and the idempotency key is
+  // still the session and the kind, because a locale in the key would make
+  // every language a different message and the Resend guard would let a second
+  // one through.
+  const store = memoryOrdersStore();
+  const sent: { kind: string; subject: string; text: string; sessionId: string }[] =
+    [];
+  const result = await fulfillCheckoutSession({
+    ...paidInput({
+      customerEmail: "buyer@example.com",
+      metadata: {
+        photoSlug: SAMPLE_SLUG,
+        format: "digital",
+        size: "",
+        frame: "",
+        quoteEur: "30",
+        locale: "bg",
+      },
+    }),
+    store,
+    sendEmail: async (mail) => {
+      sent.push({
+        kind: mail.kind,
+        subject: mail.subject,
+        text: mail.text,
+        sessionId: mail.sessionId,
+      });
+      return { ok: true, message: "sent" };
+    },
+  });
+  assert.equal(result.httpStatus, 200);
+  assert.equal(sent.length, 1);
+  assert.equal(sent[0]?.subject, "Вашата поръчка за Nessebar Lens");
+  assert.match(sent[0]?.text ?? "", /Благодарим ви за поръчката\./);
+  assert.match(
+    sent[0]?.text ?? "",
+    /\/bg\/checkout\/success\?session_id=/,
+  );
+  // The key is the session and the kind, in every language.
+  assert.equal(sent[0]?.sessionId, SESSION);
+
+  const record = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  assert.equal(record.locale, "bg");
+
+  // A redelivery must not send a second message, in any language.
+  const again = await fulfillCheckoutSession({
+    ...paidInput({
+      customerEmail: "buyer@example.com",
+      metadata: {
+        photoSlug: SAMPLE_SLUG,
+        format: "digital",
+        size: "",
+        frame: "",
+        quoteEur: "30",
+        locale: "bg",
+      },
+    }),
+    store,
+    sendEmail: async (mail) => {
+      sent.push({
+        kind: mail.kind,
+        subject: mail.subject,
+        text: mail.text,
+        sessionId: mail.sessionId,
+      });
+      return { ok: true, message: "sent" };
+    },
+  });
+  assert.equal(again.body.duplicate, true);
+  assert.equal(sent.length, 1, "redelivery must not re-send the confirmation");
+});
+
 test("physical payment creates a Prodigi sandbox order and stores the id", async () => {
   const store = memoryOrdersStore();
   const result = await fulfillCheckoutSession({
@@ -1942,6 +2016,72 @@ test("a terminal unfulfilled order mails once, naming the kind not the session",
       mails.push({ kind: mail.kind, subject: mail.subject, text: mail.text });
       return { ok: true, message: "sent" };
     },
+  });
+  assert.equal(again.httpStatus, 200);
+  assert.equal(mails.length, 1, "a terminal failure must not apologise twice");
+});
+
+test("a terminal unfulfilled order is apologised for in the order's language", async () => {
+  // The mail that says "we could not complete your order" is the one a
+  // customer reads most carefully, and it can be triggered long after they
+  // left the page. It is in the language the order was placed in, because the
+  // stored record is the only thing that remembers it — not the customer's
+  // address, and not the deployment's default.
+  const store = memoryOrdersStore();
+  const mails: Array<{ kind: string; subject: string; text: string }> = [];
+  const fail: CreateProdigiOrder = async () => ({
+    ok: false,
+    kind: "client",
+    reason: "prodigi-validation-error",
+    message: "Prodigi order HTTP 400",
+    status: 400,
+  });
+  const input = paidInput({
+    amountTotal: 1999,
+    prodigiKeyConfigured: true,
+    shippingDetails: SHIPPING,
+    customerEmail: "buyer@example.com",
+    metadata: physicalMeta({ locale: "bg" }),
+  });
+  const send = async (mail: {
+    kind: string;
+    subject: string;
+    text: string;
+  }) => {
+    mails.push({ kind: mail.kind, subject: mail.subject, text: mail.text });
+    return { ok: true, message: "sent" };
+  };
+  const first = await fulfillCheckoutSession({
+    ...input,
+    store,
+    createOrder: fail,
+    sendEmail: send,
+  });
+  assert.equal(first.httpStatus, 200);
+  assert.equal(mails.length, 1);
+  assert.equal(mails[0]!.kind, "order-unfulfilled");
+  assert.equal(
+    mails[0]!.subject,
+    "Не можем да завършим поръчката ви за Nessebar Lens",
+  );
+  assert.match(mails[0]!.text, /Получихме плащането ви/);
+  // The reference label is in the same language as the sentence it labels.
+  assert.match(
+    mails[0]!.text,
+    new RegExp(`Референция: ${SESSION.slice(-8).toUpperCase()}`),
+  );
+
+  // The record keeps the language, so a redelivery cannot switch it.
+  const record = parseOrderRecord((await store.getOrder(SESSION))!)!;
+  assert.equal(record.locale, "bg");
+
+  // And the redelivery sends nothing at all — the idempotency key is the
+  // session and the kind, in every language.
+  const again = await fulfillCheckoutSession({
+    ...input,
+    store,
+    createOrder: fail,
+    sendEmail: send,
   });
   assert.equal(again.httpStatus, 200);
   assert.equal(mails.length, 1, "a terminal failure must not apologise twice");

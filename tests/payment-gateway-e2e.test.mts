@@ -94,6 +94,7 @@ test("a fake gateway + fake print provider drive a physical order end to end", a
     quoteEur: 15,
     shippingEur: 4.99,
     destinationCountryCode: "BG",
+    locale: "en",
     successUrl: "https://nessebarlens.com/ok",
     cancelUrl: "https://nessebarlens.com/cancel",
     metadata: {},

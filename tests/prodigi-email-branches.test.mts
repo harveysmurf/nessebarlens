@@ -31,6 +31,7 @@ test("shipped copy with no tracking details says so instead of printing blanks",
     kind: "print-shipped",
     sessionId: "cs_test_abcdefgh",
     siteUrl: "https://nessebarlens.com",
+    locale: "en",
   });
   assert.equal(copy.subject, "Your Nessebar Lens print has shipped");
   assert.match(copy.text, /Your carrier will provide tracking details separately\./);
@@ -43,6 +44,7 @@ test("shipped copy treats whitespace-only tracking fields as absent", () => {
     kind: "print-shipped",
     sessionId: "cs_test_abcdefgh",
     siteUrl: "https://nessebarlens.com",
+    locale: "en",
     carrier: "   ",
     trackingNumber: "  ",
     trackingUrl: "",

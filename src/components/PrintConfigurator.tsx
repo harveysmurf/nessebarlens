@@ -266,6 +266,7 @@ export function PrintConfigurator({
         destinationCountry,
         mount,
         paper,
+        locale,
       );
 
       const res = await postJson("/api/checkout", body);

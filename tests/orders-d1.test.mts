@@ -21,6 +21,7 @@ const BASE_ORDER: OrderRecord = {
   v: 1,
   sessionId: "cs_test_abcdefgh",
   merchantReference: "cs_test_abcdefgh",
+  locale: "en",
   terminal: true,
   status: "paid",
   photoSlug: SAMPLE_SLUG,

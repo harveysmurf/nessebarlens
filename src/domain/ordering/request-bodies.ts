@@ -9,6 +9,7 @@ import type {
   PrintPaper,
 } from "../pricing/sku-map";
 import type { ShipToCountryCode } from "../pricing/ship-to-countries";
+import type { Locale } from "../i18n/locale";
 
 /**
  * The client half of the request contract, so it can be unit-tested instead of
@@ -34,6 +35,15 @@ export type CheckoutRequest = {
   mount: FramedMount | null;
   paper: PrintPaper | null;
   destinationCountryCode: ShipToCountryCode | null;
+  /**
+   * The language the buyer is reading in.
+   *
+   * It rides on the body because the server cannot know it: the endpoint has no
+   * page to read the language from, and it has to answer with the locale's
+   * return URL, the locale's line item and — through the order record — the
+   * locale's emails.
+   */
+  locale: Locale;
 };
 
 /** Digital has no Prodigi quote, so the format is physical by construction. */
@@ -71,6 +81,7 @@ export function checkoutRequest(
   destinationCountryCode: ShipToCountryCode,
   mount: FramedMount,
   paper: PrintPaper,
+  locale: Locale,
 ): CheckoutRequest {
   if (format === "digital") {
     return {
@@ -81,6 +92,7 @@ export function checkoutRequest(
       mount: null,
       paper: null,
       destinationCountryCode: null,
+      locale,
     };
   }
   const spec = physicalSpecification(format, size, frame, mount, paper);
@@ -92,5 +104,6 @@ export function checkoutRequest(
     mount: spec.mount,
     paper: spec.paper,
     destinationCountryCode,
+    locale,
   };
 }

@@ -160,6 +160,10 @@ async function sendClaimedEmail(input: {
     kind: input.kind,
     sessionId: input.record.sessionId,
     siteUrl: input.siteUrl,
+    // The order's own language, not the customer's address and not the
+    // deployment's default: the record is the only thing that remembers which
+    // language this order was placed in.
+    locale: input.record.locale,
   });
   try {
     const sent = await input.sendEmail({
