@@ -310,7 +310,7 @@ test("the configurator's copy is Bulgarian in every branch", () => {
 
   // Framed with a mount: the frame and mount fields, and the mounted help.
   const framed = markup({ ...base, format: "framed" }, "bg");
-  assert.match(framed, /Рамка/);
+  assert.match(framed, /Цвят на рамката/);
   assert.match(framed, /Паспарту/);
   assert.match(framed, /Бяло паспарту/);
   assert.match(framed, /Снимката е поставена зад бяло паспарту/);
@@ -335,7 +335,10 @@ test("the configurator's copy is Bulgarian in every branch", () => {
 
   // The busy and idle button, the footnote and the failure messages.
   assert.match(markup(base, "bg"), /Плащане през Stripe/);
-  assert.match(markup(base, "bg"), /Сигурно плащане · Доставка на живо през Prodigi/);
+  assert.match(
+    markup(base, "bg"),
+    /Сигурно плащане · Актуална информация за доставката чрез Prodigi · Печат и изпращане от Prodigi/,
+  );
   assert.doesNotMatch(markup(base, "bg"), /Checkout with Stripe/);
 });
 
