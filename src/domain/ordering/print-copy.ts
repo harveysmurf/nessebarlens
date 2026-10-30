@@ -80,10 +80,10 @@ const FORMAT_COPY: Record<Locale, Record<PrintFormat, FormatCopy>> = {
     digital: { title: "Digital Copy", sub: "Full Resolution JPG" },
   },
   bg: {
-    giclee: { title: "Художествен отпечатък (giclée)", sub: "Matte Art или Hahnemühle" },
-    framed: { title: "Художествен отпечатък с рамка", sub: "Дървена рамка · Бяло паспарту" },
+    giclee: { title: "Художествен печат (Giclée)", sub: "Matte Art или Hahnemühle" },
+    framed: { title: "Печат в рамка", sub: "Дървена рамка · бяло паспарту" },
     canvas: { title: "Печат върху платно", sub: "Памучно платно" },
-    digital: { title: "Дигитален файл", sub: "JPG файл с пълна резолюция" },
+    digital: { title: "Цифров файл", sub: "JPG файл в пълна разделителна способност" },
   },
 };
 
@@ -150,8 +150,8 @@ const PAPER_COPY: Record<Locale, Record<PrintPaper, string>> = {
   },
   bg: {
     // The paper's own name is a product name and stays as it is written.
-    ema: "Matte Art · 200gsm",
-    hpr: "Hahnemühle Photo Rag · 308gsm",
+    ema: "Matte Art · 200 gsm",
+    hpr: "Hahnemühle Photo Rag · 308 gsm",
   },
 };
 
@@ -162,7 +162,7 @@ const PAPER_NOTE: Record<Locale, Record<PrintPaper, string>> = {
     hpr: "100% cotton rag, soft matte with a fine felt texture.",
   },
   bg: {
-    ema: "Гладка плътна матова хартия с естествено бял тон.",
+    ema: "Гладка, плътна матова хартия с естествено бял нюанс.",
     // Deliberately no acid-free claim: Prodigi does not state it for Photo Rag.
     hpr: "100% памучна хартия с мека матова повърхност и фина текстура.",
   },
@@ -356,9 +356,9 @@ const PREVIEW_LABEL: Record<
   },
   bg: {
     giclee: (alt, selection, orientation) =>
-      `${alt} — художествен фотографски отпечатък giclée, ${sizeLabel(selection.size, orientation, "bg")}`,
+      `${alt} — художествен фотографски печат Giclée, ${sizeLabel(selection.size, orientation, "bg")}`,
     framed: (alt, selection, orientation) =>
-      `${alt} — художествен отпечатък в ${FRAME_PHRASE.bg[selection.frame]} рамка, ${sizeLabel(selection.size, orientation, "bg")}, ${MOUNT_PHRASE.bg[selection.mount]}`,
+      `${alt} — печат в ${FRAME_PHRASE.bg[selection.frame]} рамка, ${sizeLabel(selection.size, orientation, "bg")}, ${MOUNT_PHRASE.bg[selection.mount]}`,
     canvas: (alt, selection, orientation) =>
       `${alt} — печат върху платно, ${sizeLabel(selection.size, orientation, "bg")}, изображението се прегъва около ръбовете с дебелина ${CANVAS_BAR_DEPTH_MM} мм`,
     digital: (alt) => alt,
@@ -394,9 +394,9 @@ const PREVIEW_CAPTION: Record<
   },
   bg: {
     giclee: (selection, orientation) =>
-      `Художествен отпечатък giclée · ${sizeLabel(selection.size, orientation, "bg")}`,
+      `Художествен печат Giclée · ${sizeLabel(selection.size, orientation, "bg")}`,
     framed: (selection, orientation) =>
-      `Художествен отпечатък · ${sizeLabel(selection.size, orientation, "bg")} · ${FRAME_PHRASE.bg[selection.frame]} рамка · ${MOUNT_COPY.bg[selection.mount]}`,
+      `Печат в рамка · ${sizeLabel(selection.size, orientation, "bg")} · ${FRAME_PHRASE.bg[selection.frame]} рамка · ${MOUNT_COPY.bg[selection.mount]}`,
     canvas: (selection, orientation) =>
       `Печат върху платно · ${sizeLabel(selection.size, orientation, "bg")}`,
     digital: () => "Цифров файл · пълният кадър",

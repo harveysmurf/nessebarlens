@@ -214,7 +214,7 @@ test("the shipped email is in the order's language, and the carrier's details ar
     trackingNumber: "1Z999",
     trackingUrl: "https://track.example/1Z999",
   });
-  assert.equal(copy.subject, "Вашият отпечатък от Nessebar Lens е изпратен");
+  assert.equal(copy.subject, "Вашият печат от Nessebar Lens е изпратен");
   assert.match(copy.text, /Куриер: DHL/);
   assert.match(copy.text, /Номер за проследяване: 1Z999/);
   assert.match(copy.text, /Проследяване: https:\/\/track\.example\/1Z999/);
@@ -321,7 +321,7 @@ test("the hosted checkout line is in the buyer's language", () => {
   assert.equal(physicalDescription("30x40", "black", "bg"), "30x40 · черна рамка");
   assert.equal(physicalDescription("30x40", null, "bg"), "30x40");
   assert.equal(digitalDescription("en"), "Digital high-resolution license");
-  assert.equal(digitalDescription("bg"), "Цифров лиценз с висока резолюция");
+  assert.equal(digitalDescription("bg"), "Цифров файл с висока разделителна способност");
   assert.equal(shippingDisplayName("en"), "Shipping");
   assert.equal(shippingDisplayName("bg"), "Доставка");
 });

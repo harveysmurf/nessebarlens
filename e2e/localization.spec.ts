@@ -68,13 +68,13 @@ test("the Bulgarian home page is Bulgarian, and says so in the document", async 
   ).toBeVisible();
   await expect(nav.getByRole("link", { name: "Архив", exact: true })).toBeVisible();
   await expect(
-    nav.getByRole("link", { name: "Аналогова фотография", exact: true }),
+    nav.getByRole("link", { name: "Филмова фотография", exact: true }),
   ).toBeVisible();
 
   // The header's tagline joins the categories the Bulgarian way.
   await expect(
     page.getByText(
-      "Старият Несебър • Художествена фотография, Архив и Аналогова фотография",
+      "Старият Несебър • Художествена фотография, архив и филмова фотография",
     ),
   ).toBeVisible();
 
@@ -103,7 +103,7 @@ test("the Bulgarian gallery and print page are Bulgarian", async ({ page }) => {
   const card = page.locator(`a[href="/bg/prints/${SAMPLE.slug}"]`).first();
   await expect(card).toBeVisible();
   await expect(card.getByText(BULGARIAN.title)).toBeVisible();
-  await expect(card.getByText("Изберете вариант за печат")).toBeVisible();
+  await expect(card.getByText("Изберете вид печат")).toBeVisible();
 
   // And the image's alt text is the Bulgarian one: the card's own picture
   // carries it, and the source's words are nowhere on the page.
@@ -130,13 +130,13 @@ test("the Bulgarian configurator is Bulgarian, and prices in Bulgarian", async (
   // title is also in the screen-reader line under the button, so the
   // assertion is on the first of them.
   await expect(
-    page.getByText("Художествен отпечатък (giclée)").first(),
+    page.getByText("Художествен печат (Giclée)").first(),
   ).toBeVisible();
-  await expect(page.getByText("Дигитален файл").first()).toBeVisible();
+  await expect(page.getByText("Цифров файл").first()).toBeVisible();
   await expect(
-    page.getByText("Изберете вариант за печат").first(),
+    page.getByText("Изберете вид печат").first(),
   ).toBeVisible();
-  await expect(page.getByRole("button", { name: "Плащане през Stripe" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Плащане чрез Stripe" })).toBeVisible();
 
   // The price is in the locale's conventions: the symbol after the amount and
   // a decimal comma. The amount is the same number.
@@ -162,7 +162,7 @@ test("the Bulgarian contact page is Bulgarian, and so are its field errors", asy
     page.getByRole("heading", { name: "Контакт с ателието" }),
   ).toBeVisible();
   await expect(page.getByText("Свържете се с нас")).toBeVisible();
-  await expect(page.getByText("Въпроси за отпечатък")).toBeVisible();
+  await expect(page.getByText("Въпроси за печат")).toBeVisible();
 
   // The form's labels, and the button.
   await expect(page.getByLabel("Име", { exact: true })).toBeVisible();

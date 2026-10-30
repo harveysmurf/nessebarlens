@@ -359,9 +359,9 @@ test("the shipped mail is in the order's language, not the callback's", async ()
   assert.equal(mails[0]!.kind, "print-shipped");
   assert.equal(
     mails[0]!.subject,
-    "Вашият отпечатък от Nessebar Lens е изпратен",
+    "Вашият печат от Nessebar Lens е изпратен",
   );
-  assert.match(mails[0]!.text, /Отпечатъкът ви е изпратен/);
+  assert.match(mails[0]!.text, /Печатът ви е изпратен/);
   assert.match(mails[0]!.text, /Куриер: DHL/);
   // The carrier's details are values, not words: a carrier has one name.
   assert.match(mails[0]!.text, /Номер за проследяване: 1Z999ABC/);

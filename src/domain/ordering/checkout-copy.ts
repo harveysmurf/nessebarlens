@@ -54,7 +54,7 @@ const FRAME_PHRASE: Record<Locale, Record<FrameFinish, string>> = {
 /** The digital line item's description. */
 const DIGITAL_DESCRIPTION: Record<Locale, string> = {
   en: "Digital high-resolution license",
-  bg: "Цифров лиценз с висока резолюция",
+  bg: "Цифров файл с висока разделителна способност",
 };
 
 /** The shipping option's display name on the hosted checkout page. */

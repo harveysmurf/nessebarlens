@@ -2367,11 +2367,11 @@ test("checkout: a Bulgarian order gets the Bulgarian URLs, the Bulgarian line it
     // The line item is ours, so it is in the buyer's language.
     assert.equal(
       params["line_items[0][price_data][product_data][description]"],
-      "Цифров лиценз с висока резолюция",
+      "Цифров файл с висока разделителна способност",
     );
     assert.match(
       params["line_items[0][price_data][product_data][name]"],
-      /JPG файл с пълна резолюция/,
+      /Цифров файл — JPG с пълна разделителна способност/,
     );
     // And the payment invariants are untouched by the language.
     assert.equal(params["line_items[0][price_data][currency]"], "eur");
@@ -2441,7 +2441,7 @@ test("checkout: a Bulgarian print carries a Bulgarian line item, frame and shipp
     // The format label is the configurator's own, in the buyer's language.
     assert.match(
       params["line_items[0][price_data][product_data][name]"],
-      /Художествен отпечатък с рамка/,
+      /Печат в рамка/,
     );
     // And the shipping option is named in the same language.
     assert.equal(
