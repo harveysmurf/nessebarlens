@@ -30,8 +30,9 @@
 
 import type { Metadata } from "next";
 import { CATEGORY } from "@/domain/catalog/categories";
+import { photoForLocale } from "@/domain/catalog/photos";
 import type { PhotoCategory } from "@/domain/catalog/photo-schema";
-import type { Locale } from "@/domain/i18n/locale";
+import { DEFAULT_LOCALE, PUBLIC_LOCALES, type Locale } from "@/domain/i18n/locale";
 import { localePath } from "@/domain/i18n/locale-path";
 import { configuredSiteUrl, type ConfigEnv } from "../config/config";
 import { NODE_ENV } from "../config/env";
@@ -82,6 +83,27 @@ export function canonicalUrl(route: string, env: ConfigEnv = NODE_ENV): string {
   // A leading slash is the site's own convention (`CATEGORY[].href`, `NAV`).
   const path = route.startsWith("/") ? route : `/${route}`;
   return `${origin}${path}`;
+}
+
+/**
+ * The `hreflang` cluster for one locale-relative route.
+ *
+ * One entry per served locale, each pointing at that locale's own URL, plus
+ * `x-default` on the default locale — the page a crawler should show when no
+ * language matches. The entries are built from `PUBLIC_LOCALES`, never from a
+ * list here: a locale this build does not serve has no page to point at, and an
+ * alternate that answers 404 is a broken cluster.
+ */
+export function languageAlternates(
+  route: string,
+  env: ConfigEnv = NODE_ENV,
+): Record<string, string> {
+  const languages: Record<string, string> = {};
+  for (const locale of PUBLIC_LOCALES) {
+    languages[locale] = canonicalUrl(localePath(locale, route), env);
+  }
+  languages["x-default"] = canonicalUrl(localePath(DEFAULT_LOCALE, route), env);
+  return languages;
 }
 
 /**
@@ -169,6 +191,79 @@ export const PAGE_COPY: Record<string, PageCopy> = {
   },
 };
 
+/**
+ * The same routes, in every locale whose copy is a translation.
+ *
+ * `PAGE_COPY` is the source, so it is the reference every other locale is held
+ * against: `tests/seo-metadata.test.mts` fails when a route is added to one
+ * table and not the other, when a translated title repeats another route's, or
+ * when a Bulgarian string is not Bulgarian. There is deliberately no fallback
+ * to English here — a `/bg` page that shipped an English `<title>` would be the
+ * same lie the route guard exists to prevent, one layer down.
+ *
+ * The length windows in that test are English windows: they describe where
+ * Google truncates, and character counts are not comparable across scripts. The
+ * translated rows are checked for uniqueness and language instead of length.
+ */
+const TRANSLATED_PAGE_COPY: Partial<Record<Locale, Record<string, PageCopy>>> = {
+  bg: {
+    "/": {
+      title: "Nessebar Lens — Фотография на Стария Несебър",
+      description:
+        "Финиарт, архивна и филмова фотография от Стария Несебър. Музейни принтове и дигитални сваляния с високо качество.",
+    },
+    "/fine-art": {
+      title: "Финиарт принтове — Музейна фотография от Несебър",
+      description:
+        "Подбрани финиарт фотографии на Стария Несебър, отпечатани в музейно качество на Hahnemühle Photo Rag или доставени като дигитален файл с висока резолюция.",
+    },
+    "/film": {
+      title: "35 mm филмова фотография — Nikon F3 от Стария Несебър",
+      description:
+        "Черно-бели 35 mm филмови фотографии от Стария Несебър, България, заснети с Nikon F3 и Kentmere Pan 100.",
+    },
+    "/archive": {
+      title: "Архив — Ежедневна улична фотография от Стария Несебър",
+      description:
+        "Ежедневни улични и фоторепортажни фотографии от Стария Несебър: рибари по изгрев, есенни обущари, сезонни бури и обикновения живот на града.",
+    },
+    "/story": {
+      title: "Нашата история — Три десетилетия фотография в Несебър",
+      description:
+        "Как три десетилетия крайбрежна светлина, улична памет и аналогово филмово зърно се превърнаха в архива на Nessebar Lens и как се прави и доставя всеки принт.",
+    },
+    "/contact": {
+      title: "Контакт с ателието — Принтове, лицензи и поръчки",
+      description:
+        "Въпроси за принт, лиценз или поръчка? Пишете на ателието на Nessebar Lens и получете директен отговор от фотографа.",
+    },
+    "/checkout/cancel": {
+      title: "Плащането е отменено — Nessebar Lens",
+      description:
+        "Напуснахте плащането преди да платите. Не е направено начисление и изборът ви остава на страницата на принта.",
+      index: false,
+    },
+    "/checkout/success": {
+      title: "Поръчката е получена — Nessebar Lens",
+      description:
+        "Номерът на поръчката ви и връзката за сваляне. Тази страница принадлежи на поръчката ви и не се индексира.",
+      index: false,
+    },
+  },
+};
+
+/**
+ * A route's copy in one locale, or `undefined` when the route has none.
+ *
+ * The default locale reads `PAGE_COPY`; every other reads its own table. No
+ * fallback on purpose: a missing translated row is a build-time failure at the
+ * call site, not an English page served under a Bulgarian URL.
+ */
+export function pageCopy(route: string, locale: Locale): PageCopy | undefined {
+  if (locale === DEFAULT_LOCALE) return PAGE_COPY[route];
+  return TRANSLATED_PAGE_COPY[locale]?.[route];
+}
+
 /** The dynamic route, named the way the filesystem names it. */
 export const PRINT_ROUTE = "/prints/[slug]";
 
@@ -211,11 +306,11 @@ export function pageMetadata(
   locale: Locale,
   env: ConfigEnv = NODE_ENV,
 ): Metadata {
-  const copy = PAGE_COPY[route];
+  const copy = pageCopy(route, locale);
   if (!copy) {
     throw new Error(
-      `No PAGE_COPY entry for ${route}. Add the route's title and description ` +
-        `there, or the page ships the root layout's metadata.`,
+      `No PAGE_COPY entry for ${route} in ${locale}. Add the route's title and ` +
+        `description there, or the page ships the root layout's metadata.`,
     );
   }
   return metadataFor(route, copy, locale, env);
@@ -256,15 +351,20 @@ export function categoryMetadata(
  * writing copy on the photographer's behalf.
  */
 export function printMetadata(
-  photo: { slug: string; title: string; description: string },
+  photo: Parameters<typeof photoForLocale>[0],
   locale: Locale,
   env: ConfigEnv = NODE_ENV,
 ): Metadata {
+  // The catalog holds the source's words; the title a reader sees in the SERP
+  // is this page's language, exactly as the page body is. `photoForLocale`
+  // throws for a locale a published photo has no translation for, which the
+  // catalog build already refuses — so this cannot silently fall back.
+  const localized = photoForLocale(photo, locale);
   return metadataFor(
     printRoute(photo.slug),
     {
-      title: `${photo.title} — ${SITE_TITLE}`,
-      description: photo.description,
+      title: `${localized.title} — ${SITE_TITLE}`,
+      description: localized.description,
     },
     locale,
     env,
@@ -293,7 +393,13 @@ function metadataFor(
   const metadata: Metadata = {
     title: copy.title,
     description: copy.description,
-    alternates: { canonical },
+    alternates: {
+      canonical,
+      // Every served locale's URL for this same page, plus `x-default` on the
+      // default language. Built from the served list so an unpublished locale
+      // is never named: an alternate pointing at a 404 is worse than none.
+      languages: languageAlternates(route, env),
+    },
     openGraph: {
       type: "website",
       siteName: SITE_TITLE,

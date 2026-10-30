@@ -294,3 +294,38 @@ test("no file in public/ hardcodes a site origin", () => {
       "Build the URL from configuredSiteUrl() in a route instead.",
   );
 });
+
+test("the sitemap lists every indexable route and print in every served locale", () => {
+  const urls = withSiteUrl().map((entry) => entry.url);
+
+  for (const locale of PUBLIC_LOCALES) {
+    for (const route of INDEXABLE_ROUTES) {
+      assert.ok(
+        urls.includes(`${SITE}${localePath(locale, route)}`),
+        `sitemap is missing ${locale} ${route}`,
+      );
+    }
+    for (const photo of PHOTOS) {
+      assert.ok(
+        urls.includes(`${SITE}${localePath(locale, `/prints/${photo.slug}`)}`),
+        `sitemap is missing ${locale} /prints/${photo.slug}`,
+      );
+    }
+  }
+
+  // Exactly those URLs: nothing half-localized, and nothing outside the served
+  // set. Counting is what catches a route present in one language only.
+  assert.equal(
+    urls.length,
+    (INDEXABLE_ROUTES.length + PHOTOS.length) * PUBLIC_LOCALES.length,
+  );
+});
+
+test("the sitemap follows the published-locale guard", () => {
+  // With Bulgarian published, both languages are listed; the registry is the
+  // only place that decides, and the sitemap reads it rather than a copy.
+  assert.deepEqual([...PUBLIC_LOCALES], ["en", "bg"]);
+  const urls = withSiteUrl().map((entry) => entry.url);
+  assert.ok(urls.some((url) => url.startsWith(`${SITE}/en/`)));
+  assert.ok(urls.some((url) => url.startsWith(`${SITE}/bg/`)));
+});

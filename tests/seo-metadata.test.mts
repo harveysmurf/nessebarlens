@@ -68,13 +68,20 @@ import test from "node:test";
 import { PHOTOS, getPhoto } from "../src/domain/catalog/photos.ts";
 import { CATEGORY } from "../src/domain/catalog/categories.ts";
 import { PHOTO_CATEGORIES } from "../src/domain/catalog/photo-schema.ts";
-import { DEFAULT_LOCALE } from "../src/domain/i18n/locale.ts";
+import {
+  DEFAULT_LOCALE,
+  LOCALES,
+  PUBLIC_LOCALES,
+  TRANSLATED_LOCALES,
+} from "../src/domain/i18n/locale.ts";
 import { localePath } from "../src/domain/i18n/locale-path.ts";
 import {
   canonicalUrl,
   categoryMetadata,
   INDEXABLE_ROUTES,
   isIndexable,
+  languageAlternates,
+  pageCopy,
   pageMetadata,
   PAGE_COPY,
   PRINT_ROUTE,
@@ -483,6 +490,119 @@ test("the catalog the print metadata reads is the one the routes render", () => 
       getPhoto(photo.slug),
       `${photo.slug} is in PHOTOS but not findable by getPhoto, so its route ` +
         `renders a 404 with a title in the sitemap`,
+    );
+  }
+});
+test("every route has a translated copy in every translated locale", () => {
+  // The English table is the source, and a route that exists in one language
+  // but not the other would render an English title under a Bulgarian URL.
+  for (const locale of TRANSLATED_LOCALES) {
+    for (const route of Object.keys(PAGE_COPY)) {
+      const copy = pageCopy(route, locale);
+      assert.ok(copy, `${locale} has no metadata copy for ${route}`);
+      assert.ok(copy.title.length > 0, `${locale} ${route} has an empty title`);
+      assert.ok(
+        copy.description.length > 0,
+        `${locale} ${route} has an empty description`,
+      );
+      // The index flag is a decision about the route, not about the language:
+      // a noindex page must not become indexable by being translated.
+      assert.equal(
+        copy.index,
+        PAGE_COPY[route]?.index,
+        `${locale} ${route} disagrees with the source about indexing`,
+      );
+    }
+  }
+});
+
+test("translated titles and descriptions are unique within their language", () => {
+  for (const locale of TRANSLATED_LOCALES) {
+    for (const field of ["title", "description"] as const) {
+      const seen = new Map<string, string[]>();
+      for (const route of Object.keys(PAGE_COPY)) {
+        const value = pageCopy(route, locale)?.[field] ?? "";
+        seen.set(value, [...(seen.get(value) ?? []), route]);
+      }
+      const shared = [...seen.entries()].filter(([, routes]) => routes.length > 1);
+      assert.deepEqual(
+        shared,
+        [],
+        `${locale} ${field} is shared by two routes; a crawler reads them as one page`,
+      );
+    }
+  }
+});
+
+test("the translated metadata is written in the locale it claims", () => {
+  // English prose with a Bulgarian URL would be the same lie the route guard
+  // exists to stop, one layer down. Latin brand names and product names are
+  // allowed inside the sentence; every translated title and description still
+  // has to contain Cyrillic.
+  for (const locale of TRANSLATED_LOCALES) {
+    for (const route of Object.keys(PAGE_COPY)) {
+      const copy = pageCopy(route, locale);
+      assert.match(
+        `${copy?.title} ${copy?.description}`,
+        /[\u0400-\u04FF]/u,
+        `${locale} ${JSON.stringify(route)} is not written in ${locale}`,
+      );
+    }
+  }
+});
+
+test("every page's hreflang cluster names every served locale and x-default", () => {
+  const routes = [
+    ...routesOnDisk().filter((route) => route !== PRINT_ROUTE),
+    PRINT_ROUTE,
+  ];
+  for (const route of routes) {
+    // A print's alternates name its real slug, not the `[slug]` pattern.
+    const actualRoute =
+      route === PRINT_ROUTE ? `/prints/${PHOTOS[0]?.slug}` : route;
+    const metadata =
+      route === PRINT_ROUTE
+        ? printMetadata(PHOTOS[0]!, DEFAULT_LOCALE, ENV)
+        : pageMetadata(route, DEFAULT_LOCALE, ENV);
+    const languages = metadata.alternates?.languages as
+      | Record<string, string>
+      | undefined;
+    assert.ok(languages, `${route} has no hreflang cluster`);
+
+    for (const locale of PUBLIC_LOCALES) {
+      assert.equal(
+        languages[locale],
+        canonicalUrl(localePath(locale, actualRoute), ENV),
+        `${route} has no ${locale} alternate`,
+      );
+    }
+    assert.equal(
+      languages["x-default"],
+      canonicalUrl(localePath(DEFAULT_LOCALE, actualRoute), ENV),
+      `${route} must point x-default at the default language`,
+    );
+    // The cluster is the served set plus x-default, and nothing else: an
+    // alternate for an unpublished locale would point at a 404.
+    assert.deepEqual(
+      Object.keys(languages).sort(),
+      [...PUBLIC_LOCALES, "x-default"].sort(),
+      `${route} names a locale the site does not serve`,
+    );
+  }
+});
+
+test("the languageAlternates helper reads the route the same way the canonical does", () => {
+  for (const locale of LOCALES) {
+    const metadata = pageMetadata("/story", locale, ENV);
+    assert.equal(
+      metadata.alternates?.canonical,
+      canonicalUrl(localePath(locale, "/story"), ENV),
+      `${locale} canonical is not self-referential`,
+    );
+    assert.deepEqual(
+      languageAlternates("/story", ENV),
+      metadata.alternates?.languages,
+      `${locale} and the helper disagree about the cluster`,
     );
   }
 });

@@ -75,7 +75,7 @@ test("the site describes itself as an Organization and a WebSite", () => {
     assert.equal(organization.name, "Nessebar Lens");
     assert.equal(organization.url, `${SITE}/`);
     assert.equal(website.name, "Nessebar Lens");
-    assert.equal(website.url, `${SITE}/`);
+    assert.equal(website.url, `${SITE}/en`);
     assert.ok(
       organization["@id"],
       "the Organization needs an @id for the WebSite's publisher to reference",
@@ -96,7 +96,7 @@ test("a print is a Product with one offer, at the price the catalog states", () 
     assert.ok(product, "no Product on a print page");
     assert.equal(product.name, photo.title);
     assert.equal(product.description, photo.description);
-    assert.equal(product.url, `${SITE}/prints/${photo.slug}`);
+    assert.equal(product.url, `${SITE}/en/prints/${photo.slug}`);
     assert.equal(asRecord(product.brand).name, "Nessebar Lens");
 
     const offer = asRecord(product.offers);
@@ -139,14 +139,39 @@ test("the breadcrumb is home → category → this print", () => {
       items.map((item) => item.position),
       [1, 2, 3],
     );
-    assert.equal(items[0]?.item, `${SITE}/`);
-    assert.equal(items[2]?.item, `${SITE}/prints/${photo.slug}`);
+    assert.equal(items[0]?.item, `${SITE}/en`);
+    assert.equal(items[2]?.item, `${SITE}/en/prints/${photo.slug}`);
     // The middle entry points at the category the print really is in, read from
     // the registry rather than re-spelled, so it tracks a category rename.
     assert.ok(
-      String(items[1]?.item).startsWith(`${SITE}/`),
+      String(items[1]?.item).startsWith(`${SITE}/en/`),
       "the category crumb must be an absolute site URL",
     );
+  });
+});
+
+test("the Bulgarian print markup is Bulgarian, and names Bulgarian URLs", () => {
+  withSiteUrl(() => {
+    const photo = PHOTOS[0]!;
+    const translation = photo.translations.bg;
+    assert.ok(translation, `${photo.slug} has no Bulgarian translation to localize with`);
+
+    const product = byType(printJsonLd(photo, null, "bg"), "Product");
+    assert.ok(product, "no Product in the Bulgarian document");
+    assert.equal(product.name, translation.title);
+    assert.equal(product.description, translation.description);
+    assert.equal(product.url, `${SITE}/bg/prints/${photo.slug}`);
+    assert.equal(product.inLanguage, "bg-BG");
+
+    const trail = byType(printJsonLd(photo, null, "bg"), "BreadcrumbList");
+    const items = trail?.itemListElement as Rec[];
+    assert.equal(items[0]?.name, "Начало");
+    assert.equal(items[0]?.item, `${SITE}/bg`);
+    assert.equal(items[2]?.item, `${SITE}/bg/prints/${photo.slug}`);
+
+    const website = byType(sitewideJsonLd("bg"), "WebSite");
+    assert.equal(website?.url, `${SITE}/bg`);
+    assert.equal(website?.inLanguage, "bg-BG");
   });
 });
 
@@ -211,14 +236,14 @@ test("what the page renders parses back as JSON", () => {
 test("a builder reads the configured origin, not a hardcoded one", () => {
   withSiteUrl(() => {
     const website = byType(sitewideJsonLd(), "WebSite");
-    assert.equal(website?.url, `${SITE}/`);
+    assert.equal(website?.url, `${SITE}/en`);
   });
   process.env.NEXT_PUBLIC_SITE_URL = "https://staging.example.com";
   try {
     const website = byType(sitewideJsonLd(), "WebSite");
     assert.equal(
       website?.url,
-      "https://staging.example.com/",
+      "https://staging.example.com/en",
       "a preview deployment must describe itself, not the production origin",
     );
   } finally {

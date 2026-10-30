@@ -73,7 +73,7 @@ export default async function PrintDetailPage({
         {/* Product + BreadcrumbList, describing the print this page sells. The
             image is the 2000px rung the page already requests, so the markup
             names a file that exists rather than a second, larger one. */}
-        <JsonLd data={printJsonLd(photo, image)} />
+        <JsonLd data={printJsonLd(photo, image, locale)} />
         <Link
           href={localePath(locale, categoryHref(photo.category))}
           className="text-xs uppercase tracking-widest text-stone-500 hover:text-stone-900 mb-8 inline-flex items-center gap-2 font-medium"

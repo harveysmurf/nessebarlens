@@ -107,10 +107,10 @@ test("the registry knows English and Bulgarian, and serves English", () => {
       `${locale} is served but not known`,
     );
   }
-  // The integration guard: Bulgarian is known (the dictionaries and the tests
-  // cover it) but not served, so `/bg` is a 404 until the page, contact and
-  // checkout slices land. `PUBLIC_LOCALES` is the one line that flips it.
-  assert.deepEqual([...PUBLIC_LOCALES], ["en"]);
+  // The integration guard: both known locales are served, now that the page,
+  // contact, checkout and SEO slices have landed. `PUBLIC_LOCALES` is still the
+  // one line that publishes a locale.
+  assert.deepEqual([...PUBLIC_LOCALES], ["en", "bg"]);
 });
 
 test("every locale has a formatting tag and an endonym", () => {

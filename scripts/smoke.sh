@@ -86,21 +86,16 @@ if [[ "$BASE" == "https://nessebarlens.com" && "${SMOKE_ALLOW_PRODUCTION:-}" != 
   exit 1
 fi
 
-# The locale segment the public pages live under. It is the site's default
-# locale and, today, the only one it serves: Bulgarian is known but not
-# published until the page, contact and checkout slices land, so `/bg` is a 404
-# rather than an English page wearing a Bulgarian URL.
+# The locale segment the public pages live under. Both languages are published
+# now, so both trees have to answer; Bulgarian used to be a 404 until the SEO
+# slice published it.
 #
-# It is spelled out here because this script runs against a deployed Worker and
-# cannot import the registry that owns it. If the default locale ever changes,
-# this line is what changes with it — and until it does, the checks below fail
-# loudly rather than quietly.
+# These are spelled out because this script runs against a deployed Worker and
+# cannot import the registry that owns them. If the served set ever changes,
+# these lines change with it — and until they do, the checks below fail loudly
+# rather than quietly.
 DEFAULT_LOCALE="en"
-
-# The locale the site knows but does not serve. Asserted as a 404 below, so
-# publishing Bulgarian means this line and the redirect target change together
-# rather than one of them being left behind.
-UNSERVED_LOCALE="bg"
+PUBLISHED_LOCALE="bg"
 
 # A cold Worker and freshly-attached secrets both take a moment to serve, so
 # each check retries for ~60s before it is called a failure.
@@ -385,12 +380,14 @@ for path in / /film /archive /fine-art /story; do
   check "GET $target" 200 "$BASE$target"
 done
 
-# A locale the site knows but does not serve is a 404, never an English page
-# under a foreign URL. This is the integration guard of the localisation epic,
-# asserted against the deployed surface rather than against the source: a
-# deploy carrying a build that predates the guard would serve English at a
-# Bulgarian URL, and no other check here would notice.
-check "GET /$UNSERVED_LOCALE" 404 "$BASE/$UNSERVED_LOCALE"
+# Every published locale serves its own tree. The guard used to be the opposite
+# — Bulgarian was known but unpublished, and `/bg` had to be a 404. Now it is
+# published, so the failure that matters is a deploy that lost one language:
+# a check that only asked for English would pass that build.
+for locale in "$DEFAULT_LOCALE" "$PUBLISHED_LOCALE"; do
+  check "GET /$locale" 200 "$BASE/$locale"
+  check "GET /$locale/fine-art" 200 "$BASE/$locale/fine-art"
+done
 
 # Pre-rendered print detail: the legacy URL redirects to the prefixed one, a
 # real slug serves, and an unknown slug 404s.
