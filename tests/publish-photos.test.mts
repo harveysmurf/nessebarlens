@@ -14,6 +14,10 @@ import { parse as parseYaml } from "yaml";
 import { buildCatalog } from "../scripts/build-catalog.mjs";
 import { renderPrintAsset } from "../scripts/derivative-image.mjs";
 import {
+  nodeVersionError,
+  publishPhotosArgv,
+} from "../scripts/publish-photos-launcher.mjs";
+import {
   MASTERS_BUCKET_NAME,
   STAGING_MASTERS_BUCKET_NAME,
   WEB_BUCKET_NAME,
@@ -728,6 +732,25 @@ test("the launcher spawns publish-photos and is wired as the npm script", () => 
   // #278: the deprecated `npm run ingest` alias was removed after its
   // transition; publish-photos is the one supported command.
   assert.equal(pkg.scripts.ingest, undefined);
+});
+
+test("the launcher's version check refuses a node that is not the pin", () => {
+  // The launcher exists for this check: publish-photos.mjs imports sharp, and
+  // an ES module's imports are hoisted, so a check inside it would run after
+  // the import that fails first. The decision is here so it can be tested.
+  assert.equal(nodeVersionError("24.21.0", "24.21.0"), null);
+  assert.equal(nodeVersionError("24.21.0", "24.22.1"), null);
+  assert.match(nodeVersionError("24.21.0", "20.19.2") ?? "", /needs Node 24\.21\.0/);
+  // The minor has to be at least the pin's; the patch line does not matter.
+  assert.match(nodeVersionError("24.21.0", "24.20.9") ?? "", /needs Node 24\.21\.0/);
+});
+
+test("the launcher runs the uploader with the register hook and the caller's arguments", () => {
+  const argv = publishPhotosArgv(["--apply", "--slug", "dawn"]);
+  assert.equal(argv[0], "--import");
+  assert.equal(argv[1], "./scripts/register.mjs");
+  assert.match(argv[2] ?? "", /publish-photos\.mjs$/);
+  assert.deepEqual(argv.slice(3), ["--apply", "--slug", "dawn"]);
 });
 
 // ---------------------------------------------------------------------------

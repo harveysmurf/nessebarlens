@@ -3,9 +3,15 @@
  *
  * Runs the suite under node's built-in V8 coverage, then enforces floors over
  * the gated files: the bounded-context tree (src/domain, src/application,
- * src/infrastructure) plus the five src/app/api route handlers. The page tree
- * and components/ are React code that a DOM would be needed to measure
- * honestly, so they stay out until that is a decision worth making.
+ * src/infrastructure) plus the five src/app/api route handlers, and — since
+ * the scripts/ tree stopped being a blind spot — the ops scripts as well. The
+ * page tree and components/ are React code that a DOM would be needed to
+ * measure honestly, so they stay out until that is a decision worth making.
+ *
+ * The gate's decisions live in scripts/coverage-gate.mjs, which is a pure
+ * module with no side effects: this file spawns node, reads the report and
+ * prints, and the gate itself is a function that can be run against a report
+ * that ought to fail. See that module for why the split exists.
  *
  * Line numbers are trustworthy because node strips the types itself, in place:
  * there is no transpiler output between the .ts and the code V8 sees. The
@@ -13,7 +19,7 @@
  * still misplaced object-literal spreads — it reported executed lines as
  * uncovered, so the number it produced was not a measurement of this code.
  *
- * The floor is checked here rather than via --test-coverage-lines. Lines /
+ * The floors are checked here rather than via --test-coverage-lines. Lines /
  * branches / functions are the simple mean over the gated files, not
  * a line-weighted total: that is pessimistic for big files and is therefore safe
  * to ratchet upward.
@@ -33,12 +39,15 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync } from "node:fs";
 import os from "node:os";
 import path from "node:path";
 import process from "node:process";
+import {
+  SCRIPT_FLOOR,
+  SRC_FLOOR,
+  gate,
+  isGatedScript,
+} from "./coverage-gate.mjs";
 import { isGatedFile, mean, parseCoverage, testRunExitCode } from "./coverage-report.mjs";
 
 const ROOT = path.join(import.meta.dirname, "..");
-
-/** Ratchet: never lower these, raise them as tests land. */
-const FLOOR = { lines: 99.95, branches: 99.9, functions: 100 };
 
 // The test runner takes the glob itself, but only a shell expands it, so pass
 // the file list explicitly.
@@ -95,25 +104,29 @@ if (rows.length === 0) {
   process.exit(1);
 }
 
-const gated = rows.filter((row) => isGatedFile(row.file));
+// Every script in scripts/ is measured unless the gate's allow-list says why
+// it cannot be. The list comes from the filesystem, not from a constant, so a
+// new script is inside the gate the moment it lands.
+const scriptFiles = readdirSync(path.join(ROOT, "scripts"))
+  .filter((name) => name.endsWith(".mjs"))
+  .sort()
+  .map((name) => `scripts/${name}`);
+
+const verdict = gate({ rows, scriptFiles });
 const tests = rows.filter((row) => /(^|\/)tests\//.test(row.file));
-if (gated.length === 0) {
-  process.stderr.write(
-    `coverage.mjs: parsed ${rows.length} rows but none under the bounded-context tree or src/app/api\n`,
-  );
-  process.exit(1);
-}
 
-const actual = {
-  lines: mean(gated, "lines"),
-  branches: mean(gated, "branches"),
-  functions: mean(gated, "functions"),
-};
-
-console.log(`gated: bounded-context tree + src/app/api (${gated.length} files, mean over files)`);
+console.log(
+  `gated: bounded-context tree + src/app/api (${verdict.measured.src.length} files, mean over files)`,
+);
 for (const name of ["lines", "branches", "functions"]) {
   console.log(
-    `  ${name.padEnd(10)} ${actual[name].toFixed(2).padStart(6)}%  floor ${FLOOR[name]}%`,
+    `  ${name.padEnd(10)} ${verdict.actual.src[name].toFixed(2).padStart(6)}%  floor ${SRC_FLOOR[name]}%`,
+  );
+}
+console.log(`gated: scripts/ (${verdict.measured.scripts.length} files, mean over files)`);
+for (const name of ["lines", "branches", "functions"]) {
+  console.log(
+    `  ${name.padEnd(10)} ${verdict.actual.scripts[name].toFixed(2).padStart(6)}%  floor ${SCRIPT_FLOOR[name]}%`,
   );
 }
 if (tests.length > 0) {
@@ -122,7 +135,9 @@ if (tests.length > 0) {
 
 if (process.argv.includes("--files")) {
   // Per-file, worst branch coverage first: this is the working list of gaps.
-  for (const row of [...gated].sort((a, b) => a.branches - b.branches)) {
+  for (const row of [...verdict.measured.src, ...verdict.measured.scripts].sort(
+    (a, b) => a.branches - b.branches,
+  )) {
     console.log(
       `${row.branches.toFixed(2).padStart(6)}% br ${row.lines.toFixed(2).padStart(6)}% ln  ` +
         `${row.file.replace(`${ROOT}/`, "")}  ${row.uncovered}`,
@@ -133,21 +148,20 @@ if (process.argv.includes("--files")) {
 
 if (process.argv.includes("--print")) process.exit(0);
 
-const failures = [];
-for (const name of ["lines", "branches", "functions"]) {
-  if (actual[name] < FLOOR[name]) {
-    failures.push(`${name} ${actual[name].toFixed(2)}% < ${FLOOR[name]}%`);
-  }
-}
-if (failures.length > 0) {
-  console.error(`\ncoverage floor not met: ${failures.join(", ")}`);
+if (verdict.failures.length > 0) {
+  console.error(`\ncoverage gate failed: ${verdict.failures.join(", ")}`);
   console.error("files below the floor:");
-  for (const row of [...gated].sort((a, b) => a.lines - b.lines)) {
-    if (row.lines < FLOOR.lines) {
-      console.error(`  ${row.lines.toFixed(2).padStart(6)}%  ${row.file}  ${row.uncovered}`);
+  for (const [set, floor] of [
+    ["src", SRC_FLOOR],
+    ["scripts", SCRIPT_FLOOR],
+  ]) {
+    for (const row of [...verdict.measured[set]].sort((a, b) => a.lines - b.lines)) {
+      if (row.lines < floor.lines) {
+        console.error(`  ${row.lines.toFixed(2).padStart(6)}%  ${row.file}  ${row.uncovered}`);
+      }
     }
   }
-  const gaps = branchGaps(lcov).filter((gap) => isGatedFile(gap.file));
+  const gaps = branchGaps(lcov).filter((gap) => isGatedFile(gap.file) || isGatedScript(gap.file));
   if (gaps.length > 0) {
     console.error("branches never taken, by file (line:branch-index):");
     for (const { file, taken, total, lines } of gaps) {

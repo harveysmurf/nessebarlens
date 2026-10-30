@@ -14,39 +14,78 @@
  * The spawn passes `--import ./scripts/register.mjs` because publish-photos
  * imports src/domain/catalog/photo-schema.ts, whose own imports are extensionless. The
  * version check above is what makes that safe on an old Node.
+ *
+ * The run is behind an `isMain` guard, the convention every other ops script
+ * in this directory follows, so a test can import this file and drive the two
+ * decisions it makes — the version check and the child's argv — instead of
+ * reading its source text. Without the guard the coverage gate cannot measure
+ * this file at all: node's report lists loaded modules only, and nothing loads
+ * a launcher.
  */
 
 import { spawnSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import path from "node:path";
 import process from "node:process";
+import { fileURLToPath } from "node:url";
 
 const ROOT = path.join(import.meta.dirname, "..");
 
 /** The repo's pin, read rather than repeated — three copies drift (see §3). */
-const PINNED = readFileSync(path.join(ROOT, ".nvmrc"), "utf8").trim();
+export const PINNED_NODE = readFileSync(path.join(ROOT, ".nvmrc"), "utf8").trim();
 
-const [reqMajor, reqMinor] = PINNED.split(".").map(Number);
-const [major, minor] = process.versions.node.split(".").map(Number);
-
-if (major !== reqMajor || (minor ?? 0) < reqMinor) {
-  process.stderr.write(
-    `publish-photos needs Node ${PINNED} (this is ${process.versions.node}).\n` +
-      `sharp is a native binding compiled per Node line, so a mismatch fails ` +
-      `with an opaque loader error rather than anything about images.\n` +
-      `Fix: nvm use   (or install Node ${PINNED} and re-run)\n`,
+/**
+ * The message the operator gets when the running node is not the pinned one,
+ * or null when it is.
+ *
+ * The rule is the pin's: the same major, and the minor at least as high. The
+ * patch line does not matter — sharp is compiled per Node *line*, not per
+ * patch.
+ */
+export function nodeVersionError(pinned, running) {
+  const [reqMajor, reqMinor] = pinned.split(".").map(Number);
+  const [major, minor] = running.split(".").map(Number);
+  if (major === reqMajor && (minor ?? 0) >= reqMinor) return null;
+  return (
+    `publish-photos needs Node ${pinned} (this is ${running}).\n` +
+    `sharp is a native binding compiled per Node line, so a mismatch fails ` +
+    `with an opaque loader error rather than anything about images.\n` +
+    `Fix: nvm use   (or install Node ${pinned} and re-run)\n`
   );
-  process.exit(1);
 }
 
-const result = spawnSync(
-  process.execPath,
-  [
+/** The argv the uploader is spawned with. */
+export function publishPhotosArgv(argv) {
+  return [
     "--import",
     "./scripts/register.mjs",
     path.join(import.meta.dirname, "publish-photos.mjs"),
-    ...process.argv.slice(2),
-  ],
-  { stdio: "inherit", cwd: ROOT },
-);
-process.exit(result.status ?? 1);
+    ...argv,
+  ];
+}
+
+/**
+ * Run the uploader, or refuse to. Returns the exit code the caller should
+ * exit with; the refusal is written to stderr here, because the operator is
+ * the one who has to act on it.
+ */
+export function run(argv = process.argv.slice(2)) {
+  const error = nodeVersionError(PINNED_NODE, process.versions.node);
+  if (error) {
+    process.stderr.write(error);
+    return 1;
+  }
+  const result = spawnSync(process.execPath, publishPhotosArgv(argv), {
+    stdio: "inherit",
+    cwd: ROOT,
+  });
+  return result.status ?? 1;
+}
+
+const isMain =
+  typeof process.argv[1] === "string" &&
+  process.argv[1] === fileURLToPath(import.meta.url);
+
+if (isMain) {
+  process.exit(run());
+}
