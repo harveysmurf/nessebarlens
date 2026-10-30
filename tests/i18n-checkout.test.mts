@@ -35,6 +35,7 @@ import {
 } from "../src/domain/ordering/email-copy.ts";
 import {
   digitalDescription,
+  fillDownloadSentence,
   physicalDescription,
   shippingDisplayName,
   ttlPhrase,
@@ -223,6 +224,24 @@ test("the shipped email is in the order's language, and the carrier's details ar
   assert.equal(copy.text.includes("Tracking number:"), false);
 });
 
+test("a shipped email with no tracking details says so in the order's language", () => {
+  // The third shape of the shipped email, in Bulgarian: Prodigi can mark a
+  // shipment shipped before a carrier posts tracking, and an empty labelled
+  // line reads as a bug.
+  const copy = emailCopyFor({
+    kind: "print-shipped",
+    sessionId: SESSION,
+    siteUrl: "https://nessebarlens.com",
+    locale: "bg",
+    carrier: "",
+    trackingNumber: "   ",
+    trackingUrl: undefined,
+  });
+  assert.match(copy.text, /Куриерът ще ви изпрати данните за проследяване отделно\./);
+  assert.equal(copy.text.includes("Куриер: "), false);
+  assert.equal(copy.text.includes("Номер за проследяване:"), false);
+});
+
 test("the unfulfilled email is in the order's language", () => {
   const copy = emailCopyFor({
     kind: "order-unfulfilled",
@@ -269,6 +288,21 @@ test("the link's lifetime is written in the reader's language", () => {
   assert.equal(ttlPhrase(90, bgUnits, "bg"), "2 минути");
   // The unit is never a raw seconds count.
   assert.equal(ttlPhrase(45, units, "en"), "1 minute");
+});
+
+test("the ready-download sentence's holes are filled in the reader's language", () => {
+  // The sentence is the dictionary's; the numbers are the deployment's. Filling
+  // the holes must leave no placeholder behind and must not touch the words.
+  const bg = getDictionary("bg").checkout.success;
+  const uses = pluralUnit(3, bg.units.time, "bg");
+  const ttl = ttlPhrase(2 * 86_400, bg.units, "bg");
+  const sentence = fillDownloadSentence(
+    bg.states["digital-ready"],
+    { uses, ttl },
+  );
+  assert.match(sentence, /Връзката работи 3 пъти и изтича след 2 дни\./);
+  assert.equal(sentence.includes("{uses}"), false);
+  assert.equal(sentence.includes("{ttl}"), false);
 });
 
 test("the count and its unit are one phrase, in the reader's language", () => {

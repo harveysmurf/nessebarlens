@@ -33,7 +33,21 @@ import { LOCALE_TAGS, type Locale } from "./locale";
  */
 export type PluralCategory = "one" | "few" | "many" | "other";
 
-const CATEGORIES: readonly PluralCategory[] = ["one", "few", "many", "other"];
+/**
+ * Every category `Intl` can name, mapped onto the four with a unit word.
+ *
+ * A Record keyed by `Intl`'s own union, not a filter with a fallback: the table
+ * is total, so a category this module does not carry a word for is a reading of
+ * the table rather than a branch no test can reach.
+ */
+const CATEGORY: Record<Intl.LDMLPluralRule, PluralCategory> = {
+  zero: "other",
+  one: "one",
+  two: "other",
+  few: "few",
+  many: "many",
+  other: "other",
+};
 
 /**
  * The unit words for one kind of thing, in one language.
@@ -47,11 +61,6 @@ const CATEGORIES: readonly PluralCategory[] = ["one", "few", "many", "other"];
  */
 export type LocaleUnits = Record<PluralCategory, string>;
 
-/** Whether a category is one this module names. */
-function isCategory(value: string): value is PluralCategory {
-  return (CATEGORIES as readonly string[]).includes(value);
-}
-
 /**
  * The category a count falls into, in a locale.
  *
@@ -61,7 +70,7 @@ function isCategory(value: string): value is PluralCategory {
  */
 export function pluralCategory(count: number, locale: Locale): PluralCategory {
   const selected = new Intl.PluralRules(LOCALE_TAGS[locale]).select(count);
-  return isCategory(selected) ? selected : "other";
+  return CATEGORY[selected];
 }
 
 /**
