@@ -186,7 +186,7 @@ test("the money follows the locale and the amount does not change", () => {
   assert.match(eurLabel(0, "bg"), /^0,00\s€/);
   // The order line's label is the locale's, and the product ids are not.
   assert.equal(formatLabel("giclee", "white", "ema", "en"), "Giclée Fine Art Print (Matte Art 200gsm)");
-  assert.equal(formatLabel("giclee", "white", "ema", "bg"), "Финиарт giclée (Matte Art 200gsm)");
+  assert.equal(formatLabel("giclee", "white", "ema", "bg"), "Художествен фотографски отпечатък (giclée) (Matte Art 200gsm)");
   // The size label writes the unit the way the language writes it.
   assert.equal(sizeLabel("30x40", "portrait", "en"), "30 × 40 cm (12 × 16\")");
   assert.equal(sizeLabel("30x40", "portrait", "bg"), "30 × 40 см (12 × 16″)");
@@ -289,7 +289,7 @@ test("the configurator's copy is Bulgarian in every branch", () => {
   // The format names, in both languages.
   assert.deepEqual(
     configuratorFormats("bg").map((f) => f.title),
-    ["Финиарт giclée", "Финиарт в рамка", "Опъната канава", "Цифров файл"],
+    ["Художествен отпечатък (giclée)", "Художествен отпечатък с рамка", "Печат върху платно", "Дигитален файл"],
   );
   assert.deepEqual(
     configuratorFormats("en").map((f) => f.title),
@@ -300,20 +300,20 @@ test("the configurator's copy is Bulgarian in every branch", () => {
   const digital = markup({ ...base, format: "digital" }, "bg");
   assert.match(digital, /Резолюция/);
   assert.match(digital, /30,00\s€/);
-  assert.match(digital, /Сигурно плащане · Линк за изтегляне след изпълнение/);
+  assert.match(digital, /Сигурно плащане · Линк за изтегляне след обработка на поръчката/);
 
   // Giclée: the paper field and the paper's own note.
   const giclee = markup(base, "bg");
-  assert.match(giclee, /Хартия/);
+  assert.match(giclee, /Вид хартия/);
   assert.match(giclee, /Гладка плътна матова хартия/);
   assert.match(markup(base, "en"), /Smooth heavyweight matte, natural white\./);
 
   // Framed with a mount: the frame and mount fields, and the mounted help.
   const framed = markup({ ...base, format: "framed" }, "bg");
-  assert.match(framed, /Рамка/);
+  assert.match(framed, /Цвят на рамката/);
   assert.match(framed, /Паспарту/);
-  assert.match(framed, /Бяла паспарту/);
-  assert.match(framed, /Снимката е зад бяла паспарту/);
+  assert.match(framed, /Бяло паспарту/);
+  assert.match(framed, /Снимката е поставена зад бяло паспарту/);
 
   // Framed without a mount: the other help line, and the size in Bulgarian.
   const unmounted = markup(
@@ -335,7 +335,10 @@ test("the configurator's copy is Bulgarian in every branch", () => {
 
   // The busy and idle button, the footnote and the failure messages.
   assert.match(markup(base, "bg"), /Плащане през Stripe/);
-  assert.match(markup(base, "bg"), /Сигурно плащане · Доставка на живо през Prodigi/);
+  assert.match(
+    markup(base, "bg"),
+    /Сигурно плащане · Актуална информация за доставката чрез Prodigi · Печат и изпращане от Prodigi/,
+  );
   assert.doesNotMatch(markup(base, "bg"), /Checkout with Stripe/);
 });
 
@@ -376,8 +379,8 @@ test("the preview's label, caption and note are Bulgarian", () => {
     paper: "ema",
   };
   const alt = "Едноредово описание на изображението";
-  assert.match(previewLabel(alt, selection, "landscape", "bg"), /финиарт в рамка/);
-  assert.match(previewCaption(selection, "landscape", "bg"), /Финиарт в рамка/);
+  assert.match(previewLabel(alt, selection, "landscape", "bg"), /художествен отпечатък в бяла сатенена рамка/);
+  assert.match(previewCaption(selection, "landscape", "bg"), /Художествен отпечатък/);
   assert.match(previewCaption(selection, "landscape", "en"), /Framed Print/);
   // The size option's label is Bulgarian too.
   assert.deepEqual(
