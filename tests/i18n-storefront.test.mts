@@ -304,7 +304,7 @@ test("the configurator's copy is Bulgarian in every branch", () => {
 
   // Giclée: the paper field and the paper's own note.
   const giclee = markup(base, "bg");
-  assert.match(giclee, /Хартия/);
+  assert.match(giclee, /Вид хартия/);
   assert.match(giclee, /Гладка плътна матова хартия/);
   assert.match(markup(base, "en"), /Smooth heavyweight matte, natural white\./);
 
