@@ -443,7 +443,7 @@ test("the signature line and the reference label have one owner in the source", 
   // One per locale, and each of them in one place. The guard is the same for
   // both: a second spelling of the label would be a second owner of the line
   // the customer reads, and the test above cannot see it.
-  for (const label of ["Reference:", "Референция:"]) {
+  for (const label of ["Reference:", "Номер на поръчката:"]) {
     const labels = sites.filter((site) => site.text.startsWith(label));
     assert.deepEqual(
       labels.map((site) => site.file),

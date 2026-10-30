@@ -2068,7 +2068,7 @@ test("a terminal unfulfilled order is apologised for in the order's language", a
   // The reference label is in the same language as the sentence it labels.
   assert.match(
     mails[0]!.text,
-    new RegExp(`Референция: ${SESSION.slice(-8).toUpperCase()}`),
+    new RegExp(`Номер на поръчката: ${SESSION.slice(-8).toUpperCase()}`),
   );
 
   // The record keeps the language, so a redelivery cannot switch it.

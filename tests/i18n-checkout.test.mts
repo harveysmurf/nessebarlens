@@ -257,7 +257,7 @@ test("the unfulfilled email is in the order's language", () => {
 
 test("the reference line is labelled in the order's language", () => {
   assert.equal(referenceLine(SESSION, "en"), "Reference: ABCDEFGH");
-  assert.equal(referenceLine(SESSION, "bg"), "Референция: ABCDEFGH");
+  assert.equal(referenceLine(SESSION, "bg"), "Номер на поръчката: ABCDEFGH");
 });
 
 test("the plural rules are the language's, not an appended s", () => {
