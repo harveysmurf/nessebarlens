@@ -300,7 +300,10 @@ test("the ready-download sentence's holes are filled in the reader's language", 
     bg.states["digital-ready"],
     { uses, ttl },
   );
-  assert.match(sentence, /Връзката работи 3 пъти и изтича след 2 дни\./);
+  assert.match(
+    sentence,
+    /Файлът ви е готов\. Връзката може да се използва 3 пъти и изтича след 2 дни\./,
+  );
   assert.equal(sentence.includes("{uses}"), false);
   assert.equal(sentence.includes("{ttl}"), false);
 });

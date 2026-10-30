@@ -156,7 +156,7 @@ test.describe("success page states in Bulgarian", () => {
     // the HTML, and an effect runs after it.
     await expect(page.locator("html")).toHaveAttribute("lang", "bg");
 
-    await expect(page.getByText(/вашият файл е готов/i)).toBeVisible();
+    await expect(page.getByText(/файлът ви е готов/i)).toBeVisible();
 
     // The same href as in English: the token endpoint is not localized, and a
     // localized one would be a link to nothing.
@@ -170,7 +170,7 @@ test.describe("success page states in Bulgarian", () => {
     // The limits are stated in the reader's language, with the language's own
     // plural words: "5 пъти" and "30 дни", not "5 times" and "30 days".
     await expect(
-      page.getByText(/работи 5 пъти и изтича след 30 дни/i),
+      page.getByText(/може да се използва 5 пъти и изтича след 30 дни/i),
     ).toBeVisible();
   });
 
@@ -179,7 +179,7 @@ test.describe("success page states in Bulgarian", () => {
   }) => {
     await page.goto(bgUrl(DIGITAL_PENDING));
 
-    await expect(page.getByText(/подготвяме вашия файл/i)).toBeVisible();
+    await expect(page.getByText(/подготвяме поръчката ви/i)).toBeVisible();
 
     // The load-bearing assertion, in this language too: a link here would be
     // the page promising something /api/download refuses.
