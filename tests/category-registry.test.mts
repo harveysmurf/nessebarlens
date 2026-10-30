@@ -350,9 +350,9 @@ test("the header tagline lists every category, from the registry", () => {
   // the one thing here that was never a `Record` and never a compile error.
   assert.equal(categoryTagline("en"), "Fine Art, Archive & Film");
   // The Bulgarian list joins with "и", not "&": the joiner is part of the
-  // localized names, and a header that says "Художествена фотография, Архив и Аналогова фотография" is a
+  // localized names, and a header that says "Художествена фотография, архив и филмова фотография" is a
   // sentence in the wrong language.
-  assert.equal(categoryTagline("bg"), "Художествена фотография, Архив и Аналогова фотография");
+  assert.equal(categoryTagline("bg"), "Художествена фотография, архив и филмова фотография");
   for (const category of PHOTO_CATEGORIES) {
     assert.ok(
       categoryTagline("en").includes(CATEGORY[category].names.en.taglineName),
@@ -436,16 +436,16 @@ test("the Bulgarian names are written out too, and they are Bulgarian", () => {
       galleryTitle: "Архив на ежедневието",
       homeTitle: "Архив",
       storyTitle: "Архив на ежедневието",
-      taglineName: "Архив",
+      taglineName: "архив",
       printLabel: "Архив на ежедневието · Документална фотография",
     },
     film: {
-      navLabel: "Аналогова фотография",
-      galleryTitle: "Аналогова фотография",
-      homeTitle: "Аналогова фотография",
-      storyTitle: "Аналогова фотография",
-      taglineName: "Аналогова фотография",
-      printLabel: "Аналогова фотография",
+      navLabel: "Филмова фотография",
+      galleryTitle: "Филмова фотография",
+      homeTitle: "Филмова фотография",
+      storyTitle: "Филмова фотография",
+      taglineName: "филмова фотография",
+      printLabel: "Филмова фотография",
     },
   };
   for (const category of PHOTO_CATEGORIES) {

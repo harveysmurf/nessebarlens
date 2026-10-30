@@ -106,10 +106,10 @@ const FORMAT_LABELS: Record<Locale, Record<PrintFormat, string>> = {
     digital: "High-Res Digital Download",
   },
   bg: {
-    giclee: "Художествен фотографски отпечатък (giclée)",
-    framed: "Художествен отпечатък с рамка",
+    giclee: "Художествен фотографски печат Giclée",
+    framed: "Печат в рамка",
     canvas: "Печат върху платно",
-    digital: "JPG файл с пълна резолюция",
+    digital: "Цифров файл — JPG с пълна разделителна способност",
   },
 };
 
@@ -135,8 +135,8 @@ const PAPER_LABELS: Record<Locale, Record<PrintPaper, string>> = {
     hpr: "Hahnemühle Photo Rag 308gsm",
   },
   bg: {
-    ema: "Matte Art 200gsm",
-    hpr: "Hahnemühle Photo Rag 308gsm",
+    ema: "Matte Art, 200 gsm",
+    hpr: "Hahnemühle Photo Rag, 308 gsm",
   },
 };
 

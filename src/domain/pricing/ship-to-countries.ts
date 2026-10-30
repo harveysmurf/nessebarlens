@@ -265,6 +265,24 @@ export const ISO_ALPHA2_PATTERN = /^[A-Z]{2}$/;
 
 const SHIP_TO_SET = new Set<string>(SHIP_TO_COUNTRY_CODES);
 
+/** Bulgarian country names use the site's preferred short forms. */
+const BULGARIAN_COUNTRY_NAMES: Partial<Record<ShipToCountryCode, string>> = {
+  BN: "Бруней",
+  SV: "Ел Салвадор",
+  HK: "Хонг Конг",
+  MM: "Мианма (Бирма)",
+  IM: "Остров Ман",
+  CK: "Острови Кук",
+  TC: "Търкс и Кайкос",
+  TL: "Източен Тимор",
+  SH: "Света Елена",
+  US: "САЩ",
+  GB: "Великобритания",
+  CG: "Конго (Бразавил)",
+  CD: "Конго (Киншаса)",
+  RE: "Реюнион",
+};
+
 export function isShipToCountryCode(code: string): code is ShipToCountryCode {
   return SHIP_TO_SET.has(code);
 }
@@ -293,6 +311,9 @@ export function countryName(
   code: ShipToCountryCode,
   locale: Locale = DEFAULT_LOCALE,
 ): string {
+  if (locale === "bg" && BULGARIAN_COUNTRY_NAMES[code]) {
+    return BULGARIAN_COUNTRY_NAMES[code];
+  }
   const names = new Intl.DisplayNames([LOCALE_TAGS[locale]], { type: "region" });
   // The `!` is the type saying what the runtime already knows: the code is an
   // ISO 3166-1 alpha-2 region and ICU names every one of them. `of()` is typed
@@ -317,8 +338,12 @@ export type ShipToCountry = { code: ShipToCountryCode; name: string };
 export function shipToCountriesFor(
   locale: Locale = DEFAULT_LOCALE,
 ): ShipToCountry[] {
-  return SHIP_TO_COUNTRIES.map((country) => ({
+  const countries = SHIP_TO_COUNTRIES.map((country) => ({
     code: country.code,
     name: countryName(country.code, locale),
   }));
+  if (locale !== "bg") return countries;
+
+  const collator = new Intl.Collator("bg");
+  return countries.sort((a, b) => collator.compare(a.name, b.name));
 }
