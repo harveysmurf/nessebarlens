@@ -14,12 +14,13 @@
 import type { WebPhotoSource } from "./derivatives";
 import type { GalleryImage } from "./gallery-image";
 import { galleryImage } from "./gallery-image";
-import { envString } from "@/infrastructure/config/env";
+import { envString, NODE_ENV } from "@/infrastructure/config/env";
+import type { EnvReader } from "@/infrastructure/config/env";
 import type { WebDerivativeWidth } from "@/domain/catalog/derivative-ladder";
 
 /** The placeholder phase is on by default; set `NEXT_PUBLIC_PLACEHOLDER_PHOTOS=0` to restore the R2 ladder. */
-const placeholderPhase = (): boolean =>
-  envString("NEXT_PUBLIC_PLACEHOLDER_PHOTOS") !== "0";
+const placeholderPhase = (env: EnvReader = NODE_ENV): boolean =>
+  envString("NEXT_PUBLIC_PLACEHOLDER_PHOTOS", env) !== "0";
 
 /** The placeholder JPEG for one slug. */
 function placeholderImageFor(slug: string): GalleryImage {
@@ -31,7 +32,8 @@ function placeholderImageFor(slug: string): GalleryImage {
 export function galleryImageOrPlaceholder(
   photo: WebPhotoSource,
   preferred?: WebDerivativeWidth,
+  env: EnvReader = NODE_ENV,
 ): GalleryImage | null {
-  if (placeholderPhase()) return placeholderImageFor(photo.slug);
+  if (placeholderPhase(env)) return placeholderImageFor(photo.slug);
   return galleryImage(photo, preferred);
 }
