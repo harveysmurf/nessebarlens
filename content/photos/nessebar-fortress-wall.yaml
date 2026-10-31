@@ -1,0 +1,35 @@
+slug: nessebar-fortress-wall
+title: "Nessebar Fortress Wall"
+caption: "The remains of the medieval fortress wall along the peninsula's narrow isthmus."
+description: >-
+  The remains of the medieval fortress wall stand along the narrow isthmus that joins the Nessebar peninsula to the mainland. Weathered stone blocks and the arched gateway are shown without colour, the sea visible beyond the wall on both sides.
+alt: "Remains of the medieval fortress wall on the Nessebar isthmus."
+translations:
+  bg:
+    title: "Крепостната стена на Несебър"
+    caption: "Останки от средновековната крепостна стена по тесния провлак на полуострова."
+    description: >-
+      Останките от средновековната крепостна стена се издигат по тесния провлак, който свързва Несебърския полуостров със сушата. Изветрелите каменни блокове и сводестият вход са показани в черно-бял кадър, а отвъд стената от двете страни се вижда морето.
+    alt: "Останки от средновековната крепостна стена на Несебърския провлак."
+category: archive
+published: true
+# written by publish-photos
+master_sha256: 445d54f3eefb6c3f01797595856caa9471b2441c706c3dbcd31401eb5f61a7db
+image_hash: ac1761a2
+master_width: 3630
+master_height: 2722
+orientation: landscape
+print_asset_sha256: 03a55c6d15d004c8fd201f349b8888b4454f3ca85e767e83b42935b5e2ae26e2
+print_asset_md5: fc6a80401fca8debcf4da2e4368da86e
+print_options:
+  giclee:
+    - 20x30
+    - 30x40
+  framed:
+    - 20x30
+    - 30x40
+    - 30x45
+  canvas:
+    - 20x30
+    - 30x40
+    - 30x45

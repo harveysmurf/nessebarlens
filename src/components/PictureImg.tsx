@@ -7,7 +7,7 @@
  * `GalleryImage` *type* is imported here.
  *
  * The `<picture>` is `display: contents`, so it generates no box and the <img>
- * is laid out exactly as it was before the wrapper existed.
+ * `img` is laid out exactly as it was before the wrapper existed.
  */
 import type { CSSProperties, ReactEventHandler, Ref } from "react";
 import type { GalleryImage } from "@/infrastructure/media/gallery-image";
@@ -28,13 +28,15 @@ export function PictureImg({
   sizes?: string | undefined;
   priority?: boolean | undefined;
   style?: CSSProperties | undefined;
-  /** The inner `<img>`, so a caller can read the URL the browser picked (#327). */
+  /** The inner `img`, so a caller can read the URL the browser picked (#327). */
   imgRef?: Ref<HTMLImageElement | null> | undefined;
   onLoad?: ReactEventHandler<HTMLImageElement> | undefined;
 }) {
   return (
     <picture className="contents">
-      <source type="image/webp" srcSet={image.webpSrcSet} sizes={sizes} />
+      {image.webpSrcSet ? (
+        <source type="image/webp" srcSet={image.webpSrcSet} sizes={sizes} />
+      ) : null}
       <img
         ref={imgRef}
         onLoad={onLoad}

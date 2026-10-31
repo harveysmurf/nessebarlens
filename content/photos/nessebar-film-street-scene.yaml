@@ -1,0 +1,36 @@
+slug: nessebar-film-street-scene
+title: "Nessebar Street Scene"
+caption: "A street scene in Nessebar on film, grainy and candid."
+description: >-
+  A grainy film street scene in Nessebar: a cobbled lane, a shuttered shop, and a cat sitting in a doorway. The film stock gives the image a soft contrast and a faint silver cast, the way old photographs age.
+alt: "A grainy film street scene in Nessebar."
+translations:
+  bg:
+    title: "Улична сцена от Несебър"
+    caption: "Улична сцена от Несебър, заснета на филм — зърнеста и непринудена."
+    description: >-
+      Зърнеста филмова улична сцена от Несебър: калдъръмена уличка, магазин със затворени капаци и котка, седнала на прага. Филмовата лента придава на изображението мек контраст и лек сребрист оттенък, характерен за старите фотографии.
+    alt: "Зърнеста филмова улична сцена от Несебър."
+category: film
+film_look: grayscale
+published: true
+# written by publish-photos
+master_sha256: 7f7ba84d903a64e5a526017e6d3dcf1410c720ac11594af4d503391f91f1d8b6
+image_hash: 5548ccbf
+master_width: 3630
+master_height: 2722
+orientation: landscape
+print_asset_sha256: cecd3934348cfde051967caacfd29982755857681a6d3790c3eda0953197d938
+print_asset_md5: 494c2c6c3c256e37e66f98ca85dc2893
+print_options:
+  giclee:
+    - 20x30
+    - 30x40
+  framed:
+    - 20x30
+    - 30x40
+    - 30x45
+  canvas:
+    - 20x30
+    - 30x40
+    - 30x45

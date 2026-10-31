@@ -1,0 +1,35 @@
+slug: old-windmill-at-sunset-nessebar
+title: "Old Windmill at Sunset"
+caption: "The eighteenth-century windmill on Nessebar's ridge, lit by the last light of the day."
+description: >-
+  A solitary stone windmill stands on the ridge above the old town, its sails still, as the sun drops behind the Black Sea coast. The warm light picks out the ochre stonework and the long shadow it casts across the plateau.
+alt: "An old stone windmill on a ridge against a sunset sky over the Black Sea."
+translations:
+  bg:
+    title: "Стара вятърна мелница по залез"
+    caption: "Вятърната мелница от XVIII век на билото на Несебър, озарена от последните слънчеви лъчи за деня."
+    description: >-
+      Самотна каменна вятърна мелница се издига на билото над стария град, а крилата ѝ са неподвижни, докато слънцето залязва зад черноморския бряг. Топлата светлина подчертава охрените камъни и дългата сянка, която мелницата хвърля върху платото.
+    alt: "Стара каменна вятърна мелница на билото на фона на залеза над Черно море."
+category: fine-art
+published: true
+# written by publish-photos
+master_sha256: 3fabbe381a4ac328653c3dbddd6afe16852cc90ec8f7c61414a17e54799005a2
+image_hash: 2f306ba0
+master_width: 3630
+master_height: 2722
+orientation: landscape
+print_asset_sha256: 80f97122bcb7c35921a616020eb3ececef41ad804007acef33b3e82542e1feba
+print_asset_md5: b143f30701a18ca096d76703995c16fc
+print_options:
+  giclee:
+    - 20x30
+    - 30x40
+  framed:
+    - 20x30
+    - 30x40
+    - 30x45
+  canvas:
+    - 20x30
+    - 30x40
+    - 30x45
