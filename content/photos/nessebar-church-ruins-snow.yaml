@@ -13,6 +13,8 @@ translations:
     alt: "Руини на стара църква, покрити със сняг в Несебър."
 category: archive
 published: true
+# no production master yet: gallery placeholder, skipped by the release gate
+placeholder: true
 # written by publish-photos
 master_sha256: a36184e8ae0fad1d34a0329c87b385aac1e6ac60007ae565e5caf746cdab4ec9
 image_hash: 9950ab12

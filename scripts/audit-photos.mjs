@@ -129,6 +129,7 @@ export function readCatalogEntries(photosDir) {
     entries.push({
       slug: result.photo.slug,
       published: result.photo.published,
+      ...(result.photo.placeholder === true ? { placeholder: true } : {}),
       ...(result.photo.imageHash === undefined
         ? {}
         : { imageHash: result.photo.imageHash }),
@@ -153,6 +154,7 @@ export function readCatalogEntries(photosDir) {
  * @typedef {{
  *   slug: string,
  *   published: boolean,
+ *   placeholder?: boolean,
  *   imageHash?: string,
  *   masterSha256?: string,
  * }} CatalogEntry
@@ -207,14 +209,17 @@ export function auditFindings({
       const slug = slugFromMasterKey(object.key);
       if (slug === null) continue; // reported as unknown below
       const entry = bySlug.get(slug);
-      if (!entry || entry.published === false) {
+      if (!entry || entry.published === false || entry.placeholder === true) {
         unpublishedMasters.push({ slug, bucket, key: object.key, size: object.size });
       }
     }
   }
 
   for (const entry of catalog) {
-    if (entry.published === false) continue;
+    // A placeholder-phase photo has no bucket objects by design, so reporting
+    // it as missing every audit would be noise, not drift. Every real photo is
+    // still checked.
+    if (entry.published === false || entry.placeholder === true) continue;
     // A published photo always carries an `image_hash` (schema-enforced #245),
     // so this guard is defensive; without a hash there is no ladder to check.
     if (typeof entry.imageHash !== "string") continue;

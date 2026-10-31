@@ -14,6 +14,8 @@ translations:
 category: film
 film_look: grayscale
 published: true
+# no production master yet: gallery placeholder, skipped by the release gate
+placeholder: true
 # written by publish-photos
 master_sha256: 7f7ba84d903a64e5a526017e6d3dcf1410c720ac11594af4d503391f91f1d8b6
 image_hash: 5548ccbf

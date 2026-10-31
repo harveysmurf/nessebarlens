@@ -13,6 +13,8 @@ translations:
     alt: "Овехтяла дървена врата на стара къща в Несебър."
 category: archive
 published: true
+# no production master yet: gallery placeholder, skipped by the release gate
+placeholder: true
 # written by publish-photos
 master_sha256: 411802ea82b297bb81095aeb8b3781678324372ad6b1834d1d2a30b5380a77cd
 image_hash: d30f8f0d

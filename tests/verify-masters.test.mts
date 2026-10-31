@@ -102,6 +102,30 @@ test("an unpublished photo is not checked", async () => {
   assert.deepEqual(s3.calls, []);
 });
 
+test("a placeholder-phase photo is not checked", async () => {
+  // #484 added gallery placeholders with no production master. They are
+  // expected to be absent from the bucket, so the release gate must skip them
+  // while still checking every real photo.
+  const s3 = fakeS3({});
+  const failures = await verifyMasters({
+    photos: [PHOTO({ slug: "placeholder", placeholder: true })],
+    s3,
+  });
+  assert.deepEqual(failures, []);
+  assert.deepEqual(s3.calls, []);
+});
+
+test("photosToVerify drops placeholder entries and keeps real ones", () => {
+  const photos = [
+    { slug: "real", published: true, masterSha256: SHA_A },
+    { slug: "phase", published: true, placeholder: true, masterSha256: SHA_A },
+  ];
+  assert.deepEqual(
+    photosToVerify(photos).map((photo) => photo.slug),
+    ["real"],
+  );
+});
+
 test("a published photo without master_sha256 fails", async () => {
   const s3 = fakeS3({});
   const failures = await verifyMasters({
