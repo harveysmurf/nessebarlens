@@ -29,7 +29,7 @@ import {
  * lets the route branch on `format` and have `size`/`frame`/`destinationCountryCode`
  * narrow without a cast.
  */
-export type DigitalCheckout = {
+type DigitalCheckout = {
   photoSlug: string;
   format: "digital";
   destinationCountryCode: ShipToCountryCode | null;
@@ -37,7 +37,7 @@ export type DigitalCheckout = {
   locale: Locale;
 };
 
-export type PhysicalCheckout = PhysicalSelectionFields & {
+type PhysicalCheckout = PhysicalSelectionFields & {
   photoSlug: string;
   destinationCountryCode: ShipToCountryCode | null;
   locale: Locale;
