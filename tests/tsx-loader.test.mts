@@ -84,8 +84,9 @@ test("the rendered image is the derivative ladder, not a bare <img>", () => {
   // Proves the loader produced working JSX all the way down: PictureImg's
   // <picture>, the WebP <source>, and a srcset built from the real photo hash.
   // The expectation is derived inside the same env as the render — the ladder
-  // needs the base configured to exist at all.
-  withEnv({ [BASE]: BASE_URL }, () => {
+  // needs the base configured to exist at all, and the placeholder phase must
+  // be off so the ladder is used rather than the placeholder JPEG.
+  withEnv({ [BASE]: BASE_URL, "NEXT_PUBLIC_PLACEHOLDER_PHOTOS": "0" }, () => {
     const html = renderToStaticMarkup(createElement(PhotoCard, { photo: plainPhoto, locale: "en", printOptions: "Print options" }));
     assert.match(html, /<picture/);
     assert.match(html, /<source type="image\/webp"/);
@@ -201,4 +202,20 @@ test("the placeholder image renders for both film and non-film photos without a 
       `the ${label} tile should not render a fallback span`,
     );
   }
+});
+
+test("the placeholder image renders even when the ladder could build", () => {
+  // Placeholder phase: with a base configured and a photo hash present, the
+  // ladder *could* build R2 URLs, but the placeholder phase still wins so the
+  // gallery never points at the empty R2 derivative bucket.
+  const html = withEnv({ [BASE]: BASE_URL }, () =>
+    renderToStaticMarkup(createElement(PhotoCard, { photo: plainPhoto, locale: "en", printOptions: "Print options" })),
+  );
+  assert.match(
+    html,
+    new RegExp(`<img[^>]*src="/placeholders/${plainPhoto.slug}.jpg"`),
+    `the tile should render its placeholder image with the base set`,
+  );
+  assert.doesNotMatch(html, /<source type="image\/webp"/, "no webp source for a placeholder");
+  assert.ok(html.includes(plainPhoto.alt), "the alt text should still be rendered");
 });
