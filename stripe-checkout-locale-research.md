@@ -21,8 +21,8 @@ If Stripe supports an explicit `locale`, the exact adapter change and test cases
 |------|-------|--------|
 | Stripe SDK | `stripe` 23.0.1 | `package.json:40` (`"stripe": "^23.0.1"`) |
 | Pinned API version | `2026-09-30.endive` | `src/infrastructure/stripe/stripe.ts:14` (`STRIPE_API_VERSION`) |
-| Docs reference | API `2026-10-28.endive` | https://docs.stripe.com/api/checkout/sessions/create#create_checkout_session-locale |
-| Current `locale` passed to Stripe | none | `src/infrastructure/stripe/stripe-gateway.ts:47-107` (`buildSessionParams` sets no `locale`) |
+| Docs reference | API `2026-10-28.endive` (repo pins `2026-09-30.endive`); the `locale` param and `bg`/`en` values exist in the pinned SDK types | https://docs.stripe.com/api/checkout/sessions/create#create_checkout_session-locale |
+| Current `locale` passed to Stripe | none | `src/infrastructure/stripe/stripe-gateway.ts:50-108` (`buildSessionParams` sets no `locale`) |
 | Intent locale available | yes | `CheckoutIntent.locale` is already populated and used for `formatLabel`, `physicalDescription`, `digitalDescription`, `shippingDisplayName` |
 
 ## Answers to the six questions
@@ -92,7 +92,7 @@ Stripe **does** support an explicit UI locale for hosted Checkout, and **Bulgari
 
 If the product owner wants localized hosted Checkout, the safe implementation is:
 
-- Add `locale: intent.locale` to the `Stripe.Checkout.SessionCreateParams` built in `src/infrastructure/stripe/stripe-gateway.ts` `buildSessionParams`, guarded so only `bg`/`en` (and `auto`) are passed — `CheckoutIntent.locale` is already narrowed to `"en" | "bg"` by `src/domain/i18n/locale.ts` (`LOCALES = ["en", "bg"]`), so no additional mapping is needed at the `CheckoutIntent` → Stripe boundary.
+- Add `locale: intent.locale` to the `Stripe.Checkout.SessionCreateParams` built in `src/infrastructure/stripe/stripe-gateway.ts` `buildSessionParams`. No guard or mapping is needed: `CheckoutIntent.locale` is already narrowed to `"en" | "bg"` by `src/domain/i18n/locale.ts` (`LOCALES = ["en", "bg"]`), which are exactly Stripe's `bg` and `en` locale values.
 - Do **not** change `adaptive_pricing`, `shipping_address_collection`, `success_url`/`cancel_url`, `metadata`, or webhook handling.
 - Add tests asserting the created session carries `locale` and that `bg` maps to Stripe's `bg` value; keep the e2e / `verify-stripe-integration.mjs` payment invariants unchanged.
 
