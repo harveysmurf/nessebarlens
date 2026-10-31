@@ -22,7 +22,7 @@ const placeholderPhase = (): boolean =>
   envString("NEXT_PUBLIC_PLACEHOLDER_PHOTOS") !== "0";
 
 /** The placeholder JPEG for one slug. */
-export function placeholderImageFor(slug: string): GalleryImage {
+function placeholderImageFor(slug: string): GalleryImage {
   const placeholder = `/placeholders/${slug}.jpg`;
   return { src: placeholder, srcSet: placeholder, webpSrcSet: "" };
 }
