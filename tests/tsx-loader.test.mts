@@ -20,6 +20,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 
 import { PhotoCard } from "../src/components/PhotoCard.tsx";
 import { webDerivativeUrls } from "../src/infrastructure/media/derivatives.ts";
+import { galleryImageOrPlaceholder } from "../src/infrastructure/media/placeholder.ts";
 import { PHOTOS, isFilmPhoto } from "../src/domain/catalog/photos.ts";
 import { load } from "./tsx-hooks.mjs";
 
@@ -218,4 +219,32 @@ test("the placeholder image renders even when the ladder could build", () => {
   );
   assert.doesNotMatch(html, /<source type="image\/webp"/, "no webp source for a placeholder");
   assert.ok(html.includes(plainPhoto.alt), "the alt text should still be rendered");
+});
+
+test("placeholder phase serves the placeholder JPEG even when the base is set", () => {
+  // Placeholder phase is on by default, so with the base configured the
+  // placeholder JPEG wins over the R2 derivative ladder.
+  const image = withEnv({ [BASE]: BASE_URL }, () =>
+    galleryImageOrPlaceholder(plainPhoto, 2000),
+  );
+  assert.ok(image, "placeholder phase resolves an image");
+  assert.equal(
+    image.src,
+    `/placeholders/${plainPhoto.slug}.jpg`,
+    "placeholder phase serves the local placeholder JPEG",
+  );
+  assert.equal(image.webpSrcSet, "", "no WebP source for a placeholder");
+});
+
+test("off the placeholder phase, the real ladder builds when base is set", () => {
+  // With NEXT_PUBLIC_PLACEHOLDER_PHOTOS=0 the phase is off and the R2
+  // derivative ladder is used instead of the placeholder JPEG.
+  withEnv({ [BASE]: BASE_URL, "NEXT_PUBLIC_PLACEHOLDER_PHOTOS": "0" }, () => {
+    const expected = webDerivativeUrls(plainPhoto);
+    assert.ok(expected, "the test photo needs a buildable ladder");
+    const got = galleryImageOrPlaceholder(plainPhoto, 2000);
+    assert.ok(got, "ladder phase resolves an image");
+    assert.equal(got.src, expected.jpeg[2000], "ladder phase serves the R2 derivative src");
+    assert.ok(got.webpSrcSet, "ladder phase serves a WebP srcset");
+  });
 });
