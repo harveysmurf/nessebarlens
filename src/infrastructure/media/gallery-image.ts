@@ -28,8 +28,8 @@ export type GalleryImage = {
   src: string;
   /** The JPEG srcset. */
   srcSet: string;
-  /** The WebP srcset for the `<source>`. Omitted when there is no WebP variant. */
-  webpSrcSet?: string | undefined;
+  /** The WebP srcset for the `<source>`. */
+  webpSrcSet: string;
 };
 
 /**

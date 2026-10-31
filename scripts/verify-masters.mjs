@@ -53,7 +53,6 @@ const MASTER_METADATA_KEY = "sha256";
  * @typedef {{
  *   slug: string,
  *   published?: boolean,
- *   placeholder?: boolean,
  *   masterSha256?: string,
  *   printAsset?: { sha256: string, md5: string },
  * }} MasterPhoto
@@ -96,7 +95,6 @@ export async function verifyMasters({
   const failures = [];
   for (const photo of photos) {
     if (photo.published === false) continue;
-    if (photo.placeholder === true) continue;
     // The compiled catalog stores the YAML's `master_sha256` as `masterSha256`.
     if (
       typeof photo.masterSha256 !== "string" ||
@@ -224,17 +222,12 @@ function requiredEnv(names, env) {
 }
 
 /**
- * The published photos that need a master checked. A placeholder-phase photo
- * (`placeholder: true`) is deliberately excluded: it is a gallery entry with no
- * objects in the production bucket, so demanding one would refuse every release
- * for a photo that was never promoted. Every real photo is still checked.
+ * The published photos, every one of which now needs a master checked.
  * @param {MasterPhoto[]} [photos]
  * @returns {MasterPhoto[]}
  */
 export function photosToVerify(photos = PHOTOS) {
-  return photos.filter(
-    (photo) => photo.published !== false && photo.placeholder !== true,
-  );
+  return photos.filter((photo) => photo.published !== false);
 }
 
 /**
