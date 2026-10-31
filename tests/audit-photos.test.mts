@@ -17,6 +17,7 @@ import {
   WEB_DERIVATIVE_WIDTHS,
   webDerivativeKey,
 } from "../src/domain/catalog/derivative-ladder.ts";
+import { PLACEHOLDER_SLUGS } from "../src/domain/catalog/placeholder-slugs.ts";
 import {
   AUDIT_CATEGORIES,
   auditFindings,
@@ -113,20 +114,21 @@ test("a photo published with no image_hash is not reported as missing", () => {
   assert.deepEqual(findings.missing, []);
 });
 
-test("a placeholder-phase photo is not reported as missing", () => {
-  // #484 gallery placeholders carry master facts but have no bucket objects by
-  // design; a daily audit must not report them as drift. A promoted real photo
-  // still must.
+test("a placeholder-phase slug is not reported as missing", () => {
+  // #484 gallery placeholders carry catalog facts but have no bucket objects by
+  // design; a daily audit must not report them as drift. A real photo with an
+  // ordinary slug still must.
+  const [placeholder] = [...PLACEHOLDER_SLUGS];
   const findings = auditFindings({
     catalog: [
-      { slug: "phase", published: true, placeholder: true, imageHash: NEW, masterSha256: SHA },
+      { slug: placeholder!, published: true, imageHash: NEW, masterSha256: SHA },
       { slug: "real", published: true, imageHash: OLD, masterSha256: SHA },
     ],
     webObjects: [],
     stagingObjects: [],
     mastersObjects: [],
   });
-  assert.equal(findings.missing.some((item) => item.slug === "phase"), false);
+  assert.equal(findings.missing.some((item) => item.slug === placeholder), false);
   assert.ok(findings.missing.length > 0);
   assert.ok(findings.missing.every((item) => item.slug === "real"));
 });

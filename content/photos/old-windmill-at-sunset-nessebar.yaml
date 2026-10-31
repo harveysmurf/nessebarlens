@@ -13,8 +13,6 @@ translations:
     alt: "Стара каменна вятърна мелница на билото на фона на залеза над Черно море."
 category: fine-art
 published: true
-# no production master yet: gallery placeholder, skipped by the release gate
-placeholder: true
 # written by publish-photos
 master_sha256: 3fabbe381a4ac328653c3dbddd6afe16852cc90ec8f7c61414a17e54799005a2
 image_hash: 2f306ba0

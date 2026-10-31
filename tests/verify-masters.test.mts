@@ -9,6 +9,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { MASTERS_BUCKET_NAME } from "../src/domain/catalog/derivative-ladder.ts";
+import { PLACEHOLDER_SLUGS } from "../src/domain/catalog/placeholder-slugs.ts";
 import {
   createMastersS3,
   main,
@@ -107,18 +108,20 @@ test("a placeholder-phase photo is not checked", async () => {
   // expected to be absent from the bucket, so the release gate must skip them
   // while still checking every real photo.
   const s3 = fakeS3({});
+  const [placeholder] = [...PLACEHOLDER_SLUGS];
   const failures = await verifyMasters({
-    photos: [PHOTO({ slug: "placeholder", placeholder: true })],
+    photos: [PHOTO({ slug: placeholder! })],
     s3,
   });
   assert.deepEqual(failures, []);
   assert.deepEqual(s3.calls, []);
 });
 
-test("photosToVerify drops placeholder entries and keeps real ones", () => {
+test("photosToVerify drops placeholder slugs and keeps real ones", () => {
+  const [placeholder] = [...PLACEHOLDER_SLUGS];
   const photos = [
     { slug: "real", published: true, masterSha256: SHA_A },
-    { slug: "phase", published: true, placeholder: true, masterSha256: SHA_A },
+    { slug: placeholder!, published: true, masterSha256: SHA_A },
   ];
   assert.deepEqual(
     photosToVerify(photos).map((photo) => photo.slug),

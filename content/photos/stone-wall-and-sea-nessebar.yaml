@@ -13,8 +13,6 @@ translations:
     alt: "Древна каменна стена, спускаща се към морето, с вълнолом отвъд нея."
 category: fine-art
 published: true
-# no production master yet: gallery placeholder, skipped by the release gate
-placeholder: true
 # written by publish-photos
 master_sha256: c3548266af48e779e8311e076a055c74fedb89e10fd9ae1a8cfd28c58e45c4f2
 image_hash: cd3d9e49

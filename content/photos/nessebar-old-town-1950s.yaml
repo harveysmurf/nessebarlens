@@ -13,8 +13,6 @@ translations:
     alt: "Калдъръмени улички и къщи от дърво и камък в стария град на Несебър през 50-те години."
 category: archive
 published: true
-# no production master yet: gallery placeholder, skipped by the release gate
-placeholder: true
 # written by publish-photos
 master_sha256: bda7d48d32771e3f32e88d70703c57543c10fdbfeb27388af42bee20cc015c00
 image_hash: 44d090ca
