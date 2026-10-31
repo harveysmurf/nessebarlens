@@ -13,6 +13,8 @@ translations:
     alt: "Останки от средновековната крепостна стена на Несебърския провлак."
 category: archive
 published: true
+# no production master yet: gallery placeholder, skipped by the release gate
+placeholder: true
 # written by publish-photos
 master_sha256: 445d54f3eefb6c3f01797595856caa9471b2441c706c3dbcd31401eb5f61a7db
 image_hash: ac1761a2

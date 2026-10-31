@@ -95,6 +95,14 @@ export type PhotoFile = {
    */
   printAsset?: { sha256: string; md5: string } | undefined;
   /**
+   * A placeholder-phase entry (see `NEXT_PUBLIC_PLACEHOLDER_PHOTOS`): it is
+   * listed in the gallery so the shop is not empty, but it has no objects in
+   * `nessebar-lens-masters` and is not for sale. The release gate
+   * (`verify-masters`) and the bucket audit skip it; every real photo is still
+   * checked. Remove the marker when the real master is promoted.
+   */
+  placeholder?: boolean | undefined;
+  /**
    * The print offer (#300): which sizes are sold per physical format. Derived
    * from the master by `publish-photos` and validated here against the same
    * facts. Required on a published photo; the owner narrows it by deleting
@@ -122,6 +130,7 @@ const KNOWN_KEYS = new Set([
   "featured",
   "hero_caption",
   "published",
+  "placeholder",
   "translations",
   "master_sha256",
   "image_hash",
@@ -598,6 +607,7 @@ export function validatePhotoFile(
     problems,
   );
   const published = readPublished(data.published, problems);
+  const placeholder = readBoolean("placeholder", data.placeholder, problems);
   const { translations, seen: translatedLocales } = readTranslations(
     data.translations,
     featured,
@@ -708,6 +718,7 @@ export function validatePhotoFile(
       featured,
       heroCaption,
       published,
+      placeholder,
       translations,
       masterSha256,
       imageHash,

@@ -13,6 +13,8 @@ translations:
     alt: "Фар и къща на пазача, разположени на скала над скалистия морски бряг."
 category: fine-art
 published: true
+# no production master yet: gallery placeholder, skipped by the release gate
+placeholder: true
 # written by publish-photos
 master_sha256: 1324134c741a8cf9b74eacd507a07d2621237f980528d0386ab75fcbac331d24
 image_hash: 1ca18f00
