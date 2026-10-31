@@ -1,0 +1,35 @@
+slug: nessebar-old-town-1950s
+title: "Nessebar Old Town, 1950s"
+caption: "An archival black-and-white view of the old town's cobbled lanes and wood-and-stone houses."
+description: >-
+  An archival black-and-white photograph of Nessebar's old town in the 1950s: cobbled lanes climb the hill between wood-and-stone houses with overhanging eaves, and washing hangs on lines between the buildings. A few figures move in the distance near the church square.
+alt: "Cobbled lanes and wood-and-stone houses in Nessebar's old town, 1950s."
+translations:
+  bg:
+    title: "Stara Nessebar, 1950-te"
+    caption: "Архийна черно-бела снимка на старата graded в 50-те години: колками улици каб летигра между дървено-камени хоили с превисани кирпич и."
+    description: >-
+      Архийна черно-бела снимка на старата Nessebar през 1950-те: колки трасты изкачват хълма между дървено-камени хора с извиващи булекъ, и пране се вие на прачки между сградите. Няколко фигула се движат на разтояние близо църквения тръг.
+    alt: "Колки ленти и дървено-камени хора в старата Nessebar, 1950."
+category: archive
+published: true
+# written by publish-photos
+master_sha256: bda7d48d32771e3f32e88d70703c57543c10fdbfeb27388af42bee20cc015c00
+image_hash: 44d090ca
+master_width: 3630
+master_height: 2722
+orientation: landscape
+print_asset_sha256: 0337b182fa2d172e09ba70b70f8c4c6d9569a86a7c2f6a98525d780e5ee4c0a5
+print_asset_md5: fe9b8bdcaf2c25eaad0c9216155cdae2
+print_options:
+  giclee:
+    - 20x30
+    - 30x40
+  framed:
+    - 20x30
+    - 30x40
+    - 30x45
+  canvas:
+    - 20x30
+    - 30x40
+    - 30x45

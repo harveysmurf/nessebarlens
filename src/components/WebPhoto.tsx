@@ -2,9 +2,11 @@
  * Gallery / product preview as a `<picture>`.
  *
  * Every published photo is served from the R2 derivative ladder (#245): a WebP
- * `<source>` and a JPEG `<img>` over the full four-rung srcset, so a browser
+ * `<source>` and a JPEG `img` over the full four-rung srcset, so a browser
  * that supports WebP downloads it and one that does not falls back to the JPEG.
- * There is no placeholder image anymore.
+ * While the ladder has no public derivatives (this phase), the component falls
+ * back to a local `/placeholders/{slug}.jpg` JPEG so the gallery is never
+ * empty; the R2 helper is left in place for later real prints.
  *
  * `preferred` names the derivative rung to use as the JPEG `src` — the largest
  * thing on the page passes the largest rung, a grid tile passes the middle one.
@@ -37,9 +39,19 @@ export function WebPhoto({
 }) {
   const image = galleryImage(photo, preferred);
   if (image === null) {
-    // The ladder could not be built (an unusable slug, or no configured base):
-    // render the alt text rather than request a file that is not there.
-    return <span className={className}>{photo.alt}</span>;
+    // Placeholder phase: the R2 derivative ladder has no public derivatives yet,
+    // so serve a local placeholder JPEG instead of rendering nothing. The R2
+    // helper is left in place for later real prints.
+    const placeholder = `/placeholders/${photo.slug}.jpg`;
+    return (
+      <PictureImg
+        image={{ src: placeholder, srcSet: placeholder, webpSrcSet: "" }}
+        alt={photo.alt}
+        className={className}
+        sizes={sizes}
+        priority={priority}
+      />
+    );
   }
 
   return (

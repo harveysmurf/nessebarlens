@@ -1,0 +1,36 @@
+slug: nessebar-film-boat-sunset
+title: "Nessebar Boat at Sunset"
+caption: "A small boat at sunset on film, sepia-toned and quiet."
+description: >-
+  A small boat drifts at sunset on film, sepia-toned and quiet. The fading light reddens the water, the boat rides low, and the horizon is a thin line between sea and sky. The grain holds the moment soft.
+alt: "A small boat at sunset on film in Nessebar."
+translations:
+  bg:
+    title: "Лодка на зара в Nessebar на филм"
+    caption: "Мала барака на зара на филм, сепия-тон и тихо."
+    description: >-
+      Мала барка плава на зара на филм, сепия-тон и тихо. Замясното светлина червенива водите, барката лези ниско, и хоризонтът е тънка линия между морето и небото. Зърнът държи момента съглен.
+    alt: "Мала лодка на зара на филм в Nessebar."
+category: film
+film_look: sepia
+published: true
+# written by publish-photos
+master_sha256: b270e864144900bd05f28fc916fb74e6ef718ac6acb6ee4aeda73170a79a9751
+image_hash: a823d868
+master_width: 3630
+master_height: 2722
+orientation: landscape
+print_asset_sha256: 12cb9bb1849a269f7d6403eb9bbcf92974079b815e043baebd60753ad81cb7a0
+print_asset_md5: 4b7bba377eaf1eaa44256f76e8be2af3
+print_options:
+  giclee:
+    - 20x30
+    - 30x40
+  framed:
+    - 20x30
+    - 30x40
+    - 30x45
+  canvas:
+    - 20x30
+    - 30x40
+    - 30x45

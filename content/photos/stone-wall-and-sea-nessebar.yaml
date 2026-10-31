@@ -1,0 +1,35 @@
+slug: stone-wall-and-sea-nessebar
+title: "Stone Wall and the Sea"
+caption: "The ancient fortress wall running down to the water, with the breakwater beyond."
+description: >-
+  The old stone wall follows the coastline toward the breakwater, worn smooth by centuries of sea wind. Gulls rest on the coping stones where the wall meets the surf, and the water is dark and calm beneath an overcast sky.
+alt: "An ancient stone wall running down to the sea with a breakwater beyond."
+translations:
+  bg:
+    title: "Каменна стена и морето"
+    caption: "Старата камъна стена Folgeте берегobreja към моловара, изместена от вековете на морския вятър."
+    description: >-
+      Свата камъна стена върви нерегера към буера, изיתана от вековете на морския вятър. Чайки почиват на каpiteте, където стената среща вълната, и водите се тъмен и спокоен под предни небеса.
+    alt: "Стана камъна стена вода надълго към морето с буера зад нея."
+category: fine-art
+published: true
+# written by publish-photos
+master_sha256: c3548266af48e779e8311e076a055c74fedb89e10fd9ae1a8cfd28c58e45c4f2
+image_hash: cd3d9e49
+master_width: 3630
+master_height: 2722
+orientation: landscape
+print_asset_sha256: a8185856ccbf2d30609f4b57d944a79a575944d736bc5ad64576a9c6e8fc7f10
+print_asset_md5: 82d2e1509c2f3e423d3fc8462940dc67
+print_options:
+  giclee:
+    - 20x30
+    - 30x40
+  framed:
+    - 20x30
+    - 30x40
+    - 30x45
+  canvas:
+    - 20x30
+    - 30x40
+    - 30x45
