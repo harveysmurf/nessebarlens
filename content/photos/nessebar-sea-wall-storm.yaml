@@ -13,8 +13,6 @@ translations:
     alt: "Вълни се разбиват над морската стена на Несебър по време на буря."
 category: archive
 published: true
-# no production master yet: gallery placeholder, skipped by the release gate
-placeholder: true
 # written by publish-photos
 master_sha256: 5b2343c3a93effca8207f660993d80fde92ed0581cd9480f9c70c4a4c62fbb06
 image_hash: 6dd34250

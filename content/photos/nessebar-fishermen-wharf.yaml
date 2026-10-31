@@ -13,8 +13,6 @@ translations:
     alt: "Рибари кърпят мрежи на стария пристан в Несебър."
 category: archive
 published: true
-# no production master yet: gallery placeholder, skipped by the release gate
-placeholder: true
 # written by publish-photos
 master_sha256: 82d7c71c4574e77d817f2d76799ced8a31912922848e8139669b47b043e1f061
 image_hash: 73d8dccd

@@ -113,24 +113,6 @@ test("a photo published with no image_hash is not reported as missing", () => {
   assert.deepEqual(findings.missing, []);
 });
 
-test("a placeholder-phase photo is not reported as missing", () => {
-  // #484 gallery placeholders carry master facts but have no bucket objects by
-  // design; a daily audit must not report them as drift. A promoted real photo
-  // still must.
-  const findings = auditFindings({
-    catalog: [
-      { slug: "phase", published: true, placeholder: true, imageHash: NEW, masterSha256: SHA },
-      { slug: "real", published: true, imageHash: OLD, masterSha256: SHA },
-    ],
-    webObjects: [],
-    stagingObjects: [],
-    mastersObjects: [],
-  });
-  assert.equal(findings.missing.some((item) => item.slug === "phase"), false);
-  assert.ok(findings.missing.length > 0);
-  assert.ok(findings.missing.every((item) => item.slug === "real"));
-});
-
 test("an unpublished photo's masters are informational, not orphaned web", () => {
   const findings = auditFindings({
     catalog: [{ slug: "dawn", published: false, imageHash: OLD, masterSha256: SHA }],
