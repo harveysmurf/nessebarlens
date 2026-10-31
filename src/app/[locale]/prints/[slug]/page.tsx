@@ -9,7 +9,7 @@ import { shipToCountriesFor } from "@/domain/pricing/ship-to-countries";
 import { filmLookClass, getPhoto, PHOTOS, photoForLocale } from "@/domain/catalog/photos";
 import { isLocale } from "@/domain/i18n/locale";
 import { localePath } from "@/domain/i18n/locale-path";
-import { galleryImageOrPlaceholder } from "@/infrastructure/media/placeholder";
+import { galleryImage } from "@/infrastructure/media/gallery-image";
 import { printJsonLd } from "@/infrastructure/seo/json-ld";
 import { printMetadata } from "@/infrastructure/seo/page-metadata";
 import { getDictionary } from "@/components/i18n/dictionaries";
@@ -61,11 +61,10 @@ export default async function PrintDetailPage({
   // hydration mismatch.
   const countries = shipToCountriesFor(locale);
 
-  // Resolved on the server: `galleryImageOrPlaceholder()` reads `process.env`,
-  // which a client component does not see, so the ladder URL must be computed
-  // here and passed down as a plain value (#326). During the placeholder phase
-  // it returns `/placeholders/{slug}.jpg` instead of an empty R2 derivative.
-  const image = galleryImageOrPlaceholder(photo, 2000);
+  // Resolved on the server: `galleryImage()` reads `process.env`, which a
+  // client component does not see, so the ladder URL must be computed here and
+  // passed down as a plain value (#326).
+  const image = galleryImage(photo, 2000);
   const filmLookClassName = filmLookClass(photo.filmLook);
 
   return (

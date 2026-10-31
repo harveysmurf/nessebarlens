@@ -42,7 +42,7 @@ test("a published photo is a CDN derivative with jpeg and webp srcSets", () => {
       image.src,
       `https://cdn.example.com/gallery/dawn/${HASH}/${WEB_DEFAULT_WIDTH}.jpg`,
     );
-    for (const set of [image.srcSet, image.webpSrcSet!]) {
+    for (const set of [image.srcSet, image.webpSrcSet]) {
       assert.equal(set.split(", ").length, WEB_DERIVATIVE_WIDTHS.length);
       for (const part of set.split(", ")) {
         assert.match(part, /^\S+ \d+w$/);
