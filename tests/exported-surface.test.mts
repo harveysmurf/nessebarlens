@@ -112,6 +112,14 @@ test("the checkout body module exports its parsers, not the types they return", 
     "CheckoutBody is exported but no consumer names it",
   );
   assert.ok(!names.includes("QuoteBody"), "QuoteBody is exported but no consumer names it");
+  assert.ok(
+    !names.includes("DigitalCheckout"),
+    "DigitalCheckout is exported but no consumer names it",
+  );
+  assert.ok(
+    !names.includes("PhysicalCheckout"),
+    "PhysicalCheckout is exported but no consumer names it",
+  );
 });
 
 test("the json body module exports its reader, not the type it returns", () => {
